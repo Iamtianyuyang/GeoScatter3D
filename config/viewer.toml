@@ -1,0 +1,39 @@
+# config/viewer.toml
+
+[input]
+gs3d_path = "data/test.gs3d"
+
+[shader]
+vertex_shader_path = "assets/shaders/point.vert.spv"
+fragment_shader_path = "assets/shaders/point.frag.spv"
+
+[window]
+width = 1280
+height = 720
+title = "GeoScatter3D Viewer"
+resizable = true
+
+[vulkan]
+validation_layers = true
+
+[render]
+clear_color = [0.015, 0.018, 0.025, 1.0]
+initial_point_size = 1.0
+
+[camera]
+mode = "fixed"
+position = [0.0, -14000.0, 6000.0]
+target = [0.0, 0.0, 0.0]
+up = [0.0, 0.0, 1.0]
+fov_y = 45.0
+near = 1.0
+far = 100000.0
+
+[controller]
+rotate_speed = 1.0
+pan_speed = 1.0
+zoom_speed = 1.0
+invert_rotate_x = false
+invert_rotate_y = false
+invert_pan_x = false
+invert_pan_y = true

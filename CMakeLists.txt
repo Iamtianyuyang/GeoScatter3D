@@ -12,6 +12,10 @@ find_package(glfw3 REQUIRED)
 add_executable(GeoScatter3D
     src/main.cpp
 
+    src/app/ViewerApp.cpp
+    src/app/AppConfig.cpp
+    src/app/ResourcePath.cpp
+
     src/platform/Window.cpp
 
     src/data/CsvStreamReader.cpp
@@ -26,7 +30,7 @@ add_executable(GeoScatter3D
     src/camera/Camera.cpp
     src/camera/CameraController.cpp
     src/camera/MouseRay.cpp
-    
+
     src/preprocess/StatisticsPass.cpp
     src/preprocess/Gs3dWriter.cpp
     
@@ -38,6 +42,10 @@ add_executable(GeoScatter3D
     src/render/PointPipeline.cpp
     src/render/VulkanDepthBuffer.cpp
 
+    include/app/ViewerApp.hpp
+    include/app/AppConfig.hpp
+    include/app/ResourcePath.hpp
+    
     include/platform/Window.hpp
 
     include/data/Gs3dVerifier.hpp
@@ -68,6 +76,7 @@ add_executable(GeoScatter3D
 
 target_include_directories(GeoScatter3D PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
 )
 
 target_link_libraries(GeoScatter3D PRIVATE
