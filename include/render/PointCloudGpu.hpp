@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/Gs3dDataset.hpp"
+#include "data/Gs3dFormat.hpp"
 #include "render/VulkanBuffer.hpp"
 #include "render/VulkanContext.hpp"
 
@@ -21,6 +22,14 @@ public:
         const gs3d::data::Gs3dDataset& dataset
     );
 
+    PointCloudGpu(
+        const VulkanContext& context,
+        VkCommandPool command_pool,
+        VkQueue transfer_queue,
+        const gs3d::data::Gs3dPoint* points,
+        std::uint64_t point_count
+    );
+
     ~PointCloudGpu() = default;
 
     PointCloudGpu(const PointCloudGpu&) = delete;
@@ -34,6 +43,14 @@ public:
         VkCommandPool command_pool,
         VkQueue transfer_queue,
         const gs3d::data::Gs3dDataset& dataset
+    );
+
+    void upload_points(
+        const VulkanContext& context,
+        VkCommandPool command_pool,
+        VkQueue transfer_queue,
+        const gs3d::data::Gs3dPoint* points,
+        std::uint64_t point_count
     );
 
     void destroy() noexcept;

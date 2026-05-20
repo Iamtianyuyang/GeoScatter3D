@@ -3,19 +3,33 @@
 #include "camera/Camera.hpp"
 #include "camera/CameraController.hpp"
 #include "data/Gs3dDataset.hpp"
+#include "data/Gs3dLodDataset.hpp"
+#include "data/Gs3dLodReader.hpp"
+#include "data/Gs3dTileReader.hpp"
+
 #include "platform/Window.hpp"
+#include "render/LodSelector.hpp"
 #include "render/PointCloudGpu.hpp"
+#include "render/PointCloudLodGpu.hpp"
 #include "render/PointPipeline.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanRenderer.hpp"
 #include "render/VulkanSwapchain.hpp"
+#include "render/PointCloudTileGpu.hpp"
+#include "render/TileSelection.hpp"
+
+#include "preprocess/Gs3dLodWriter.hpp"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <optional>
 
 namespace gs3d::app {
 
@@ -49,6 +63,162 @@ gs3d::camera::CameraBounds make_camera_bounds(
     };
 
     return bounds;
+}
+
+gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
+    const std::string& mode
+) {
+    if (mode == "XY" || mode == "xy") {
+        return gs3d::data::Gs3dLodVoxelMode::XY;
+    }
+
+    if (mode == "XYZ" || mode == "xyz") {
+        return gs3d::data::Gs3dLodVoxelMode::XYZ;
+    }
+
+    throw std::runtime_error(
+        "ViewerApp: unsupported LOD voxel_mode: " + mode
+    );
+}
+
+gs3d::render::TileSelectionConfig make_tile_selection_config(
+    const ViewerAppConfig& config
+) {
+    gs3d::render::TileSelectionConfig tile_config;
+
+    tile_config.enable_distance =
+        config.tile_enable_distance;
+
+    tile_config.near_distance =
+        config.tile_near_distance;
+
+    tile_config.middle_distance =
+        config.tile_middle_distance;
+
+    tile_config.near_half_size =
+        config.tile_near_half_size;
+
+    tile_config.middle_half_size =
+        config.tile_middle_half_size;
+
+    tile_config.far_half_size =
+        config.tile_far_half_size;
+
+    tile_config.use_full_z_range =
+        config.tile_use_full_z_range;
+
+    return tile_config;
+}
+
+gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
+    const gs3d::data::Gs3dDataset& dataset,
+    const ViewerAppConfig& config
+) {
+    gs3d::data::Gs3dLodBuildConfig lod_config;
+    lod_config.include_full_resolution_level = false;
+    lod_config.target_point_counts =
+        config.lod_target_point_counts;
+    lod_config.voxel_mode =
+        parse_lod_voxel_mode(config.lod_voxel_mode);
+    lod_config.voxel_scale =
+        config.lod_voxel_scale;
+    lod_config.verbose =
+        config.lod_verbose;
+
+    return gs3d::data::Gs3dLodDataset::build(
+        dataset,
+        lod_config
+    );
+}
+
+gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
+    const gs3d::data::Gs3dDataset& dataset,
+    const ViewerAppConfig& config
+) {
+    if (!config.lod_enabled) {
+        return {};
+    }
+
+    const auto& sidecar_path =
+        config.lod_sidecar_path;
+
+    if (config.lod_auto_load_sidecar &&
+        !sidecar_path.empty() &&
+        std::filesystem::exists(sidecar_path)) {
+        try {
+            gs3d::data::Gs3dLodReadConfig read_config;
+            read_config.validate_against_source = true;
+            read_config.verbose = config.lod_verbose;
+
+            const auto read_result =
+                gs3d::data::Gs3dLodReader::read(
+                    sidecar_path,
+                    dataset.header(),
+                    read_config
+                );
+
+            std::cout << "[OK] LOD sidecar loaded.\n";
+            std::cout << "path = "
+                      << sidecar_path.string()
+                      << '\n';
+
+            return read_result.dataset;
+
+        } catch (const std::exception& e) {
+            std::cout << "[WARN] Failed to load LOD sidecar.\n";
+            std::cout << "[WARN] path = "
+                      << sidecar_path.string()
+                      << '\n';
+            std::cout << "[WARN] reason = "
+                      << e.what()
+                      << '\n';
+            std::cout << "[WARN] Falling back to runtime LOD build.\n";
+        }
+    } else if (config.lod_auto_load_sidecar &&
+               !sidecar_path.empty()) {
+        std::cout << "[LOD] sidecar not found, runtime build required.\n";
+        std::cout << "path = "
+                  << sidecar_path.string()
+                  << '\n';
+    }
+
+    auto lod_dataset =
+        build_runtime_lod_dataset(
+            dataset,
+            config
+        );
+
+    std::cout << lod_dataset.summary();
+
+    if (config.lod_auto_save_sidecar &&
+        !sidecar_path.empty()) {
+        try {
+            const auto write_stats =
+                gs3d::preprocess::Gs3dLodWriter::write(
+                    sidecar_path,
+                    lod_dataset
+                );
+
+            std::cout << "[OK] LOD sidecar written.\n";
+            std::cout << "path = "
+                      << write_stats.path.string()
+                      << '\n';
+            std::cout << "file_bytes = "
+                      << write_stats.total_file_bytes
+                      << '\n';
+
+        } catch (const std::exception& e) {
+            std::cout << "[WARN] Failed to write LOD sidecar.\n";
+            std::cout << "[WARN] path = "
+                      << sidecar_path.string()
+                      << '\n';
+            std::cout << "[WARN] reason = "
+                      << e.what()
+                      << '\n';
+        }
+    }
+
+    return lod_dataset;
 }
 
 void initialize_camera_from_config(
@@ -119,7 +289,10 @@ void print_dataset_info(
               << dataset.value_max() << "]\n";
 }
 
-void print_controls() {
+void print_controls(
+    bool lod_enabled,
+    bool tile_enabled
+){
     std::cout << "[OK] Entering render loop.\n";
     std::cout << "Controls:\n";
     std::cout << "  Left drag   : orbit\n";
@@ -129,6 +302,24 @@ void print_controls() {
     std::cout << "  + / -       : point size\n";
     std::cout << "  R           : reset view\n";
     std::cout << "  Esc         : quit\n";
+    std::cout << "Render mode:\n";
+    std::cout << "  LOD         : "
+              << (lod_enabled ? "enabled" : "disabled")
+              << '\n';
+    std::cout << "  Tile full-res : "
+              << (tile_enabled ? "enabled" : "disabled")
+              << '\n';
+}
+
+bool window_interacting(
+    const gs3d::platform::Window& window
+) {
+    const auto& mouse = window.mouse_state();
+
+    return mouse.left_pressed ||
+           mouse.right_pressed ||
+           mouse.middle_pressed ||
+           mouse.scroll_y != 0.0;
 }
 
 } // namespace
@@ -155,6 +346,46 @@ int ViewerApp::run() {
 
         print_dataset_info(dataset);
 
+        std::optional<gs3d::data::Gs3dTileReader> tile_reader;
+
+        if (config_.tile_enabled) {
+            tile_reader =
+                gs3d::data::Gs3dTileReader::open(
+                    config_.tile_index_path,
+                    config_.tile_data_path,
+                    dataset.header()
+                );
+
+            if (!tile_reader->valid()) {
+                std::cerr << "[FAIL] TileReader is invalid.\n";
+                return 1;
+            }
+
+            const auto tile_stats =
+                tile_reader->stats();
+
+            std::cout << "[OK] TileReader opened.\n";
+            std::cout << "tile_count = "
+                      << tile_stats.tile_count
+                      << '\n';
+            std::cout << "tile_total_point_count = "
+                      << tile_stats.total_point_count
+                      << '\n';
+            std::cout << "tile_total_point_bytes = "
+                      << tile_stats.total_point_bytes
+                      << '\n';
+        }
+
+        gs3d::data::Gs3dLodDataset lod_dataset;
+
+        if (config_.lod_enabled) {
+            lod_dataset =
+                load_or_build_lod_dataset(
+                    dataset,
+                    config_
+                );
+        }
+        
         gs3d::platform::WindowConfig window_config;
         window_config.width = config_.window_width;
         window_config.height = config_.window_height;
@@ -184,16 +415,36 @@ int ViewerApp::run() {
         clear_color.a = config_.clear_color[3];
         renderer.set_clear_color(clear_color);
 
-        gs3d::render::PointCloudGpu gpu_cloud(
-            context,
-            renderer.command_pool(),
-            context.graphics_queue(),
-            dataset
-        );
+        std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud;
+        std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud;
+        std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud;
 
-        std::cout << "[OK] PointCloudGpu uploaded.\n";
-        std::cout << "gpu point_count = "
-                  << gpu_cloud.point_count() << '\n';
+        if (config_.lod_enabled) {
+            lod_gpu_cloud =
+                std::make_unique<gs3d::render::PointCloudLodGpu>(
+                    context,
+                    renderer.command_pool(),
+                    context.graphics_queue(),
+                    lod_dataset
+                );
+
+            std::cout << "[OK] PointCloudLodGpu uploaded.\n";
+            std::cout << lod_gpu_cloud->summary();
+
+        } else {
+            full_gpu_cloud =
+                std::make_unique<gs3d::render::PointCloudGpu>(
+                    context,
+                    renderer.command_pool(),
+                    context.graphics_queue(),
+                    dataset
+                );
+
+            std::cout << "[OK] PointCloudGpu uploaded.\n";
+            std::cout << "gpu point_count = "
+                      << full_gpu_cloud->point_count()
+                      << '\n';
+        }
 
         gs3d::render::PointPipelineConfig pipeline_config;
         pipeline_config.vertex_shader_path =
@@ -266,11 +517,57 @@ int ViewerApp::run() {
             dataset
         );
 
+        gs3d::render::LodSelector lod_selector;
+
+        if (config_.lod_enabled) {
+            gs3d::render::LodSelectorConfig lod_selector_config;
+            lod_selector_config.medium_delay_seconds =
+                config_.lod_medium_delay_seconds;
+            lod_selector_config.high_delay_seconds =
+                config_.lod_high_delay_seconds;
+            lod_selector_config.use_lowest_while_interacting =
+                config_.lod_use_lowest_while_interacting;
+
+            lod_selector.set_config(lod_selector_config);
+        }
+
+        gs3d::render::TileSelection tile_selection;
+
+        if (config_.tile_enabled && tile_reader.has_value()) {
+            tile_selection.set_config(
+                make_tile_selection_config(config_)
+            );
+
+            tile_gpu_cloud =
+                std::make_unique<gs3d::render::PointCloudTileGpu>();
+
+            std::cout << "[OK] TileSelection initialized.\n";
+        }
+
         bool r_was_pressed = false;
 
-        print_controls();
+        std::size_t last_lod_level =
+             static_cast<std::size_t>(-1);
+
+        auto previous_time =
+            std::chrono::steady_clock::now();
+
+        print_controls(
+                        config_.lod_enabled,
+                        config_.tile_enabled
+                    );
 
         while (!window.should_close()) {
+            const auto current_time =
+                std::chrono::steady_clock::now();
+
+            const double delta_seconds =
+                std::chrono::duration<double>(
+                    current_time - previous_time
+                ).count();
+
+            previous_time = current_time;
+
             window.poll_events();
 
             if (window.key_pressed(GLFW_KEY_ESCAPE)) {
@@ -319,15 +616,126 @@ int ViewerApp::run() {
                 dataset
             );
 
+            if (config_.lod_enabled) {
+                lod_selector.update(
+                    window_interacting(window),
+                    delta_seconds
+                );
+            }
+
+            if (config_.tile_enabled &&
+                tile_reader.has_value() &&
+                tile_gpu_cloud) {
+                const auto tile_result =
+                    tile_selection.update(
+                        camera,
+                        *tile_reader
+                    );
+
+                if (!tile_result.enabled) {
+                    if (tile_gpu_cloud->valid()) {
+                        /*
+                        * clear() 会销毁旧 VkBuffer。
+                        * 销毁前必须确保 GPU 不再使用它。
+                        */
+                        vkDeviceWaitIdle(context.device());
+
+                        tile_gpu_cloud->clear();
+
+                        if (config_.tile_verbose) {
+                            std::cout << "[TILE] disabled, local full-res buffer cleared.\n";
+                        }
+                    }
+                } else if (tile_result.changed) {
+                    /*
+                    * 当前 PointCloudTileGpu::update_from_tiles() 会销毁旧 VkBuffer。
+                    * 旧 buffer 可能仍被上一帧 command buffer 使用。
+                    * 第一版先用 vkDeviceWaitIdle 保证安全。
+                    * 后续再改成延迟销毁 / frames-in-flight 资源回收。
+                    */
+                    vkDeviceWaitIdle(context.device());
+
+                    tile_gpu_cloud->update_from_tiles(
+                        context,
+                        renderer.command_pool(),
+                        context.graphics_queue(),
+                        *tile_reader,
+                        tile_result.tile_ids
+                    );
+
+                    if (config_.tile_verbose) {
+                        const auto& stats =
+                            tile_gpu_cloud->stats();
+
+                        std::cout << "[TILE] active full-res tiles updated.\n";
+                        std::cout << "tile_count = "
+                                << stats.tile_count
+                                << '\n';
+                        std::cout << "point_count = "
+                                << stats.point_count
+                                << '\n';
+                        std::cout << "gpu_buffer_bytes = "
+                                << stats.gpu_buffer_bytes
+                                << '\n';
+                        std::cout << "camera_distance = "
+                                << tile_result.camera_distance
+                                << '\n';
+                        std::cout << "query_half_size = "
+                                << tile_result.query_half_size
+                                << '\n';
+                    }
+                }
+            }
+
             renderer.draw_frame(
                 window,
                 [&](VkCommandBuffer command_buffer) {
-                    point_pipeline.draw(
-                        command_buffer,
-                        gpu_cloud,
-                        renderer.extent(),
-                        push
-                    );
+                    if (config_.lod_enabled) {
+                        const std::size_t level_index =
+                            lod_selector.select_level(
+                                lod_gpu_cloud->level_count()
+                            );
+                        if (level_index != last_lod_level) {
+                            if (config_.lod_verbose) {
+                                const auto& level =
+                                    lod_gpu_cloud->level(level_index);
+
+                                std::cout << "[LOD] active level = "
+                                        << level_index
+                                        << ", points = "
+                                        << level.gpu_point_count
+                                        << ", idle_seconds = "
+                                        << lod_selector.idle_seconds()
+                                        << '\n';
+                            }
+
+                            last_lod_level = level_index;
+                        }
+                        const auto& cloud =
+                            lod_gpu_cloud->gpu_cloud(level_index);
+
+                        point_pipeline.draw(
+                            command_buffer,
+                            cloud,
+                            renderer.extent(),
+                            push
+                        );
+                    } else {
+                        point_pipeline.draw(
+                            command_buffer,
+                            *full_gpu_cloud,
+                            renderer.extent(),
+                            push
+                        );
+                    }
+                    if (tile_gpu_cloud && tile_gpu_cloud->valid()) {
+                        point_pipeline.draw(
+                            command_buffer,
+                            tile_gpu_cloud->gpu_cloud(),
+                            renderer.extent(),
+                            push
+                        );
+                    }
                 }
             );
         }

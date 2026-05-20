@@ -33,7 +33,40 @@ far = 100000.0
 rotate_speed = 1.0
 pan_speed = 1.0
 zoom_speed = 1.0
+
 invert_rotate_x = false
 invert_rotate_y = false
 invert_pan_x = false
 invert_pan_y = true
+
+[lod]
+enabled = true
+keep_full_buffer = false
+
+sidecar_path = "data/test.gs3dlod"
+auto_load_sidecar = true
+auto_save_sidecar = true
+target_point_counts = [3000000, 1000000, 300000]
+voxel_mode = "XY"
+voxel_scale = 1.0
+
+medium_delay_seconds = 0.20
+high_delay_seconds = 0.80
+use_lowest_while_interacting = true
+verbose = true
+
+[tile]
+enabled = true
+index_path = "data/test.gs3dtiles.index"
+data_path = "data/test.gs3dtiles"
+
+enable_distance = 12000.0
+near_distance = 3000.0
+middle_distance = 6000.0
+
+near_half_size = 256.0
+middle_half_size = 512.0
+far_half_size = 1024.0
+
+use_full_z_range = true
+verbose = true

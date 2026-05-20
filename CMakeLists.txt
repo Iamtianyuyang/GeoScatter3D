@@ -26,6 +26,11 @@ add_executable(GeoScatter3D
     src/data/Gs3dReader.cpp
     src/data/Gs3dVerifier.cpp
     src/data/Gs3dDataset.cpp
+    src/data/Gs3dLodDataset.cpp
+    src/data/Gs3dLodFormat.cpp
+    src/data/Gs3dLodReader.cpp
+    src/data/Gs3dTileFormat.cpp
+    src/data/Gs3dTileReader.cpp
 
     src/camera/Camera.cpp
     src/camera/CameraController.cpp
@@ -33,7 +38,9 @@ add_executable(GeoScatter3D
 
     src/preprocess/StatisticsPass.cpp
     src/preprocess/Gs3dWriter.cpp
-    
+    src/preprocess/Gs3dLodWriter.cpp
+    src/preprocess/Gs3dTileWriter.cpp
+
     src/render/VulkanContext.cpp
     src/render/VulkanSwapchain.cpp
     src/render/VulkanRenderer.cpp
@@ -41,11 +48,15 @@ add_executable(GeoScatter3D
     src/render/PointCloudGpu.cpp
     src/render/PointPipeline.cpp
     src/render/VulkanDepthBuffer.cpp
+    src/render/PointCloudLodGpu.cpp
+    src/render/LodSelector.cpp
+    src/render/PointCloudTileGpu.cpp
+    src/render/TileSelection.cpp
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp
     include/app/ResourcePath.hpp
-    
+
     include/platform/Window.hpp
 
     include/data/Gs3dVerifier.hpp
@@ -55,13 +66,20 @@ add_executable(GeoScatter3D
     include/data/Gs3dFormat.hpp
     include/data/Gs3dReader.hpp
     include/data/Gs3dDataset.hpp
-    
+    include/data/Gs3dLodDataset.hpp
+    include/data/Gs3dLodFormat.hpp
+    include/data/Gs3dLodReader.hpp
+    include/data/Gs3dTileFormat.hpp
+    include/data/Gs3dTileReader.hpp
+
     include/camera/Camera.hpp
     include/camera/CameraController.hpp
     include/camera/MouseRay.hpp
 
     include/preprocess/StatisticsPass.hpp
     include/preprocess/Gs3dWriter.hpp
+    include/preprocess/Gs3dLodWriter.hpp  
+    include/preprocess/Gs3dTileWriter.hpp
 
     include/render/VulkanContext.hpp
     include/render/VulkanSwapchain.hpp
@@ -70,8 +88,10 @@ add_executable(GeoScatter3D
     include/render/PointCloudGpu.hpp  
     include/render/PointPipeline.hpp
     include/render/VulkanDepthBuffer.hpp
-
-    
+    include/render/PointCloudLodGpu.hpp
+    include/render/LodSelector.hpp
+    include/render/PointCloudTileGpu.hpp
+    include/render/TileSelection.hpp
 )
 
 target_include_directories(GeoScatter3D PRIVATE

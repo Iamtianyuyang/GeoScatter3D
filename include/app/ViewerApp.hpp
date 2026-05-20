@@ -1,20 +1,22 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace gs3d::app {
 
 struct ViewerAppConfig {
     std::filesystem::path gs3d_path =
-        "./data/test.gs3d";
+        "/home/tianyy/project/GeoScatter3D/data/test.gs3d";
 
     std::filesystem::path vertex_shader_path =
-        "./assets/shaders/point.vert.spv";
+        "/home/tianyy/project/GeoScatter3D/assets/shaders/point.vert.spv";
 
     std::filesystem::path fragment_shader_path =
-        "./assets/shaders/point.frag.spv";
+        "/home/tianyy/project/GeoScatter3D/assets/shaders/point.frag.spv";
 
     unsigned int window_width = 1280;
     unsigned int window_height = 720;
@@ -67,6 +69,49 @@ struct ViewerAppConfig {
     bool controller_invert_rotate_y = false;
     bool controller_invert_pan_x = false;
     bool controller_invert_pan_y = true;
+
+    bool lod_enabled = false;
+    bool lod_keep_full_buffer = false;
+
+    std::filesystem::path lod_sidecar_path =
+    "data/test.gs3dlod";
+
+    bool lod_auto_load_sidecar = true;
+    bool lod_auto_save_sidecar = true;
+    
+    std::vector<std::uint64_t> lod_target_point_counts{
+        3'000'000ull,
+        1'000'000ull,
+        300'000ull
+    };
+
+    std::string lod_voxel_mode = "XY";
+    float lod_voxel_scale = 1.0f;
+
+    double lod_medium_delay_seconds = 0.20;
+    double lod_high_delay_seconds = 0.80;
+
+    bool lod_use_lowest_while_interacting = true;
+    bool lod_verbose = true;
+
+        bool tile_enabled = false;
+
+    std::filesystem::path tile_index_path =
+        "data/test.gs3dtiles.index";
+
+    std::filesystem::path tile_data_path =
+        "data/test.gs3dtiles";
+
+    float tile_enable_distance = 12000.0f;
+    float tile_near_distance = 3000.0f;
+    float tile_middle_distance = 6000.0f;
+
+    float tile_near_half_size = 256.0f;
+    float tile_middle_half_size = 512.0f;
+    float tile_far_half_size = 1024.0f;
+
+    bool tile_use_full_z_range = true;
+    bool tile_verbose = true;
 };
 
 class ViewerApp {

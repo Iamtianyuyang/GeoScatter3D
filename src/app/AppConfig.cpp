@@ -61,6 +61,48 @@ std::filesystem::path resolve_config_file_path(
     );
 }
 
+[[nodiscard]]
+std::vector<std::uint64_t> uint64_array_or_default(
+    const toml::table& table,
+    std::string_view key,
+    const std::vector<std::uint64_t>& default_value
+) {
+    const auto* array = table[key].as_array();
+
+    if (!array) {
+        return default_value;
+    }
+
+    std::vector<std::uint64_t> result;
+    result.reserve(array->size());
+
+    for (std::size_t i = 0; i < array->size(); ++i) {
+        const auto node = array->get(i);
+
+        if (!node) {
+            throw std::runtime_error(
+                "AppConfig: invalid uint64 array element"
+            );
+        }
+
+        if (const auto value = node->value<std::int64_t>()) {
+            if (*value < 0) {
+                throw std::runtime_error(
+                    "AppConfig: uint64 array contains negative value"
+                );
+            }
+
+            result.push_back(static_cast<std::uint64_t>(*value));
+        } else {
+            throw std::runtime_error(
+                "AppConfig: uint64 array contains non-integer value"
+            );
+        }
+    }
+
+    return result;
+}
+
 void resolve_viewer_resource_paths(
     AppConfig& config,
     const std::filesystem::path& config_path,
@@ -87,6 +129,40 @@ void resolve_viewer_resource_paths(
             config.viewer.fragment_shader_path,
             context
         );
+
+    /*
+     * .gs3dlod 可能还不存在，因为 auto_save_sidecar 会在运行时生成。
+     * 所以不能用 resolve_existing_file。
+     */
+    if (!config.viewer.lod_sidecar_path.empty() &&
+        !config.viewer.lod_sidecar_path.is_absolute()) {
+        const auto config_dir =
+            ResourcePath::config_directory(config_path);
+
+        if (!config_dir.empty() && config_dir.has_parent_path()) {
+            config.viewer.lod_sidecar_path =
+                (config_dir.parent_path() /
+                 config.viewer.lod_sidecar_path).lexically_normal();
+        } else {
+            config.viewer.lod_sidecar_path =
+                (ResourcePath::current_working_directory() /
+                 config.viewer.lod_sidecar_path).lexically_normal();
+        }
+
+    if (config.viewer.tile_enabled) {
+            config.viewer.tile_index_path =
+                ResourcePath::resolve_existing_file(
+                    config.viewer.tile_index_path,
+                    context
+                );
+
+            config.viewer.tile_data_path =
+                ResourcePath::resolve_existing_file(
+                    config.viewer.tile_data_path,
+                    context
+                );
+        }
+    }
 }
 
 [[nodiscard]]
@@ -428,6 +504,155 @@ AppConfig AppConfigLoader::load_from_file(
         );
     }
 
+        if (const auto* lod = root["lod"].as_table()) {
+        config.viewer.lod_enabled = bool_or_default(
+            *lod,
+            "enabled",
+            config.viewer.lod_enabled
+        );
+
+        config.viewer.lod_keep_full_buffer = bool_or_default(
+            *lod,
+            "keep_full_buffer",
+            config.viewer.lod_keep_full_buffer
+        );
+        config.viewer.lod_sidecar_path = path_or_default(
+            *lod,
+            "sidecar_path",
+            config.viewer.lod_sidecar_path
+        );
+
+        config.viewer.lod_auto_load_sidecar = bool_or_default(
+            *lod,
+            "auto_load_sidecar",
+            config.viewer.lod_auto_load_sidecar
+        );
+
+        config.viewer.lod_auto_save_sidecar = bool_or_default(
+            *lod,
+            "auto_save_sidecar",
+            config.viewer.lod_auto_save_sidecar
+        );
+        
+        config.viewer.lod_target_point_counts = uint64_array_or_default(
+            *lod,
+            "target_point_counts",
+            config.viewer.lod_target_point_counts
+        );
+
+        config.viewer.lod_voxel_mode = string_or_default(
+            *lod,
+            "voxel_mode",
+            config.viewer.lod_voxel_mode
+        );
+
+        config.viewer.lod_voxel_scale = float_or_default(
+            *lod,
+            "voxel_scale",
+            config.viewer.lod_voxel_scale
+        );
+
+        config.viewer.lod_medium_delay_seconds =
+            static_cast<double>(
+                float_or_default(
+                    *lod,
+                    "medium_delay_seconds",
+                    static_cast<float>(
+                        config.viewer.lod_medium_delay_seconds
+                    )
+                )
+            );
+
+        config.viewer.lod_high_delay_seconds =
+            static_cast<double>(
+                float_or_default(
+                    *lod,
+                    "high_delay_seconds",
+                    static_cast<float>(
+                        config.viewer.lod_high_delay_seconds
+                    )
+                )
+            );
+
+        config.viewer.lod_use_lowest_while_interacting = bool_or_default(
+            *lod,
+            "use_lowest_while_interacting",
+            config.viewer.lod_use_lowest_while_interacting
+        );
+
+        config.viewer.lod_verbose = bool_or_default(
+            *lod,
+            "verbose",
+            config.viewer.lod_verbose
+        );
+    }
+    if (const auto* tile = root["tile"].as_table()) {
+        config.viewer.tile_enabled = bool_or_default(
+            *tile,
+            "enabled",
+            config.viewer.tile_enabled
+        );
+
+        config.viewer.tile_index_path = path_or_default(
+            *tile,
+            "index_path",
+            config.viewer.tile_index_path
+        );
+
+        config.viewer.tile_data_path = path_or_default(
+            *tile,
+            "data_path",
+            config.viewer.tile_data_path
+        );
+
+        config.viewer.tile_enable_distance = float_or_default(
+            *tile,
+            "enable_distance",
+            config.viewer.tile_enable_distance
+        );
+
+        config.viewer.tile_near_distance = float_or_default(
+            *tile,
+            "near_distance",
+            config.viewer.tile_near_distance
+        );
+
+        config.viewer.tile_middle_distance = float_or_default(
+            *tile,
+            "middle_distance",
+            config.viewer.tile_middle_distance
+        );
+
+        config.viewer.tile_near_half_size = float_or_default(
+            *tile,
+            "near_half_size",
+            config.viewer.tile_near_half_size
+        );
+
+        config.viewer.tile_middle_half_size = float_or_default(
+            *tile,
+            "middle_half_size",
+            config.viewer.tile_middle_half_size
+        );
+
+        config.viewer.tile_far_half_size = float_or_default(
+            *tile,
+            "far_half_size",
+            config.viewer.tile_far_half_size
+        );
+
+        config.viewer.tile_use_full_z_range = bool_or_default(
+            *tile,
+            "use_full_z_range",
+            config.viewer.tile_use_full_z_range
+        );
+
+        config.viewer.tile_verbose = bool_or_default(
+            *tile,
+            "verbose",
+            config.viewer.tile_verbose
+        );
+    }
     resolve_viewer_resource_paths(
         config,
         path,
@@ -618,6 +843,98 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] controller.invert_pan_y = "
               << (config.controller.invert_pan_y ? "true" : "false")
+              << '\n';
+    std::cout << "[CONFIG] lod.enabled = "
+              << (config.viewer.lod_enabled ? "true" : "false")
+              << '\n';
+    std::cout << "[CONFIG] lod.keep_full_buffer = "
+          << (config.viewer.lod_keep_full_buffer ? "true" : "false")
+          << '\n';
+    std::cout << "[CONFIG] lod.sidecar_path = "
+          << config.viewer.lod_sidecar_path.string()
+          << '\n';
+    std::cout << "[CONFIG] lod.auto_load_sidecar = "
+            << (config.viewer.lod_auto_load_sidecar ? "true" : "false")
+            << '\n';
+
+    std::cout << "[CONFIG] lod.auto_save_sidecar = "
+            << (config.viewer.lod_auto_save_sidecar ? "true" : "false")
+            << '\n';
+    std::cout << "[CONFIG] lod.target_point_counts = [";
+
+    for (std::size_t i = 0; i < config.viewer.lod_target_point_counts.size(); ++i) {
+        if (i > 0) {
+            std::cout << ", ";
+        }
+
+        std::cout << config.viewer.lod_target_point_counts[i];
+    }
+
+    std::cout << "]\n";
+
+    std::cout << "[CONFIG] lod.voxel_mode = "
+              << config.viewer.lod_voxel_mode << '\n';
+
+    std::cout << "[CONFIG] lod.voxel_scale = "
+              << config.viewer.lod_voxel_scale << '\n';
+
+    std::cout << "[CONFIG] lod.medium_delay_seconds = "
+              << config.viewer.lod_medium_delay_seconds << '\n';
+
+    std::cout << "[CONFIG] lod.high_delay_seconds = "
+              << config.viewer.lod_high_delay_seconds << '\n';
+
+    std::cout << "[CONFIG] lod.use_lowest_while_interacting = "
+              << (config.viewer.lod_use_lowest_while_interacting
+                    ? "true"
+                    : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] lod.verbose = "
+              << (config.viewer.lod_verbose ? "true" : "false")
+              << '\n';
+        std::cout << "[CONFIG] tile.enabled = "
+              << (config.viewer.tile_enabled ? "true" : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] tile.index_path = "
+              << config.viewer.tile_index_path.string()
+              << '\n';
+
+    std::cout << "[CONFIG] tile.data_path = "
+              << config.viewer.tile_data_path.string()
+              << '\n';
+
+    std::cout << "[CONFIG] tile.enable_distance = "
+              << config.viewer.tile_enable_distance
+              << '\n';
+
+    std::cout << "[CONFIG] tile.near_distance = "
+              << config.viewer.tile_near_distance
+              << '\n';
+
+    std::cout << "[CONFIG] tile.middle_distance = "
+              << config.viewer.tile_middle_distance
+              << '\n';
+
+    std::cout << "[CONFIG] tile.near_half_size = "
+              << config.viewer.tile_near_half_size
+              << '\n';
+
+    std::cout << "[CONFIG] tile.middle_half_size = "
+              << config.viewer.tile_middle_half_size
+              << '\n';
+
+    std::cout << "[CONFIG] tile.far_half_size = "
+              << config.viewer.tile_far_half_size
+              << '\n';
+
+    std::cout << "[CONFIG] tile.use_full_z_range = "
+              << (config.viewer.tile_use_full_z_range ? "true" : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] tile.verbose = "
+              << (config.viewer.tile_verbose ? "true" : "false")
               << '\n';
 }
 
