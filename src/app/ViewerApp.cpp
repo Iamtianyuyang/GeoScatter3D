@@ -830,12 +830,16 @@ int ViewerApp::run() {
                      * points no longer overlap with the precise local data.
                      */
                     gs3d::render::PointPushConstants lod_push = push;
-                    // 只有 tile cloud 本帧会被渲染时才裁剪 LOD。
-                    // 交互期间 tile cloud 被跳过，若此时仍裁剪 LOD 则全黑。
+                    /*
+                     * Tile cloud 始终渲染（已在 GPU 内存中，无额外 I/O 开销）。
+                     * 交互期间 tile 选区冻结，但已加载的全精度数据持续可见，
+                     * 不会退化为 LOD —— 对比 Potree/Cesium 的流式加载场景，
+                     * 本地渲染无需牺牲视觉质量换取带宽节省。
+                     * LOD 仅补全 tile 未覆盖的区域。
+                     */
                     const bool tile_will_render =
                         tile_gpu_cloud &&
-                        tile_gpu_cloud->valid() &&
-                        !interacting;
+                        tile_gpu_cloud->valid();
                     if (tile_will_render &&
                         loaded_tile_query_box.has_value()) {
                         const auto& b = *loaded_tile_query_box;
@@ -888,13 +892,7 @@ int ViewerApp::run() {
                             lod_push
                         );
                     }
-                    /*
-                     * Potree 策略：交互期间只渲染 LOD，跳过 tile cloud。
-                     * tile cloud 可能有数百万点，每帧渲染代价高；
-                     * 用户移动相机时不需要精细细节，低质 LOD 已够用。
-                     * 停止操作后，tile cloud 加载完成后立即显示。
-                     */
-                    if (tile_gpu_cloud && tile_gpu_cloud->valid() && !interacting) {
+                    if (tile_will_render) {
                         point_pipeline.draw(
                             command_buffer,
                             tile_gpu_cloud->gpu_cloud(),
