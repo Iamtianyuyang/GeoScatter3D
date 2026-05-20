@@ -30,13 +30,13 @@ public:
         std::uint64_t point_count
     );
 
-    ~PointCloudGpu() = default;
+    ~PointCloudGpu();
 
     PointCloudGpu(const PointCloudGpu&) = delete;
     PointCloudGpu& operator=(const PointCloudGpu&) = delete;
 
-    PointCloudGpu(PointCloudGpu&&) noexcept = default;
-    PointCloudGpu& operator=(PointCloudGpu&&) noexcept = default;
+    PointCloudGpu(PointCloudGpu&&) noexcept;
+    PointCloudGpu& operator=(PointCloudGpu&&) noexcept;
 
     void upload(
         const VulkanContext& context,
@@ -71,10 +71,22 @@ public:
     bool empty() const noexcept;
 
 private:
-    VulkanBuffer vertex_buffer_{};
+    VulkanBuffer  vertex_buffer_{};
+    std::uint64_t point_count_           = 0;
+    VkDeviceSize  vertex_buffer_size_    = 0; // active bytes
+    VkDeviceSize  vertex_buffer_capacity_= 0; // allocated bytes
 
-    std::uint64_t point_count_ = 0;
-    VkDeviceSize vertex_buffer_size_ = 0;
+    /*
+     * Persistent staging buffer (Vulkan Tutorial / VMA 最佳实践):
+     * 分配一次、持久 map，跨上传复用，消除每次上传的
+     * vkAllocateMemory + vkMapMemory 调用开销。
+     */
+    VulkanBuffer         staging_buffer_{};
+    void*                staging_mapped_  = nullptr;
+    const VulkanContext* staging_context_ = nullptr;
+
+    void ensure_staging(const VulkanContext& context, VkDeviceSize needed);
+    void release_staging() noexcept;
 };
 
 } // namespace gs3d::render

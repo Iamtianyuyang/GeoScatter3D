@@ -1,5 +1,6 @@
 #include "render/PointCloudTileGpu.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -245,8 +246,19 @@ PointCloudTileGpu::read_tiles(
     const gs3d::data::Gs3dTileReader& reader,
     const std::vector<std::uint64_t>& tile_ids
 ) {
-    // Delegate to existing implementation (no filter box = all points).
-    return read_and_merge_tiles(reader, tile_ids, nullptr);
+    /*
+     * 按磁盘偏移排序后读取（顺序 I/O 优化）。
+     * 磁盘顺序读比随机 seek 快；对 HDD 效果显著，SSD 也有一定收益。
+     * 参考：Potree 按节点存储偏移排序，Cesium 按请求优先级排队。
+     */
+    std::vector<std::uint64_t> sorted_ids = tile_ids;
+    std::sort(sorted_ids.begin(), sorted_ids.end(),
+        [&reader](std::uint64_t a, std::uint64_t b) {
+            return reader.record(a).point_data_offset <
+                   reader.record(b).point_data_offset;
+        }
+    );
+    return read_and_merge_tiles(reader, sorted_ids, nullptr);
 }
 
 void PointCloudTileGpu::upload_from_points(
