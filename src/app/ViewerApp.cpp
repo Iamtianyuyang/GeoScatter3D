@@ -806,8 +806,13 @@ int ViewerApp::run() {
                      * points no longer overlap with the precise local data.
                      */
                     gs3d::render::PointPushConstants lod_push = push;
-                    if (tile_gpu_cloud &&
+                    // 只有 tile cloud 本帧会被渲染时才裁剪 LOD。
+                    // 交互期间 tile cloud 被跳过，若此时仍裁剪 LOD 则全黑。
+                    const bool tile_will_render =
+                        tile_gpu_cloud &&
                         tile_gpu_cloud->valid() &&
+                        !interacting;
+                    if (tile_will_render &&
                         loaded_tile_query_box.has_value()) {
                         const auto& b = *loaded_tile_query_box;
                         lod_push.clip_mode  = 1.0f;
