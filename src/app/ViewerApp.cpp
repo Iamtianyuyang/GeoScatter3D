@@ -257,24 +257,12 @@ void initialize_camera_from_config(
 
 void fill_push_constants(
     gs3d::render::PointPushConstants& push,
-    const gs3d::camera::Camera& camera,
-    const gs3d::data::Gs3dDataset& dataset
+    const gs3d::camera::Camera& camera
 ) {
     const auto mvp = camera.view_projection_matrix();
-
-    std::copy(
-        mvp.m.begin(),
-        mvp.m.end(),
-        push.mvp
-    );
-
-    push.value_min = dataset.value_min();
-    push.value_range = dataset.value_max() - dataset.value_min();
-
-    if (push.value_range <= 0.0f) {
-        push.value_range = 1.0f;
-    }
-
+    std::copy(mvp.m.begin(), mvp.m.end(), push.mvp);
+    // value_min / value_range / attr_index are managed by the
+    // attribute-selection system and must not be overwritten here.
     push.clip_mode = 0.0f;
 }
 
@@ -312,6 +300,7 @@ void print_controls(
     std::cout << "  Wheel       : zoom\n";
     std::cout << "  + / -       : point size\n";
     std::cout << "  R           : reset view\n";
+    std::cout << "  Tab         : cycle color attribute\n";
     std::cout << "  Esc         : quit\n";
     std::cout << "Render mode:\n";
     std::cout << "  LOD         : "
@@ -520,13 +509,13 @@ int ViewerApp::run() {
                   << camera.distance() << '\n';
 
         gs3d::render::PointPushConstants push{};
-        push.point_size = config_.initial_point_size;
+        push.point_size  = config_.initial_point_size;
+        push.attr_index  = 0;   // default: value attribute (amplitude)
+        push.value_min   = dataset.value_min();
+        push.value_range = dataset.value_max() - dataset.value_min();
+        if (push.value_range <= 0.0f) push.value_range = 1.0f;
 
-        fill_push_constants(
-            push,
-            camera,
-            dataset
-        );
+        fill_push_constants(push, camera);
 
         /*
          * Tracks the query box of the tile buffer currently on the GPU.
@@ -578,6 +567,29 @@ int ViewerApp::run() {
         }
 
         bool r_was_pressed = false;
+        bool tab_was_pressed = false;
+
+        /*
+         * 多属性可视化（Potree activeAttributeName / CloudCompare scalar field）。
+         * 所有属性数据已在 VBO 中，切换只改 push constant，零 GPU 重传。
+         *
+         * 当前支持的属性：
+         *   0 = value   (导入时存储的属性，如振幅/反射率)
+         *   1 = z       (高程/深度)
+         */
+        struct AttrDesc {
+            const char* name;
+            float min_val;
+            float range;
+        };
+        const std::array<AttrDesc, 2> attr_table = {{
+            { "value (amplitude)",
+              dataset.value_min(),
+              dataset.value_max() - dataset.value_min() },
+            { "z (elevation)",
+              dataset.bbox_min_z(),
+              dataset.bbox_max_z() - dataset.bbox_min_z() }
+        }};
 
         std::size_t last_lod_level =
              static_cast<std::size_t>(-1);
@@ -638,16 +650,28 @@ int ViewerApp::run() {
 
             r_was_pressed = r_pressed;
 
+            // Tab: cycle through color attributes (zero GPU cost — push constant only)
+            const bool tab_pressed = window.key_pressed(GLFW_KEY_TAB);
+            if (tab_pressed && !tab_was_pressed) {
+                push.attr_index =
+                    (push.attr_index + 1u) %
+                    static_cast<std::uint32_t>(attr_table.size());
+
+                const auto& a = attr_table[push.attr_index];
+                push.value_min   = a.min_val;
+                push.value_range = a.range;
+                if (push.value_range <= 0.0f) push.value_range = 1.0f;
+
+                std::cout << "[ATTR] switched to: " << a.name << '\n';
+            }
+            tab_was_pressed = tab_pressed;
+
             controller.update(
                 camera,
                 window
             );
 
-            fill_push_constants(
-                push,
-                camera,
-                dataset
-            );
+            fill_push_constants(push, camera);
 
             const bool interacting = window_interacting(window);
 

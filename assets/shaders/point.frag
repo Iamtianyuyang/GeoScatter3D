@@ -11,8 +11,9 @@ layout(push_constant) uniform PointPushConstants {
     float value_range;
     float point_size;
     float clip_mode;
-    vec3  clip_min;
-    vec3  clip_max;
+    vec4  clip_min;   // xyz = clip bounds, w = unused
+    vec4  clip_max;   // xyz = clip bounds, w = unused
+    uint  attr_index;
 } pc;
 
 vec3 colormap(float t) {
@@ -37,7 +38,6 @@ vec3 colormap(float t) {
 
 void main() {
     if (pc.clip_mode > 0.5) {
-        // Discard LOD points that fall inside the full-res tile region.
         bool inside =
             in_world_pos.x >= pc.clip_min.x && in_world_pos.x <= pc.clip_max.x &&
             in_world_pos.y >= pc.clip_min.y && in_world_pos.y <= pc.clip_max.y &&

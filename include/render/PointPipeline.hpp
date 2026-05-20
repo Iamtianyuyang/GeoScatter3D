@@ -17,30 +17,40 @@ struct PointPushConstants {
         0.0f, 0.0f, 0.0f, 1.0f
     };                          // offset   0, size 64
 
-    float value_min   = 0.0f;  // offset  64
-    float value_range = 1.0f;  // offset  68
+    float value_min   = 0.0f;  // offset  64  min of currently active attribute
+    float value_range = 1.0f;  // offset  68  range of currently active attribute
     float point_size  = 1.0f;  // offset  72
 
     /*
      * clip_mode:
      *   0 = no clipping
      *   1 = discard points whose world-space XYZ is INSIDE [clip_min, clip_max]
-     *       (used for LOD draw to suppress the region covered by full-res tiles)
      */
     float clip_mode = 0.0f;    // offset  76
 
     /*
      * clip_min[4] / clip_max[4]: vec3 + 1 float padding.
-     * Matches std430 vec3 layout: vec3 has base alignment 16, so each takes 16 bytes.
-     * [0]=x  [1]=y  [2]=z  [3]=padding (must be written but ignored in shader)
+     * Using vec4 (not vec3) in GLSL to guarantee 16-byte alignment and
+     * eliminate std430 ambiguity between C++ and GLSL layouts.
+     * [0]=x  [1]=y  [2]=z  [3]=padding
      */
     float clip_min[4] = {};    // offset  80, size 16
     float clip_max[4] = {};    // offset  96, size 16
-};                             // total: 112 bytes
+
+    /*
+     * attr_index: which point attribute to use for color mapping.
+     *   0 = value field  (amplitude / imported attribute)
+     *   1 = z coordinate (elevation / depth)
+     * Switching is zero-cost: only this push constant changes, no GPU re-upload.
+     * Mirrors Potree's activeAttributeName + CloudCompare scalar field selection.
+     */
+    std::uint32_t attr_index = 0; // offset 112
+    float _pad[3] = {};           // offset 116, pad to 128 bytes
+};                                // total: 128 bytes
 
 static_assert(
-    sizeof(PointPushConstants) == 112,
-    "PointPushConstants must be 112 bytes"
+    sizeof(PointPushConstants) == 128,
+    "PointPushConstants must be 128 bytes"
 );
 
 struct PointPipelineConfig {
