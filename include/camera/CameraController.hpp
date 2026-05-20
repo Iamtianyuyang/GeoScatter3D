@@ -6,15 +6,23 @@
 namespace gs3d::camera {
 
 struct CameraControllerConfig {
-    // 经典 trackball/orbit 控制参数
     float rotate_speed = 1.0f;
-    float pan_speed = 1.0f;
-    float zoom_speed = 1.0f;
+    float pan_speed    = 1.0f;
+    float zoom_speed   = 1.0f;
 
     bool invert_rotate_x = false;
     bool invert_rotate_y = false;
-    bool invert_pan_x = false;
-    bool invert_pan_y = false;
+    bool invert_pan_x    = false;
+    bool invert_pan_y    = false;
+
+    /*
+     * 球坐标 orbit 的俯仰角约束（弧度）。
+     * min_pitch > 0 可防止相机翻入数据平面以下；
+     * max_pitch < π/2 可防止极点翻转。
+     * 默认允许从 −85° 仰视到 +89° 俯视。
+     */
+    float min_pitch = -1.483f;  // ≈ −85°
+    float max_pitch =  1.553f;  // ≈ +89°
 };
 
 class CameraController {
@@ -60,6 +68,8 @@ private:
         float scroll_y
     ) const noexcept;
 
+    void adjust_near_far(Camera& camera) const noexcept;
+
     static Vec3 add(const Vec3& a, const Vec3& b) noexcept;
     static Vec3 sub(const Vec3& a, const Vec3& b) noexcept;
     static Vec3 mul(const Vec3& v, float s) noexcept;
@@ -68,12 +78,6 @@ private:
     static Vec3 cross(const Vec3& a, const Vec3& b) noexcept;
     static float length(const Vec3& v) noexcept;
     static Vec3 normalize(const Vec3& v) noexcept;
-
-    static Vec3 rotate_vector(
-        const Vec3& v,
-        const Vec3& axis,
-        float angle
-    ) noexcept;
 };
 
 } // namespace gs3d::camera

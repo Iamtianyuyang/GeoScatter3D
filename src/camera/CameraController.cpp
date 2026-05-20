@@ -99,64 +99,40 @@ void CameraController::rotate_trackball(
         return;
     }
 
-    if (config_.invert_rotate_x) {
-        delta_x = -delta_x;
-    }
+    if (config_.invert_rotate_x) delta_x = -delta_x;
+    if (config_.invert_rotate_y) delta_y = -delta_y;
 
-    if (config_.invert_rotate_y) {
-        delta_y = -delta_y;
-    }
-
-    /*
-     * 常见 Trackball / Orbit Camera 做法：
-     * 鼠标横向移动映射为绕世界 up 轴旋转；
-     * 鼠标纵向移动映射为绕当前 camera right 轴旋转。
-     *
-     * 用 viewport 尺寸归一化，避免不同分辨率下手感差异太大。
-     */
-    const float yaw =
-        -delta_x / viewport_width * PI * config_.rotate_speed;
-
-    const float pitch =
-        -delta_y / viewport_height * PI * config_.rotate_speed;
+    const float d_yaw   = -delta_x / viewport_width  * PI * config_.rotate_speed;
+    const float d_pitch = -delta_y / viewport_height * PI * config_.rotate_speed;
 
     const Vec3 target = camera.target();
-    const Vec3 position = camera.position();
-
-    Vec3 offset = sub(position, target);
-
-    const float distance = std::max(length(offset), MIN_DISTANCE);
-
-    const Vec3 world_up{0.0f, 0.0f, 1.0f};
-
-    Vec3 forward = normalize(sub(target, position));
-    Vec3 right = normalize(cross(forward, camera.up()));
-
-    if (length(right) < 1.0e-6f) {
-        right = {1.0f, 0.0f, 0.0f};
-    }
+    const Vec3 offset = sub(camera.position(), target);
+    const float dist  = std::max(length(offset), MIN_DISTANCE);
 
     /*
-     * 先 yaw，再 pitch。
+     * 球坐标 orbit（Blender/Maya 同款）：
+     * 把 (dx, dy, dz) 分解为 (yaw, pitch)，独立增减后重建，
+     * 完全消除 up 向量漂移和 Rodrigues 旋转的极点翻转问题。
+     * world-up 始终强制为 (0,0,1)，不随旋转积累误差。
      */
-    offset = rotate_vector(offset, world_up, yaw);
-    offset = rotate_vector(offset, right, pitch);
+    float yaw   = std::atan2(offset.y, offset.x);
+    float pitch = std::asin(std::clamp(offset.z / dist, -1.0f, 1.0f));
 
-    Vec3 new_up = rotate_vector(camera.up(), world_up, yaw);
-    new_up = rotate_vector(new_up, right, pitch);
-
-    /*
-     * 防止相机翻到奇异位置。
-     */
-    if (length(offset) < MIN_DISTANCE) {
-        offset = mul(normalize(offset), distance);
-    }
-
-    camera.look_at(
-        add(target, offset),
-        target,
-        normalize(new_up)
+    yaw   += d_yaw;
+    pitch  = std::clamp(
+        pitch + d_pitch,
+        config_.min_pitch,
+        config_.max_pitch
     );
+
+    const float cos_p = std::cos(pitch);
+    const Vec3 new_pos = add(target, Vec3{
+        dist * cos_p * std::cos(yaw),
+        dist * cos_p * std::sin(yaw),
+        dist * std::sin(pitch)
+    });
+
+    camera.look_at(new_pos, target, {0.0f, 0.0f, 1.0f});
 }
 
 void CameraController::pan_view(
@@ -220,29 +196,49 @@ void CameraController::zoom_view(
     Camera& camera,
     float scroll_y
 ) const noexcept {
-    /*
-     * 常见 dolly zoom：
-     * 沿 target-position 方向移动相机，不改变 target。
-     */
-    const Vec3 target = camera.target();
-    const Vec3 position = camera.position();
+    const Vec3 offset = sub(camera.position(), camera.target());
+    float dist = std::max(length(offset), MIN_DISTANCE);
 
-    Vec3 offset = sub(position, target);
-    float distance = std::max(length(offset), MIN_DISTANCE);
-
-    const float base = 0.88f;
+    // 指数缩放：每格滚轮缩放 ~12%，手感平滑且远近一致
     const float zoom_factor =
-        std::pow(base, scroll_y * config_.zoom_speed);
+        std::pow(0.88f, scroll_y * config_.zoom_speed);
 
-    distance *= zoom_factor;
-    distance = std::max(distance, MIN_DISTANCE);
-
-    const Vec3 direction = normalize(offset);
+    dist = std::max(dist * zoom_factor, MIN_DISTANCE);
 
     camera.look_at(
-        add(target, mul(direction, distance)),
-        target,
+        add(camera.target(), mul(normalize(offset), dist)),
+        camera.target(),
         camera.up()
+    );
+
+    adjust_near_far(camera);
+}
+
+void CameraController::adjust_near_far(Camera& camera) const noexcept {
+    const float dist = camera.distance();
+
+    float scene_radius = 1.0f;
+    if (has_bounds_) {
+        const Vec3 ext = sub(bounds_.max, bounds_.min);
+        scene_radius = std::max({ ext.x, ext.y, ext.z }) * 0.5f;
+    }
+
+    /*
+     * 动态近/远平面：
+     *   near = distance × 0.001，保证深度精度在任意缩放级别下充足；
+     *   far  = distance + scene_radius × 4，保证整个数据集始终可见。
+     * 对应 Cesium 和 Potree 的自动 near/far 策略。
+     */
+    const float near_plane = std::max(0.1f, dist * 0.001f);
+    const float far_plane  = std::max(
+        near_plane * 1000.0f,
+        dist + scene_radius * 4.0f
+    );
+
+    camera.set_perspective(
+        camera.fov_y_degrees(),
+        near_plane,
+        far_plane
     );
 }
 
@@ -313,23 +309,6 @@ Vec3 CameraController::normalize(
     }
 
     return mul(v, 1.0f / len);
-}
-
-Vec3 CameraController::rotate_vector(
-    const Vec3& v,
-    const Vec3& axis,
-    float angle
-) noexcept {
-    const Vec3 n = normalize(axis);
-
-    const float c = std::cos(angle);
-    const float s = std::sin(angle);
-
-    const Vec3 term1 = mul(v, c);
-    const Vec3 term2 = mul(cross(n, v), s);
-    const Vec3 term3 = mul(n, dot(n, v) * (1.0f - c));
-
-    return add(add(term1, term2), term3);
 }
 
 } // namespace gs3d::camera

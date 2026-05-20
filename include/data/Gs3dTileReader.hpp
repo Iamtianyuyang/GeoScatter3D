@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 
 namespace gs3d::data {
@@ -89,6 +90,17 @@ public:
         const Gs3dTileQueryBox& box
     ) const;
 
+    /*
+     * EPT-style grid-address query.
+     * Selects tiles by logical grid cell range derived from box and grid
+     * parameters, guaranteeing that every tile owning at least one point
+     * inside [box.min_x, box.max_x] × [box.min_y, box.max_y] is returned.
+     */
+    [[nodiscard]]
+    std::vector<std::uint64_t> query_tile_ids_by_grid(
+        const Gs3dTileQueryBox& box
+    ) const;
+
     [[nodiscard]]
     const Gs3dTileRecord& record(
         std::uint64_t tile_id
@@ -109,6 +121,12 @@ private:
 
     std::vector<Gs3dTileRecord> records_;
 
+    /*
+     * Maps logical grid key (tile_y * grid_count_x + tile_x) → tile_id.
+     * Built at open() time for O(1) EPT-style grid-address lookup.
+     */
+    std::unordered_map<std::uint64_t, std::uint64_t> grid_to_tile_id_;
+
 private:
     static void validate_query_box(
         const Gs3dTileQueryBox& box
@@ -119,6 +137,8 @@ private:
         const Gs3dTileRecord& record,
         const Gs3dTileQueryBox& box
     ) noexcept;
+
+    void build_grid_map() noexcept;
 };
 
 } // namespace gs3d::data

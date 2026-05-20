@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -86,28 +87,36 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
 ) {
     gs3d::render::TileSelectionConfig tile_config;
 
-    tile_config.enable_distance =
-        config.tile_enable_distance;
-
-    tile_config.near_distance =
-        config.tile_near_distance;
-
-    tile_config.middle_distance =
-        config.tile_middle_distance;
-
-    tile_config.near_half_size =
-        config.tile_near_half_size;
-
-    tile_config.middle_half_size =
-        config.tile_middle_half_size;
-
-    tile_config.far_half_size =
-        config.tile_far_half_size;
+    tile_config.min_tile_pixel_size =
+        config.tile_min_pixel_size;
 
     tile_config.use_full_z_range =
         config.tile_use_full_z_range;
 
     return tile_config;
+}
+
+bool same_query_box(
+    const std::optional<gs3d::data::Gs3dTileQueryBox>& loaded_box,
+    const gs3d::data::Gs3dTileQueryBox& current_box
+) noexcept {
+    if (!loaded_box.has_value()) {
+        return false;
+    }
+
+    constexpr float epsilon = 1.0e-3f;
+    const auto close = [epsilon](float a, float b) noexcept {
+        return std::abs(a - b) <= epsilon;
+    };
+
+    const auto& box = *loaded_box;
+
+    return close(box.min_x, current_box.min_x) &&
+           close(box.min_y, current_box.min_y) &&
+           close(box.min_z, current_box.min_z) &&
+           close(box.max_x, current_box.max_x) &&
+           close(box.max_y, current_box.max_y) &&
+           close(box.max_z, current_box.max_z);
 }
 
 gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
@@ -264,7 +273,7 @@ void fill_push_constants(
         push.value_range = 1.0f;
     }
 
-    push.padding = 0.0f;
+    push.clip_mode = 0.0f;
 }
 
 void print_dataset_info(
@@ -517,6 +526,13 @@ int ViewerApp::run() {
             dataset
         );
 
+        /*
+         * Tracks the query box of the tile buffer currently on the GPU.
+         * Used to clip LOD draws so LOD points don't overlap full-res tiles.
+         * Reset when the tile buffer is cleared.
+         */
+        std::optional<gs3d::data::Gs3dTileQueryBox> loaded_tile_query_box;
+
         gs3d::render::LodSelector lod_selector;
 
         if (config_.lod_enabled) {
@@ -616,9 +632,11 @@ int ViewerApp::run() {
                 dataset
             );
 
+            const bool interacting = window_interacting(window);
+
             if (config_.lod_enabled) {
                 lod_selector.update(
-                    window_interacting(window),
+                    interacting,
                     delta_seconds
                 );
             }
@@ -641,48 +659,87 @@ int ViewerApp::run() {
                         vkDeviceWaitIdle(context.device());
 
                         tile_gpu_cloud->clear();
+                        loaded_tile_query_box.reset();
 
                         if (config_.tile_verbose) {
                             std::cout << "[TILE] disabled, local full-res buffer cleared.\n";
                         }
                     }
-                } else if (tile_result.changed) {
+                } else if (!interacting) {
                     /*
-                    * 当前 PointCloudTileGpu::update_from_tiles() 会销毁旧 VkBuffer。
-                    * 旧 buffer 可能仍被上一帧 command buffer 使用。
-                    * 第一版先用 vkDeviceWaitIdle 保证安全。
-                    * 后续再改成延迟销毁 / frames-in-flight 资源回收。
+                    * 用"GPU 实际加载的 tile ids"与当前选择比较，
+                    * 而不是 tile_result.changed：
+                    * changed 在交互期间被跳过后会变 false，
+                    * 导致下一帧 idle 时错误地认为不需要上传。
+                    *
+                    * 交互期间冻结 tile buffer（不触发 vkDeviceWaitIdle + 磁盘读）。
+                    * 停止操作后，检测到 buffer 与当前选择不一致则刷新。
+                    *
+                    * vkDeviceWaitIdle：销毁旧 VkBuffer 前必须确认 GPU 空闲。
+                    * 后续可改为延迟销毁 / frames-in-flight 资源回收。
                     */
-                    vkDeviceWaitIdle(context.device());
+                    const auto& loaded_ids =
+                        tile_gpu_cloud->loaded_tile_ids();
 
-                    tile_gpu_cloud->update_from_tiles(
-                        context,
-                        renderer.command_pool(),
-                        context.graphics_queue(),
-                        *tile_reader,
-                        tile_result.tile_ids
-                    );
+                    const bool buffer_stale =
+                        loaded_ids.size() != tile_result.tile_ids.size() ||
+                        !std::equal(
+                            loaded_ids.begin(),
+                            loaded_ids.end(),
+                            tile_result.tile_ids.begin()
+                        ) ||
+                        !same_query_box(
+                            loaded_tile_query_box,
+                            tile_result.query_box
+                        );
 
-                    if (config_.tile_verbose) {
-                        const auto& stats =
-                            tile_gpu_cloud->stats();
+                    if (buffer_stale) {
+                        vkDeviceWaitIdle(context.device());
 
-                        std::cout << "[TILE] active full-res tiles updated.\n";
-                        std::cout << "tile_count = "
-                                << stats.tile_count
-                                << '\n';
-                        std::cout << "point_count = "
-                                << stats.point_count
-                                << '\n';
-                        std::cout << "gpu_buffer_bytes = "
-                                << stats.gpu_buffer_bytes
-                                << '\n';
-                        std::cout << "camera_distance = "
-                                << tile_result.camera_distance
-                                << '\n';
-                        std::cout << "query_half_size = "
-                                << tile_result.query_half_size
-                                << '\n';
+                        tile_gpu_cloud->update_from_tiles(
+                            context,
+                            renderer.command_pool(),
+                            context.graphics_queue(),
+                            *tile_reader,
+                            tile_result.tile_ids,
+                            &tile_result.query_box
+                        );
+
+                        /*
+                         * Tile upload filters original points to this exact
+                         * query box. LOD clipping must use the same box, so
+                         * the local region is represented by full-resolution
+                         * points only, without LOD overlap or extra dark gaps.
+                         */
+                        if (tile_gpu_cloud->valid()) {
+                            loaded_tile_query_box = tile_result.query_box;
+                        } else {
+                            loaded_tile_query_box.reset();
+                        }
+
+                        if (config_.tile_verbose) {
+                            const auto& stats =
+                                tile_gpu_cloud->stats();
+
+                            std::cout << "[TILE] active full-res tiles updated.\n";
+                            std::cout << "tile_count = "
+                                    << stats.tile_count
+                                    << '\n';
+                            std::cout << "point_count = "
+                                    << stats.point_count
+                                    << '\n';
+                            std::cout << "gpu_buffer_bytes = "
+                                    << stats.gpu_buffer_bytes
+                                    << '\n';
+                            std::cout << "camera_distance = "
+                                    << tile_result.camera_distance
+                                    << '\n';
+                            std::cout << "query_box_xy = ["
+                                    << tile_result.query_box.min_x << ", "
+                                    << tile_result.query_box.min_y << "] to ["
+                                    << tile_result.query_box.max_x << ", "
+                                    << tile_result.query_box.max_y << "]\n";
+                        }
                     }
                 }
             }
@@ -690,6 +747,27 @@ int ViewerApp::run() {
             renderer.draw_frame(
                 window,
                 [&](VkCommandBuffer command_buffer) {
+                    /*
+                     * Build a LOD push-constant variant that clips out the
+                     * region covered by the loaded full-res tiles, so LOD
+                     * points no longer overlap with the precise local data.
+                     */
+                    gs3d::render::PointPushConstants lod_push = push;
+                    if (tile_gpu_cloud &&
+                        tile_gpu_cloud->valid() &&
+                        loaded_tile_query_box.has_value()) {
+                        const auto& b = *loaded_tile_query_box;
+                        lod_push.clip_mode  = 1.0f;
+                        lod_push.clip_min[0] = b.min_x;
+                        lod_push.clip_min[1] = b.min_y;
+                        lod_push.clip_min[2] = b.min_z;
+                        lod_push.clip_min[3] = 0.0f;
+                        lod_push.clip_max[0] = b.max_x;
+                        lod_push.clip_max[1] = b.max_y;
+                        lod_push.clip_max[2] = b.max_z;
+                        lod_push.clip_max[3] = 0.0f;
+                    }
+
                     if (config_.lod_enabled) {
                         const std::size_t level_index =
                             lod_selector.select_level(
@@ -718,17 +796,18 @@ int ViewerApp::run() {
                             command_buffer,
                             cloud,
                             renderer.extent(),
-                            push
+                            lod_push
                         );
                     } else {
                         point_pipeline.draw(
                             command_buffer,
                             *full_gpu_cloud,
                             renderer.extent(),
-                            push
+                            lod_push
                         );
                     }
                     if (tile_gpu_cloud && tile_gpu_cloud->valid()) {
+                        // Tile cloud: no clip, draw all uploaded original points.
                         point_pipeline.draw(
                             command_buffer,
                             tile_gpu_cloud->gpu_cloud(),

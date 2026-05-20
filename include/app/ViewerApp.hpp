@@ -102,13 +102,12 @@ struct ViewerAppConfig {
     std::filesystem::path tile_data_path =
         "data/test.gs3dtiles";
 
-    float tile_enable_distance = 12000.0f;
-    float tile_near_distance = 3000.0f;
-    float tile_middle_distance = 6000.0f;
-
-    float tile_near_half_size = 256.0f;
-    float tile_middle_half_size = 512.0f;
-    float tile_far_half_size = 1024.0f;
+    /*
+     * 触发全精度 tile 加载的屏幕空间阈值（像素）。
+     * 当 tile 投影宽度 ≥ 该值时，加载该 tile 的全量原始点。
+     * 对应 Potree 的 projected_area > threshold 判断。
+     */
+    float tile_min_pixel_size = 50.0f;
 
     bool tile_use_full_z_range = true;
     bool tile_verbose = true;

@@ -1,7 +1,19 @@
 #version 450
 
 layout(location = 0) in float in_value;
+layout(location = 1) in vec3  in_world_pos;
+
 layout(location = 0) out vec4 out_color;
+
+layout(push_constant) uniform PointPushConstants {
+    mat4  mvp;
+    float value_min;
+    float value_range;
+    float point_size;
+    float clip_mode;
+    vec3  clip_min;
+    vec3  clip_max;
+} pc;
 
 vec3 colormap(float t) {
     t = clamp(t, 0.0, 1.0);
@@ -24,6 +36,14 @@ vec3 colormap(float t) {
 }
 
 void main() {
-    vec3 color = colormap(in_value);
-    out_color = vec4(color, 1.0);
+    if (pc.clip_mode > 0.5) {
+        // Discard LOD points that fall inside the full-res tile region.
+        bool inside =
+            in_world_pos.x >= pc.clip_min.x && in_world_pos.x <= pc.clip_max.x &&
+            in_world_pos.y >= pc.clip_min.y && in_world_pos.y <= pc.clip_max.y &&
+            in_world_pos.z >= pc.clip_min.z && in_world_pos.z <= pc.clip_max.z;
+        if (inside) discard;
+    }
+
+    out_color = vec4(colormap(in_value), 1.0);
 }

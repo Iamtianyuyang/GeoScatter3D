@@ -1,6 +1,7 @@
 #include "data/Gs3dTileReader.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -287,6 +288,7 @@ Gs3dTileReader Gs3dTileReader::open(
     reader.index_header_ = index_header;
     reader.data_header_ = data_header;
     reader.records_ = std::move(records);
+    reader.build_grid_map();
 
     return reader;
 }
@@ -357,6 +359,7 @@ Gs3dTileReader Gs3dTileReader::open_without_source_validation(
     reader.index_header_ = index_header;
     reader.data_header_ = data_header;
     reader.records_ = std::move(records);
+    reader.build_grid_map();
 
     return reader;
 }
@@ -570,6 +573,94 @@ bool Gs3dTileReader::intersects(
     }
 
     return true;
+}
+
+void Gs3dTileReader::build_grid_map() noexcept {
+    grid_to_tile_id_.clear();
+    grid_to_tile_id_.reserve(records_.size());
+
+    const std::uint32_t gx = index_header_.grid_count_x;
+
+    for (const auto& rec : records_) {
+        const std::uint64_t key =
+            static_cast<std::uint64_t>(rec.tile_y) * gx +
+            static_cast<std::uint64_t>(rec.tile_x);
+
+        grid_to_tile_id_.emplace(key, rec.tile_id);
+    }
+}
+
+std::vector<std::uint64_t> Gs3dTileReader::query_tile_ids_by_grid(
+    const Gs3dTileQueryBox& box
+) const {
+    validate_query_box(box);
+
+    const auto& h = index_header_;
+
+    if (h.tile_size_x <= 0.0f || h.tile_size_y <= 0.0f ||
+        h.grid_count_x == 0 || h.grid_count_y == 0) {
+        return {};
+    }
+
+    const float grid_max_x =
+        h.grid_origin_x + static_cast<float>(h.grid_count_x) * h.tile_size_x;
+    const float grid_max_y =
+        h.grid_origin_y + static_cast<float>(h.grid_count_y) * h.tile_size_y;
+
+    if (box.max_x < h.grid_origin_x || box.min_x >= grid_max_x ||
+        box.max_y < h.grid_origin_y || box.min_y >= grid_max_y) {
+        return {};
+    }
+
+    auto cell_coord = [](
+        float value,
+        float origin,
+        float tile_size,
+        std::uint32_t grid_count
+    ) -> std::uint32_t {
+        const auto raw = static_cast<std::int64_t>(
+            std::floor((value - origin) / tile_size)
+        );
+
+        if (raw < 0) {
+            return 0;
+        }
+
+        const auto upper = static_cast<std::int64_t>(grid_count - 1);
+
+        if (raw > upper) {
+            return grid_count - 1;
+        }
+
+        return static_cast<std::uint32_t>(raw);
+    };
+
+    const std::uint32_t tx_min =
+        cell_coord(box.min_x, h.grid_origin_x, h.tile_size_x, h.grid_count_x);
+    const std::uint32_t tx_max =
+        cell_coord(box.max_x, h.grid_origin_x, h.tile_size_x, h.grid_count_x);
+    const std::uint32_t ty_min =
+        cell_coord(box.min_y, h.grid_origin_y, h.tile_size_y, h.grid_count_y);
+    const std::uint32_t ty_max =
+        cell_coord(box.max_y, h.grid_origin_y, h.tile_size_y, h.grid_count_y);
+
+    std::vector<std::uint64_t> result;
+
+    for (std::uint32_t ty = ty_min; ty <= ty_max; ++ty) {
+        for (std::uint32_t tx = tx_min; tx <= tx_max; ++tx) {
+            const std::uint64_t key =
+                static_cast<std::uint64_t>(ty) * h.grid_count_x +
+                static_cast<std::uint64_t>(tx);
+
+            const auto it = grid_to_tile_id_.find(key);
+
+            if (it != grid_to_tile_id_.end()) {
+                result.push_back(it->second);
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace gs3d::data

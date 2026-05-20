@@ -46,7 +46,8 @@ public:
         VkCommandPool command_pool,
         VkQueue transfer_queue,
         const gs3d::data::Gs3dTileReader& reader,
-        const std::vector<std::uint64_t>& tile_ids
+        const std::vector<std::uint64_t>& tile_ids,
+        const gs3d::data::Gs3dTileQueryBox* filter_box = nullptr
     );
 
     void clear() noexcept;
@@ -89,7 +90,8 @@ private:
     [[nodiscard]]
     static std::vector<gs3d::data::Gs3dPoint> read_and_merge_tiles(
         const gs3d::data::Gs3dTileReader& reader,
-        const std::vector<std::uint64_t>& tile_ids
+        const std::vector<std::uint64_t>& tile_ids,
+        const gs3d::data::Gs3dTileQueryBox* filter_box
     );
 
     [[nodiscard]]
@@ -97,6 +99,12 @@ private:
         const gs3d::data::Gs3dTileReader& reader,
         const std::vector<std::uint64_t>& tile_ids
     );
+
+    [[nodiscard]]
+    static bool point_inside_box(
+        const gs3d::data::Gs3dPoint& point,
+        const gs3d::data::Gs3dTileQueryBox& box
+    ) noexcept;
 };
 
 } // namespace gs3d::render

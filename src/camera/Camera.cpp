@@ -329,6 +329,14 @@ float Camera::aspect_ratio() const noexcept {
            static_cast<float>(viewport_height_);
 }
 
+std::uint32_t Camera::viewport_width() const noexcept {
+    return viewport_width_;
+}
+
+std::uint32_t Camera::viewport_height() const noexcept {
+    return viewport_height_;
+}
+
 float Camera::fov_y_degrees() const noexcept {
     return fov_y_degrees_;
 }

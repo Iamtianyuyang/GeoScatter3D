@@ -27,7 +27,8 @@ void PointCloudTileGpu::update_from_tiles(
     VkCommandPool command_pool,
     VkQueue transfer_queue,
     const gs3d::data::Gs3dTileReader& reader,
-    const std::vector<std::uint64_t>& tile_ids
+    const std::vector<std::uint64_t>& tile_ids,
+    const gs3d::data::Gs3dTileQueryBox* filter_box
 ) {
     if (!reader.valid()) {
         throw std::runtime_error(
@@ -43,7 +44,8 @@ void PointCloudTileGpu::update_from_tiles(
     auto merged_points =
         read_and_merge_tiles(
             reader,
-            tile_ids
+            tile_ids,
+            filter_box
         );
 
     if (merged_points.empty()) {
@@ -142,7 +144,8 @@ PointCloudTileGpu::stats() const noexcept {
 std::vector<gs3d::data::Gs3dPoint>
 PointCloudTileGpu::read_and_merge_tiles(
     const gs3d::data::Gs3dTileReader& reader,
-    const std::vector<std::uint64_t>& tile_ids
+    const std::vector<std::uint64_t>& tile_ids,
+    const gs3d::data::Gs3dTileQueryBox* filter_box
 ) {
     const std::uint64_t total_point_count =
         estimate_total_point_count(
@@ -174,15 +177,25 @@ PointCloudTileGpu::read_and_merge_tiles(
         auto tile_points =
             reader.read_tile_points(tile_id);
 
-        merged_points.insert(
-            merged_points.end(),
-            tile_points.begin(),
-            tile_points.end()
-        );
+        if (!filter_box) {
+            merged_points.insert(
+                merged_points.end(),
+                tile_points.begin(),
+                tile_points.end()
+            );
+            continue;
+        }
+
+        for (const auto& point : tile_points) {
+            if (point_inside_box(point, *filter_box)) {
+                merged_points.push_back(point);
+            }
+        }
     }
 
-    if (merged_points.size() !=
-        static_cast<std::size_t>(total_point_count)) {
+    if (!filter_box &&
+        merged_points.size() !=
+            static_cast<std::size_t>(total_point_count)) {
         throw std::runtime_error(
             "PointCloudTileGpu: merged point count mismatch"
         );
@@ -213,6 +226,18 @@ std::uint64_t PointCloudTileGpu::estimate_total_point_count(
     }
 
     return total;
+}
+
+bool PointCloudTileGpu::point_inside_box(
+    const gs3d::data::Gs3dPoint& point,
+    const gs3d::data::Gs3dTileQueryBox& box
+) noexcept {
+    return point.x >= box.min_x &&
+           point.x <= box.max_x &&
+           point.y >= box.min_y &&
+           point.y <= box.max_y &&
+           point.z >= box.min_z &&
+           point.z <= box.max_z;
 }
 
 } // namespace gs3d::render

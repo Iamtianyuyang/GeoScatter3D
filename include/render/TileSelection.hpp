@@ -10,34 +10,20 @@ namespace gs3d::render {
 
 struct TileSelectionConfig {
     /*
-     * 距离大于该值时，不加载 full-resolution tile，只显示 LOD。
+     * 屏幕空间触发阈值（像素）。
+     *
+     * 对应 Potree 的 projected_area > threshold 判断：
+     *   pixel_size = tile_size / (camera_distance × tan(fov_y/2)) × viewport_height
+     *
+     * 当 tile 的投影宽度 ≥ min_tile_pixel_size 时，该 tile 需要加载全精度数据。
+     * 值越小 = 越早进入全精度；值越大 = 只在非常近时才加载。
+     * 推荐范围：20–100。
      */
-    float enable_distance = 12000.0f;
+    float min_tile_pixel_size = 50.0f;
 
     /*
-     * 不同距离下的局部查询半径。
-     *
-     * distance <= near_distance:
-     *     使用 near_half_size
-     *
-     * distance <= middle_distance:
-     *     使用 middle_half_size
-     *
-     * distance <= enable_distance:
-     *     使用 far_half_size
-     */
-    float near_distance = 3000.0f;
-    float middle_distance = 6000.0f;
-
-    float near_half_size = 256.0f;
-    float middle_half_size = 512.0f;
-    float far_half_size = 1024.0f;
-
-    /*
-     * z 方向是否限制。
-     *
-     * 第一版默认不限制 z，使用全数据 z 范围。
-     * 对 2.5D 地震散点数据更稳。
+     * z 方向是否使用全数据 z 范围。
+     * 默认 true，适合 2.5D 地震散点数据。
      */
     bool use_full_z_range = true;
 };
@@ -47,7 +33,6 @@ struct TileSelectionResult {
     bool changed = false;
 
     float camera_distance = 0.0f;
-    float query_half_size = 0.0f;
 
     gs3d::data::Gs3dTileQueryBox query_box{};
 
@@ -84,10 +69,10 @@ private:
 
 private:
     [[nodiscard]]
-    float select_half_size(float camera_distance) const noexcept;
-
-    [[nodiscard]]
-    bool should_enable(float camera_distance) const noexcept;
+    bool should_enable(
+        const gs3d::camera::Camera& camera,
+        const gs3d::data::Gs3dTileIndexFileHeader& header
+    ) const noexcept;
 
     [[nodiscard]]
     static bool same_tile_ids(
@@ -95,13 +80,39 @@ private:
         const std::vector<std::uint64_t>& b
     ) noexcept;
 
+    /*
+     * Gribb/Hartmann frustum plane extraction (Vulkan z∈[0,1]).
+     * Returns 6 planes: left, right, bottom, top, near, far.
+     * A world-space point X is inside if plane.dot(X,1) >= 0 for all planes.
+     */
+    struct FrustumPlane { float a, b, c, d; };
+    using Frustum = std::array<FrustumPlane, 6>;
+
     [[nodiscard]]
-    static gs3d::data::Gs3dTileQueryBox make_query_box(
+    static Frustum extract_frustum(
+        const std::array<float, 16>& vp
+    ) noexcept;
+
+    /*
+     * AABB-frustum intersection via p-vertex method.
+     * Returns true if the AABB is fully OUTSIDE any frustum plane (cull).
+     */
+    [[nodiscard]]
+    static bool aabb_outside_frustum(
+        const Frustum& frustum,
+        float min_x, float min_y, float min_z,
+        float max_x, float max_y, float max_z
+    ) noexcept;
+
+    /*
+     * Projected screen width of the tile in pixels (Potree SSE equivalent).
+     */
+    [[nodiscard]]
+    static float tile_projected_pixels(
         const gs3d::camera::Camera& camera,
-        const gs3d::data::Gs3dTileReader& tile_reader,
-        float half_size,
-        bool use_full_z_range
-    );
+        const gs3d::data::Gs3dTileIndexFileHeader& header,
+        const gs3d::data::Gs3dTileRecord& record
+    ) noexcept;
 };
 
 } // namespace gs3d::render

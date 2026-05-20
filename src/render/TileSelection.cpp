@@ -1,12 +1,23 @@
 #include "render/TileSelection.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace gs3d::render {
 
-TileSelection::TileSelection(
-    TileSelectionConfig config
-)
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+
+[[nodiscard]]
+float vec3_len(float x, float y, float z) noexcept {
+    return std::sqrt(x * x + y * y + z * z);
+}
+
+} // namespace
+
+TileSelection::TileSelection(TileSelectionConfig config)
     : config_(config)
 {
 }
@@ -27,12 +38,10 @@ TileSelectionResult TileSelection::update(
     const gs3d::data::Gs3dTileReader& tile_reader
 ) {
     TileSelectionResult result;
-
-    result.camera_distance =
-        camera.distance();
+    result.camera_distance = camera.distance();
 
     if (!tile_reader.valid() ||
-        !should_enable(result.camera_distance)) {
+        !should_enable(camera, tile_reader.index_header())) {
         result.enabled = false;
         result.changed = active_ || !current_tile_ids_.empty();
 
@@ -43,45 +52,80 @@ TileSelectionResult TileSelection::update(
     }
 
     result.enabled = true;
-    result.query_half_size =
-        select_half_size(result.camera_distance);
 
-    result.query_box =
-        make_query_box(
-            camera,
-            tile_reader,
-            result.query_half_size,
-            config_.use_full_z_range
-        );
-
-    result.tile_ids =
-        tile_reader.query_tile_ids_by_bbox(
-            result.query_box
-        );
-
-    std::sort(
-        result.tile_ids.begin(),
-        result.tile_ids.end()
+    /*
+     * Potree/Cesium 标准方案：
+     * 1. 从 VP 矩阵提取 6 个 frustum 平面（Gribb/Hartmann，Vulkan z∈[0,1]）
+     * 2. 对每个 tile 的 grid-cell bbox 做 p-vertex frustum 裁剪
+     * 3. 通过裁剪的 tile 再做 Potree-equivalent 投影像素大小检测
+     *
+     * 不做 Z 平面投影 —— 侧视角、俯视角下都正确。
+     */
+    const auto frustum = extract_frustum(
+        camera.view_projection_matrix().m
     );
 
-    result.tile_ids.erase(
-        std::unique(
-            result.tile_ids.begin(),
-            result.tile_ids.end()
-        ),
-        result.tile_ids.end()
-    );
+    const auto& header = tile_reader.index_header();
+
+    float sel_min_x = std::numeric_limits<float>::max();
+    float sel_min_y = std::numeric_limits<float>::max();
+    float sel_min_z = std::numeric_limits<float>::max();
+    float sel_max_x = std::numeric_limits<float>::lowest();
+    float sel_max_y = std::numeric_limits<float>::lowest();
+    float sel_max_z = std::numeric_limits<float>::lowest();
+
+    for (const auto& record : tile_reader.records()) {
+        // Grid cell bbox (conservative: full Z extent of dataset)
+        const float cell_min_x =
+            header.grid_origin_x + record.tile_x * header.tile_size_x;
+        const float cell_max_x =
+            header.grid_origin_x + (record.tile_x + 1) * header.tile_size_x;
+        const float cell_min_y =
+            header.grid_origin_y + record.tile_y * header.tile_size_y;
+        const float cell_max_y =
+            header.grid_origin_y + (record.tile_y + 1) * header.tile_size_y;
+        const float cell_min_z = header.bbox_min_z;
+        const float cell_max_z = header.bbox_max_z;
+
+        if (aabb_outside_frustum(
+                frustum,
+                cell_min_x, cell_min_y, cell_min_z,
+                cell_max_x, cell_max_y, cell_max_z)) {
+            continue;
+        }
+
+        if (tile_projected_pixels(camera, header, record)
+                < config_.min_tile_pixel_size) {
+            continue;
+        }
+
+        result.tile_ids.push_back(record.tile_id);
+
+        sel_min_x = std::min(sel_min_x, record.bbox_min_x);
+        sel_min_y = std::min(sel_min_y, record.bbox_min_y);
+        sel_min_z = std::min(sel_min_z, record.bbox_min_z);
+        sel_max_x = std::max(sel_max_x, record.bbox_max_x);
+        sel_max_y = std::max(sel_max_y, record.bbox_max_y);
+        sel_max_z = std::max(sel_max_z, record.bbox_max_z);
+    }
+
+    if (!result.tile_ids.empty()) {
+        result.query_box.min_x = sel_min_x;
+        result.query_box.min_y = sel_min_y;
+        result.query_box.min_z = sel_min_z;
+        result.query_box.max_x = sel_max_x;
+        result.query_box.max_y = sel_max_y;
+        result.query_box.max_z = sel_max_z;
+    }
+
+    std::sort(result.tile_ids.begin(), result.tile_ids.end());
 
     result.changed =
         !active_ ||
-        !same_tile_ids(
-            current_tile_ids_,
-            result.tile_ids
-        );
+        !same_tile_ids(current_tile_ids_, result.tile_ids);
 
     if (result.changed) {
-        current_tile_ids_ =
-            result.tile_ids;
+        current_tile_ids_ = result.tile_ids;
     }
 
     active_ = true;
@@ -98,24 +142,33 @@ bool TileSelection::active() const noexcept {
     return active_;
 }
 
-float TileSelection::select_half_size(
-    float camera_distance
-) const noexcept {
-    if (camera_distance <= config_.near_distance) {
-        return config_.near_half_size;
-    }
-
-    if (camera_distance <= config_.middle_distance) {
-        return config_.middle_half_size;
-    }
-
-    return config_.far_half_size;
-}
-
 bool TileSelection::should_enable(
-    float camera_distance
+    const gs3d::camera::Camera& camera,
+    const gs3d::data::Gs3dTileIndexFileHeader& header
 ) const noexcept {
-    return camera_distance <= config_.enable_distance;
+    const float tile_size =
+        std::min(header.tile_size_x, header.tile_size_y);
+
+    const float dist = camera.distance();
+
+    if (tile_size <= 0.0f || dist <= 0.0f) {
+        return false;
+    }
+
+    const float fov_y_rad = camera.fov_y_degrees() * kPi / 180.0f;
+    const float tan_half  = std::tan(fov_y_rad * 0.5f);
+
+    if (tan_half <= 0.0f) {
+        return false;
+    }
+
+    // Potree-equivalent screen-space criterion:
+    // pixel_size = tile_size / (distance × tan(fov/2)) × viewport_height
+    const float pixel_size =
+        tile_size / (dist * tan_half) *
+        static_cast<float>(camera.viewport_height());
+
+    return pixel_size >= config_.min_tile_pixel_size;
 }
 
 bool TileSelection::same_tile_ids(
@@ -126,78 +179,93 @@ bool TileSelection::same_tile_ids(
         return false;
     }
 
-    return std::equal(
-        a.begin(),
-        a.end(),
-        b.begin()
-    );
+    return std::equal(a.begin(), a.end(), b.begin());
 }
 
-gs3d::data::Gs3dTileQueryBox TileSelection::make_query_box(
+TileSelection::Frustum TileSelection::extract_frustum(
+    const std::array<float, 16>& m
+) noexcept {
+    /*
+     * Gribb/Hartmann 方法（2001）：从 column-major VP 矩阵提取 6 个 frustum 平面。
+     *
+     * 矩阵布局：m[col*4 + row]，即
+     *   行 i 的分量 = (m[i], m[4+i], m[8+i], m[12+i])
+     *
+     * 平面方程：对 homogeneous 世界点 X=(x,y,z,1)，
+     *   plane.a*x + plane.b*y + plane.c*z + plane.d >= 0 → 在平面内侧
+     *
+     * Vulkan NDC z∈[0,1]：near 平面用 row2（不加 row3），与 OpenGL [-1,1] 不同。
+     */
+    Frustum f;
+    //        a              b               c               d
+    // Left  (R0+R3)
+    f[0] = { m[0]+m[3],  m[4]+m[7],  m[8]+m[11],  m[12]+m[15] };
+    // Right (R3-R0)
+    f[1] = { m[3]-m[0],  m[7]-m[4],  m[11]-m[8],  m[15]-m[12] };
+    // Bottom (R1+R3)
+    f[2] = { m[1]+m[3],  m[5]+m[7],  m[9]+m[11],  m[13]+m[15] };
+    // Top (R3-R1)
+    f[3] = { m[3]-m[1],  m[7]-m[5],  m[11]-m[9],  m[15]-m[13] };
+    // Near  (R2, Vulkan z>=0)
+    f[4] = { m[2],       m[6],       m[10],        m[14]        };
+    // Far   (R3-R2)
+    f[5] = { m[3]-m[2],  m[7]-m[6],  m[11]-m[10], m[15]-m[14] };
+    return f;
+}
+
+bool TileSelection::aabb_outside_frustum(
+    const Frustum& frustum,
+    float min_x, float min_y, float min_z,
+    float max_x, float max_y, float max_z
+) noexcept {
+    /*
+     * p-vertex（正顶点）方法：对每个平面，找 AABB 中距平面最近的顶点。
+     * 若该顶点在平面负侧，整个 AABB 都在平面外 → 裁剪掉。
+     */
+    for (const auto& p : frustum) {
+        const float px = (p.a >= 0.0f) ? max_x : min_x;
+        const float py = (p.b >= 0.0f) ? max_y : min_y;
+        const float pz = (p.c >= 0.0f) ? max_z : min_z;
+        if (p.a * px + p.b * py + p.c * pz + p.d < 0.0f) {
+            return true;  // fully outside this plane
+        }
+    }
+    return false;
+}
+
+float TileSelection::tile_projected_pixels(
     const gs3d::camera::Camera& camera,
-    const gs3d::data::Gs3dTileReader& tile_reader,
-    float half_size,
-    bool use_full_z_range
-) {
-    const auto target =
-        camera.target();
+    const gs3d::data::Gs3dTileIndexFileHeader& header,
+    const gs3d::data::Gs3dTileRecord& record
+) noexcept {
+    // Grid cell center (matches how points were assigned)
+    const float cx =
+        header.grid_origin_x + (record.tile_x + 0.5f) * header.tile_size_x;
+    const float cy =
+        header.grid_origin_y + (record.tile_y + 0.5f) * header.tile_size_y;
+    const float cz = 0.5f * (header.bbox_min_z + header.bbox_max_z);
 
-    const auto& header =
-        tile_reader.index_header();
+    const float dx = cx - camera.position().x;
+    const float dy = cy - camera.position().y;
+    const float dz = cz - camera.position().z;
+    const float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
 
-    gs3d::data::Gs3dTileQueryBox box;
-
-    box.min_x = target.x - half_size;
-    box.max_x = target.x + half_size;
-
-    box.min_y = target.y - half_size;
-    box.max_y = target.y + half_size;
-
-    if (use_full_z_range) {
-        box.min_z = header.bbox_min_z;
-        box.max_z = header.bbox_max_z;
-    } else {
-        box.min_z = target.z - half_size;
-        box.max_z = target.z + half_size;
+    if (dist <= 0.0f) {
+        return std::numeric_limits<float>::max();
     }
 
-    box.min_x =
-        std::max(
-            box.min_x,
-            header.bbox_min_x
-        );
+    // Conservative tile size: larger of the two grid dimensions
+    const float tile_size = std::max(header.tile_size_x, header.tile_size_y);
 
-    box.max_x =
-        std::min(
-            box.max_x,
-            header.bbox_max_x
-        );
+    const float fov_y_rad = camera.fov_y_degrees() * kPi / 180.0f;
+    const float tan_half  = std::tan(fov_y_rad * 0.5f);
 
-    box.min_y =
-        std::max(
-            box.min_y,
-            header.bbox_min_y
-        );
+    if (tan_half <= 0.0f) {
+        return 0.0f;
+    }
 
-    box.max_y =
-        std::min(
-            box.max_y,
-            header.bbox_max_y
-        );
-
-    box.min_z =
-        std::max(
-            box.min_z,
-            header.bbox_min_z
-        );
-
-    box.max_z =
-        std::min(
-            box.max_z,
-            header.bbox_max_z
-        );
-
-    return box;
+    return tile_size / (dist * tan_half) *
+           static_cast<float>(camera.viewport_height());
 }
 
 } // namespace gs3d::render

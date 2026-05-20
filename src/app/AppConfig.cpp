@@ -605,40 +605,10 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.tile_data_path
         );
 
-        config.viewer.tile_enable_distance = float_or_default(
+        config.viewer.tile_min_pixel_size = float_or_default(
             *tile,
-            "enable_distance",
-            config.viewer.tile_enable_distance
-        );
-
-        config.viewer.tile_near_distance = float_or_default(
-            *tile,
-            "near_distance",
-            config.viewer.tile_near_distance
-        );
-
-        config.viewer.tile_middle_distance = float_or_default(
-            *tile,
-            "middle_distance",
-            config.viewer.tile_middle_distance
-        );
-
-        config.viewer.tile_near_half_size = float_or_default(
-            *tile,
-            "near_half_size",
-            config.viewer.tile_near_half_size
-        );
-
-        config.viewer.tile_middle_half_size = float_or_default(
-            *tile,
-            "middle_half_size",
-            config.viewer.tile_middle_half_size
-        );
-
-        config.viewer.tile_far_half_size = float_or_default(
-            *tile,
-            "far_half_size",
-            config.viewer.tile_far_half_size
+            "min_tile_pixel_size",
+            config.viewer.tile_min_pixel_size
         );
 
         config.viewer.tile_use_full_z_range = bool_or_default(
@@ -905,28 +875,8 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << config.viewer.tile_data_path.string()
               << '\n';
 
-    std::cout << "[CONFIG] tile.enable_distance = "
-              << config.viewer.tile_enable_distance
-              << '\n';
-
-    std::cout << "[CONFIG] tile.near_distance = "
-              << config.viewer.tile_near_distance
-              << '\n';
-
-    std::cout << "[CONFIG] tile.middle_distance = "
-              << config.viewer.tile_middle_distance
-              << '\n';
-
-    std::cout << "[CONFIG] tile.near_half_size = "
-              << config.viewer.tile_near_half_size
-              << '\n';
-
-    std::cout << "[CONFIG] tile.middle_half_size = "
-              << config.viewer.tile_middle_half_size
-              << '\n';
-
-    std::cout << "[CONFIG] tile.far_half_size = "
-              << config.viewer.tile_far_half_size
+    std::cout << "[CONFIG] tile.min_tile_pixel_size = "
+              << config.viewer.tile_min_pixel_size
               << '\n';
 
     std::cout << "[CONFIG] tile.use_full_z_range = "

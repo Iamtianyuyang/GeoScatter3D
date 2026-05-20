@@ -86,6 +86,12 @@ public:
     float aspect_ratio() const noexcept;
 
     [[nodiscard]]
+    std::uint32_t viewport_width() const noexcept;
+
+    [[nodiscard]]
+    std::uint32_t viewport_height() const noexcept;
+
+    [[nodiscard]]
     float fov_y_degrees() const noexcept;
 
     [[nodiscard]]
