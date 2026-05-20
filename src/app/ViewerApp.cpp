@@ -27,7 +27,9 @@
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <future>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <optional>
@@ -533,6 +535,21 @@ int ViewerApp::run() {
          */
         std::optional<gs3d::data::Gs3dTileQueryBox> loaded_tile_query_box;
 
+        /*
+         * 异步磁盘读取（Potree/Cesium 模式）：
+         * 后台线程读取 tile 数据，主线程每帧非阻塞检查 future 是否完成。
+         * GPU upload 仍在主线程，调用前用 in-flight fence 代替 vkDeviceWaitIdle。
+         */
+        struct TileLoadResult {
+            std::vector<gs3d::data::Gs3dPoint>  points;
+            std::vector<std::uint64_t>          tile_ids;
+            gs3d::data::Gs3dTileQueryBox        actual_bbox;
+        };
+
+        std::future<TileLoadResult> tile_load_future;
+        // IDs dispatched to background thread (may differ from current selection)
+        std::vector<std::uint64_t> tile_loading_ids;
+
         gs3d::render::LodSelector lod_selector;
 
         if (config_.lod_enabled) {
@@ -645,100 +662,136 @@ int ViewerApp::run() {
                 tile_reader.has_value() &&
                 tile_gpu_cloud) {
                 const auto tile_result =
-                    tile_selection.update(
-                        camera,
-                        *tile_reader
-                    );
+                    tile_selection.update(camera, *tile_reader);
 
                 if (!tile_result.enabled) {
+                    // Tile mode disabled (camera too far away).
+                    // Cancel pending load then release GPU buffer.
+                    if (tile_load_future.valid()) {
+                        tile_load_future.wait();
+                        tile_load_future = {};
+                        tile_loading_ids.clear();
+                    }
                     if (tile_gpu_cloud->valid()) {
-                        /*
-                        * clear() 会销毁旧 VkBuffer。
-                        * 销毁前必须确保 GPU 不再使用它。
-                        */
-                        vkDeviceWaitIdle(context.device());
-
+                        renderer.wait_for_in_flight_fences();
                         tile_gpu_cloud->clear();
                         loaded_tile_query_box.reset();
-
                         if (config_.tile_verbose) {
-                            std::cout << "[TILE] disabled, local full-res buffer cleared.\n";
+                            std::cout << "[TILE] disabled, buffer cleared.\n";
                         }
                     }
-                } else if (!interacting) {
+                } else {
                     /*
-                    * 用"GPU 实际加载的 tile ids"与当前选择比较，
-                    * 而不是 tile_result.changed：
-                    * changed 在交互期间被跳过后会变 false，
-                    * 导致下一帧 idle 时错误地认为不需要上传。
-                    *
-                    * 交互期间冻结 tile buffer（不触发 vkDeviceWaitIdle + 磁盘读）。
-                    * 停止操作后，检测到 buffer 与当前选择不一致则刷新。
-                    *
-                    * vkDeviceWaitIdle：销毁旧 VkBuffer 前必须确认 GPU 空闲。
-                    * 后续可改为延迟销毁 / frames-in-flight 资源回收。
-                    */
-                    const auto& loaded_ids =
-                        tile_gpu_cloud->loaded_tile_ids();
+                     * Potree/Cesium 异步加载模式：
+                     *
+                     * 1. 每帧非阻塞检查后台磁盘读取是否完成
+                     *    → 完成后在主线程做 GPU upload（用 in-flight fence 代替
+                     *      vkDeviceWaitIdle，只等渲染帧完成而非整个 GPU 队列）
+                     *
+                     * 2. 交互停止后，若 buffer 与当前选择不一致，
+                     *    派发新的后台加载请求（不阻塞渲染循环）
+                     *
+                     * 3. 交互期间：不渲染 tile cloud（仅渲染 LOD）
+                     *    → 消除旋转/拖动/缩放时的 GPU 负载
+                     */
 
-                    const bool buffer_stale =
-                        loaded_ids.size() != tile_result.tile_ids.size() ||
-                        !std::equal(
-                            loaded_ids.begin(),
-                            loaded_ids.end(),
-                            tile_result.tile_ids.begin()
-                        ) ||
-                        !same_query_box(
-                            loaded_tile_query_box,
-                            tile_result.query_box
-                        );
+                    // ── Step 1: apply completed load ─────────────────────
+                    if (tile_load_future.valid() &&
+                        tile_load_future.wait_for(std::chrono::seconds(0))
+                            == std::future_status::ready) {
 
-                    if (buffer_stale) {
-                        vkDeviceWaitIdle(context.device());
+                        auto loaded = tile_load_future.get();
+                        tile_load_future = {};
 
-                        tile_gpu_cloud->update_from_tiles(
-                            context,
-                            renderer.command_pool(),
-                            context.graphics_queue(),
-                            *tile_reader,
-                            tile_result.tile_ids,
-                            &tile_result.query_box
-                        );
+                        if (loaded.tile_ids == tile_result.tile_ids) {
+                            // Selection unchanged since load was dispatched
+                            renderer.wait_for_in_flight_fences();
+                            tile_gpu_cloud->upload_from_points(
+                                context,
+                                renderer.command_pool(),
+                                context.graphics_queue(),
+                                std::move(loaded.points),
+                                loaded.tile_ids
+                            );
+                            loaded_tile_query_box = loaded.actual_bbox;
 
-                        /*
-                         * Tile upload filters original points to this exact
-                         * query box. LOD clipping must use the same box, so
-                         * the local region is represented by full-resolution
-                         * points only, without LOD overlap or extra dark gaps.
-                         */
-                        if (tile_gpu_cloud->valid()) {
-                            loaded_tile_query_box = tile_result.query_box;
-                        } else {
-                            loaded_tile_query_box.reset();
+                            if (config_.tile_verbose) {
+                                const auto& stats = tile_gpu_cloud->stats();
+                                std::cout << "[TILE] async upload complete.\n";
+                                std::cout << "tile_count = "
+                                          << stats.tile_count << '\n';
+                                std::cout << "point_count = "
+                                          << stats.point_count << '\n';
+                                std::cout << "gpu_buffer_bytes = "
+                                          << stats.gpu_buffer_bytes << '\n';
+                            }
                         }
+                        // If selection changed while loading, discard result;
+                        // a new load will be dispatched below.
+                        tile_loading_ids.clear();
+                    }
 
-                        if (config_.tile_verbose) {
-                            const auto& stats =
-                                tile_gpu_cloud->stats();
+                    // ── Step 2: dispatch new load if needed ───────────────
+                    if (!interacting) {
+                        const auto& loaded_ids =
+                            tile_gpu_cloud->loaded_tile_ids();
 
-                            std::cout << "[TILE] active full-res tiles updated.\n";
-                            std::cout << "tile_count = "
-                                    << stats.tile_count
-                                    << '\n';
-                            std::cout << "point_count = "
-                                    << stats.point_count
-                                    << '\n';
-                            std::cout << "gpu_buffer_bytes = "
-                                    << stats.gpu_buffer_bytes
-                                    << '\n';
-                            std::cout << "camera_distance = "
-                                    << tile_result.camera_distance
-                                    << '\n';
-                            std::cout << "query_box_xy = ["
-                                    << tile_result.query_box.min_x << ", "
-                                    << tile_result.query_box.min_y << "] to ["
-                                    << tile_result.query_box.max_x << ", "
-                                    << tile_result.query_box.max_y << "]\n";
+                        const bool buffer_stale =
+                            loaded_ids.size() != tile_result.tile_ids.size() ||
+                            !std::equal(
+                                loaded_ids.begin(), loaded_ids.end(),
+                                tile_result.tile_ids.begin()
+                            );
+
+                        const bool load_in_progress =
+                            tile_load_future.valid() &&
+                            tile_load_future.wait_for(std::chrono::seconds(0))
+                                != std::future_status::ready;
+
+                        if (buffer_stale && !load_in_progress &&
+                            tile_loading_ids != tile_result.tile_ids) {
+
+                            // Compute actual data bbox on main thread
+                            // (record metadata, no I/O)
+                            gs3d::data::Gs3dTileQueryBox actual_bbox;
+                            actual_bbox.min_x = actual_bbox.min_y =
+                                actual_bbox.min_z =
+                                    std::numeric_limits<float>::max();
+                            actual_bbox.max_x = actual_bbox.max_y =
+                                actual_bbox.max_z =
+                                    -std::numeric_limits<float>::max();
+                            for (const auto tid : tile_result.tile_ids) {
+                                const auto& rec = tile_reader->record(tid);
+                                actual_bbox.min_x = std::min(actual_bbox.min_x, rec.bbox_min_x);
+                                actual_bbox.min_y = std::min(actual_bbox.min_y, rec.bbox_min_y);
+                                actual_bbox.min_z = std::min(actual_bbox.min_z, rec.bbox_min_z);
+                                actual_bbox.max_x = std::max(actual_bbox.max_x, rec.bbox_max_x);
+                                actual_bbox.max_y = std::max(actual_bbox.max_y, rec.bbox_max_y);
+                                actual_bbox.max_z = std::max(actual_bbox.max_z, rec.bbox_max_z);
+                            }
+
+                            tile_loading_ids = tile_result.tile_ids;
+                            const auto ids = tile_result.tile_ids;
+                            const auto& tr  = *tile_reader;
+
+                            tile_load_future = std::async(
+                                std::launch::async,
+                                [&tr, ids, actual_bbox]() -> TileLoadResult {
+                                    TileLoadResult r;
+                                    r.tile_ids   = ids;
+                                    r.actual_bbox = actual_bbox;
+                                    r.points =
+                                        gs3d::render::PointCloudTileGpu::read_tiles(
+                                            tr, ids
+                                        );
+                                    return r;
+                                }
+                            );
+
+                            if (config_.tile_verbose) {
+                                std::cout << "[TILE] async load dispatched, "
+                                          << ids.size() << " tiles.\n";
+                            }
                         }
                     }
                 }
@@ -806,8 +859,13 @@ int ViewerApp::run() {
                             lod_push
                         );
                     }
-                    if (tile_gpu_cloud && tile_gpu_cloud->valid()) {
-                        // Tile cloud: no clip, draw all uploaded original points.
+                    /*
+                     * Potree 策略：交互期间只渲染 LOD，跳过 tile cloud。
+                     * tile cloud 可能有数百万点，每帧渲染代价高；
+                     * 用户移动相机时不需要精细细节，低质 LOD 已够用。
+                     * 停止操作后，tile cloud 加载完成后立即显示。
+                     */
+                    if (tile_gpu_cloud && tile_gpu_cloud->valid() && !interacting) {
                         point_pipeline.draw(
                             command_buffer,
                             tile_gpu_cloud->gpu_cloud(),

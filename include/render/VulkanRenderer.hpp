@@ -48,6 +48,13 @@ public:
 
     void set_clear_color(const ClearColor& color) noexcept;
 
+    /*
+     * 等待所有 in-flight 帧的 fence（替代 vkDeviceWaitIdle）。
+     * 只等当前正在飞行的渲染帧，不等无关的 GPU 队列。
+     * 在销毁/替换被 GPU 使用的 buffer 前调用。
+     */
+    void wait_for_in_flight_fences();
+
     [[nodiscard]]
     VkRenderPass render_pass() const noexcept;
 

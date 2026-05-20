@@ -240,4 +240,44 @@ bool PointCloudTileGpu::point_inside_box(
            point.z <= box.max_z;
 }
 
+std::vector<gs3d::data::Gs3dPoint>
+PointCloudTileGpu::read_tiles(
+    const gs3d::data::Gs3dTileReader& reader,
+    const std::vector<std::uint64_t>& tile_ids
+) {
+    // Delegate to existing implementation (no filter box = all points).
+    return read_and_merge_tiles(reader, tile_ids, nullptr);
+}
+
+void PointCloudTileGpu::upload_from_points(
+    const VulkanContext& context,
+    VkCommandPool command_pool,
+    VkQueue transfer_queue,
+    std::vector<gs3d::data::Gs3dPoint> points,
+    const std::vector<std::uint64_t>& tile_ids
+) {
+    if (points.empty()) {
+        clear();
+        return;
+    }
+
+    gpu_cloud_.upload_points(
+        context,
+        command_pool,
+        transfer_queue,
+        points.data(),
+        static_cast<std::uint64_t>(points.size())
+    );
+
+    loaded_tile_ids_ = tile_ids;
+
+    stats_.tile_count  = static_cast<std::uint64_t>(tile_ids.size());
+    stats_.point_count = static_cast<std::uint64_t>(points.size());
+    stats_.point_bytes = stats_.point_count *
+        static_cast<std::uint64_t>(sizeof(gs3d::data::Gs3dPoint));
+    stats_.gpu_buffer_bytes =
+        static_cast<std::uint64_t>(gpu_cloud_.vertex_buffer_size());
+    stats_.success = true;
+}
+
 } // namespace gs3d::render

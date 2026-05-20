@@ -50,6 +50,27 @@ public:
         const gs3d::data::Gs3dTileQueryBox* filter_box = nullptr
     );
 
+    /*
+     * 步骤 1：磁盘读取（线程安全，可在后台线程调用，不接触 Vulkan）。
+     */
+    [[nodiscard]]
+    static std::vector<gs3d::data::Gs3dPoint> read_tiles(
+        const gs3d::data::Gs3dTileReader& reader,
+        const std::vector<std::uint64_t>& tile_ids
+    );
+
+    /*
+     * 步骤 2：GPU 上传（主线程，调用前需等 in-flight fence）。
+     * 接受已读取的点，不再访问磁盘。
+     */
+    void upload_from_points(
+        const VulkanContext& context,
+        VkCommandPool command_pool,
+        VkQueue transfer_queue,
+        std::vector<gs3d::data::Gs3dPoint> points,
+        const std::vector<std::uint64_t>& tile_ids
+    );
+
     void clear() noexcept;
 
     [[nodiscard]]

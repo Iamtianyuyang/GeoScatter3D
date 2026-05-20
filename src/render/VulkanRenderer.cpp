@@ -177,6 +177,20 @@ void VulkanRenderer::set_clear_color(const ClearColor& color) noexcept {
     clear_color_ = color;
 }
 
+void VulkanRenderer::wait_for_in_flight_fences() {
+    for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (in_flight_fences_[i] != VK_NULL_HANDLE) {
+            vkWaitForFences(
+                context_.device(),
+                1,
+                &in_flight_fences_[i],
+                VK_TRUE,
+                UINT64_MAX
+            );
+        }
+    }
+}
+
 VkRenderPass VulkanRenderer::render_pass() const noexcept {
     return render_pass_;
 }
