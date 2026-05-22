@@ -1,7 +1,9 @@
 # config/viewer.toml
 
 [input]
+mode = "csv"
 gs3d_path = "data/test.gs3d"
+csv_path = "data/test.csv"
 
 [shader]
 vertex_shader_path = "assets/shaders/point.vert.spv"

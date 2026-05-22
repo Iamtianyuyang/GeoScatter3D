@@ -1,7 +1,9 @@
 #include "render/PointCloudTileGpu.hpp"
+#include "util/ThreadPool.hpp"
 
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <utility>
 
@@ -246,10 +248,18 @@ PointCloudTileGpu::read_tiles(
     const gs3d::data::Gs3dTileReader& reader,
     const std::vector<std::uint64_t>& tile_ids
 ) {
+    if (tile_ids.empty()) {
+        return {};
+    }
+
     /*
-     * 按磁盘偏移排序后读取（顺序 I/O 优化）。
-     * 磁盘顺序读比随机 seek 快；对 HDD 效果显著，SSD 也有一定收益。
-     * 参考：Potree 按节点存储偏移排序，Cesium 按请求优先级排队。
+     * 线程池并行读取（Cesium-Native AsyncSystem / PDAL 7-thread 模式）：
+     * 每个 tile 的磁盘读取提交为独立任务，N 个 tile 由 min(N, pool) 线程并行处理。
+     *
+     * 线程安全：read_tile_points 每次调用独立开文件描述符，无共享状态。
+     * 单 tile 或少量 tile 退化为顺序读，开销可忽略。
+     *
+     * 按磁盘偏移排序：HDD 顺序读加速；SSD 也受益于 OS 预取预测。
      */
     std::vector<std::uint64_t> sorted_ids = tile_ids;
     std::sort(sorted_ids.begin(), sorted_ids.end(),
@@ -258,7 +268,42 @@ PointCloudTileGpu::read_tiles(
                    reader.record(b).point_data_offset;
         }
     );
-    return read_and_merge_tiles(reader, sorted_ids, nullptr);
+
+    // Static pool: created once, lives for the program's duration.
+    // Cesium-Native uses a similarly long-lived AsyncSystem thread pool.
+    static gs3d::util::ThreadPool pool(
+        gs3d::util::recommended_io_threads()
+    );
+
+    // Submit each tile as an independent read task
+    std::vector<std::future<std::vector<gs3d::data::Gs3dPoint>>> futures;
+    futures.reserve(sorted_ids.size());
+    for (const auto tid : sorted_ids) {
+        futures.push_back(pool.submit([&reader, tid] {
+            return reader.read_tile_points(tid);
+        }));
+    }
+
+    // Pre-allocate result buffer (avoids repeated reallocations during merge)
+    std::uint64_t total_points = 0;
+    for (const auto tid : sorted_ids) {
+        total_points += reader.record(tid).point_count;
+    }
+
+    std::vector<gs3d::data::Gs3dPoint> result;
+    result.reserve(static_cast<std::size_t>(total_points));
+
+    // Collect in sorted order (preserves disk-offset ordering for coherent render)
+    for (auto& f : futures) {
+        auto tile_points = f.get();
+        result.insert(
+            result.end(),
+            std::make_move_iterator(tile_points.begin()),
+            std::make_move_iterator(tile_points.end())
+        );
+    }
+
+    return result;
 }
 
 void PointCloudTileGpu::upload_from_points(

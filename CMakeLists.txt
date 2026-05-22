@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(GeoScatter3D
     src/main.cpp
@@ -92,6 +93,8 @@ add_executable(GeoScatter3D
     include/render/LodSelector.hpp
     include/render/PointCloudTileGpu.hpp
     include/render/TileSelection.hpp
+
+    include/util/ThreadPool.hpp
 )
 
 target_include_directories(GeoScatter3D PRIVATE
@@ -102,4 +105,5 @@ target_include_directories(GeoScatter3D PRIVATE
 target_link_libraries(GeoScatter3D PRIVATE
     Vulkan::Vulkan
     glfw
+    Threads::Threads
 )

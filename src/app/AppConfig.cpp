@@ -103,6 +103,21 @@ std::vector<std::uint64_t> uint64_array_or_default(
     return result;
 }
 
+[[nodiscard]]
+bool input_mode_is_csv(const AppConfig& config) noexcept {
+    return config.input_mode == "csv";
+}
+
+void validate_input_mode(const std::string& mode) {
+    if (mode == "csv" || mode == "gs3d") {
+        return;
+    }
+
+    throw std::runtime_error(
+        "AppConfig: input.mode must be \"csv\" or \"gs3d\""
+    );
+}
+
 void resolve_viewer_resource_paths(
     AppConfig& config,
     const std::filesystem::path& config_path,
@@ -112,11 +127,19 @@ void resolve_viewer_resource_paths(
     context.config_path = config_path;
     context.executable_path = executable_path;
 
-    config.viewer.gs3d_path =
-        ResourcePath::resolve_existing_file(
-            config.viewer.gs3d_path,
-            context
-        );
+    if (!input_mode_is_csv(config)) {
+        config.viewer.gs3d_path =
+            ResourcePath::resolve_existing_file(
+                config.viewer.gs3d_path,
+                context
+            );
+    } else {
+        config.csv_input_path =
+            ResourcePath::resolve_existing_file(
+                config.csv_input_path,
+                context
+            );
+    }
 
     config.viewer.vertex_shader_path =
         ResourcePath::resolve_existing_file(
@@ -148,8 +171,10 @@ void resolve_viewer_resource_paths(
                 (ResourcePath::current_working_directory() /
                  config.viewer.lod_sidecar_path).lexically_normal();
         }
+    }
 
-    if (config.viewer.tile_enabled) {
+    if (!input_mode_is_csv(config) &&
+        config.viewer.tile_enabled) {
             config.viewer.tile_index_path =
                 ResourcePath::resolve_existing_file(
                     config.viewer.tile_index_path,
@@ -161,7 +186,6 @@ void resolve_viewer_resource_paths(
                     config.viewer.tile_data_path,
                     context
                 );
-        }
     }
 }
 
@@ -347,12 +371,26 @@ AppConfig AppConfigLoader::load_from_file(
     AppConfig config;
 
     if (const auto* input = root["input"].as_table()) {
+        config.input_mode = string_or_default(
+            *input,
+            "mode",
+            config.input_mode
+        );
+
         config.viewer.gs3d_path = path_or_default(
             *input,
             "gs3d_path",
             config.viewer.gs3d_path
         );
+
+        config.csv_input_path = path_or_default(
+            *input,
+            "csv_path",
+            config.csv_input_path
+        );
     }
+
+    validate_input_mode(config.input_mode);
 
     if (const auto* shader = root["shader"].as_table()) {
         config.viewer.vertex_shader_path = path_or_default(
@@ -623,12 +661,6 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.tile_verbose
         );
     }
-    resolve_viewer_resource_paths(
-        config,
-        path,
-        {}
-    );
-
     return config;
 }
 
@@ -722,7 +754,20 @@ void AppConfigLoader::apply_command_line_overrides(
                 );
             }
 
+            config.input_mode = "gs3d";
             config.viewer.gs3d_path =
+                argument_at(argc, argv, i + 1);
+        }
+
+        if (arg == "--csv") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(
+                    "AppConfig: --csv requires a file path"
+                );
+            }
+
+            config.input_mode = "csv";
+            config.csv_input_path =
                 argument_at(argc, argv, i + 1);
         }
     }
@@ -731,6 +776,12 @@ void AppConfigLoader::apply_command_line_overrides(
 void AppConfigPrinter::print(const AppConfig& config) {
     std::cout << "[CONFIG] input.gs3d_path = "
               << config.viewer.gs3d_path.string() << '\n';
+
+    std::cout << "[CONFIG] input.mode = "
+              << config.input_mode << '\n';
+
+    std::cout << "[CONFIG] input.csv_path = "
+              << config.csv_input_path.string() << '\n';
 
     std::cout << "[CONFIG] shader.vertex_shader_path = "
               << config.viewer.vertex_shader_path.string() << '\n';

@@ -61,6 +61,9 @@ struct AppConfig {
     RenderConfig render;
     CameraConfig camera;
     ControllerConfig controller;
+
+    std::string input_mode = "gs3d";
+    std::filesystem::path csv_input_path;
 };
 
 class AppConfigLoader {

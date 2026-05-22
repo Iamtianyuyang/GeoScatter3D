@@ -1,5 +1,6 @@
 .idea/
 .vscode/
+.claude/
 cmake-build-*/
 build/
 out/
@@ -9,3 +10,7 @@ out/
 *.pdb
 *.ilk
 *.log
+*.bak
+data/*.gs3dlod
+data/*.gs3dtiles
+data/*.gs3dtiles.index

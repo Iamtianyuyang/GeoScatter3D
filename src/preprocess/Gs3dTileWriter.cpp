@@ -1,8 +1,10 @@
 #include "preprocess/Gs3dTileWriter.hpp"
 
 #include "data/Gs3dTileFormat.hpp"
+#include "util/ThreadPool.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
@@ -147,6 +149,27 @@ float safe_extent(
 }
 
 [[nodiscard]]
+std::uint32_t resolve_thread_count(
+    std::uint32_t requested_threads,
+    std::uint64_t point_count
+) noexcept {
+    if (point_count <= 1) {
+        return 1;
+    }
+
+    if (requested_threads > 0) {
+        return requested_threads;
+    }
+
+    const auto hw = std::thread::hardware_concurrency();
+    if (hw <= 1) {
+        return 1;
+    }
+
+    return std::min<std::uint32_t>(hw, 8);
+}
+
+[[nodiscard]]
 std::uint32_t compute_grid_count(
     float min_value,
     float max_value,
@@ -247,7 +270,8 @@ std::vector<TileBuildBucket> build_tile_buckets(
     float tile_size_x,
     float tile_size_y,
     std::uint32_t grid_count_x,
-    std::uint32_t grid_count_y
+    std::uint32_t grid_count_y,
+    std::uint32_t num_threads
 ) {
     const std::uint64_t total_tile_slots =
         static_cast<std::uint64_t>(grid_count_x) *
@@ -295,44 +319,241 @@ std::vector<TileBuildBucket> build_tile_buckets(
     const auto& points =
         dataset.points();
 
-    for (std::uint64_t i = 0; i < dataset.point_count(); ++i) {
-        const auto& point =
-            points[static_cast<std::size_t>(i)];
-
-        const std::uint32_t tx =
-            point_tile_coord(
-                point.x,
-                dataset.bbox_min_x(),
-                tile_size_x,
-                grid_count_x
-            );
-
-        const std::uint32_t ty =
-            point_tile_coord(
-                point.y,
-                dataset.bbox_min_y(),
-                tile_size_y,
-                grid_count_y
-            );
-
-        const auto tile_id =
-            linear_tile_id(
-                tx,
-                ty,
-                grid_count_x
-            );
-
-        auto& tile =
-            tiles[static_cast<std::size_t>(tile_id)];
-
-        tile.point_indices.push_back(
-            static_cast<std::uint32_t>(i)
+    const std::uint32_t worker_count =
+        resolve_thread_count(
+            num_threads,
+            dataset.point_count()
         );
 
-        update_tile_bounds(
-            tile,
-            point
+    if (worker_count <= 1) {
+        for (std::uint64_t i = 0; i < dataset.point_count(); ++i) {
+            const auto& point =
+                points[static_cast<std::size_t>(i)];
+
+            const std::uint32_t tx =
+                point_tile_coord(
+                    point.x,
+                    dataset.bbox_min_x(),
+                    tile_size_x,
+                    grid_count_x
+                );
+
+            const std::uint32_t ty =
+                point_tile_coord(
+                    point.y,
+                    dataset.bbox_min_y(),
+                    tile_size_y,
+                    grid_count_y
+                );
+
+            const auto tile_id =
+                linear_tile_id(
+                    tx,
+                    ty,
+                    grid_count_x
+                );
+
+            auto& tile =
+                tiles[static_cast<std::size_t>(tile_id)];
+
+            tile.point_indices.push_back(
+                static_cast<std::uint32_t>(i)
+            );
+
+            update_tile_bounds(
+                tile,
+                point
+            );
+        }
+
+        return tiles;
+    }
+
+    std::vector<std::vector<TileBuildBucket>> local_tiles(
+        static_cast<std::size_t>(worker_count)
+    );
+    for (auto& worker_tiles : local_tiles) {
+        worker_tiles.resize(
+            static_cast<std::size_t>(total_tile_slots)
         );
+
+        for (std::uint32_t ty = 0; ty < grid_count_y; ++ty) {
+            for (std::uint32_t tx = 0; tx < grid_count_x; ++tx) {
+                const auto id =
+                    linear_tile_id(
+                        tx,
+                        ty,
+                        grid_count_x
+                    );
+
+                auto& tile =
+                    worker_tiles[static_cast<std::size_t>(id)];
+
+                tile.tile_x = tx;
+                tile.tile_y = ty;
+            }
+        }
+    }
+
+    gs3d::util::ThreadPool pool(worker_count);
+    std::vector<std::future<void>> futures;
+    futures.reserve(worker_count);
+
+    const std::uint64_t point_count =
+        dataset.point_count();
+    const std::uint64_t chunk_size =
+        (point_count + worker_count - 1) /
+        worker_count;
+
+    std::atomic<bool> failed = false;
+
+    for (std::uint32_t worker_index = 0;
+         worker_index < worker_count;
+         ++worker_index) {
+        const std::uint64_t begin =
+            static_cast<std::uint64_t>(worker_index) *
+            chunk_size;
+        const std::uint64_t end =
+            std::min(
+                point_count,
+                begin + chunk_size
+            );
+
+        if (begin >= end) {
+            continue;
+        }
+
+        futures.push_back(pool.submit(
+            [&, worker_index, begin, end] {
+                auto& worker_tiles =
+                    local_tiles[static_cast<std::size_t>(worker_index)];
+
+                for (std::uint64_t i = begin; i < end; ++i) {
+                    if (failed.load(std::memory_order_relaxed)) {
+                        return;
+                    }
+
+                    const auto& point =
+                        points[static_cast<std::size_t>(i)];
+
+                    const std::uint32_t tx =
+                        point_tile_coord(
+                            point.x,
+                            dataset.bbox_min_x(),
+                            tile_size_x,
+                            grid_count_x
+                        );
+
+                    const std::uint32_t ty =
+                        point_tile_coord(
+                            point.y,
+                            dataset.bbox_min_y(),
+                            tile_size_y,
+                            grid_count_y
+                        );
+
+                    const auto tile_id =
+                        linear_tile_id(
+                            tx,
+                            ty,
+                            grid_count_x
+                        );
+
+                    auto& tile =
+                        worker_tiles[static_cast<std::size_t>(tile_id)];
+
+                    tile.point_indices.push_back(
+                        static_cast<std::uint32_t>(i)
+                    );
+
+                    update_tile_bounds(
+                        tile,
+                        point
+                    );
+                }
+            }
+        ));
+    }
+
+    try {
+        for (auto& future : futures) {
+            future.get();
+        }
+    } catch (...) {
+        failed.store(true, std::memory_order_relaxed);
+        throw;
+    }
+
+    for (std::size_t tile_index = 0;
+         tile_index < tiles.size();
+         ++tile_index) {
+        auto& merged_tile = tiles[tile_index];
+
+        std::size_t total_indices = 0;
+        bool has_points = false;
+
+        for (const auto& worker_tiles : local_tiles) {
+            const auto& worker_tile =
+                worker_tiles[tile_index];
+
+            total_indices +=
+                worker_tile.point_indices.size();
+
+            if (worker_tile.empty()) {
+                continue;
+            }
+
+            if (!has_points) {
+                merged_tile.bbox_min_x = worker_tile.bbox_min_x;
+                merged_tile.bbox_min_y = worker_tile.bbox_min_y;
+                merged_tile.bbox_min_z = worker_tile.bbox_min_z;
+
+                merged_tile.bbox_max_x = worker_tile.bbox_max_x;
+                merged_tile.bbox_max_y = worker_tile.bbox_max_y;
+                merged_tile.bbox_max_z = worker_tile.bbox_max_z;
+
+                merged_tile.value_min = worker_tile.value_min;
+                merged_tile.value_max = worker_tile.value_max;
+
+                has_points = true;
+            } else {
+                merged_tile.bbox_min_x =
+                    std::min(merged_tile.bbox_min_x, worker_tile.bbox_min_x);
+                merged_tile.bbox_min_y =
+                    std::min(merged_tile.bbox_min_y, worker_tile.bbox_min_y);
+                merged_tile.bbox_min_z =
+                    std::min(merged_tile.bbox_min_z, worker_tile.bbox_min_z);
+
+                merged_tile.bbox_max_x =
+                    std::max(merged_tile.bbox_max_x, worker_tile.bbox_max_x);
+                merged_tile.bbox_max_y =
+                    std::max(merged_tile.bbox_max_y, worker_tile.bbox_max_y);
+                merged_tile.bbox_max_z =
+                    std::max(merged_tile.bbox_max_z, worker_tile.bbox_max_z);
+
+                merged_tile.value_min =
+                    std::min(merged_tile.value_min, worker_tile.value_min);
+                merged_tile.value_max =
+                    std::max(merged_tile.value_max, worker_tile.value_max);
+            }
+        }
+
+        if (total_indices == 0) {
+            continue;
+        }
+
+        merged_tile.point_indices.reserve(total_indices);
+
+        for (auto& worker_tiles : local_tiles) {
+            auto& worker_tile =
+                worker_tiles[tile_index];
+
+            merged_tile.point_indices.insert(
+                merged_tile.point_indices.end(),
+                std::make_move_iterator(worker_tile.point_indices.begin()),
+                std::make_move_iterator(worker_tile.point_indices.end())
+            );
+        }
     }
 
     return tiles;
@@ -607,7 +828,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
             config.tile_size_x,
             config.tile_size_y,
             grid_count_x,
-            grid_count_y
+            grid_count_y,
+            config.num_threads
         );
 
     std::uint64_t non_empty_tile_count = 0;

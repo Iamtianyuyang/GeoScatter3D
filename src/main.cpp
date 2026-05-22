@@ -1,5 +1,9 @@
 #include "app/AppConfig.hpp"
 #include "app/ViewerApp.hpp"
+#include "data/Gs3dDataset.hpp"
+#include "preprocess/Gs3dTileWriter.hpp"
+#include "preprocess/Gs3dWriter.hpp"
+#include "preprocess/StatisticsPass.hpp"
 
 #include <exception>
 #include <iostream>
@@ -62,15 +66,99 @@ gs3d::app::ViewerAppConfig make_viewer_config(
     return viewer;
 }
 
+void apply_generated_paths_from_csv(
+    gs3d::app::ViewerAppConfig& viewer,
+    const std::filesystem::path& csv_path
+) {
+    viewer.gs3d_path = csv_path;
+    viewer.gs3d_path.replace_extension(".gs3d");
+
+    viewer.lod_sidecar_path = csv_path;
+    viewer.lod_sidecar_path.replace_extension(".gs3dlod");
+
+    viewer.tile_data_path = csv_path;
+    viewer.tile_data_path.replace_extension(".gs3dtiles");
+
+    viewer.tile_index_path = csv_path;
+    viewer.tile_index_path.replace_extension(".gs3dtiles.index");
+}
+
+void preprocess_csv_input(
+    gs3d::app::AppConfig& app_config
+) {
+    if (app_config.input_mode != "csv") {
+        return;
+    }
+
+    if (app_config.csv_input_path.empty()) {
+        throw std::runtime_error(
+            "AppConfig: input.mode is \"csv\" but input.csv_path is empty"
+        );
+    }
+
+    apply_generated_paths_from_csv(
+        app_config.viewer,
+        app_config.csv_input_path
+    );
+
+    std::cout << "[PREPROCESS] csv_path = "
+              << app_config.csv_input_path.string()
+              << '\n';
+    std::cout << "[PREPROCESS] gs3d_path = "
+              << app_config.viewer.gs3d_path.string()
+              << '\n';
+
+    gs3d::preprocess::StatisticsPass statistics_pass;
+    const auto statistics =
+        statistics_pass.run(app_config.csv_input_path);
+
+    gs3d::preprocess::Gs3dWriter writer;
+    const auto write_result =
+        writer.write(
+            app_config.csv_input_path,
+            app_config.viewer.gs3d_path,
+            statistics
+        );
+
+    std::cout << "[PREPROCESS] written_points = "
+              << write_result.written_points
+              << '\n';
+
+    if (app_config.viewer.tile_enabled) {
+        const auto dataset =
+            gs3d::data::Gs3dDatasetLoader::load(
+                app_config.viewer.gs3d_path
+            );
+
+        gs3d::preprocess::Gs3dTileWriteConfig tile_config;
+        tile_config.num_threads = 0;
+        tile_config.verbose = app_config.viewer.tile_verbose;
+
+        const auto tile_stats =
+            gs3d::preprocess::Gs3dTileWriter::write(
+                app_config.viewer.tile_index_path,
+                app_config.viewer.tile_data_path,
+                dataset,
+                tile_config
+            );
+
+        std::cout << "[PREPROCESS] tile_count = "
+                  << tile_stats.tile_count
+                  << '\n';
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     try {
-        const auto app_config =
+        auto app_config =
             gs3d::app::AppConfigLoader::load_from_args(
                 argc,
                 argv
             );
+
+        preprocess_csv_input(app_config);
 
         gs3d::app::AppConfigPrinter::print(app_config);
         
