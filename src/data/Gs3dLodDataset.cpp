@@ -1,13 +1,16 @@
 #include "data/Gs3dLodDataset.hpp"
+#include "util/ThreadPool.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 
@@ -45,6 +48,25 @@ struct VoxelKeyHash {
         return static_cast<std::size_t>(h);
     }
 };
+
+[[nodiscard]]
+std::uint32_t resolve_lod_build_threads(
+    std::size_t level_task_count
+) noexcept {
+    if (level_task_count <= 1) {
+        return 1;
+    }
+
+    const auto hw = std::thread::hardware_concurrency();
+    if (hw <= 1) {
+        return 1;
+    }
+
+    return std::min<std::uint32_t>(
+        static_cast<std::uint32_t>(level_task_count),
+        std::min<std::uint32_t>(hw, 8)
+    );
+}
 
 [[nodiscard]]
 float safe_extent(float min_value, float max_value) noexcept {
@@ -376,20 +398,104 @@ Gs3dLodDataset Gs3dLodDataset::build(
     std::uint32_t next_level_index =
         config.include_full_resolution_level ? 1u : 0u;
 
+    struct LevelTask {
+        std::uint32_t level_index = 0;
+        std::uint64_t target_point_count = 0;
+    };
+
+    std::vector<LevelTask> level_tasks;
+    level_tasks.reserve(config.target_point_counts.size());
+
     for (const auto target_count : config.target_point_counts) {
         if (target_count == 0) {
             continue;
         }
 
-        auto level =
-            build_voxel_level(
+        level_tasks.push_back(LevelTask{
+            .level_index = next_level_index,
+            .target_point_count = target_count,
+        });
+        ++next_level_index;
+    }
+
+    const auto worker_count =
+        resolve_lod_build_threads(level_tasks.size());
+
+    if (config.verbose && worker_count > 1) {
+        std::cout << "[LOD] parallel build: levels="
+                  << level_tasks.size()
+                  << ", threads="
+                  << worker_count
+                  << '\n';
+    }
+
+    if (worker_count <= 1) {
+        for (const auto& task : level_tasks) {
+            auto level =
+                build_voxel_level(
+                    dataset,
+                    task.level_index,
+                    task.target_point_count,
+                    config.voxel_scale,
+                    config.voxel_mode
+                );
+
+            if (config.verbose) {
+                std::cout << "[LOD] level "
+                          << level.level_index
+                          << ": mode="
+                          << voxel_mode_name(level.voxel_mode)
+                          << ", target="
+                          << level.target_point_count
+                          << ", actual="
+                          << level.point_count()
+                          << ", voxel_size="
+                          << level.voxel_size
+                          << ", bytes="
+                          << level.point_bytes()
+                          << ", build_seconds="
+                          << level.build_seconds
+                          << '\n';
+            }
+
+            lod_dataset.add_level(std::move(level));
+        }
+
+        return lod_dataset;
+    }
+
+    gs3d::util::ThreadPool pool(worker_count);
+    std::vector<std::future<Gs3dLodLevel>> futures;
+    futures.reserve(level_tasks.size());
+
+    for (const auto& task : level_tasks) {
+        futures.push_back(pool.submit([&, task] {
+            return build_voxel_level(
                 dataset,
-                next_level_index,
-                target_count,
+                task.level_index,
+                task.target_point_count,
                 config.voxel_scale,
                 config.voxel_mode
             );
+        }));
+    }
 
+    std::vector<Gs3dLodLevel> built_levels;
+    built_levels.reserve(level_tasks.size());
+
+    for (auto& future : futures) {
+        built_levels.push_back(future.get());
+    }
+
+    std::sort(
+        built_levels.begin(),
+        built_levels.end(),
+        [](const Gs3dLodLevel& a, const Gs3dLodLevel& b) {
+            return a.level_index < b.level_index;
+        }
+    );
+
+    for (auto& level : built_levels) {
         if (config.verbose) {
             std::cout << "[LOD] level "
                       << level.level_index
@@ -409,7 +515,6 @@ Gs3dLodDataset Gs3dLodDataset::build(
         }
 
         lod_dataset.add_level(std::move(level));
-        ++next_level_index;
     }
 
     return lod_dataset;
@@ -527,4 +632,3 @@ void Gs3dLodDataset::add_level(
 }
 
 } // namespace gs3d::data
-

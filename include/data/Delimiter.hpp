@@ -24,6 +24,8 @@ public:
 
     static std::string trim_copy(std::string_view text);
 
+    static std::string_view trim_view(std::string_view text);
+
     static std::string normalize_field_name(
         std::string_view text,
         bool case_insensitive = true
@@ -38,8 +40,6 @@ private:
     static std::vector<std::string_view> split_by_whitespace(
         std::string_view line
     );
-
-    static std::string_view trim_view(std::string_view text);
 };
 
 } // namespace gs3d::data

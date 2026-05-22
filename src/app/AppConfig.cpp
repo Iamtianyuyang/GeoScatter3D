@@ -248,6 +248,25 @@ unsigned int uint_or_default(
 }
 
 [[nodiscard]]
+std::uint64_t uint64_or_default(
+    const toml::table& table,
+    std::string_view key,
+    std::uint64_t default_value
+) {
+    if (const auto value = table[key].value<std::int64_t>()) {
+        if (*value < 0) {
+            throw std::runtime_error(
+                "AppConfig: uint64 field is negative"
+            );
+        }
+
+        return static_cast<std::uint64_t>(*value);
+    }
+
+    return default_value;
+}
+
+[[nodiscard]]
 float float_or_default(
     const toml::table& table,
     std::string_view key,
@@ -387,6 +406,26 @@ AppConfig AppConfigLoader::load_from_file(
             *input,
             "csv_path",
             config.csv_input_path
+        );
+    }
+
+    if (const auto* csv_convert = root["csv_convert"].as_table()) {
+        config.csv_convert.num_threads = uint_or_default(
+            *csv_convert,
+            "num_threads",
+            config.csv_convert.num_threads
+        );
+
+        config.csv_convert.chunk_bytes = uint64_or_default(
+            *csv_convert,
+            "chunk_bytes",
+            config.csv_convert.chunk_bytes
+        );
+
+        config.csv_convert.min_parallel_file_bytes = uint64_or_default(
+            *csv_convert,
+            "min_parallel_file_bytes",
+            config.csv_convert.min_parallel_file_bytes
         );
     }
 
@@ -660,6 +699,18 @@ AppConfig AppConfigLoader::load_from_file(
             "verbose",
             config.viewer.tile_verbose
         );
+
+        config.viewer.tile_gpu_cache_max_tiles = uint_or_default(
+            *tile,
+            "gpu_cache_max_tiles",
+            config.viewer.tile_gpu_cache_max_tiles
+        );
+
+        config.tile_build.num_threads = uint_or_default(
+            *tile,
+            "num_threads",
+            config.tile_build.num_threads
+        );
     }
     return config;
 }
@@ -782,6 +833,15 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] input.csv_path = "
               << config.csv_input_path.string() << '\n';
+
+    std::cout << "[CONFIG] csv_convert.num_threads = "
+              << config.csv_convert.num_threads << '\n';
+
+    std::cout << "[CONFIG] csv_convert.chunk_bytes = "
+              << config.csv_convert.chunk_bytes << '\n';
+
+    std::cout << "[CONFIG] csv_convert.min_parallel_file_bytes = "
+              << config.csv_convert.min_parallel_file_bytes << '\n';
 
     std::cout << "[CONFIG] shader.vertex_shader_path = "
               << config.viewer.vertex_shader_path.string() << '\n';
@@ -936,6 +996,14 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] tile.verbose = "
               << (config.viewer.tile_verbose ? "true" : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] tile.gpu_cache_max_tiles = "
+              << config.viewer.tile_gpu_cache_max_tiles
+              << '\n';
+
+    std::cout << "[CONFIG] tile.num_threads = "
+              << config.tile_build.num_threads
               << '\n';
 }
 

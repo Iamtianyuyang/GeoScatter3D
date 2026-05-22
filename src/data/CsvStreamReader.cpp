@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
 
 namespace gs3d::data {
 
@@ -33,6 +34,13 @@ CsvReadStats CsvStreamReader::read(
             "CsvStreamReader: failed to open file: " + path.string()
         );
     }
+
+    constexpr std::size_t kReadBufSize = 16 * 1024 * 1024;
+    std::vector<char> read_buf(kReadBufSize);
+    file.rdbuf()->pubsetbuf(
+        read_buf.data(),
+        static_cast<std::streamsize>(kReadBufSize)
+    );
 
     CsvReadStats stats;
 
@@ -129,22 +137,23 @@ bool CsvStreamReader::is_comment_line(const std::string& line) const {
 }
 
 bool CsvStreamReader::parse_float(std::string_view text, float& value) {
-    const std::string trimmed = Delimiter::trim_copy(text);
+    const auto trimmed = Delimiter::trim_view(text);
 
     if (trimmed.empty()) {
         return false;
     }
 
-    const char* begin = trimmed.data();
-    const char* end = trimmed.data() + trimmed.size();
-
-    const auto result = std::from_chars(begin, end, value);
+    const auto result = std::from_chars(
+        trimmed.data(),
+        trimmed.data() + trimmed.size(),
+        value
+    );
 
     if (result.ec != std::errc{}) {
         return false;
     }
 
-    return result.ptr == end;
+    return result.ptr == trimmed.data() + trimmed.size();
 }
 
 std::unordered_map<std::string, std::size_t> CsvStreamReader::build_field_map(

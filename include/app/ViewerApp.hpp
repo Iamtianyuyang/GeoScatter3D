@@ -111,6 +111,7 @@ struct ViewerAppConfig {
 
     bool tile_use_full_z_range = true;
     bool tile_verbose = true;
+    std::uint32_t tile_gpu_cache_max_tiles = 256;
 };
 
 class ViewerApp {

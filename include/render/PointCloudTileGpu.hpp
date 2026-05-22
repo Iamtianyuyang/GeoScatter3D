@@ -8,6 +8,11 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace gs3d::render {
@@ -17,8 +22,16 @@ struct PointCloudTileGpuStats {
     std::uint64_t point_count = 0;
     std::uint64_t point_bytes = 0;
     std::uint64_t gpu_buffer_bytes = 0;
+    std::uint64_t resident_tile_count = 0;
 
     bool success = false;
+};
+
+struct PointCloudTileGpuSyncResult {
+    std::uint64_t uploaded_tile_count = 0;
+    std::uint64_t uploaded_point_count = 0;
+    std::uint64_t resident_tile_count = 0;
+    std::uint64_t resident_gpu_buffer_bytes = 0;
 };
 
 class PointCloudTileGpu {
@@ -67,8 +80,23 @@ public:
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        std::vector<gs3d::data::Gs3dPoint> points,
+        const std::vector<gs3d::data::Gs3dPoint>& points,
         const std::vector<std::uint64_t>& tile_ids
+    );
+
+    void set_resident_tile_budget(
+        std::uint32_t max_tiles
+    ) noexcept;
+
+    [[nodiscard]]
+    PointCloudTileGpuSyncResult sync_from_cached_tiles(
+        const VulkanContext& context,
+        VkCommandPool command_pool,
+        VkQueue transfer_queue,
+        const std::vector<std::pair<
+            std::uint64_t,
+            std::shared_ptr<const std::vector<gs3d::data::Gs3dPoint>>
+        >>& tiles
     );
 
     void clear() noexcept;
@@ -86,6 +114,11 @@ public:
     PointCloudGpu& gpu_cloud();
 
     [[nodiscard]]
+    const PointCloudGpu& gpu_cloud_for_tile(
+        std::uint64_t tile_id
+    ) const;
+
+    [[nodiscard]]
     std::uint64_t tile_count() const noexcept;
 
     [[nodiscard]]
@@ -101,11 +134,19 @@ public:
     const PointCloudTileGpuStats& stats() const noexcept;
 
 private:
-    PointCloudGpu gpu_cloud_{};
+    struct ResidentTileGpu {
+        PointCloudGpu gpu_cloud{};
+        std::uint64_t point_count = 0;
+        std::uint64_t last_used_tick = 0;
+    };
+
+    std::unordered_map<std::uint64_t, ResidentTileGpu> resident_tiles_{};
 
     std::vector<std::uint64_t> loaded_tile_ids_{};
 
     PointCloudTileGpuStats stats_{};
+    std::uint32_t resident_tile_budget_ = 0;
+    std::uint64_t usage_tick_ = 0;
 
 private:
     [[nodiscard]]
@@ -126,6 +167,10 @@ private:
         const gs3d::data::Gs3dPoint& point,
         const gs3d::data::Gs3dTileQueryBox& box
     ) noexcept;
+
+    void evict_to_budget(
+        const std::unordered_set<std::uint64_t>& pinned_tile_ids
+    );
 };
 
 } // namespace gs3d::render

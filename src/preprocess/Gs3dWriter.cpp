@@ -1,9 +1,36 @@
 #include "preprocess/Gs3dWriter.hpp"
 
+#include "data/CsvChunkPlanner.hpp"
+#include "data/CsvChunkReader.hpp"
+#include "data/CsvSniffer.hpp"
+#include "util/ThreadPool.hpp"
+
 #include <fstream>
+#include <future>
+#include <iostream>
 #include <stdexcept>
+#include <thread>
 
 namespace gs3d::preprocess {
+namespace {
+
+std::uint32_t resolve_thread_count(std::size_t chunk_count) noexcept {
+    if (chunk_count <= 1) {
+        return 1;
+    }
+
+    const auto hw = std::thread::hardware_concurrency();
+    if (hw <= 1) {
+        return 1;
+    }
+
+    return std::min<std::uint32_t>(
+        static_cast<std::uint32_t>(chunk_count),
+        std::min<std::uint32_t>(hw, 8)
+    );
+}
+
+} // namespace
 
 Gs3dWriter::Gs3dWriter(gs3d::data::CsvReadConfig config)
     : config_(std::move(config))
@@ -19,6 +46,39 @@ Gs3dWriteResult Gs3dWriter::write(
         throw std::runtime_error("Gs3dWriter: statistics.point_count is zero");
     }
 
+    gs3d::data::CsvSniffer sniffer(config_);
+    const auto sniff = sniffer.sniff(csv_path);
+
+    gs3d::data::CsvChunkPlanConfig plan_config;
+    const auto chunks = gs3d::data::CsvChunkPlanner::plan(
+        csv_path,
+        sniff,
+        plan_config
+    );
+
+    if (chunks.size() <= 1) {
+        return write_sequential(csv_path, output_path, statistics);
+    }
+
+    const auto worker_count = resolve_thread_count(chunks.size());
+    if (worker_count <= 1) {
+        return write_sequential(csv_path, output_path, statistics);
+    }
+
+    std::cout << "[CSV] parallel write: chunks="
+              << chunks.size()
+              << ", threads="
+              << worker_count
+              << '\n';
+
+    return write_parallel(csv_path, output_path, statistics);
+}
+
+Gs3dWriteResult Gs3dWriter::write_sequential(
+    const std::filesystem::path& csv_path,
+    const std::filesystem::path& output_path,
+    const StatisticsResult& statistics
+) const {
     std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
         throw std::runtime_error(
@@ -77,6 +137,105 @@ Gs3dWriteResult Gs3dWriter::write(
     result.output_file_size = expected_size;
 
     return result;
+}
+
+Gs3dWriteResult Gs3dWriter::write_parallel(
+    const std::filesystem::path& csv_path,
+    const std::filesystem::path& output_path,
+    const StatisticsResult& statistics
+) const {
+    gs3d::data::CsvSniffer sniffer(config_);
+    const auto sniff = sniffer.sniff(csv_path);
+
+    gs3d::data::CsvChunkPlanConfig plan_config;
+    const auto chunks = gs3d::data::CsvChunkPlanner::plan(
+        csv_path,
+        sniff,
+        plan_config
+    );
+
+    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        throw std::runtime_error(
+            "Gs3dWriter: failed to open output file: " + output_path.string()
+        );
+    }
+
+    const auto header = build_header(statistics);
+    out.write(
+        reinterpret_cast<const char*>(&header),
+        static_cast<std::streamsize>(sizeof(gs3d::data::Gs3dHeader))
+    );
+
+    if (!out.good()) {
+        throw std::runtime_error("Gs3dWriter: failed to write GS3D header");
+    }
+
+    const auto worker_count = resolve_thread_count(chunks.size());
+    gs3d::data::CsvChunkReader reader(config_);
+    gs3d::util::ThreadPool pool(worker_count);
+
+    std::vector<std::future<gs3d::data::CsvChunkPointResult>> futures;
+    futures.reserve(chunks.size());
+
+    for (const auto& chunk : chunks) {
+        futures.push_back(pool.submit([&, chunk] {
+            return reader.parse_chunk_for_points(
+                csv_path,
+                sniff,
+                chunk,
+                statistics
+            );
+        }));
+    }
+
+    std::vector<gs3d::data::CsvChunkPointResult> chunk_results(
+        chunks.size()
+    );
+    for (auto& future : futures) {
+        auto result = future.get();
+        chunk_results[result.chunk_id] = std::move(result);
+    }
+
+    Gs3dWriteResult summary;
+    summary.expected_points = statistics.point_count;
+
+    for (const auto& chunk_result : chunk_results) {
+        if (!chunk_result.points.empty()) {
+            out.write(
+                reinterpret_cast<const char*>(chunk_result.points.data()),
+                static_cast<std::streamsize>(
+                    chunk_result.points.size() *
+                    sizeof(gs3d::data::Gs3dPoint)
+                )
+            );
+
+            if (!out.good()) {
+                throw std::runtime_error(
+                    "Gs3dWriter: failed to write GS3D point chunk"
+                );
+            }
+        }
+
+        summary.written_points += chunk_result.valid_records;
+        summary.invalid_records += chunk_result.invalid_records;
+    }
+
+    if (summary.written_points != summary.expected_points) {
+        throw std::runtime_error(
+            "Gs3dWriter: written point count does not match statistics"
+        );
+    }
+
+    out.flush();
+    if (!out.good()) {
+        throw std::runtime_error("Gs3dWriter: failed to flush output file");
+    }
+
+    summary.output_file_size =
+        gs3d::data::Gs3dFormat::expected_file_size(header);
+
+    return summary;
 }
 
 gs3d::data::Gs3dHeader Gs3dWriter::build_header(

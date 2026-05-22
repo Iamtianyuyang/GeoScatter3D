@@ -20,6 +20,10 @@ add_executable(GeoScatter3D
     src/platform/Window.cpp
 
     src/data/CsvStreamReader.cpp
+    src/data/CsvSniffer.cpp
+    src/data/CsvChunkUtils.cpp
+    src/data/CsvChunkPlanner.cpp
+    src/data/CsvChunkReader.cpp
     src/data/DataSchema.cpp
     src/data/Delimiter.cpp
     src/data/Gs3dFormat.cpp
@@ -39,6 +43,7 @@ add_executable(GeoScatter3D
 
     src/preprocess/StatisticsPass.cpp
     src/preprocess/Gs3dWriter.cpp
+    src/preprocess/CsvToGs3dConverter.cpp
     src/preprocess/Gs3dLodWriter.cpp
     src/preprocess/Gs3dTileWriter.cpp
 
@@ -62,6 +67,10 @@ add_executable(GeoScatter3D
 
     include/data/Gs3dVerifier.hpp
     include/data/CsvStreamReader.hpp
+    include/data/CsvSniffer.hpp
+    include/data/CsvChunkUtils.hpp
+    include/data/CsvChunkPlanner.hpp
+    include/data/CsvChunkReader.hpp
     include/data/DataSchema.hpp
     include/data/Delimiter.hpp
     include/data/Gs3dFormat.hpp
@@ -79,7 +88,8 @@ add_executable(GeoScatter3D
 
     include/preprocess/StatisticsPass.hpp
     include/preprocess/Gs3dWriter.hpp
-    include/preprocess/Gs3dLodWriter.hpp  
+    include/preprocess/CsvToGs3dConverter.hpp
+    include/preprocess/Gs3dLodWriter.hpp
     include/preprocess/Gs3dTileWriter.hpp
 
     include/render/VulkanContext.hpp
@@ -95,6 +105,7 @@ add_executable(GeoScatter3D
     include/render/TileSelection.hpp
 
     include/util/ThreadPool.hpp
+    include/util/Stopwatch.hpp
 )
 
 target_include_directories(GeoScatter3D PRIVATE

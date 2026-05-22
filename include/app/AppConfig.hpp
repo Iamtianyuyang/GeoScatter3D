@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/ViewerApp.hpp"
+#include "data/CsvChunkPlanner.hpp"
 
 #include <array>
 #include <filesystem>
@@ -56,11 +57,23 @@ struct ControllerConfig {
     bool invert_pan_y = true;
 };
 
+struct CsvConvertConfig {
+    std::uint32_t num_threads = 0;
+    std::uint64_t chunk_bytes = 16ull * 1024ull * 1024ull;
+    std::uint64_t min_parallel_file_bytes = 64ull * 1024ull * 1024ull;
+};
+
+struct TileBuildConfig {
+    std::uint32_t num_threads = 0;
+};
+
 struct AppConfig {
     ViewerAppConfig viewer;
     RenderConfig render;
     CameraConfig camera;
     ControllerConfig controller;
+    CsvConvertConfig csv_convert;
+    TileBuildConfig tile_build;
 
     std::string input_mode = "gs3d";
     std::filesystem::path csv_input_path;

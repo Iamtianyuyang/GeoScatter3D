@@ -325,6 +325,12 @@ std::vector<TileBuildBucket> build_tile_buckets(
             dataset.point_count()
         );
 
+    if (worker_count > 1) {
+        std::cout << "[TILE] parallel bucketing: threads="
+                  << worker_count
+                  << '\n';
+    }
+
     if (worker_count <= 1) {
         for (std::uint64_t i = 0; i < dataset.point_count(); ++i) {
             const auto& point =

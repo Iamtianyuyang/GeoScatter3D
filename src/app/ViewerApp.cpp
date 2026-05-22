@@ -19,6 +19,7 @@
 #include "render/TileSelection.hpp"
 
 #include "preprocess/Gs3dLodWriter.hpp"
+#include "util/Stopwatch.hpp"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -31,8 +32,11 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <optional>
+#include <sstream>
+#include <unordered_map>
 
 namespace gs3d::app {
 
@@ -119,6 +123,21 @@ bool same_query_box(
            close(box.max_x, current_box.max_x) &&
            close(box.max_y, current_box.max_y) &&
            close(box.max_z, current_box.max_z);
+}
+
+[[nodiscard]]
+std::string selection_cache_key(
+    const std::vector<std::uint64_t>& tile_ids
+) {
+    std::string key;
+    key.reserve(tile_ids.size() * 10);
+
+    for (const auto tid : tile_ids) {
+        key += std::to_string(tid);
+        key.push_back(',');
+    }
+
+    return key;
 }
 
 gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
@@ -322,6 +341,8 @@ bool window_interacting(
            mouse.scroll_y != 0.0;
 }
 
+constexpr double kTileSelectionDebounceSeconds = 0.12;
+
 } // namespace
 
 ViewerApp::ViewerApp(ViewerAppConfig config)
@@ -331,8 +352,14 @@ ViewerApp::ViewerApp(ViewerAppConfig config)
 
 int ViewerApp::run() {
     try {
+        gs3d::util::Stopwatch startup_timer;
+
+        gs3d::util::Stopwatch dataset_load_timer;
         const auto dataset =
             gs3d::data::Gs3dDatasetLoader::load(config_.gs3d_path);
+        std::cout << "[TIME] viewer.dataset_load_seconds = "
+                  << dataset_load_timer.elapsed_seconds()
+                  << '\n';
 
         if (!dataset.is_consistent()) {
             std::cerr << "[FAIL] dataset is inconsistent.\n";
@@ -349,12 +376,16 @@ int ViewerApp::run() {
         std::optional<gs3d::data::Gs3dTileReader> tile_reader;
 
         if (config_.tile_enabled) {
+            gs3d::util::Stopwatch tile_reader_timer;
             tile_reader =
                 gs3d::data::Gs3dTileReader::open(
                     config_.tile_index_path,
                     config_.tile_data_path,
                     dataset.header()
                 );
+            std::cout << "[TIME] viewer.tile_reader_open_seconds = "
+                      << tile_reader_timer.elapsed_seconds()
+                      << '\n';
 
             if (!tile_reader->valid()) {
                 std::cerr << "[FAIL] TileReader is invalid.\n";
@@ -379,11 +410,15 @@ int ViewerApp::run() {
         gs3d::data::Gs3dLodDataset lod_dataset;
 
         if (config_.lod_enabled) {
+            gs3d::util::Stopwatch lod_timer;
             lod_dataset =
                 load_or_build_lod_dataset(
                     dataset,
                     config_
                 );
+            std::cout << "[TIME] viewer.lod_prepare_seconds = "
+                      << lod_timer.elapsed_seconds()
+                      << '\n';
         }
         
         gs3d::platform::WindowConfig window_config;
@@ -400,6 +435,9 @@ int ViewerApp::run() {
         vk_config.application_name = "GeoScatter3D";
 
         gs3d::render::VulkanContext context(window, vk_config);
+        std::cout << "[TIME] viewer.startup_seconds = "
+                  << startup_timer.elapsed_seconds()
+                  << '\n';
 
         std::cout << "[OK] VulkanContext created.\n";
         std::cout << "Physical device: "
@@ -530,14 +568,26 @@ int ViewerApp::run() {
          * GPU upload 仍在主线程，调用前用 in-flight fence 代替 vkDeviceWaitIdle。
          */
         struct TileLoadResult {
-            std::vector<gs3d::data::Gs3dPoint>  points;
             std::vector<std::uint64_t>          tile_ids;
             gs3d::data::Gs3dTileQueryBox        actual_bbox;
+            double                              read_seconds = 0.0;
+            std::size_t                         cache_hit_tiles = 0;
+            std::size_t                         cache_miss_tiles = 0;
         };
 
         std::future<TileLoadResult> tile_load_future;
         // IDs dispatched to background thread (may differ from current selection)
         std::vector<std::uint64_t> tile_loading_ids;
+        std::vector<std::uint64_t> debounced_tile_ids;
+        auto tile_selection_changed_at =
+            std::chrono::steady_clock::now();
+        gs3d::util::Stopwatch tile_async_cycle_timer;
+
+        std::unordered_map<
+            std::uint64_t,
+            std::shared_ptr<std::vector<gs3d::data::Gs3dPoint>>
+        > tile_point_cache;
+        std::mutex tile_cache_mutex;
 
         gs3d::render::LodSelector lod_selector;
 
@@ -562,6 +612,9 @@ int ViewerApp::run() {
 
             tile_gpu_cloud =
                 std::make_unique<gs3d::render::PointCloudTileGpu>();
+            tile_gpu_cloud->set_resident_tile_budget(
+                config_.tile_gpu_cache_max_tiles
+            );
 
             std::cout << "[OK] TileSelection initialized.\n";
         }
@@ -593,6 +646,67 @@ int ViewerApp::run() {
 
         std::size_t last_lod_level =
              static_cast<std::size_t>(-1);
+
+        const auto log_tile_upload =
+            [this](
+                const gs3d::render::PointCloudTileGpuStats& stats,
+                const TileLoadResult& loaded,
+                const gs3d::render::PointCloudTileGpuSyncResult& sync,
+                double upload_seconds,
+                double total_seconds
+            ) {
+                if (!config_.tile_verbose) {
+                    return;
+                }
+
+                std::cout << "[TILE] async upload complete.\n";
+                std::cout << "tile_count = "
+                          << stats.tile_count << '\n';
+                std::cout << "point_count = "
+                          << stats.point_count << '\n';
+                std::cout << "gpu_buffer_bytes = "
+                          << stats.gpu_buffer_bytes << '\n';
+                std::cout << "resident_tile_count = "
+                          << stats.resident_tile_count << '\n';
+                std::cout << "uploaded_tile_count = "
+                          << sync.uploaded_tile_count << '\n';
+                std::cout << "uploaded_point_count = "
+                          << sync.uploaded_point_count << '\n';
+                std::cout << "cache_hit_tiles = "
+                          << loaded.cache_hit_tiles << '\n';
+                std::cout << "cache_miss_tiles = "
+                          << loaded.cache_miss_tiles << '\n';
+                std::cout << "[TIME] tile.async_read_seconds = "
+                          << loaded.read_seconds << '\n';
+                std::cout << "[TIME] tile.async_upload_seconds = "
+                          << upload_seconds << '\n';
+                std::cout << "[TIME] tile.async_total_seconds = "
+                          << total_seconds << '\n';
+            };
+
+        const auto collect_cached_tile_points =
+            [&tile_point_cache, &tile_cache_mutex](
+                const std::vector<std::uint64_t>& ids
+            ) {
+                std::vector<std::pair<
+                    std::uint64_t,
+                    std::shared_ptr<const std::vector<gs3d::data::Gs3dPoint>>
+                >> tiles;
+                tiles.reserve(ids.size());
+
+                std::scoped_lock lock(tile_cache_mutex);
+                for (const auto tid : ids) {
+                    const auto it = tile_point_cache.find(tid);
+                    if (it == tile_point_cache.end() || !it->second) {
+                        throw std::runtime_error(
+                            "ViewerApp: tile cache missing expected tile"
+                        );
+                    }
+                    tiles.emplace_back(tid, it->second);
+                }
+
+                return tiles;
+            };
 
         auto previous_time =
             std::chrono::steady_clock::now();
@@ -696,6 +810,7 @@ int ViewerApp::run() {
                         tile_load_future = {};
                         tile_loading_ids.clear();
                     }
+                    debounced_tile_ids.clear();
                     if (tile_gpu_cloud->valid()) {
                         renderer.wait_for_in_flight_fences();
                         tile_gpu_cloud->clear();
@@ -719,6 +834,11 @@ int ViewerApp::run() {
                      *    → 消除旋转/拖动/缩放时的 GPU 负载
                      */
 
+                    if (tile_result.changed) {
+                        debounced_tile_ids = tile_result.tile_ids;
+                        tile_selection_changed_at = current_time;
+                    }
+
                     // ── Step 1: apply completed load ─────────────────────
                     if (tile_load_future.valid() &&
                         tile_load_future.wait_for(std::chrono::seconds(0))
@@ -729,26 +849,25 @@ int ViewerApp::run() {
 
                         if (loaded.tile_ids == tile_result.tile_ids) {
                             // Selection unchanged since load was dispatched
+                            const auto cached_tiles =
+                                collect_cached_tile_points(loaded.tile_ids);
+                            gs3d::util::Stopwatch upload_timer;
                             renderer.wait_for_in_flight_fences();
-                            tile_gpu_cloud->upload_from_points(
-                                context,
-                                renderer.command_pool(),
-                                context.graphics_queue(),
-                                std::move(loaded.points),
-                                loaded.tile_ids
-                            );
+                            const auto sync =
+                                tile_gpu_cloud->sync_from_cached_tiles(
+                                    context,
+                                    renderer.command_pool(),
+                                    context.graphics_queue(),
+                                    cached_tiles
+                                );
                             loaded_tile_query_box = loaded.actual_bbox;
-
-                            if (config_.tile_verbose) {
-                                const auto& stats = tile_gpu_cloud->stats();
-                                std::cout << "[TILE] async upload complete.\n";
-                                std::cout << "tile_count = "
-                                          << stats.tile_count << '\n';
-                                std::cout << "point_count = "
-                                          << stats.point_count << '\n';
-                                std::cout << "gpu_buffer_bytes = "
-                                          << stats.gpu_buffer_bytes << '\n';
-                            }
+                            log_tile_upload(
+                                tile_gpu_cloud->stats(),
+                                loaded,
+                                sync,
+                                upload_timer.elapsed_seconds(),
+                                tile_async_cycle_timer.elapsed_seconds()
+                            );
                         }
                         // If selection changed while loading, discard result;
                         // a new load will be dispatched below.
@@ -772,8 +891,20 @@ int ViewerApp::run() {
                             tile_load_future.wait_for(std::chrono::seconds(0))
                                 != std::future_status::ready;
 
-                        if (buffer_stale && !load_in_progress &&
-                            tile_loading_ids != tile_result.tile_ids) {
+                        const double selection_stable_seconds =
+                            std::chrono::duration<double>(
+                                current_time - tile_selection_changed_at
+                            ).count();
+
+                        const bool selection_stable =
+                            selection_stable_seconds >=
+                            kTileSelectionDebounceSeconds;
+
+                        if (buffer_stale &&
+                            !load_in_progress &&
+                            selection_stable &&
+                            !debounced_tile_ids.empty() &&
+                            tile_loading_ids != debounced_tile_ids) {
 
                             // Compute actual data bbox on main thread
                             // (record metadata, no I/O)
@@ -784,7 +915,7 @@ int ViewerApp::run() {
                             actual_bbox.max_x = actual_bbox.max_y =
                                 actual_bbox.max_z =
                                     -std::numeric_limits<float>::max();
-                            for (const auto tid : tile_result.tile_ids) {
+                            for (const auto tid : debounced_tile_ids) {
                                 const auto& rec = tile_reader->record(tid);
                                 actual_bbox.min_x = std::min(actual_bbox.min_x, rec.bbox_min_x);
                                 actual_bbox.min_y = std::min(actual_bbox.min_y, rec.bbox_min_y);
@@ -794,27 +925,96 @@ int ViewerApp::run() {
                                 actual_bbox.max_z = std::max(actual_bbox.max_z, rec.bbox_max_z);
                             }
 
-                            tile_loading_ids = tile_result.tile_ids;
-                            const auto ids = tile_result.tile_ids;
+                            tile_loading_ids = debounced_tile_ids;
+                            const auto ids = debounced_tile_ids;
                             const auto& tr  = *tile_reader;
+                            tile_async_cycle_timer.reset();
+
+                            std::vector<std::uint64_t> missing_ids;
+                            std::size_t cache_hit_tiles = 0;
+                            {
+                                std::scoped_lock lock(tile_cache_mutex);
+                                for (const auto tid : ids) {
+                                    if (tile_point_cache.contains(tid)) {
+                                        ++cache_hit_tiles;
+                                    } else {
+                                        missing_ids.push_back(tid);
+                                    }
+                                }
+                            }
+
+                            if (missing_ids.empty()) {
+                                tile_async_cycle_timer.reset();
+
+                                TileLoadResult cached;
+                                cached.tile_ids = ids;
+                                cached.actual_bbox = actual_bbox;
+                                cached.cache_hit_tiles = ids.size();
+                                cached.cache_miss_tiles = 0;
+
+                                const auto cached_tiles =
+                                    collect_cached_tile_points(ids);
+
+                                gs3d::util::Stopwatch upload_timer;
+                                renderer.wait_for_in_flight_fences();
+                                const auto sync =
+                                    tile_gpu_cloud->sync_from_cached_tiles(
+                                        context,
+                                        renderer.command_pool(),
+                                        context.graphics_queue(),
+                                        cached_tiles
+                                    );
+                                loaded_tile_query_box = cached.actual_bbox;
+                                tile_loading_ids.clear();
+
+                                log_tile_upload(
+                                    tile_gpu_cloud->stats(),
+                                    cached,
+                                    sync,
+                                    upload_timer.elapsed_seconds(),
+                                    tile_async_cycle_timer.elapsed_seconds()
+                                );
+                                continue;
+                            }
 
                             tile_load_future = std::async(
                                 std::launch::async,
-                                [&tr, ids, actual_bbox]() -> TileLoadResult {
+                                [&tr,
+                                 &tile_point_cache,
+                                 &tile_cache_mutex,
+                                 ids,
+                                 missing_ids,
+                                 actual_bbox,
+                                 cache_hit_tiles]() -> TileLoadResult {
+                                    gs3d::util::Stopwatch read_timer;
+
+                                    for (const auto tid : missing_ids) {
+                                        auto points =
+                                            std::make_shared<
+                                                std::vector<gs3d::data::Gs3dPoint>
+                                            >(tr.read_tile_points(tid));
+                                        std::scoped_lock lock(tile_cache_mutex);
+                                        tile_point_cache[tid] = std::move(points);
+                                    }
+
                                     TileLoadResult r;
-                                    r.tile_ids   = ids;
+                                    r.tile_ids = ids;
                                     r.actual_bbox = actual_bbox;
-                                    r.points =
-                                        gs3d::render::PointCloudTileGpu::read_tiles(
-                                            tr, ids
-                                        );
+                                    r.cache_hit_tiles = cache_hit_tiles;
+                                    r.cache_miss_tiles = missing_ids.size();
+                                    r.read_seconds = read_timer.elapsed_seconds();
                                     return r;
                                 }
                             );
 
                             if (config_.tile_verbose) {
                                 std::cout << "[TILE] async load dispatched, "
-                                          << ids.size() << " tiles.\n";
+                                          << ids.size() << " tiles"
+                                          << " (cache_hit="
+                                          << cache_hit_tiles
+                                          << ", cache_miss="
+                                          << missing_ids.size()
+                                          << ").\n";
                             }
                         }
                     }
@@ -893,12 +1093,14 @@ int ViewerApp::run() {
                         );
                     }
                     if (tile_will_render) {
-                        point_pipeline.draw(
-                            command_buffer,
-                            tile_gpu_cloud->gpu_cloud(),
-                            renderer.extent(),
-                            push
-                        );
+                        for (const auto tile_id : tile_gpu_cloud->loaded_tile_ids()) {
+                            point_pipeline.draw(
+                                command_buffer,
+                                tile_gpu_cloud->gpu_cloud_for_tile(tile_id),
+                                renderer.extent(),
+                                push
+                            );
+                        }
                     }
                 }
             );

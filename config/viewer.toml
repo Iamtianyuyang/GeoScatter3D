@@ -5,6 +5,11 @@ mode = "csv"
 gs3d_path = "data/test.gs3d"
 csv_path = "data/test.csv"
 
+[csv_convert]
+num_threads = 12
+chunk_bytes = 16777216
+min_parallel_file_bytes = 67108864
+
 [shader]
 vertex_shader_path = "assets/shaders/point.vert.spv"
 fragment_shader_path = "assets/shaders/point.frag.spv"
@@ -61,9 +66,11 @@ verbose = true
 enabled = true
 index_path = "data/test.gs3dtiles.index"
 data_path = "data/test.gs3dtiles"
+num_threads = 12
 
 # tile 投影宽度 >= 该像素值时加载全精度数据（对应 Potree 屏幕空间阈值）
 min_tile_pixel_size = 50
 
 use_full_z_range = true
 verbose = true
+gpu_cache_max_tiles = 64

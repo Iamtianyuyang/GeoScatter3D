@@ -32,6 +32,20 @@ private:
 
 private:
     [[nodiscard]]
+    Gs3dWriteResult write_sequential(
+        const std::filesystem::path& csv_path,
+        const std::filesystem::path& output_path,
+        const StatisticsResult& statistics
+    ) const;
+
+    [[nodiscard]]
+    Gs3dWriteResult write_parallel(
+        const std::filesystem::path& csv_path,
+        const std::filesystem::path& output_path,
+        const StatisticsResult& statistics
+    ) const;
+
+    [[nodiscard]]
     static gs3d::data::Gs3dHeader build_header(
         const StatisticsResult& statistics
     );
