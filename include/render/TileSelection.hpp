@@ -20,6 +20,7 @@ struct TileSelectionConfig {
      * 推荐范围：20–100。
      */
     float min_tile_pixel_size = 50.0f;
+    std::uint32_t max_visible_tiles = 0;
 
     /*
      * z 方向是否使用全数据 z 范围。
@@ -35,6 +36,7 @@ struct TileSelectionResult {
     float camera_distance = 0.0f;
 
     gs3d::data::Gs3dTileQueryBox query_box{};
+    std::uint32_t total_candidate_tiles = 0;
 
     std::vector<std::uint64_t> tile_ids;
 };

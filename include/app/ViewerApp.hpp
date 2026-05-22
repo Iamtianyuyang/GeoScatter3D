@@ -108,6 +108,7 @@ struct ViewerAppConfig {
      * 对应 Potree 的 projected_area > threshold 判断。
      */
     float tile_min_pixel_size = 50.0f;
+    std::uint32_t tile_max_visible_tiles = 0;
 
     bool tile_use_full_z_range = true;
     bool tile_verbose = true;

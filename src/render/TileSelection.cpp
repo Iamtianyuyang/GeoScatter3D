@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace gs3d::render {
 
@@ -37,6 +38,17 @@ TileSelectionResult TileSelection::update(
     const gs3d::camera::Camera& camera,
     const gs3d::data::Gs3dTileReader& tile_reader
 ) {
+    struct CandidateTile {
+        std::uint64_t tile_id = 0;
+        float projected_pixels = 0.0f;
+        float bbox_min_x = 0.0f;
+        float bbox_min_y = 0.0f;
+        float bbox_min_z = 0.0f;
+        float bbox_max_x = 0.0f;
+        float bbox_max_y = 0.0f;
+        float bbox_max_z = 0.0f;
+    };
+
     TileSelectionResult result;
     result.camera_distance = camera.distance();
 
@@ -67,12 +79,8 @@ TileSelectionResult TileSelection::update(
 
     const auto& header = tile_reader.index_header();
 
-    float sel_min_x = std::numeric_limits<float>::max();
-    float sel_min_y = std::numeric_limits<float>::max();
-    float sel_min_z = std::numeric_limits<float>::max();
-    float sel_max_x = std::numeric_limits<float>::lowest();
-    float sel_max_y = std::numeric_limits<float>::lowest();
-    float sel_max_z = std::numeric_limits<float>::lowest();
+    std::vector<CandidateTile> candidates;
+    candidates.reserve(tile_reader.records().size());
 
     for (const auto& record : tile_reader.records()) {
         // Grid cell bbox (conservative: full Z extent of dataset)
@@ -94,19 +102,61 @@ TileSelectionResult TileSelection::update(
             continue;
         }
 
-        if (tile_projected_pixels(camera, header, record)
-                < config_.min_tile_pixel_size) {
+        const float projected_pixels =
+            tile_projected_pixels(camera, header, record);
+
+        if (projected_pixels < config_.min_tile_pixel_size) {
             continue;
         }
 
-        result.tile_ids.push_back(record.tile_id);
+        candidates.push_back({
+            record.tile_id,
+            projected_pixels,
+            record.bbox_min_x,
+            record.bbox_min_y,
+            record.bbox_min_z,
+            record.bbox_max_x,
+            record.bbox_max_y,
+            record.bbox_max_z
+        });
+    }
 
-        sel_min_x = std::min(sel_min_x, record.bbox_min_x);
-        sel_min_y = std::min(sel_min_y, record.bbox_min_y);
-        sel_min_z = std::min(sel_min_z, record.bbox_min_z);
-        sel_max_x = std::max(sel_max_x, record.bbox_max_x);
-        sel_max_y = std::max(sel_max_y, record.bbox_max_y);
-        sel_max_z = std::max(sel_max_z, record.bbox_max_z);
+    result.total_candidate_tiles =
+        static_cast<std::uint32_t>(candidates.size());
+
+    std::sort(
+        candidates.begin(),
+        candidates.end(),
+        [](const CandidateTile& a, const CandidateTile& b) {
+            if (a.projected_pixels != b.projected_pixels) {
+                return a.projected_pixels > b.projected_pixels;
+            }
+
+            return a.tile_id < b.tile_id;
+        }
+    );
+
+    if (config_.max_visible_tiles > 0 &&
+        candidates.size() > config_.max_visible_tiles) {
+        candidates.resize(config_.max_visible_tiles);
+    }
+
+    float sel_min_x = std::numeric_limits<float>::max();
+    float sel_min_y = std::numeric_limits<float>::max();
+    float sel_min_z = std::numeric_limits<float>::max();
+    float sel_max_x = std::numeric_limits<float>::lowest();
+    float sel_max_y = std::numeric_limits<float>::lowest();
+    float sel_max_z = std::numeric_limits<float>::lowest();
+
+    for (const auto& candidate : candidates) {
+        result.tile_ids.push_back(candidate.tile_id);
+
+        sel_min_x = std::min(sel_min_x, candidate.bbox_min_x);
+        sel_min_y = std::min(sel_min_y, candidate.bbox_min_y);
+        sel_min_z = std::min(sel_min_z, candidate.bbox_min_z);
+        sel_max_x = std::max(sel_max_x, candidate.bbox_max_x);
+        sel_max_y = std::max(sel_max_y, candidate.bbox_max_y);
+        sel_max_z = std::max(sel_max_z, candidate.bbox_max_z);
     }
 
     if (!result.tile_ids.empty()) {

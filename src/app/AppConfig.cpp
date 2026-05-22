@@ -688,6 +688,12 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.tile_min_pixel_size
         );
 
+        config.viewer.tile_max_visible_tiles = uint_or_default(
+            *tile,
+            "max_visible_tiles",
+            config.viewer.tile_max_visible_tiles
+        );
+
         config.viewer.tile_use_full_z_range = bool_or_default(
             *tile,
             "use_full_z_range",
@@ -988,6 +994,10 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] tile.min_tile_pixel_size = "
               << config.viewer.tile_min_pixel_size
+              << '\n';
+
+    std::cout << "[CONFIG] tile.max_visible_tiles = "
+              << config.viewer.tile_max_visible_tiles
               << '\n';
 
     std::cout << "[CONFIG] tile.use_full_z_range = "

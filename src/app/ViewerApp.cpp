@@ -95,6 +95,8 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
 
     tile_config.min_tile_pixel_size =
         config.tile_min_pixel_size;
+    tile_config.max_visible_tiles =
+        config.tile_max_visible_tiles;
 
     tile_config.use_full_z_range =
         config.tile_use_full_z_range;
@@ -573,6 +575,7 @@ int ViewerApp::run() {
             double                              read_seconds = 0.0;
             std::size_t                         cache_hit_tiles = 0;
             std::size_t                         cache_miss_tiles = 0;
+            std::size_t                         candidate_tiles = 0;
         };
 
         std::future<TileLoadResult> tile_load_future;
@@ -662,6 +665,8 @@ int ViewerApp::run() {
                 std::cout << "[TILE] async upload complete.\n";
                 std::cout << "tile_count = "
                           << stats.tile_count << '\n';
+                std::cout << "candidate_tile_count = "
+                          << loaded.candidate_tiles << '\n';
                 std::cout << "point_count = "
                           << stats.point_count << '\n';
                 std::cout << "gpu_buffer_bytes = "
@@ -927,6 +932,10 @@ int ViewerApp::run() {
 
                             tile_loading_ids = debounced_tile_ids;
                             const auto ids = debounced_tile_ids;
+                            const auto candidate_tile_count =
+                                static_cast<std::size_t>(
+                                    tile_result.total_candidate_tiles
+                                );
                             const auto& tr  = *tile_reader;
                             tile_async_cycle_timer.reset();
 
@@ -951,6 +960,8 @@ int ViewerApp::run() {
                                 cached.actual_bbox = actual_bbox;
                                 cached.cache_hit_tiles = ids.size();
                                 cached.cache_miss_tiles = 0;
+                                cached.candidate_tiles =
+                                    candidate_tile_count;
 
                                 const auto cached_tiles =
                                     collect_cached_tile_points(ids);
@@ -984,8 +995,9 @@ int ViewerApp::run() {
                                  &tile_cache_mutex,
                                  ids,
                                  missing_ids,
-                                 actual_bbox,
-                                 cache_hit_tiles]() -> TileLoadResult {
+                                  actual_bbox,
+                                 cache_hit_tiles,
+                                 candidate_tile_count]() -> TileLoadResult {
                                     gs3d::util::Stopwatch read_timer;
 
                                     for (const auto tid : missing_ids) {
@@ -1002,6 +1014,8 @@ int ViewerApp::run() {
                                     r.actual_bbox = actual_bbox;
                                     r.cache_hit_tiles = cache_hit_tiles;
                                     r.cache_miss_tiles = missing_ids.size();
+                                    r.candidate_tiles =
+                                        candidate_tile_count;
                                     r.read_seconds = read_timer.elapsed_seconds();
                                     return r;
                                 }
@@ -1010,6 +1024,9 @@ int ViewerApp::run() {
                             if (config_.tile_verbose) {
                                 std::cout << "[TILE] async load dispatched, "
                                           << ids.size() << " tiles"
+                                          << " (candidates="
+                                          << candidate_tile_count
+                                          << ")"
                                           << " (cache_hit="
                                           << cache_hit_tiles
                                           << ", cache_miss="
