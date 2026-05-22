@@ -49,6 +49,12 @@ struct Gs3dTileWriteStats {
     float tile_size_x = 0.0f;
     float tile_size_y = 0.0f;
 
+    double bucket_build_seconds = 0.0;
+    double tile_stats_seconds = 0.0;
+    double data_write_seconds = 0.0;
+    double index_write_seconds = 0.0;
+    double total_write_seconds = 0.0;
+
     bool success = false;
 };
 

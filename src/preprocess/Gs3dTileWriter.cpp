@@ -1,6 +1,7 @@
 #include "preprocess/Gs3dTileWriter.hpp"
 
 #include "data/Gs3dTileFormat.hpp"
+#include "util/Stopwatch.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <algorithm>
@@ -769,6 +770,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
     const Gs3dDataset& dataset,
     const Gs3dTileWriteConfig& config
 ) {
+    gs3d::util::Stopwatch total_timer;
+
     if (index_path.empty()) {
         throw std::runtime_error(
             "Gs3dTileWriter: index_path is empty"
@@ -828,6 +831,7 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
                   << "]\n";
     }
 
+    gs3d::util::Stopwatch bucket_timer;
     auto tiles =
         build_tile_buckets(
             dataset,
@@ -837,7 +841,10 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
             grid_count_y,
             config.num_threads
         );
+    const double bucket_build_seconds =
+        bucket_timer.elapsed_seconds();
 
+    gs3d::util::Stopwatch tile_stats_timer;
     std::uint64_t non_empty_tile_count = 0;
     std::uint64_t min_tile_points =
         std::numeric_limits<std::uint64_t>::max();
@@ -868,7 +875,10 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
             "Gs3dTileWriter: no non-empty tiles generated"
         );
     }
+    const double tile_stats_seconds =
+        tile_stats_timer.elapsed_seconds();
 
+    gs3d::util::Stopwatch data_write_timer;
     auto records =
         write_tile_data_file(
             data_path,
@@ -876,7 +886,10 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
             tiles,
             non_empty_tile_count
         );
+    const double data_write_seconds =
+        data_write_timer.elapsed_seconds();
 
+    gs3d::util::Stopwatch index_write_timer;
     write_tile_index_file(
         index_path,
         dataset,
@@ -886,6 +899,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         grid_count_x,
         grid_count_y
     );
+    const double index_write_seconds =
+        index_write_timer.elapsed_seconds();
 
     Gs3dTileWriteStats stats;
     stats.index_path = index_path;
@@ -905,6 +920,11 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         file_size_or_zero(data_path);
     stats.tile_size_x = config.tile_size_x;
     stats.tile_size_y = config.tile_size_y;
+    stats.bucket_build_seconds = bucket_build_seconds;
+    stats.tile_stats_seconds = tile_stats_seconds;
+    stats.data_write_seconds = data_write_seconds;
+    stats.index_write_seconds = index_write_seconds;
+    stats.total_write_seconds = total_timer.elapsed_seconds();
     stats.success = true;
 
     if (config.verbose) {
@@ -926,6 +946,21 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
                   << '\n';
         std::cout << "data_file_bytes = "
                   << stats.data_file_bytes
+                  << '\n';
+        std::cout << "[TIME] tile.bucket_build_seconds = "
+                  << stats.bucket_build_seconds
+                  << '\n';
+        std::cout << "[TIME] tile.tile_stats_seconds = "
+                  << stats.tile_stats_seconds
+                  << '\n';
+        std::cout << "[TIME] tile.data_write_seconds = "
+                  << stats.data_write_seconds
+                  << '\n';
+        std::cout << "[TIME] tile.index_write_seconds = "
+                  << stats.index_write_seconds
+                  << '\n';
+        std::cout << "[TIME] tile.total_write_seconds = "
+                  << stats.total_write_seconds
                   << '\n';
     }
 
