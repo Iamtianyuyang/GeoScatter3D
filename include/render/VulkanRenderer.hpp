@@ -69,6 +69,14 @@ public:
      */
     void wait_for_in_flight_fences();
 
+    /*
+     * vkAcquireNextImageKHR 在上一帧调用中的阻塞时长（毫秒）。
+     * 仅 VK_PRESENT_MODE_FIFO_KHR 下有意义：vsync 等待会让帧时间
+     * 虚高，LOD 自适应需要减去这部分才能正确判断 GPU 是否真的超预算。
+     */
+    [[nodiscard]]
+    double last_acquire_wait_ms() const noexcept;
+
     [[nodiscard]]
     VkRenderPass render_pass() const noexcept;
 
@@ -97,6 +105,9 @@ private:
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_{};
 
     std::uint32_t current_frame_ = 0;
+
+    // vkAcquireNextImageKHR 阻塞时长（毫秒），用于 FIFO vsync 补偿
+    double last_acquire_wait_ms_ = 0.0;
 
     ClearColor clear_color_{};
 

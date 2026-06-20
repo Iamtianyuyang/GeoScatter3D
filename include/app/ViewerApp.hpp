@@ -8,6 +8,28 @@
 
 namespace gs3d::app {
 
+/*
+ * 交互(缩放/平移/旋转)期间前台的显示策略。
+ *
+ *   KeepStableHighQuality (默认):交互时继续用当前相机渲染交互开始前已经
+ *     稳定显示的高质量数据(常驻的高细节 LOD + 已驻留的全分辨率 tile),
+ *     绝不在交互途中切到更粗的 LOD,也不卸载已就绪的 tile。相机实时跟随,
+ *     只是点云数据暂时不降质。新数据只在交互结束后、且质量不低于当前显示
+ *     时才替换(本架构下质量单调不降,天然满足)。
+ *
+ *   AllowCoarseLOD:旧行为——交互时降到最低/自适应 LOD 并关闭 tile 叠加,
+ *     换取最低端硬件上的交互帧率。会出现稀疏/层状的粗 LOD 显示。
+ *
+ *   FreezeLastFrameTexture:极端兜底(冻结上一帧贴图)。当前未单独实现贴图
+ *     冻结管线,按 KeepStableHighQuality 处理——继续渲染已有高质量 buffer
+ *     比贴图冻结更好(缩放/平移/旋转仍实时)。
+ */
+enum class InteractiveDisplayMode {
+    KeepStableHighQuality,
+    AllowCoarseLOD,
+    FreezeLastFrameTexture
+};
+
 struct ViewerAppConfig {
     std::filesystem::path gs3d_path =
         "/home/tianyy/project/GeoScatter3D/data/test.gs3d";
@@ -25,6 +47,12 @@ struct ViewerAppConfig {
         "GeoScatter3D 三维散点查看器";
 
     bool window_resizable = true;
+
+    /*
+     * ImGui docking 布局持久化文件路径；空路径 = 不持久化，每次启动都用
+     * 默认布局（之前的行为，io.IniFilename 被硬编码为 nullptr）。
+     */
+    std::filesystem::path ui_layout_ini_path = "config/imgui_layout.ini";
 
     bool enable_validation_layers = true;
 
@@ -107,6 +135,13 @@ struct ViewerAppConfig {
      */
     bool lod_adaptive_interacting_level = false;
     double lod_frame_time_budget_ms = 14.0;
+
+    /*
+     * 交互期间前台显示策略。默认保持稳定高质量(不在缩放/平移/旋转途中
+     * 切到稀疏粗 LOD)。见 InteractiveDisplayMode。
+     */
+    InteractiveDisplayMode interactive_display_mode =
+        InteractiveDisplayMode::KeepStableHighQuality;
 
     bool lod_verbose = true;
 

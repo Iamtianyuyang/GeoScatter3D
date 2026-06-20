@@ -2,6 +2,7 @@
 
 #include "camera/Camera.hpp"
 
+#include <algorithm>
 #include <cstdint>
 
 namespace gs3d::camera {
@@ -13,6 +14,11 @@ struct CameraInput {
     float delta_x = 0.0f;
     float delta_y = 0.0f;
     float scroll_y = 0.0f;
+
+    // 鼠标在视口本地像素坐标（原点左上角，向下为正），用于缩放到光标。
+    // 与 MouseRay::from_screen 的 mouse_x/mouse_y 约定一致。
+    float mouse_x = 0.0f;
+    float mouse_y = 0.0f;
 
     bool rotate = false;
     bool pan = false;
@@ -87,10 +93,32 @@ private:
 
     void zoom_view(
         Camera& camera,
-        float scroll_y
+        float scroll_y,
+        float mouse_x,
+        float mouse_y,
+        float viewport_width,
+        float viewport_height
     ) const noexcept;
 
     void adjust_near_far(Camera& camera) const noexcept;
+
+    [[nodiscard]]
+    float min_distance() const noexcept {
+        // Allow infinite zoom — only prevent division-by-zero.
+        return 1.0e-6f;
+    }
+
+    [[nodiscard]]
+    float max_distance() const noexcept {
+        // 防止滚轮无限缩远把场景滚出视野。绑定到场景包围盒对角线的若干
+        // 倍——没有 bounds 时不设上限（沿用旧行为，不强加假设）。
+        if (!has_bounds_) {
+            return 1.0e9f;
+        }
+        const Vec3 ext = sub(bounds_.max, bounds_.min);
+        const float diag = length(ext);
+        return std::max(diag * 50.0f, 1.0f);
+    }
 
     static Vec3 add(const Vec3& a, const Vec3& b) noexcept;
     static Vec3 sub(const Vec3& a, const Vec3& b) noexcept;

@@ -11,6 +11,22 @@ Ray MouseRay::from_screen(
     const Viewport& viewport,
     const Camera& camera
 ) noexcept {
+    const RaySegment segment =
+        near_far_points(mouse_x, mouse_y, viewport, camera);
+
+    Ray ray{};
+    ray.origin = segment.near_point;
+    ray.direction = normalize(sub(segment.far_point, segment.near_point));
+
+    return ray;
+}
+
+RaySegment MouseRay::near_far_points(
+    double mouse_x,
+    double mouse_y,
+    const Viewport& viewport,
+    const Camera& camera
+) noexcept {
     const double width =
         static_cast<double>(std::max<std::uint32_t>(viewport.width, 1));
 
@@ -36,17 +52,53 @@ Ray MouseRay::from_screen(
     const Mat4 inv_vp =
         inverse(camera.view_projection_matrix());
 
-    const Vec3 near_point =
-        transform_point(inv_vp, ndc_x, ndc_y, 0.0f);
+    return RaySegment{
+        transform_point(inv_vp, ndc_x, ndc_y, 0.0f),
+        transform_point(inv_vp, ndc_x, ndc_y, 1.0f)
+    };
+}
 
-    const Vec3 far_point =
-        transform_point(inv_vp, ndc_x, ndc_y, 1.0f);
+std::optional<ScreenPoint> MouseRay::to_screen(
+    const Vec3& world_point,
+    const Viewport& viewport,
+    const Camera& camera
+) noexcept {
+    return world_to_screen(
+        camera.view_projection_matrix(),
+        world_point.x,
+        world_point.y,
+        world_point.z,
+        static_cast<float>(std::max<std::uint32_t>(viewport.width, 1)),
+        static_cast<float>(std::max<std::uint32_t>(viewport.height, 1))
+    );
+}
 
-    Ray ray{};
-    ray.origin = near_point;
-    ray.direction = normalize(sub(far_point, near_point));
+std::optional<ScreenPoint> MouseRay::world_to_screen(
+    const Mat4& view_projection,
+    float x, float y, float z,
+    float width,
+    float height
+) noexcept {
+    const float* m = view_projection.m.data();
 
-    return ray;
+    const float clip_x =
+        m[0] * x + m[4] * y + m[8]  * z + m[12];
+    const float clip_y =
+        m[1] * x + m[5] * y + m[9]  * z + m[13];
+    const float clip_w =
+        m[3] * x + m[7] * y + m[11] * z + m[15];
+
+    if (clip_w <= 1.0e-6f) {
+        return std::nullopt;
+    }
+
+    const float ndc_x = clip_x / clip_w;
+    const float ndc_y = clip_y / clip_w;
+
+    return ScreenPoint{
+        (ndc_x + 1.0f) * 0.5f * width,
+        (1.0f - ndc_y) * 0.5f * height
+    };
 }
 
 std::optional<Vec3> MouseRay::intersect_plane(

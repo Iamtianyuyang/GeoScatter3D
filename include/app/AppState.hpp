@@ -32,8 +32,8 @@ struct DatasetSummaryState {
         "属性"
     };
     std::vector<std::string> attributes{
-        "数值（振幅）",
-        "Z（高程）"
+        "Fold（褶皱）",
+        "Elevation（高程）"
     };
     std::array<char, 128> search_text{};
     int selected_tab = 0;
@@ -45,8 +45,8 @@ struct RenderSettingsState {
     int blend_mode = 0;
     int color_by_index = 0;
     std::vector<std::string> color_by_options{
-        "数值（振幅）",
-        "Z（高程）"
+        "Fold（褶皱）",
+        "Elevation（高程）"
     };
 
     bool reverse_colormap = false;
@@ -119,6 +119,72 @@ struct RenderViewState {
     float fov = 45.0f;
     std::string scale = "500 米";
     std::string legend_title = "高程";
+
+    // Ctrl+左键拖框选状态，跨帧持续到松开鼠标（见 UiRoot.cpp draw_viewport）。
+    bool box_select_dragging = false;
+    float box_select_start_x = 0.0f;
+    float box_select_start_y = 0.0f;
+
+    // 悬浮 tooltip：由 ViewerApp 在上一帧算好写入，这一帧 UiRoot 直接读取
+    // 渲染（避免 UI 层自己做最近点查询）。
+    bool hover_tooltip_visible = false;
+    float hover_x = 0.0f;
+    float hover_y = 0.0f;
+    float hover_fold = 0.0f;
+    float hover_elevation = 0.0f;
+
+    /*
+     * 三维世界坐标轴（QGIS 包围盒 + 角柱），由 compute_axis_overlay() 填充
+     * 几何数据，UiRoot 用 ImGui DrawList 绘制。
+     */
+    bool show_world_axis = false;
+
+    struct AxisLineSegment {
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+    };
+    std::vector<AxisLineSegment> axis_lines;
+
+    struct AxisTickLabel {
+        float x = 0.0f;
+        float y = 0.0f;
+        std::string text;
+    };
+    std::vector<AxisTickLabel> axis_tick_labels;
+
+    /*
+     * 地图式坐标轴（固定在屏幕边缘，不随相机旋转）。
+     * 开启时，点云只在 plot_rect 内显示，左侧/底部留出边距画轴。
+     * 和 show_world_axis 互斥：打开地图轴时默认关闭世界轴。
+     */
+    bool show_map_axis = true;
+
+    // 当前视口中可见的 X/Y 坐标范围（世界坐标，已去除 origin 偏移的内
+    // 部值，ViewerApp 填入）。用于地图坐标轴的刻度计算。
+    float map_axis_x_min = 0.0f;
+    float map_axis_y_min = 0.0f;
+    float map_axis_x_max = 0.0f;
+    float map_axis_y_max = 0.0f;
+    // 原点偏移量（世界坐标 = 内部坐标 + origin），ViewerApp 填入后
+    // 地图轴刻度标签自动加回原值，显示为原始 CSV 坐标。
+    double map_axis_origin_x = 0.0;
+    double map_axis_origin_y = 0.0;
+
+    /*
+     * Orientation gizmo 三轴屏幕方向：ViewerApp 每帧从相机 view matrix
+     * 算出世界坐标轴 X/Y/Z 在视口内的投射方向，存为 gizmo 中心的偏移量。
+     * UiRoot 只管以 gizmo 中心为原点画这三条线段，不碰相机数学。
+     */
+    struct GizmoAxisEnd {
+        float dx = 0.0f;  // 屏幕空间 X 偏移（右正）
+        float dy = 0.0f;  // 屏幕空间 Y 偏移（下正）
+    };
+    GizmoAxisEnd gizmo_x_axis{};
+    GizmoAxisEnd gizmo_y_axis{};
+    GizmoAxisEnd gizmo_z_axis{};
+    bool gizmo_axes_valid = false;
 };
 
 struct AppState {

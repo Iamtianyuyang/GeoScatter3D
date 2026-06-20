@@ -87,8 +87,11 @@ TileSelectionResult TileSelection::update(
             header.grid_origin_y + record.tile_y * header.tile_size_y;
         const float cell_max_y =
             header.grid_origin_y + (record.tile_y + 1) * header.tile_size_y;
-        const float cell_min_z = header.bbox_min_z;
-        const float cell_max_z = header.bbox_max_z;
+        // Per-tile Z bbox from the tile record (not the global dataset Z),
+        // so frustum culling correctly rejects tiles whose Z range is
+        // entirely outside the view frustum.
+        const float cell_min_z = record.bbox_min_z;
+        const float cell_max_z = record.bbox_max_z;
 
         if (aabb_outside_frustum(
                 frustum,
@@ -266,11 +269,27 @@ bool TileSelection::aabb_outside_frustum(
     /*
      * p-vertex（正顶点）方法：对每个平面，找 AABB 中距平面最近的顶点。
      * 若该顶点在平面负侧，整个 AABB 都在平面外 → 裁剪掉。
+     *
+     * 加了 8% 的 padding：快速缩放时 tile 不再因刚好在 frustum 边界
+     * 而反复进出，消除边界闪烁。padding 按 AABB 半边长比例计算，
+     * 对近处小 tile 和远处大 tile 都适配。
      */
+    const float diag = std::sqrt(
+        (max_x - min_x) * (max_x - min_x) +
+        (max_y - min_y) * (max_y - min_y) +
+        (max_z - min_z) * (max_z - min_z));
+    const float pad = std::max(5.0f, diag * 0.08f);
+    const float pmin_x = min_x - pad;
+    const float pmin_y = min_y - pad;
+    const float pmin_z = min_z - pad;
+    const float pmax_x = max_x + pad;
+    const float pmax_y = max_y + pad;
+    const float pmax_z = max_z + pad;
+
     for (const auto& p : frustum) {
-        const float px = (p.a >= 0.0f) ? max_x : min_x;
-        const float py = (p.b >= 0.0f) ? max_y : min_y;
-        const float pz = (p.c >= 0.0f) ? max_z : min_z;
+        const float px = (p.a >= 0.0f) ? pmax_x : pmin_x;
+        const float py = (p.b >= 0.0f) ? pmax_y : pmin_y;
+        const float pz = (p.c >= 0.0f) ? pmax_z : pmin_z;
         if (p.a * px + p.b * py + p.c * pz + p.d < 0.0f) {
             return true;  // fully outside this plane
         }

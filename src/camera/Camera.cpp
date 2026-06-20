@@ -8,7 +8,7 @@ namespace gs3d::camera {
 namespace {
 
 constexpr float PI = 3.14159265358979323846f;
-constexpr float MIN_DISTANCE = 1.0e-4f;
+constexpr float MIN_DISTANCE = 1.0e-6f;
 constexpr float MIN_PITCH_DOT = 0.98f;
 
 [[nodiscard]]
@@ -211,29 +211,56 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
         bounds.max.z - bounds.min.z
     };
 
+    const float fov   = to_radians(fov_y_degrees_);
+    const float aspect = aspect_ratio();
+    const float tan_half = std::tan(fov * 0.5f);
+
+    /*
+     * 包围球距离（Cesium Camera.flyToBoundingSphere 惯例），朝向无关：
+     * 旧实现用 extent.x/extent.y 分别当作屏幕水平/垂直可见范围，隐含假设
+     * 相机严格俯视（看向 -Z）——一旦轨道旋转到任何倾斜角度，世界 X/Y 范围
+     * 不再等于屏幕水平/垂直范围，extent.z 也完全没参与计算，导致框选放大
+     * 在斜视角下算出的距离明显偏离"刚好填满视口"。
+     *
+     * 包围球的视觉大小只取决于半径和到相机的距离，与相机朝向无关，所以
+     * 不管轨道转到哪个角度，这个距离都能让包围盒刚好填满视口（取水平/
+     * 垂直视场角中更窄的一个，保证两个方向都不溢出）。
+     */
     const float radius =
         0.5f * std::sqrt(
             extent.x * extent.x +
             extent.y * extent.y +
             extent.z * extent.z
         );
-
     const float safe_radius = std::max(radius, 1.0f);
-    const float fov = to_radians(fov_y_degrees_);
 
-    const float dist = safe_radius / std::tan(fov * 0.5f);
+    const float half_fov_v = tan_half;
+    const float half_fov_h = tan_half * aspect;
+    const float limiting_half_fov = std::min(half_fov_v, half_fov_h);
+    const float dist = safe_radius / limiting_half_fov;
 
     target_ = center;
 
     /*
-     * 默认从 -Y + Z 方向看向数据中心。
-     * 对地学数据比较自然：XY 是平面，Z/elevation 是高度。
+     * Keep the current view direction (if it's non-degenerate) so that
+     * box-select zoom and re-fit don't reset the user's viewing angle.
+     * Falls back to the default -Y+Z direction for initial/reset views.
      */
-    const Vec3 dir = normalize({0.0f, -1.0f, 0.6f});
-    position_ = add(target_, mul(dir, dist * 1.5f));
+    const Vec3 current_offset = sub(position_, target_);
+    const float current_dist = length(current_offset);
+    Vec3 dir;
+    if (current_dist > 1.0e-6f) {
+        dir = normalize(current_offset);
+    } else {
+        dir = normalize({0.0f, -1.0f, 0.6f});
+    }
+    position_ = add(target_, mul(dir, dist * 1.0f));
 
-    near_plane_ = std::max(dist * 0.001f, 0.001f);
-    far_plane_ = std::max(dist * 10.0f + safe_radius * 4.0f, near_plane_ + 1.0f);
+    near_plane_ = std::max(dist * 0.001f, 1.0e-4f);
+    far_plane_  = std::max(
+        dist * 10.0f + safe_radius * 4.0f,
+        near_plane_ + 1.0f
+    );
 
     up_ = {0.0f, 0.0f, 1.0f};
 }

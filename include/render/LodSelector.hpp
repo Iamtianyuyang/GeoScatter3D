@@ -83,6 +83,13 @@ private:
     long adaptive_level_ = -1;
     std::size_t last_level_count_ = 0;
     int good_frame_streak_ = 0;
+
+    /*
+     * 降级冷却：每次 report_frame_time 触发降级后，接下来的
+     * kDropCooldownFrames 帧内禁止升级。防止快速缩放时帧时间波动
+     * 导致的 "降-升-降" 脉冲闪烁。
+     */
+    int cooldown_remaining_ = 0;
 };
 
 } // namespace gs3d::render

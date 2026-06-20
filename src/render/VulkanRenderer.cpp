@@ -1,6 +1,7 @@
 #include "render/VulkanRenderer.hpp"
 
 #include <array>
+#include <chrono>
 #include <stdexcept>
 
 namespace gs3d::render {
@@ -74,6 +75,8 @@ void VulkanRenderer::draw_frame(
 
     std::uint32_t image_index = 0;
 
+    const auto acquire_t0 = std::chrono::steady_clock::now();
+
     VkResult acquire_result = vkAcquireNextImageKHR(
         context_.device(),
         swapchain_.handle(),
@@ -82,6 +85,11 @@ void VulkanRenderer::draw_frame(
         VK_NULL_HANDLE,
         &image_index
     );
+
+    last_acquire_wait_ms_ =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - acquire_t0
+        ).count();
 
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain_resources(window);
@@ -196,6 +204,10 @@ void VulkanRenderer::wait_for_in_flight_fences() {
             );
         }
     }
+}
+
+double VulkanRenderer::last_acquire_wait_ms() const noexcept {
+    return last_acquire_wait_ms_;
 }
 
 VkRenderPass VulkanRenderer::render_pass() const noexcept {

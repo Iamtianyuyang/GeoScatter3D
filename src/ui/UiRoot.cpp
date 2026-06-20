@@ -3,6 +3,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+#include "render/AxisGrid.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -72,6 +74,55 @@ bool show_first_hidden_view(gs3d::app::AppState& state)
     return true;
 }
 
+// ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
+namespace LayoutMetrics {
+    // 地图轴边距（viewport-local px）
+    constexpr float kLeftAxis    = 62.0f;
+    constexpr float kBottomAxis  = 40.0f;
+    constexpr float kTopPad      = 12.0f;
+    constexpr float kRightPad    = 12.0f;
+    // 信息 badge
+    constexpr float kBadgePadX   = 10.0f;
+    constexpr float kBadgePadY   = 8.0f;
+    constexpr float kBadgeRound  = 4.0f;
+    // 方向指示器 — 右下角，远离边和底部轴
+    constexpr float kGizmoRadius = 14.0f;
+    constexpr float kGizmoPad    = 12.0f;   // canvas 边缘到 gizmo 中心的距离
+    // 比例尺 — 左下角，独立区域，锚定到 canvas（view_rect）
+    constexpr float kScaleBarLen = 72.0f;
+} // namespace LayoutMetrics
+
+namespace AxisStyle {
+    // 暗色地图风格色板 — 克制、低对比、专业
+    constexpr ImU32 kFrame       = IM_COL32(110, 115, 125, 130);
+    constexpr ImU32 kAxisLine    = IM_COL32(140, 145, 155, 170);
+    constexpr ImU32 kTick        = IM_COL32(135, 140, 150, 160);
+    constexpr ImU32 kMinorTick   = IM_COL32(105, 110, 120, 95);
+    constexpr ImU32 kLabel       = IM_COL32(190, 195, 205, 230);
+    constexpr ImU32 kGrid        = IM_COL32(70,  75,  85,  25);
+    constexpr ImU32 kScaleLine   = IM_COL32(180, 185, 195, 200);
+    constexpr ImU32 kScaleLabel  = IM_COL32(190, 195, 205, 215);
+    // 信息 badge
+    constexpr ImU32 kBadgeBg     = IM_COL32(14,  15,  18,  185);
+    constexpr ImU32 kBadgeText   = IM_COL32(210, 215, 225, 245);
+    // 方向指示器
+    constexpr ImU32 kGizmoBg     = IM_COL32(16,  18,  22,  200);
+    constexpr float kFrameWidth  = 1.0f;
+    constexpr float kGridWidth   = 1.0f;
+
+    // 两级刻度：major = 长刻度 + 标签 + 网格，minor = 短刻度（无标签无网格）
+    constexpr float kMajorTickLen   = 6.0f;
+    constexpr float kMinorTickLen   = 3.0f;
+    constexpr float kTickWidth      = 1.0f;
+    constexpr int   kMinorPerMajor  = 4;
+    constexpr int   kMajorCountMin  = 4;
+    constexpr int   kMajorCountMax  = 6;
+
+    // 标签与刻度线的间距
+    constexpr float kXTickToLabel = 6.0f;
+    constexpr float kYTickToLabel = 7.0f;
+} // namespace AxisStyle
+
 void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
 {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -107,101 +158,111 @@ void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
     }
 }
 
-void draw_orientation_gizmo(const ImVec2& min, const ImVec2& max)
+/*
+ * 右下角方向指示器：缩小、远离绘区边缘、降低视觉权重。
+ */
+/*
+ * 右下角方向指示器：位置固定在 plot_rect 右下角外侧，但内部三轴方向
+ * 由 ViewerApp 从相机 view matrix 每帧实时算出（存于 view.gizmo_*_axis），
+ * 所以旋转主视图时 gizmo 同步旋转。
+ */
+void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
+                            const ImVec2& canvas_min,
+                            const ImVec2& canvas_max,
+                            const ImVec2& plot_max)
 {
-    (void)min;
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const ImVec2 origin{max.x - 42.0f, max.y - 42.0f};
-    draw_list->AddCircleFilled(origin, 17.0f, IM_COL32(18, 20, 23, 210));
-    draw_list->AddLine(
-        origin,
-        {origin.x + 14.0f, origin.y},
-        IM_COL32(225, 92, 92, 255),
-        2.0f
-    );
-    draw_list->AddLine(
-        origin,
-        {origin.x, origin.y - 14.0f},
-        IM_COL32(91, 204, 122, 255),
-        2.0f
-    );
-    draw_list->AddLine(
-        origin,
-        {origin.x - 10.0f, origin.y + 10.0f},
-        IM_COL32(81, 141, 230, 255),
-        2.0f
-    );
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    const float r   = LayoutMetrics::kGizmoRadius;
+    const float pad = LayoutMetrics::kGizmoPad;
+    const ImVec2 origin{
+        canvas_max.x - r - pad,
+        plot_max.y - r - pad
+    };
+
+    dl->AddCircleFilled(origin, r, AxisStyle::kGizmoBg);
+
+    // 用相机实时方向绘制三轴（不再是硬编码的静态方向）
+    if (view.gizmo_axes_valid) {
+        const float len = r - 2.0f;
+        const auto draw_axis = [&](const gs3d::app::RenderViewState::GizmoAxisEnd& end,
+                                   ImU32 color) {
+            // 归一化屏幕空间方向，缩放到 gizmo 半径
+            const float mag = std::sqrt(end.dx * end.dx + end.dy * end.dy);
+            if (mag < 1.0e-6f) return;
+            const float s = len / mag;
+            dl->AddLine(origin,
+                        ImVec2(origin.x + end.dx * s,
+                               origin.y + end.dy * s),
+                        color, 1.5f);
+        };
+        draw_axis(view.gizmo_x_axis, IM_COL32(225, 92, 92, 220));
+        draw_axis(view.gizmo_y_axis, IM_COL32(91, 204, 122, 220));
+        draw_axis(view.gizmo_z_axis, IM_COL32(81, 141, 230, 220));
+    }
 }
 
-void draw_scale_bar(
-    const ImVec2& min,
-    const ImVec2& max,
-    const char* label
-) {
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const float y = max.y - 20.0f;
-    const float x0 = min.x + 14.0f;
-    const float x1 = x0 + 88.0f;
-    draw_list->AddLine(
-        {x0, y},
-        {x1, y},
-        IM_COL32(225, 225, 225, 210),
-        2.0f
-    );
-    draw_list->AddLine(
-        {x0, y - 5.0f},
-        {x0, y + 1.0f},
-        IM_COL32(225, 225, 225, 210),
-        2.0f
-    );
-    draw_list->AddLine(
-        {x1, y - 5.0f},
-        {x1, y + 1.0f},
-        IM_COL32(225, 225, 225, 210),
-        2.0f
-    );
-    draw_list->AddText(
-        {x0, y - 20.0f},
-        IM_COL32(225, 225, 225, 220),
-        label
-    );
+/*
+ * 左下角比例尺：独立锚定在 view_rect（canvas）左下保留区，
+ * 不依赖 plot_rect 坐标，与底部轴 gutter 完全分离。
+ */
+void draw_scale_bar(const ImVec2& canvas_min,
+                    const ImVec2& canvas_max,
+                    const char* label)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    const float bar_w  = LayoutMetrics::kScaleBarLen;
+    const float margin_bottom = 18.0f;  // 到 canvas 底边的距离
+    const float margin_left   = 18.0f;  // 到 canvas 左边的距离
+    const float y  = canvas_max.y - margin_bottom;
+    const float x0 = canvas_min.x + margin_left;
+    const float x1 = x0 + bar_w;
+
+    dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine, 1.5f);
+    dl->AddLine({x0, y - 4.0f}, {x0, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
+    dl->AddLine({x1, y - 4.0f}, {x1, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
+    dl->AddText({x0, y - 18.0f}, AxisStyle::kScaleLabel, label);
 }
 
+/*
+ * 视图叠加层：信息 badge + 比例尺 + 方向指示器。
+ * canvas_* 是整个视口，plot_* 是去除地图轴边距后的实际绘图区。
+ */
 void draw_viewport_overlay(
     const gs3d::app::RenderViewState& view,
-    const ImVec2& min,
-    const ImVec2& max
-) {
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    char text[160];
-    std::snprintf(
-        text,
-        sizeof(text),
-        "%llu 点  |  %.2f ms",
+    const ImVec2& canvas_min,
+    const ImVec2& canvas_max,
+    const ImVec2& plot_min,
+    const ImVec2& plot_max)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // ── 左上角信息 badge（半透明圆角矩形，放在绘区内侧）──
+    char text[128];
+    std::snprintf(text, sizeof(text), "%llu 点  |  %.2f ms",
         static_cast<unsigned long long>(view.points_visible),
-        static_cast<double>(view.frame_time_ms)
-    );
+        static_cast<double>(view.frame_time_ms));
 
-    const ImVec2 text_size = ImGui::CalcTextSize(text);
-    const ImVec2 box_min{min.x + 10.0f, min.y + 10.0f};
-    const ImVec2 box_max{
-        box_min.x + text_size.x + 16.0f,
-        box_min.y + text_size.y + 10.0f
-    };
-    draw_list->AddRectFilled(
-        box_min,
-        box_max,
-        IM_COL32(15, 16, 18, 190),
-        3.0f
-    );
-    draw_list->AddText(
-        {box_min.x + 8.0f, box_min.y + 5.0f},
-        IM_COL32(215, 217, 220, 255),
-        text
-    );
+    const ImVec2 text_sz = ImGui::CalcTextSize(text);
+    const float bx0 = plot_min.x + LayoutMetrics::kBadgePadX;
+    const float by0 = plot_min.y + LayoutMetrics::kBadgePadY;
+    const ImVec2 box_min{bx0, by0};
+    const ImVec2 box_max{bx0 + text_sz.x + 16.0f, by0 + text_sz.y + 10.0f};
 
-    draw_scale_bar(min, max, view.scale.c_str());
-    draw_orientation_gizmo(min, max);
+    dl->AddRectFilled(box_min, box_max, AxisStyle::kBadgeBg, LayoutMetrics::kBadgeRound);
+    dl->AddText({bx0 + 8.0f, by0 + 5.0f}, AxisStyle::kBadgeText, text);
+
+    // ── 比例尺和方向指示器 ──
+    // 比例尺锚定在 canvas（view_rect）左下保留区，与底部轴 gutter 完全分离。
+    // Gizmo 位置固定在 plot_rect 右下角外侧，内部三轴方向由相机实时驱动。
+    if (view.show_map_axis) {
+        draw_scale_bar(canvas_min, canvas_max, view.scale.c_str());
+        draw_orientation_gizmo(view, canvas_min, canvas_max, plot_max);
+    } else {
+        draw_scale_bar(canvas_min, canvas_max, view.scale.c_str());
+        draw_orientation_gizmo(view, canvas_min, canvas_max, canvas_max);
+    }
 }
 
 void draw_viewport_window(
@@ -243,8 +304,20 @@ void draw_viewport_window(
     ImGui::SameLine();
     ImGui::Checkbox("联动相机", &view.camera_linked);
     ImGui::SameLine();
+    if (ImGui::Checkbox("地图轴", &view.show_map_axis)) {
+        if (view.show_map_axis) {
+            view.show_world_axis = false;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("世界轴", &view.show_world_axis)) {
+        if (view.show_world_axis) {
+            view.show_map_axis = false;
+        }
+    }
+    ImGui::SameLine();
     ImGui::TextDisabled(
-        "左键旋转  右键/中键平移  滚轮缩放"
+        "左键旋转  右键/中键平移  滚轮缩放  Ctrl+左键拖框放大"
     );
     ImGui::PopStyleVar();
     ImGui::Separator();
@@ -265,22 +338,244 @@ void draw_viewport_window(
     const bool hovered = ImGui::IsItemHovered();
     const bool active = ImGui::IsItemActive();
 
+    // ── 地图轴模式：点在缩小的 plot_rect 内显示，轴在边距中绘制 ──
+    ImVec2 plot_min = canvas_min;
+    ImVec2 plot_max = canvas_max;
+    bool using_map_axis = false;
+    if (view.show_map_axis) {
+        using_map_axis = true;
+        plot_min.x += LayoutMetrics::kLeftAxis;
+        plot_min.y += LayoutMetrics::kTopPad;
+        plot_max.x -= LayoutMetrics::kRightPad;
+        plot_max.y -= LayoutMetrics::kBottomAxis;
+    }
+
     if (view.show_live_image &&
         view.descriptor != VK_NULL_HANDLE) {
         ImGui::GetWindowDrawList()->AddImage(
             static_cast<ImTextureID>(
                 reinterpret_cast<ImU64>(view.descriptor)
             ),
-            canvas_min,
-            canvas_max
+            plot_min,
+            plot_max
         );
     } else {
-        draw_mock_viewport(canvas_min, canvas_max);
+        draw_mock_viewport(plot_min, plot_max);
     }
 
-    draw_viewport_overlay(view, canvas_min, canvas_max);
+    // ── 地图式坐标轴 — GIS 风格 overlay（屏幕空间固定）────────────
+    if (view.show_map_axis) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->PushClipRect(canvas_min, canvas_max, true);
+
+        // 绘区外框 — 细线、低对比
+        dl->AddRect(plot_min, plot_max, AxisStyle::kFrame,
+                    LayoutMetrics::kBadgeRound, 0, AxisStyle::kFrameWidth);
+
+        const float x_range = view.map_axis_x_max - view.map_axis_x_min;
+        const float y_range = view.map_axis_y_max - view.map_axis_y_min;
+
+        // 两级刻度：major（长刻度+标签+网格），minor（短刻度，无标签无网格）。
+        // 每个 major interval 细分为 kMinorPerMajor 个 minor step，
+        // 保证坐标轴读数更细，而背景网格线仍稀疏。
+        const int major_cnt = std::clamp(
+            static_cast<int>(std::ceil(
+                std::max(x_range, y_range) > 0.0f ? 5.0f : 4.0f)),
+            AxisStyle::kMajorCountMin, AxisStyle::kMajorCountMax);
+
+        // ---- 辅助 lambda：根据刻度步长选择小数位数 ----
+        const auto fmt_label = [](char* buf, std::size_t buf_size,
+                                  float tick, double origin_offset,
+                                  float major_step) {
+            // Choose precision based on step magnitude so that
+            // zoomed-in views show decimals and zoomed-out views
+            // stay compact.
+            int prec = 0;
+            if (major_step < 1.0f) {
+                prec = static_cast<int>(
+                    std::ceil(-std::log10(std::max(major_step, 1.0e-6f))));
+                if (prec < 0) prec = 0;
+                if (prec > 6) prec = 6;
+            }
+            std::snprintf(buf, buf_size, "%.*f", prec,
+                static_cast<double>(tick) + origin_offset);
+        };
+
+        // ---- 辅助 lambda：生成 minor ticks ----
+        const auto make_minors = [](float major_step, float first_major,
+                                     float range_min, float range_max)
+            -> std::vector<float>
+        {
+            const float minor_step =
+                major_step / static_cast<float>(AxisStyle::kMinorPerMajor);
+            std::vector<float> minors;
+            // 从 first_major 向左（向 range_min）生成
+            for (float v = first_major - minor_step;
+                 v > range_min + minor_step * 0.5f;
+                 v -= minor_step) {
+                minors.push_back(v);
+            }
+            // 从 first_major 向右（向 range_max）生成
+            for (float v = first_major + minor_step;
+                 v < range_max - minor_step * 0.5f;
+                 v += minor_step) {
+                minors.push_back(v);
+            }
+            return minors;
+        };
+
+        // ---- X 轴（底部）----
+        if (x_range > 0.0f) {
+            const auto x_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
+            const float x_major_step = (x_major.size() >= 2)
+                ? (x_major[1] - x_major[0]) : 1.0f;
+
+            // 网格线：只在 major 位置画
+            for (const float tick : x_major) {
+                const float t = (tick - view.map_axis_x_min) / x_range;
+                const float px = plot_min.x + t * (plot_max.x - plot_min.x);
+                dl->AddLine(ImVec2(px, plot_min.y), ImVec2(px, plot_max.y),
+                            AxisStyle::kGrid, AxisStyle::kGridWidth);
+            }
+
+            // Major ticks + 标签
+            for (const float tick : x_major) {
+                const float t = (tick - view.map_axis_x_min) / x_range;
+                const float px = plot_min.x + t * (plot_max.x - plot_min.x);
+
+                dl->AddLine(
+                    ImVec2(px, plot_max.y),
+                    ImVec2(px, plot_max.y + AxisStyle::kMajorTickLen),
+                    AxisStyle::kTick, AxisStyle::kTickWidth);
+
+                char label[32];
+                fmt_label(label, sizeof(label), tick,
+                    view.map_axis_origin_x, x_major_step);
+                const ImVec2 ts = ImGui::CalcTextSize(label);
+                dl->AddText(
+                    ImVec2(px - ts.x * 0.5f,
+                           plot_max.y + AxisStyle::kMajorTickLen +
+                           AxisStyle::kXTickToLabel),
+                    AxisStyle::kLabel, label);
+            }
+
+            // Minor ticks（无标签）
+            if (x_major.size() >= 2) {
+                const auto x_minors = make_minors(
+                    x_major_step, x_major.front(),
+                    view.map_axis_x_min, view.map_axis_x_max);
+                for (const float tick : x_minors) {
+                    const float t = (tick - view.map_axis_x_min) / x_range;
+                    const float px = plot_min.x + t * (plot_max.x - plot_min.x);
+                    dl->AddLine(
+                        ImVec2(px, plot_max.y),
+                        ImVec2(px, plot_max.y + AxisStyle::kMinorTickLen),
+                        AxisStyle::kMinorTick, AxisStyle::kTickWidth);
+                }
+            }
+        }
+
+        // ---- Y 轴（左侧）----
+        if (y_range > 0.0f) {
+            const auto y_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
+            const float y_major_step = (y_major.size() >= 2)
+                ? (y_major[1] - y_major[0]) : 1.0f;
+
+            // 网格线：只在 major 位置画
+            for (const float tick : y_major) {
+                const float t = (tick - view.map_axis_y_min) / y_range;
+                const float py = plot_max.y - t * (plot_max.y - plot_min.y);
+                dl->AddLine(ImVec2(plot_min.x, py), ImVec2(plot_max.x, py),
+                            AxisStyle::kGrid, AxisStyle::kGridWidth);
+            }
+
+            // Major ticks + 标签
+            for (const float tick : y_major) {
+                const float t = (tick - view.map_axis_y_min) / y_range;
+                const float py = plot_max.y - t * (plot_max.y - plot_min.y);
+
+                dl->AddLine(
+                    ImVec2(plot_min.x - AxisStyle::kMajorTickLen, py),
+                    ImVec2(plot_min.x, py),
+                    AxisStyle::kTick, AxisStyle::kTickWidth);
+
+                char label[32];
+                fmt_label(label, sizeof(label), tick,
+                    view.map_axis_origin_y, y_major_step);
+                const ImVec2 ts = ImGui::CalcTextSize(label);
+                dl->AddText(
+                    ImVec2(plot_min.x - AxisStyle::kMajorTickLen -
+                           AxisStyle::kYTickToLabel - ts.x,
+                           py - ts.y * 0.5f),
+                    AxisStyle::kLabel, label);
+            }
+
+            // Minor ticks（无标签）
+            if (y_major.size() >= 2) {
+                const auto y_minors = make_minors(
+                    y_major_step, y_major.front(),
+                    view.map_axis_y_min, view.map_axis_y_max);
+                for (const float tick : y_minors) {
+                    const float t = (tick - view.map_axis_y_min) / y_range;
+                    const float py = plot_max.y - t * (plot_max.y - plot_min.y);
+                    dl->AddLine(
+                        ImVec2(plot_min.x - AxisStyle::kMinorTickLen, py),
+                        ImVec2(plot_min.x, py),
+                        AxisStyle::kMinorTick, AxisStyle::kTickWidth);
+                }
+            }
+        }
+
+        dl->PopClipRect();
+    }
+
+    // ── 三维世界坐标轴（QGIS 包围盒，随相机旋转）──
+    if (view.show_world_axis) {
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        constexpr ImU32 kFrameColor  = IM_COL32(220, 220, 220, 180);
+        constexpr ImU32 kTickColor   = IM_COL32(200, 200, 200, 140);
+        constexpr ImU32 kLabelColor  = IM_COL32(230, 230, 230, 200);
+
+        draw_list->PushClipRect(canvas_min, canvas_max, true);
+
+        for (std::size_t i = 0; i < view.axis_lines.size(); ++i) {
+            const auto& seg = view.axis_lines[i];
+            const ImU32 color = i < 12 ? kFrameColor : kTickColor;
+            const float thickness = i < 12 ? 1.5f : 1.0f;
+            draw_list->AddLine(
+                ImVec2(canvas_min.x + seg.x0, canvas_min.y + seg.y0),
+                ImVec2(canvas_min.x + seg.x1, canvas_min.y + seg.y1),
+                color,
+                thickness
+            );
+        }
+
+        for (const auto& label : view.axis_tick_labels) {
+            draw_list->AddText(
+                ImVec2(canvas_min.x + label.x, canvas_min.y + label.y),
+                kLabelColor,
+                label.text.c_str()
+            );
+        }
+
+        draw_list->PopClipRect();
+    }
+
+    draw_viewport_overlay(view, canvas_min, canvas_max, plot_min, plot_max);
     if (hovered || active) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
+
+    if (hovered && !active && view.hover_tooltip_visible) {
+        ImGui::SetTooltip(
+            "x: %.2f\ny: %.2f\nfold: %.3f\nelevation: %.2f",
+            static_cast<double>(view.hover_x),
+            static_cast<double>(view.hover_y),
+            static_cast<double>(view.hover_fold),
+            static_cast<double>(view.hover_elevation)
+        );
     }
 
     const ImGuiIO& io = ImGui::GetIO();
@@ -293,11 +588,60 @@ void draw_viewport_window(
     frame.mouse_delta_x = active ? io.MouseDelta.x : 0.0f;
     frame.mouse_delta_y = active ? io.MouseDelta.y : 0.0f;
     frame.mouse_wheel = hovered ? io.MouseWheel : 0.0f;
-    frame.rotate = active && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    frame.mouse_local_x = io.MousePos.x - canvas_min.x;
+    frame.mouse_local_y = io.MousePos.y - canvas_min.y;
+
+    // Ctrl+左键 = 框选放大，普通左键 = 轨道旋转；两者互斥，框选时不旋转。
+    const bool box_select_button_down =
+        active && io.KeyCtrl && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+
+    frame.rotate =
+        active &&
+        ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+        !io.KeyCtrl;
     frame.pan =
         active &&
         (ImGui::IsMouseDown(ImGuiMouseButton_Right) ||
          ImGui::IsMouseDown(ImGuiMouseButton_Middle));
+
+    if (box_select_button_down && !view.box_select_dragging) {
+        view.box_select_dragging = true;
+        view.box_select_start_x = frame.mouse_local_x;
+        view.box_select_start_y = frame.mouse_local_y;
+    }
+
+    if (view.box_select_dragging) {
+        const ImVec2 rect_a(
+            canvas_min.x + view.box_select_start_x,
+            canvas_min.y + view.box_select_start_y
+        );
+        const ImVec2 rect_b(io.MousePos.x, io.MousePos.y);
+        ImGui::GetWindowDrawList()->AddRect(
+            rect_a, rect_b, IM_COL32(255, 220, 0, 255)
+        );
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            rect_a, rect_b, IM_COL32(255, 220, 0, 32)
+        );
+
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            view.box_select_dragging = false;
+
+            const float min_x = std::min(view.box_select_start_x, frame.mouse_local_x);
+            const float min_y = std::min(view.box_select_start_y, frame.mouse_local_y);
+            const float max_x = std::max(view.box_select_start_x, frame.mouse_local_x);
+            const float max_y = std::max(view.box_select_start_y, frame.mouse_local_y);
+
+            // Ignore accidental clicks/tiny drags (< 4px on either axis).
+            if (max_x - min_x >= 4.0f && max_y - min_y >= 4.0f) {
+                frame.box_select_completed = true;
+                frame.box_select_min_x = min_x;
+                frame.box_select_min_y = min_y;
+                frame.box_select_max_x = max_x;
+                frame.box_select_max_y = max_y;
+            }
+        }
+    }
+
     actions.viewport_frames.push_back(frame);
     view.render_requested = view.visible;
 

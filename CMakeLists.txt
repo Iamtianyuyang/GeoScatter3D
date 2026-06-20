@@ -51,6 +51,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/data/Gs3dTileFormat.cpp
     src/data/Gs3dTileReader.cpp
 
+    src/camera/BoxSelect.cpp
     src/camera/Camera.cpp
     src/camera/CameraController.cpp
     src/camera/CameraHub.cpp
@@ -75,6 +76,8 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/render/TileSelection.cpp
     src/render/OffscreenFramebuffer.cpp
     src/render/ViewportManager.cpp
+    src/render/NearestPointQuery.cpp
+    src/render/AxisGrid.cpp
 
     include/gui/ImGuiLayer.hpp
     include/ui/UiRoot.hpp
@@ -106,6 +109,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/data/Gs3dTileFormat.hpp
     include/data/Gs3dTileReader.hpp
 
+    include/camera/BoxSelect.hpp
     include/camera/Camera.hpp
     include/camera/CameraController.hpp
     include/camera/CameraHub.hpp
@@ -131,6 +135,8 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/render/TileSelection.hpp
     include/render/OffscreenFramebuffer.hpp
     include/render/ViewportManager.hpp
+    include/render/NearestPointQuery.hpp
+    include/render/AxisGrid.hpp
 
     include/util/ThreadPool.hpp
     include/util/Stopwatch.hpp
@@ -178,9 +184,13 @@ if(BUILD_TESTING)
         tests/RuntimePerformanceTests.cpp
         src/app/TilePointCache.cpp
         src/app/ViewportResizeScheduler.cpp
+        src/camera/BoxSelect.cpp
         src/camera/Camera.cpp
         src/camera/CameraController.cpp
+        src/camera/MouseRay.cpp
         src/render/LodSelector.cpp
+        src/render/NearestPointQuery.cpp
+        src/render/AxisGrid.cpp
     )
 
     target_include_directories(GeoScatter3DRuntimeTests PRIVATE

@@ -9,7 +9,9 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
+#include <system_error>
 
 namespace gs3d::gui {
 
@@ -34,7 +36,8 @@ void ImGuiLayer::init(
     GLFWwindow* window,
     const gs3d::render::VulkanContext& context,
     const gs3d::render::VulkanRenderer& renderer,
-    std::uint32_t min_image_count
+    std::uint32_t min_image_count,
+    std::filesystem::path ini_path
 ) {
     device_ = context.device();
 
@@ -45,7 +48,18 @@ void ImGuiLayer::init(
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-    io.IniFilename = nullptr;
+
+    if (ini_path.empty()) {
+        io.IniFilename = nullptr;
+    } else {
+        std::error_code ec;
+        const auto parent = ini_path.parent_path();
+        if (!parent.empty()) {
+            std::filesystem::create_directories(parent, ec);
+        }
+        ini_path_storage_ = ini_path.string();
+        io.IniFilename = ini_path_storage_.c_str();
+    }
 
     {
         static const char* kCandidates[] = {

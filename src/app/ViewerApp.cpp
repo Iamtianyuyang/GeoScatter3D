@@ -7,9 +7,11 @@
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
+#include "camera/BoxSelect.hpp"
 #include "camera/Camera.hpp"
 #include "camera/CameraController.hpp"
 #include "camera/CameraHub.hpp"
+#include "camera/MouseRay.hpp"
 #include "data/Gs3dDataset.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "data/Gs3dLodReader.hpp"
@@ -17,7 +19,9 @@
 #include "data/Gs3dTileReader.hpp"
 
 #include "platform/Window.hpp"
+#include "render/AxisGrid.hpp"
 #include "render/LodSelector.hpp"
+#include "render/NearestPointQuery.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
 #include "render/PointPipeline.hpp"
@@ -37,6 +41,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <exception>
 #include <future>
 #include <iostream>
@@ -261,6 +266,299 @@ void fill_push_constants(
     push.clip_mode = 0.0f;
 }
 
+/*
+ * QGIS Print Layout 风格的地图坐标框：
+ *   底面矩形框 + 四边刻度标注 + 四根角柱 + 高程刻度。
+ *
+ * 所有几何在这里算好（世界坐标 -> 视口本地像素），UiRoot 只管用 ImGui
+ * draw list 画线/画字，不需要碰相机或投影矩阵。
+ */
+/*
+ * Orientation gizmo 三轴方向：用 MouseRay::to_screen 把相机 target 点和
+ * target+axis*step 点分别投影到屏幕，差值即为世界轴在屏幕上的方向。
+ * 存进 RenderViewState::gizmo_*_axis，UiRoot 只管照着画线。
+ * 每帧调用，所以旋转主视图时 gizmo 同步旋转。
+ */
+void compute_gizmo_axes(
+    gs3d::app::RenderViewState& view,
+    const gs3d::camera::Camera& camera
+) {
+    view.gizmo_axes_valid = false;
+
+    const gs3d::camera::Viewport viewport{
+        camera.viewport_width(),
+        camera.viewport_height()
+    };
+
+    const auto target = camera.target();
+    const float step = 1.0f;
+    const gs3d::camera::Vec3 axes[] = {
+        {step, 0.0f, 0.0f},
+        {0.0f, step, 0.0f},
+        {0.0f, 0.0f, step},
+    };
+
+    const auto center =
+        gs3d::camera::MouseRay::to_screen(target, viewport, camera);
+    if (!center) return;
+
+    gs3d::app::RenderViewState::GizmoAxisEnd ends[3];
+
+    for (int i = 0; i < 3; ++i) {
+        const auto tip = gs3d::camera::MouseRay::to_screen(
+            {target.x + axes[i].x,
+             target.y + axes[i].y,
+             target.z + axes[i].z},
+            viewport, camera);
+        if (!tip) return;
+
+        ends[i].dx = tip->x - center->x;
+        ends[i].dy = tip->y - center->y;
+    }
+
+    view.gizmo_x_axis   = ends[0];
+    view.gizmo_y_axis   = ends[1];
+    view.gizmo_z_axis   = ends[2];
+    view.gizmo_axes_valid = true;
+}
+
+void compute_axis_overlay(
+    gs3d::app::RenderViewState& view,
+    const gs3d::camera::CameraBounds& bounds,
+    const gs3d::camera::Camera& camera,
+    double origin_x,
+    double origin_y,
+    double origin_z
+) {
+    view.axis_lines.clear();
+    view.axis_tick_labels.clear();
+
+    if (!view.show_world_axis) {
+        return;
+    }
+
+    const gs3d::camera::Viewport viewport{
+        camera.viewport_width(),
+        camera.viewport_height()
+    };
+
+    const float min_x = bounds.min.x;
+    const float min_y = bounds.min.y;
+    const float min_z = bounds.min.z;
+    const float max_x = bounds.max.x;
+    const float max_y = bounds.max.y;
+    const float max_z = bounds.max.z;
+
+    // ---- helper: project to screen, skip if behind camera ----
+    const auto sv = [&](float x, float y, float z)
+        -> std::optional<gs3d::camera::ScreenPoint>
+    {
+        return gs3d::camera::MouseRay::to_screen(
+            {x, y, z}, viewport, camera
+        );
+    };
+
+    // ---- helper: push a screen-space line segment ----
+    const auto add_line =
+        [&](const std::optional<gs3d::camera::ScreenPoint>& a,
+            const std::optional<gs3d::camera::ScreenPoint>& b) {
+            if (a && b) {
+                view.axis_lines.push_back({a->x, a->y, b->x, b->y});
+            }
+        };
+
+    // ---- 1. 底面矩形框（四条边）----
+    add_line(sv(min_x, min_y, min_z), sv(max_x, min_y, min_z)); // 底边
+    add_line(sv(max_x, min_y, min_z), sv(max_x, max_y, min_z)); // 右边
+    add_line(sv(max_x, max_y, min_z), sv(min_x, max_y, min_z)); // 顶边
+    add_line(sv(min_x, max_y, min_z), sv(min_x, min_y, min_z)); // 左边
+
+    // ---- 2. 四根角柱（底面角点 -> 顶面角点）----
+    add_line(sv(min_x, min_y, min_z), sv(min_x, min_y, max_z));
+    add_line(sv(max_x, min_y, min_z), sv(max_x, min_y, max_z));
+    add_line(sv(max_x, max_y, min_z), sv(max_x, max_y, max_z));
+    add_line(sv(min_x, max_y, min_z), sv(min_x, max_y, max_z));
+
+    // ---- 3. X 轴刻度（底边 + 顶边）----
+    {
+        const auto x_ticks =
+            gs3d::render::compute_axis_ticks(min_x, max_x, 5);
+        for (const float tick : x_ticks) {
+            const auto bottom = sv(tick, min_y, min_z);
+            const auto top    = sv(tick, max_y, min_z);
+            // small tick mark (8 px outward from the frame)
+            constexpr float kMarkPx = 8.0f;
+            if (bottom) {
+                // Tick along bottom edge, label below frame (y + kMarkPx)
+                view.axis_lines.push_back(
+                    {bottom->x, bottom->y, bottom->x, bottom->y + kMarkPx}
+                );
+                char label[32];
+                std::snprintf(label, sizeof(label), "%.0f",
+                    static_cast<double>(tick) + origin_x);
+                view.axis_tick_labels.push_back(
+                    {bottom->x, bottom->y + kMarkPx + 2.0f, label}
+                );
+            }
+            if (top) {
+                view.axis_lines.push_back(
+                    {top->x, top->y, top->x, top->y - kMarkPx}
+                );
+                char label[32];
+                std::snprintf(label, sizeof(label), "%.0f",
+                    static_cast<double>(tick) + origin_x);
+                view.axis_tick_labels.push_back(
+                    {top->x, top->y - kMarkPx - 14.0f, label}
+                );
+            }
+        }
+    }
+
+    // ---- 4. Y 轴刻度（左边 + 右边）----
+    {
+        const auto y_ticks =
+            gs3d::render::compute_axis_ticks(min_y, max_y, 5);
+        for (const float tick : y_ticks) {
+            const auto left  = sv(min_x, tick, min_z);
+            const auto right = sv(max_x, tick, min_z);
+            constexpr float kMarkPx = 8.0f;
+            if (left) {
+                view.axis_lines.push_back(
+                    {left->x, left->y, left->x - kMarkPx, left->y}
+                );
+                char label[32];
+                std::snprintf(label, sizeof(label), "%.0f",
+                    static_cast<double>(tick) + origin_y);
+                view.axis_tick_labels.push_back(
+                    {left->x - kMarkPx - 3.0f, left->y, label}
+                );
+            }
+            if (right) {
+                view.axis_lines.push_back(
+                    {right->x, right->y, right->x + kMarkPx, right->y}
+                );
+                char label[32];
+                std::snprintf(label, sizeof(label), "%.0f",
+                    static_cast<double>(tick) + origin_y);
+                view.axis_tick_labels.push_back(
+                    {right->x + kMarkPx + 2.0f, right->y, label}
+                );
+            }
+        }
+    }
+
+    // ---- 5. Z / 高程刻度（左下角柱）----
+    {
+        const auto z_ticks =
+            gs3d::render::compute_axis_ticks(min_z, max_z, 4);
+        for (const float tick : z_ticks) {
+            const auto p = sv(min_x, min_y, tick);
+            if (!p) continue;
+            constexpr float kMarkPx = 8.0f;
+            view.axis_lines.push_back(
+                {p->x, p->y, p->x - kMarkPx, p->y}
+            );
+            char label[32];
+            std::snprintf(label, sizeof(label), "%.0f",
+                static_cast<double>(tick) + origin_z);
+            view.axis_tick_labels.push_back(
+                {p->x - kMarkPx - 3.0f, p->y, label}
+            );
+        }
+    }
+}
+
+/*
+ * 地图式坐标轴可见范围：从相机参数估算视口内 X/Y 平面的可见坐标范围。
+ * 对 2.5D 数据是合理近似，极斜视角下有轻微偏差但不影响刻度使用。
+ */
+void compute_map_axis_overlay(
+    gs3d::app::RenderViewState& view,
+    const gs3d::camera::Camera& camera,
+    double origin_x,
+    double origin_y
+) {
+    if (!view.show_map_axis) {
+        return;
+    }
+
+    const gs3d::camera::Viewport vp{
+        camera.viewport_width(),
+        camera.viewport_height()
+    };
+
+    // Ground plane: Z = 0, normal = (0, 0, 1)
+    const gs3d::camera::Vec3 ground_point{0.0f, 0.0f, 0.0f};
+    const gs3d::camera::Vec3 ground_normal{0.0f, 0.0f, 1.0f};
+
+    // 4 corners of the viewport in screen space (y=0 is top in GLFW/ImGui)
+    const float scr_w = static_cast<float>(vp.width);
+    const float scr_h = static_cast<float>(vp.height);
+    const float corners[4][2] = {
+        {0.0f,     0.0f},       // top-left
+        {scr_w,    0.0f},       // top-right
+        {0.0f,     scr_h},      // bottom-left
+        {scr_w,    scr_h}       // bottom-right
+    };
+
+    float xs[4], ys[4];
+    int valid = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        const auto ray = gs3d::camera::MouseRay::from_screen(
+            static_cast<double>(corners[i][0]),
+            static_cast<double>(corners[i][1]),
+            vp,
+            camera
+        );
+
+        const auto hit = gs3d::camera::MouseRay::intersect_plane(
+            ray, ground_point, ground_normal
+        );
+
+        if (hit) {
+            xs[valid] = hit->x;
+            ys[valid] = hit->y;
+            ++valid;
+        }
+    }
+
+    if (valid == 0) {
+        /*
+         * No ray hits Z=0 (e.g. camera is below the ground plane or
+         * looking upwards). Fall back to the perpendicular-plane estimate
+         * centred on the camera target.
+         */
+        const float distance   = camera.distance();
+        const float fov_rad    = camera.fov_y_degrees() * (3.14159265f / 180.0f);
+        const float aspect     = camera.aspect_ratio();
+        const float world_h    = 2.0f * distance * std::tan(fov_rad * 0.5f);
+        const float world_w    = world_h * aspect;
+        const float cx         = camera.target().x;
+        const float cy         = camera.target().y;
+        view.map_axis_x_min = cx - world_w * 0.5f;
+        view.map_axis_x_max = cx + world_w * 0.5f;
+        view.map_axis_y_min = cy - world_h * 0.5f;
+        view.map_axis_y_max = cy + world_h * 0.5f;
+    } else {
+        float x_min = xs[0], x_max = xs[0];
+        float y_min = ys[0], y_max = ys[0];
+        for (int i = 1; i < valid; ++i) {
+            if (xs[i] < x_min) x_min = xs[i];
+            if (xs[i] > x_max) x_max = xs[i];
+            if (ys[i] < y_min) y_min = ys[i];
+            if (ys[i] > y_max) y_max = ys[i];
+        }
+        view.map_axis_x_min = x_min;
+        view.map_axis_x_max = x_max;
+        view.map_axis_y_min = y_min;
+        view.map_axis_y_max = y_max;
+    }
+
+    view.map_axis_origin_x = origin_x;
+    view.map_axis_origin_y = origin_y;
+}
+
 void print_dataset_info(
     const gs3d::data::Gs3dDataset& dataset
 ) {
@@ -358,6 +656,7 @@ std::string format_vec3_text(const gs3d::camera::Vec3& value)
 }
 
 constexpr double kTileSelectionDebounceSeconds = 0.12;
+constexpr double kInteractingDebounceSeconds = 0.15;
 constexpr int kMaxViewportCount = 4;
 
 } // namespace
@@ -504,7 +803,8 @@ int ViewerApp::run() {
             window.native_handle(),
             context,
             renderer,
-            swapchain.image_count()
+            swapchain.image_count(),
+            config_.ui_layout_ini_path
         );
 
         gs3d::render::ClearColor clear_color;
@@ -689,6 +989,10 @@ int ViewerApp::run() {
         std::vector<std::uint64_t> debounced_tile_ids;
         auto tile_selection_changed_at =
             std::chrono::steady_clock::now();
+        // Debounce interacting so rapid scroll zoom doesn't cause
+        // frame-by-frame toggling (tiles pop in/out, LOD clip flicker).
+        auto interacting_debounce_until =
+            std::chrono::steady_clock::now();
         gs3d::util::Stopwatch tile_async_cycle_timer;
 
         ViewportResizeScheduler viewport_resize_scheduler(0.15);
@@ -750,9 +1054,9 @@ int ViewerApp::run() {
          * 多属性可视化（Potree activeAttributeName / CloudCompare scalar field）。
          * 所有属性数据已在 VBO 中，切换只改 push constant，零 GPU 重传。
          *
-         * 当前支持的属性：
-         *   0 = value   (导入时存储的属性，如振幅/反射率)
-         *   1 = z       (高程/深度)
+         * 当前支持的属性（对应比赛数据集的 fold/elevation 两个字段）：
+         *   0 = value   (导入时存储的属性，本数据集是 fold)
+         *   1 = z       (导入时的几何高度，本数据集是 elevation)
          */
         struct AttrDesc {
             const char* name;
@@ -760,10 +1064,10 @@ int ViewerApp::run() {
             float range;
         };
         const std::array<AttrDesc, 2> attr_table = {{
-            { "数值（振幅）",
+            { "Fold（褶皱）",
               dataset.value_min(),
               dataset.value_max() - dataset.value_min() },
-            { "Z（高程）",
+            { "Elevation（高程）",
               dataset.bbox_min_z(),
               dataset.bbox_max_z() - dataset.bbox_min_z() }
         }};
@@ -775,6 +1079,20 @@ int ViewerApp::run() {
         // (delta_seconds, computed at the top of frame N) before this
         // frame reassigns it.
         std::size_t lod_level_for_frame = 0;
+
+        /*
+         * 安全网：最后一次确认可用的 LOD 级别。select_level() 理论上
+         * 永远返回有效值（LOD GPU cloud 所有级别都是启动时预上传的），
+         * 但万一出现越界或无效索引，退回到 last_valid 而不是画空帧。
+         */
+        std::size_t last_valid_lod_level = 0;
+
+        /*
+         * KeepStableHighQuality 模式下,交互期间冻结的显示档位。空闲时持续
+         * 刷新为当前稳定显示的档位(会收敛到 level 0 = 最高细节);交互开始
+         * 时锁定该值,交互途中绝不切到比它更粗的档位。lower index = 更精细。
+         */
+        std::size_t frozen_display_lod = 0;
 
         const auto log_tile_upload =
             [this](
@@ -904,9 +1222,21 @@ int ViewerApp::run() {
             // (no-op otherwise). Must run before lod_level_for_frame is
             // reassigned for *this* frame, further down.
             if (config_.lod_enabled && delta_seconds > 0.0) {
+                /*
+                 * On VK_PRESENT_MODE_FIFO_KHR the total wall-clock frame
+                 * time includes vsync present-wait inside vkAcquireNextImageKHR
+                 * (~16.67ms at 60Hz).  Subtracting that wait gives a better
+                 * estimate of actual GPU render time so the adaptive LOD
+                 * budget (14ms) doesn't silently pin to the lowest level on
+                 * FIFO-only systems (iGPU / older hardware).
+                 */
+                const double present_wait_ms =
+                    renderer.last_acquire_wait_ms();
+                const double report_ms =
+                    (delta_seconds * 1000.0) - present_wait_ms;
                 lod_selector.report_frame_time(
                     lod_level_for_frame,
-                    delta_seconds * 1000.0
+                    report_ms > 0.0 ? report_ms : 0.0
                 );
             }
 
@@ -1052,6 +1382,24 @@ int ViewerApp::run() {
                     }
                 }
                 view.scale = format_scale_distance(scale_world);
+
+                compute_axis_overlay(
+                    view,
+                    bounds,
+                    camera,
+                    dataset.origin_x(),
+                    dataset.origin_y(),
+                    dataset.origin_z()
+                );
+
+                compute_map_axis_overlay(
+                    view,
+                    camera,
+                    dataset.origin_x(),
+                    dataset.origin_y()
+                );
+
+                compute_gizmo_axes(view, camera);
             }
 
             const auto gui_cmds = imgui_layer.new_frame(app_state);
@@ -1191,12 +1539,79 @@ int ViewerApp::run() {
                     tile_selection_dirty = true;
                 }
 
+                if (frame.box_select_completed) {
+                    auto& box_camera = viewport_manager.camera(frame.index);
+                    const gs3d::camera::Viewport mouse_viewport{
+                        frame.width, frame.height
+                    };
+
+                    // Anchor the selection plane to the REAL surface height
+                    // under the dragged rectangle, not the orbit target's Z
+                    // — for this viewer's height-field data, elevation
+                    // relief can span roughly half the X/Y extent, so the
+                    // target's Z can sit far from the local terrain height
+                    // after panning, which previously made the zoomed-to
+                    // location visibly disagree with the dragged rectangle.
+                    std::vector<const std::vector<gs3d::data::Gs3dPoint>*>
+                        box_select_candidate_points;
+                    if (config_.lod_enabled && lod_gpu_cloud &&
+                        lod_level_for_frame < lod_dataset.level_count()) {
+                        box_select_candidate_points.push_back(
+                            &lod_dataset.level(lod_level_for_frame).points
+                        );
+                    } else if (!config_.lod_enabled && dataset.has_point_data()) {
+                        box_select_candidate_points.push_back(&dataset.points());
+                    }
+
+                    const float rect_center_x =
+                        0.5f * (frame.box_select_min_x + frame.box_select_max_x);
+                    const float rect_center_y =
+                        0.5f * (frame.box_select_min_y + frame.box_select_max_y);
+                    const float rect_radius_px = 0.5f * std::sqrt(
+                        (frame.box_select_max_x - frame.box_select_min_x) *
+                            (frame.box_select_max_x - frame.box_select_min_x) +
+                        (frame.box_select_max_y - frame.box_select_min_y) *
+                            (frame.box_select_max_y - frame.box_select_min_y)
+                    );
+                    const auto anchor_hit =
+                        gs3d::render::find_nearest_point_on_screen(
+                            box_select_candidate_points,
+                            rect_center_x,
+                            rect_center_y,
+                            mouse_viewport,
+                            box_camera,
+                            std::max(rect_radius_px, 12.0f)
+                        );
+                    const float plane_z =
+                        anchor_hit ? anchor_hit->point.z : box_camera.target().z;
+
+                    const auto selection_bounds =
+                        gs3d::camera::box_select_world_bounds(
+                            frame.box_select_min_x,
+                            frame.box_select_min_y,
+                            frame.box_select_max_x,
+                            frame.box_select_max_y,
+                            mouse_viewport,
+                            box_camera,
+                            bounds,
+                            plane_z
+                        );
+                    if (selection_bounds) {
+                        box_camera.fit_bounds(*selection_bounds);
+                        camera_changed = true;
+                        streaming_viewport_index = frame.index;
+                        camera_hub.propagate(frame.index);
+                    }
+                }
+
                 gs3d::camera::CameraInput input;
                 input.viewport_width = frame.width;
                 input.viewport_height = frame.height;
                 input.delta_x = frame.mouse_delta_x;
                 input.delta_y = frame.mouse_delta_y;
                 input.scroll_y = frame.mouse_wheel;
+                input.mouse_x = frame.mouse_local_x;
+                input.mouse_y = frame.mouse_local_y;
                 input.rotate = frame.rotate;
                 input.pan = frame.pan;
 
@@ -1230,6 +1645,33 @@ int ViewerApp::run() {
 
             if (camera_changed) {
                 tile_selection_dirty = true;
+            }
+
+            /*
+             * Debounce the interacting signal so rapid scroll zoom doesn't
+             * cause frame-by-frame oscillation between true/false. Without
+             * this, fast mouse-wheel scrolling produces frames where
+             * scroll_y is 0 between discrete wheel events, briefly flipping
+             * interacting to false.  That would:
+             *   - toggle tiles on then off (tile_will_render)
+             *   - toggle LOD clip bbox on then off
+             *   - trigger tile selection update mid-scroll
+             * …all of which cause visible flicker.
+             *
+             * The debounce keeps interacting=true for kInteractingDebounceSeconds
+             * after the last real interacting frame, bridging the gaps between
+             * discrete scroll events.
+             */
+            if (interacting) {
+                interacting_debounce_until =
+                    current_time +
+                    std::chrono::milliseconds(
+                        static_cast<long>(
+                            kInteractingDebounceSeconds * 1000.0
+                        )
+                    );
+            } else if (current_time < interacting_debounce_until) {
+                interacting = true;
             }
 
             if (config_.lod_enabled) {
@@ -1540,8 +1982,49 @@ int ViewerApp::run() {
             // Select LOD level once per frame (not per-viewport) so all views
             // use the same level and the verbose log fires at most once.
             if (config_.lod_enabled && lod_gpu_cloud) {
-                lod_level_for_frame =
-                    lod_selector.select_level(lod_gpu_cloud->level_count());
+                const auto level_count = lod_gpu_cloud->level_count();
+                const auto requested =
+                    lod_selector.select_level(level_count);
+
+                // 安全网：select_level 理论上永远返回有效值（所有 LOD
+                // 级别都在启动时一次性上传到 GPU），但万一索引越界退回到
+                // last_valid，绝不画空帧。
+                std::size_t resolved_lod;
+                if (requested < level_count) {
+                    resolved_lod = requested;
+                } else {
+                    resolved_lod = last_valid_lod_level;
+                    std::cerr << "[WARN] LOD level out of range: "
+                              << requested << " >= " << level_count
+                              << ", falling back to "
+                              << last_valid_lod_level << '\n';
+                }
+
+                /*
+                 * KeepStableHighQuality:显示档位的"质量地板"是已经稳定收敛
+                 * 到的最精细档位(idle 会收敛到 level 0 = 最高细节)。无论
+                 * 交互中还是刚松手的过渡期,都绝不显示比这更粗的档位 ——
+                 * 取 select_level() 返回值与 frozen_display_lod 中更精细的
+                 * 一个(索引更小=更精细)。这样:
+                 *   - 交互途中点云不会变稀疏(不降档);
+                 *   - 松手后的 ~0.2s 过渡期也不会闪一下粗 LOD
+                 *     (select_level 此时仍会短暂返回粗档,被地板挡住)。
+                 * frozen 只在 idle 且 select_level 给出更精细档位时下移,
+                 * 即只向"更高质量"更新,不会反向变粗。
+                 * select_level() 仍照常在后台运行,供其他模式与状态延续。
+                 */
+                if (config_.interactive_display_mode ==
+                        gs3d::app::InteractiveDisplayMode::AllowCoarseLOD) {
+                    lod_level_for_frame = resolved_lod;
+                } else {
+                    if (!interacting && resolved_lod < frozen_display_lod) {
+                        frozen_display_lod = resolved_lod;
+                    }
+                    lod_level_for_frame =
+                        std::min(resolved_lod, frozen_display_lod);
+                }
+                last_valid_lod_level = lod_level_for_frame;
+
                 if (lod_level_for_frame != last_lod_level) {
                     if (config_.lod_verbose) {
                         const auto& level =
@@ -1555,6 +2038,78 @@ int ViewerApp::run() {
                                   << '\n';
                     }
                     last_lod_level = lod_level_for_frame;
+                }
+            }
+
+            /*
+             * 悬浮 tooltip（仅在悬停且未拖拽时查询，结果写进 AppState
+             * 供下一帧 UiRoot 渲染——同一个"UI 出命令、主循环写回状态"
+             * 的模式）。
+             *
+             * 候选点集合只用当前 LOD 档位的点（≤ 阶梯最高档，目前 ≤1.5M
+             * 点），不用当前驻留的全分辨率 tile——驻留 tile 的总点数在
+             * 缩小视野时可以逼近整个可见区域的全分辨率数据（实测一次到
+             * 过 140 个 tile、共 2600 万+点），把它们全部拿来做逐点投影
+             * 会让每个悬停帧的开销失控（已经在压测里炸过一次：1800 帧
+             * 跑到 90 秒还没完）。代价是 tooltip 显示的是 LOD 降采样后的
+             * 最近点，不一定是原始全分辨率点——这是为了保证悬停永远不卡
+             * 帧而接受的精度妥协，不是后续优化项。
+             */
+            for (const auto& frame : gui_cmds.viewport_frames) {
+                if (frame.index < 0 ||
+                    frame.index >= static_cast<int>(app_state.render_views.size())) {
+                    continue;
+                }
+
+                auto& view =
+                    app_state.render_views[static_cast<std::size_t>(frame.index)];
+
+                if (!frame.hovered || frame.active) {
+                    view.hover_tooltip_visible = false;
+                    continue;
+                }
+
+                std::vector<const std::vector<gs3d::data::Gs3dPoint>*>
+                    candidate_point_sets;
+
+                if (config_.lod_enabled && lod_gpu_cloud &&
+                    lod_level_for_frame < lod_dataset.level_count()) {
+                    candidate_point_sets.push_back(
+                        &lod_dataset.level(lod_level_for_frame).points
+                    );
+                } else if (!config_.lod_enabled && dataset.has_point_data()) {
+                    candidate_point_sets.push_back(&dataset.points());
+                }
+
+                const gs3d::camera::Viewport hover_viewport{
+                    frame.width, frame.height
+                };
+                const auto hit = gs3d::render::find_nearest_point_on_screen(
+                    candidate_point_sets,
+                    frame.mouse_local_x,
+                    frame.mouse_local_y,
+                    hover_viewport,
+                    viewport_manager.camera(frame.index)
+                );
+
+                view.hover_tooltip_visible = hit.has_value();
+                if (hit) {
+                    // Gs3dPoint x/y/z are origin-shifted at preprocess time
+                    // (CsvToGs3dConverter subtracts the centroid); add it
+                    // back so the tooltip matches the original CSV values.
+                    view.hover_x =
+                        static_cast<float>(
+                            static_cast<double>(hit->point.x) + dataset.origin_x()
+                        );
+                    view.hover_y =
+                        static_cast<float>(
+                            static_cast<double>(hit->point.y) + dataset.origin_y()
+                        );
+                    view.hover_fold = hit->point.value;
+                    view.hover_elevation =
+                        static_cast<float>(
+                            static_cast<double>(hit->point.z) + dataset.origin_z()
+                        );
                 }
             }
 
@@ -1616,8 +2171,19 @@ int ViewerApp::run() {
                                                 ->has_resident_tile(tile_id);
                                     }
                                 );
+                            /*
+                             * KeepStableHighQuality:交互期间继续绘制已驻留
+                             * 的全分辨率 tile —— 新 tile 流式本就在交互期
+                             * 冻结(见上方 !interacting 门控),所以这只是用
+                             * 当前相机继续画"交互开始前已上传好的高质量
+                             * buffer",无新上传、无中途驱逐,不空帧不闪烁。
+                             * AllowCoarseLOD 才在交互期关掉 tile 叠加。
+                             */
                             const bool tile_will_render =
-                                !interacting &&
+                                (config_.interactive_display_mode !=
+                                     gs3d::app::InteractiveDisplayMode::
+                                         AllowCoarseLOD ||
+                                 !interacting) &&
                                 any_tile_resident;
 
                             gs3d::render::PointPushConstants lod_push = vp_push;

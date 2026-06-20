@@ -7,6 +7,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include <filesystem>
+#include <string>
+
 struct GLFWwindow;
 
 namespace gs3d::gui {
@@ -19,11 +22,14 @@ public:
     ImGuiLayer(const ImGuiLayer&)            = delete;
     ImGuiLayer& operator=(const ImGuiLayer&) = delete;
 
+    // `ini_path` empty = no persistence (default ImGui in-memory layout,
+    // not saved/loaded across restarts).
     void init(
         GLFWwindow* window,
         const gs3d::render::VulkanContext&  context,
         const gs3d::render::VulkanRenderer& renderer,
-        std::uint32_t min_image_count
+        std::uint32_t min_image_count,
+        std::filesystem::path ini_path = {}
     );
 
     void shutdown();
@@ -42,6 +48,11 @@ private:
     bool     initialized_    = false;
     bool     frame_open_     = false;
     bool     frame_rendered_ = false;
+
+    // ImGui's io.IniFilename stores a raw `const char*` it expects to stay
+    // valid for the IO object's lifetime, so the path string must outlive
+    // the ImGui context rather than being a temporary.
+    std::string ini_path_storage_;
 };
 
 } // namespace gs3d::gui

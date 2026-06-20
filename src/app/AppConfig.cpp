@@ -505,6 +505,16 @@ AppConfig AppConfigLoader::load_from_file(
             "resizable",
             config.viewer.window_resizable
         );
+
+        /*
+         * ImGui docking 布局持久化文件路径；留空字符串表示不持久化
+         * （每次启动都用默认布局，不写不读 .ini）。
+         */
+        config.viewer.ui_layout_ini_path = path_or_default(
+            *window,
+            "ui_layout_ini_path",
+            config.viewer.ui_layout_ini_path
+        );
     }
 
     if (const auto* vulkan = root["vulkan"].as_table()) {
@@ -720,6 +730,29 @@ AppConfig AppConfigLoader::load_from_file(
                     )
                 )
             );
+
+        // 交互期间显示策略:keep_stable(默认) / coarse / freeze_texture。
+        // 默认保持高质量,不在交互途中切到稀疏粗 LOD。
+        {
+            const std::string mode_str = string_or_default(
+                *lod,
+                "interactive_display_mode",
+                "keep_stable"
+            );
+            if (mode_str == "coarse" ||
+                mode_str == "allow_coarse" ||
+                mode_str == "AllowCoarseLOD") {
+                config.viewer.interactive_display_mode =
+                    gs3d::app::InteractiveDisplayMode::AllowCoarseLOD;
+            } else if (mode_str == "freeze_texture" ||
+                       mode_str == "FreezeLastFrameTexture") {
+                config.viewer.interactive_display_mode =
+                    gs3d::app::InteractiveDisplayMode::FreezeLastFrameTexture;
+            } else {
+                config.viewer.interactive_display_mode =
+                    gs3d::app::InteractiveDisplayMode::KeepStableHighQuality;
+            }
+        }
 
         config.viewer.lod_verbose = bool_or_default(
             *lod,
@@ -950,6 +983,9 @@ void AppConfigPrinter::print(const AppConfig& config) {
     std::cout << "[CONFIG] window.resizable = "
               << (config.viewer.window_resizable ? "true" : "false") << '\n';
 
+    std::cout << "[CONFIG] window.ui_layout_ini_path = "
+              << config.viewer.ui_layout_ini_path.string() << '\n';
+
     std::cout << "[CONFIG] vulkan.validation_layers = "
               << (config.viewer.enable_validation_layers ? "true" : "false")
               << '\n';
@@ -1080,6 +1116,17 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] lod.frame_time_budget_ms = "
               << config.viewer.lod_frame_time_budget_ms << '\n';
+
+    std::cout << "[CONFIG] lod.interactive_display_mode = "
+              << (config.viewer.interactive_display_mode ==
+                        gs3d::app::InteractiveDisplayMode::AllowCoarseLOD
+                    ? "coarse"
+                    : config.viewer.interactive_display_mode ==
+                            gs3d::app::InteractiveDisplayMode::
+                                FreezeLastFrameTexture
+                        ? "freeze_texture"
+                        : "keep_stable")
+              << '\n';
 
     std::cout << "[CONFIG] lod.verbose = "
               << (config.viewer.lod_verbose ? "true" : "false")

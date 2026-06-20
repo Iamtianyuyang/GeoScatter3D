@@ -15,3 +15,4 @@ out/
 data/*.gs3dlod
 data/*.gs3dtiles
 data/*.gs3dtiles.index
+config/imgui_layout.ini

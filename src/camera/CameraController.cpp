@@ -1,4 +1,5 @@
 #include "camera/CameraController.hpp"
+#include "camera/MouseRay.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +9,12 @@ namespace gs3d::camera {
 namespace {
 
 constexpr float PI = 3.14159265358979323846f;
-constexpr float MIN_DISTANCE = 1.0e-3f;
+
+// Fallback minimum camera distance when no scene bounds are known.
+constexpr float MIN_DISTANCE_FALLBACK = 0.01f;
+
+// Fraction of the scene diagonal to use as minimum camera distance.
+constexpr float MIN_DISTANCE_SCENE_FRACTION = 0.001f;
 
 } // namespace
 
@@ -32,6 +38,18 @@ void CameraController::set_bounds(
 
 void CameraController::reset_view(Camera& camera) const noexcept {
     if (has_bounds_) {
+        // Give the camera a canonical viewing direction before fit_bounds,
+        // which now preserves whatever direction it finds.
+        const Vec3 center{
+            0.5f * (bounds_.min.x + bounds_.max.x),
+            0.5f * (bounds_.min.y + bounds_.max.y),
+            0.5f * (bounds_.min.z + bounds_.max.z)
+        };
+        camera.look_at(
+            add(center, Vec3{0.0f, -1.0f, 0.6f}),
+            center,
+            Vec3{0.0f, 0.0f, 1.0f}
+        );
         camera.fit_bounds(bounds_);
     }
 }
@@ -83,7 +101,11 @@ bool CameraController::update(
     if (input.scroll_y != 0.0f) {
         zoom_view(
             camera,
-            input.scroll_y
+            input.scroll_y,
+            input.mouse_x,
+            input.mouse_y,
+            viewport_width,
+            viewport_height
         );
         changed = true;
     }
@@ -98,44 +120,57 @@ void CameraController::rotate_trackball(
     float viewport_width,
     float viewport_height
 ) const noexcept {
-    if (viewport_width <= 0.0f || viewport_height <= 0.0f) {
+    if (viewport_height <= 0.0f) {
         return;
     }
 
     if (config_.invert_rotate_x) delta_x = -delta_x;
     if (config_.invert_rotate_y) delta_y = -delta_y;
 
-    const float d_yaw   = -delta_x / viewport_width  * PI * config_.rotate_speed;
-    const float d_pitch = -delta_y / viewport_height * PI * config_.rotate_speed;
-
-    const Vec3 target = camera.target();
-    const Vec3 offset = sub(camera.position(), target);
-    const float dist  = std::max(length(offset), MIN_DISTANCE);
-
     /*
-     * 球坐标 orbit（Blender/Maya 同款）：
-     * 把 (dx, dy, dz) 分解为 (yaw, pitch)，独立增减后重建，
-     * 完全消除 up 向量漂移和 Rodrigues 旋转的极点翻转问题。
-     * world-up 始终强制为 (0,0,1)，不随旋转积累误差。
+     * Three.js OrbitControls convention:
+     *   angle = 2π × pixels × rotateSpeed / clientHeight
+     * Both axes use height so speed is independent of aspect ratio.
+     * A full-viewport-height drag = one full 360° orbit.
      */
-    float yaw   = std::atan2(offset.y, offset.x);
-    float pitch = std::asin(std::clamp(offset.z / dist, -1.0f, 1.0f));
+    constexpr float kTwoPi = 2.0f * PI;
+    const float angle_h = -kTwoPi * delta_x / viewport_height
+                         * config_.rotate_speed;
+    const float angle_v = -kTwoPi * delta_y / viewport_height
+                         * config_.rotate_speed;
 
-    yaw   += d_yaw;
-    pitch  = std::clamp(
-        pitch + d_pitch,
-        config_.min_pitch,
-        config_.max_pitch
-    );
+    // --- Spherical coordinates in world-Z-up frame ---
+    // theta: azimuth in XY plane (from +X toward +Y)
+    // phi:   polar angle from XY plane (0 = horizon, +π/2 = straight up)
+    const Vec3 target = camera.target();
+    Vec3 offset       = sub(camera.position(), target);
+    float r           = std::max(length(offset), min_distance());
 
-    const float cos_p = std::cos(pitch);
-    const Vec3 new_pos = add(target, Vec3{
-        dist * cos_p * std::cos(yaw),
-        dist * cos_p * std::sin(yaw),
-        dist * std::sin(pitch)
-    });
+    float theta = std::atan2(offset.y, offset.x);
+    float phi   = std::asin(std::clamp(offset.z / r, -1.0f, 1.0f));
 
-    camera.look_at(new_pos, target, {0.0f, 0.0f, 1.0f});
+    theta += angle_h;
+    phi   += angle_v;
+
+    // Clamp polar angle (Three.js style: clamp then makeSafe).
+    phi = std::clamp(phi, config_.min_pitch, config_.max_pitch);
+
+    // makeSafe: nudge away from poles to avoid gimbal-lock (Three.js EPS = 1e-6).
+    constexpr float kPoleEps = 1.0e-6f;
+    const float half_pi     = PI * 0.5f;
+    phi = std::clamp(phi, -half_pi + kPoleEps, half_pi - kPoleEps);
+
+    // Spherical → Cartesian.
+    const float cos_phi = std::cos(phi);
+    offset = Vec3{
+        r * cos_phi * std::cos(theta),
+        r * cos_phi * std::sin(theta),
+        r * std::sin(phi)
+    };
+
+    // lookAt recomputes the camera's up from the world-up reference
+    // (0,0,1), guaranteeing no roll accumulation (Three.js convention).
+    camera.look_at(add(target, offset), target, {0.0f, 0.0f, 1.0f});
 }
 
 void CameraController::pan_view(
@@ -197,22 +232,62 @@ void CameraController::pan_view(
 
 void CameraController::zoom_view(
     Camera& camera,
-    float scroll_y
+    float scroll_y,
+    float mouse_x,
+    float mouse_y,
+    float viewport_width,
+    float viewport_height
 ) const noexcept {
-    const Vec3 offset = sub(camera.position(), camera.target());
-    float dist = std::max(length(offset), MIN_DISTANCE);
+    /*
+     * 缩放到光标（Potree EarthControls / Three.js zoomToCursor 惯例）：
+     * 先把光标射线打到 target 高度的水平面上，取交点作为缩放枢轴，再把
+     * 相机位置和 target 一起朝枢轴收缩/拉伸——枢轴点缩放前后停在屏幕同一
+     * 位置，而不是像旧实现那样永远朝固定的 target 收缩（那样的效果是
+     * "画面内容跟着漂"，必须缩放/平移反复修正才能对准想看的位置）。
+     *
+     * 射线与水平面几乎平行（贴近地平线视角）或在相机后方时交点退化，
+     * fallback 到旧的 target 枢轴。
+     */
+    const Vec3 position = camera.position();
+    const Vec3 target = camera.target();
 
-    // 指数缩放：每格滚轮缩放 ~12%，手感平滑且远近一致
+    Vec3 pivot = target;
+    if (viewport_width > 0.0f && viewport_height > 0.0f) {
+        const Viewport viewport{
+            static_cast<std::uint32_t>(viewport_width),
+            static_cast<std::uint32_t>(viewport_height)
+        };
+        const Ray ray = MouseRay::from_screen(
+            mouse_x, mouse_y, viewport, camera
+        );
+        const auto hit = MouseRay::intersect_plane(
+            ray, {0.0f, 0.0f, target.z}, {0.0f, 0.0f, 1.0f}
+        );
+        if (hit) {
+            pivot = *hit;
+        }
+    }
+
+    // 指数缩放：每格滚轮缩放 ~25%，比默认 12% 更灵敏
     const float zoom_factor =
-        std::pow(0.88f, scroll_y * config_.zoom_speed);
+        std::pow(0.75f, scroll_y * config_.zoom_speed);
 
-    dist = std::max(dist * zoom_factor, MIN_DISTANCE);
+    Vec3 new_position = add(pivot, mul(sub(position, pivot), zoom_factor));
+    Vec3 new_target   = add(pivot, mul(sub(target,   pivot), zoom_factor));
 
-    camera.look_at(
-        add(camera.target(), mul(normalize(offset), dist)),
-        camera.target(),
-        camera.up()
-    );
+    // 距离上下限：下限只防除零（允许无限靠近观察点间距），上限绑定到场景
+    // 包围盒对角线的若干倍，防止滚轮无限缩远把场景滚出视野。
+    const Vec3 new_offset = sub(new_position, new_target);
+    const float new_dist = length(new_offset);
+    const float clamped_dist =
+        std::clamp(new_dist, min_distance(), max_distance());
+
+    if (new_dist > 1.0e-6f && clamped_dist != new_dist) {
+        const Vec3 dir = normalize(new_offset);
+        new_position = add(new_target, mul(dir, clamped_dist));
+    }
+
+    camera.look_at(new_position, new_target, camera.up());
 
     adjust_near_far(camera);
 }
@@ -227,13 +302,18 @@ void CameraController::adjust_near_far(Camera& camera) const noexcept {
     }
 
     /*
-     * 动态近/远平面：
-     *   near = distance × 0.001，保证深度精度在任意缩放级别下充足；
-     *   far  = distance + scene_radius × 4，保证整个数据集始终可见。
-     * 对应 Cesium 和 Potree 的自动 near/far 策略。
+     * 动态近/远平面（参考 Potree/Cesium flyToBoundingSphere 惯例）：
+     *   near = distance × 0.001，随距离缩放以保持深度精度，地板降到 1e-4
+     *   允许无限放大到 0.1mm 级别观察点间距。
+     *   far 不分距离区间——统一用 "距离 + 场景半径的若干倍"，保证远裁面
+     *   始终能覆盖整个场景包围球，不随 dist 是否跨过 1.0 而跳变。
+     *   （旧版本在 dist<1 时把系数从 scene_radius*4 砍到 scene_radius*0.5，
+     *   缩小到 1/8，导致刚放大到很近时场景里离相机较远的点突然被远裁面
+     *   切掉、瞬间消失。）
      */
-    const float near_plane = std::max(0.1f, dist * 0.001f);
-    const float far_plane  = std::max(
+    const float near_plane = std::max(1.0e-4f, dist * 0.001f);
+
+    const float far_plane = std::max(
         near_plane * 1000.0f,
         dist + scene_radius * 4.0f
     );
