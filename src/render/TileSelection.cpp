@@ -11,11 +11,6 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-[[nodiscard]]
-float vec3_len(float x, float y, float z) noexcept {
-    return std::sqrt(x * x + y * y + z * z);
-}
-
 } // namespace
 
 TileSelection::TileSelection(TileSelectionConfig config)

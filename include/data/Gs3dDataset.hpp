@@ -16,7 +16,8 @@ public:
     Gs3dDataset(
         Gs3dHeader header,
         std::vector<Gs3dPoint> points,
-        std::filesystem::path source_path
+        std::filesystem::path source_path,
+        bool metadata_only = false
     );
 
     [[nodiscard]]
@@ -39,6 +40,12 @@ public:
 
     [[nodiscard]]
     bool empty() const noexcept;
+
+    [[nodiscard]]
+    bool has_point_data() const noexcept;
+
+    [[nodiscard]]
+    bool metadata_only() const noexcept;
 
     [[nodiscard]]
     const std::filesystem::path& source_path() const noexcept;
@@ -86,6 +93,7 @@ private:
     Gs3dHeader header_{};
     std::vector<Gs3dPoint> points_;
     std::filesystem::path source_path_;
+    bool metadata_only_ = false;
 };
 
 class Gs3dDatasetLoader {

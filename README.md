@@ -1,0 +1,79 @@
+# GeoScatter3D
+
+GeoScatter3D 是一个面向大规模三维散点/点云数据的 C++20 桌面查看器。项目使用
+Vulkan 渲染、GLFW 管理窗口、Dear ImGui 提供 docking UI，并使用自定义 GS3D、
+LOD 和 tile 文件支持分级与局部加载。
+
+## 当前能力
+
+- CSV 并行解析并转换为 GS3D 二进制数据。
+- GS3D 头部、文件长度和点数据读取校验。
+- 全量点云、LOD 点云和局部 tile 三种 GPU 数据路径。
+- 基于屏幕空间的 tile 选择、后台读取、CPU 缓存和主线程 GPU 上传。
+- Vulkan 点渲染、点大小调整、`value`/`z` 属性着色切换。
+- 轨道旋转、平移、缩放、相机重置和可选的相机联动。
+- 简体中文、Adobe 风格的紧凑 ImGui 工作台和最多 4 个三维视图。
+- 默认只打开一个视图；可按需添加，并以标签页停靠或拖成独立系统窗口。
+- 每个视图拥有独立相机和输入状态，拖出主工作台后仍可旋转、平移、缩放和操作控件。
+- LOD sidecar 存在时只加载 GS3D 元数据，避免完整点数组常驻内存。
+- 有字节预算的 LRU tile CPU 缓存、逐帧限量 GPU 上传和拖动结束后的批量视口 resize。
+- 交互时使用低 LOD，隐藏标签页停止离屏渲染，减少旋转、移动和缩放卡顿。
+- TOML 配置和 Vulkan validation layer 开关。
+
+尚未接线的 UI 功能见 [架构与现状](docs/architecture.md#尚未完成)。
+
+## 构建
+
+依赖：
+
+- CMake 3.28+
+- 支持 C++20 的编译器
+- Vulkan SDK/开发包
+- GLFW 3
+- pthreads
+- Git submodule 中的 Dear ImGui
+
+```bash
+git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+运行默认配置：
+
+```bash
+./build/GeoScatter3D --config config/viewer.toml
+```
+
+配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
+会在启动时重新生成 GS3D 和启用的 tile 数据；`input.mode = "gs3d"` 直接打开现有
+GS3D 文件。
+
+## 多窗口使用
+
+- `viewport.count` 设置启动时显示的视图数量，范围为 1-4，默认是 1。
+- 点击顶部的 `+ 视图`、使用“视图”菜单或按 `Ctrl+N` 可以添加视图。
+- 新视图默认成为中央工作区的标签页；拖动“视图 N”标签可将其变成独立系统窗口。
+- 独立窗口可移动到其他显示器，其画布和“适配”等控件不依赖主窗口输入。
+- 相机默认互不影响；勾选视图工具栏中的“联动相机”可加入同步组。
+- 未激活的停靠标签页不执行点云离屏渲染，独立可见窗口仍会持续更新。
+- `tile.cpu_cache_max_bytes` 控制 CPU tile 缓存上限，超出后按 LRU 淘汰。
+- `tile.gpu_upload_budget_bytes` 控制每帧 tile GPU 上传预算，避免一次上传造成长时间停顿。
+
+## 目录
+
+```text
+include/ + src/
+  app/         配置、应用状态和主循环编排
+  camera/      相机、输入控制和多视口同步
+  data/        CSV/GS3D/LOD/tile 格式与读取
+  preprocess/  CSV 转换、统计、LOD 与 tile 写入
+  render/      Vulkan 资源、点管线、LOD/tile GPU 数据和离屏视口
+  gui/ + ui/   ImGui 生命周期与界面绘制
+  platform/    GLFW 窗口
+  util/        线程池与计时
+```
+
+更完整的启动流程、逐帧流程、资源所有权和主要缺陷见
+[docs/architecture.md](docs/architecture.md)。

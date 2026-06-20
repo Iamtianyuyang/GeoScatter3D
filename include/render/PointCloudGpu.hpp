@@ -53,6 +53,16 @@ public:
         std::uint64_t point_count
     );
 
+    void prepare_upload(
+        const VulkanContext& context,
+        const gs3d::data::Gs3dPoint* points,
+        std::uint64_t point_count
+    );
+
+    void record_prepared_upload(
+        VkCommandBuffer command_buffer
+    ) const;
+
     void destroy() noexcept;
 
     [[nodiscard]]

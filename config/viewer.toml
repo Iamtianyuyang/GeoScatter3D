@@ -1,7 +1,7 @@
 # config/viewer.toml
 
 [input]
-mode = "csv"
+mode = "gs3d"
 gs3d_path = "data/test.gs3d"
 csv_path = "data/test.csv"
 
@@ -17,7 +17,7 @@ fragment_shader_path = "assets/shaders/point.frag.spv"
 [window]
 width = 1280
 height = 720
-title = "GeoScatter3D Viewer"
+title = "GeoScatter3D 三维散点查看器"
 resizable = true
 
 [vulkan]
@@ -53,14 +53,32 @@ keep_full_buffer = false
 sidecar_path = "data/test.gs3dlod"
 auto_load_sidecar = true
 auto_save_sidecar = true
-target_point_counts = [3000000, 1000000, 300000]
+# Fallback absolute targets, only used when target_point_ratios is empty.
+target_point_counts = [3000000, 2000000, 1500000, 1000000]
+# Ratios of the source point count — takes priority over target_point_counts
+# above. Scales the LOD ladder automatically with dataset size (1e8 points
+# instead of today's 33M) instead of needing a manual re-tune every time.
+# 4 levels (was 3): smoother adaptive-climb steps during interaction, at the
+# cost of ~33% longer LOD sidecar build time (each level takes ~4-4.5s to
+# build on the 33M-point dataset).
+target_point_ratios = [0.09, 0.06, 0.045, 0.03]
 voxel_mode = "XY"
 voxel_scale = 1.0
 
 medium_delay_seconds = 0.20
 high_delay_seconds = 0.80
 use_lowest_while_interacting = true
+# Frame-time-adaptive interacting level (on top of use_lowest_while_interacting,
+# takes priority when true): climbs toward higher detail during interaction
+# when frame time has headroom, backs off immediately when it doesn't,
+# instead of always pinning to the lowest LOD tier while interacting.
+adaptive_interacting_level = true
+frame_time_budget_ms = 14.0
 verbose = true
+
+[viewport]
+# Startup view count. Additional independent views can be opened from the UI.
+count = 1
 
 [tile]
 enabled = true
@@ -74,4 +92,13 @@ max_visible_tiles = 160
 
 use_full_z_range = true
 verbose = true
-gpu_cache_max_tiles = 128
+# Raised from 128 -> 512 (docs/benchmark/memory-budget.md Task 3/4): memory
+# is not the bottleneck at 1e8 points (16 bytes/point), so cap is sized to
+# cover the full tile set rather than rationing GPU-resident tiles.
+gpu_cache_max_tiles = 512
+# Upload at most 8 MiB of newly visible tile data per frame.
+gpu_upload_budget_bytes = 8388608
+# CPU tile cache memory budget. Cached tiles are evicted by LRU.
+# Raised from 512MB -> 4GB so most/all tiles stay CPU-resident at larger
+# scale, cutting repeat disk reads (helps the reload-latency goal).
+cpu_cache_max_bytes = 4294967296

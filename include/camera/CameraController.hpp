@@ -1,9 +1,30 @@
 #pragma once
 
 #include "camera/Camera.hpp"
-#include "platform/Window.hpp"
+
+#include <cstdint>
 
 namespace gs3d::camera {
+
+struct CameraInput {
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
+
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    float scroll_y = 0.0f;
+
+    bool rotate = false;
+    bool pan = false;
+
+    [[nodiscard]]
+    bool interacting() const noexcept {
+        return
+            (rotate && (delta_x != 0.0f || delta_y != 0.0f)) ||
+            (pan && (delta_x != 0.0f || delta_y != 0.0f)) ||
+            scroll_y != 0.0f;
+    }
+};
 
 struct CameraControllerConfig {
     float rotate_speed = 1.0f;
@@ -37,9 +58,10 @@ public:
 
     void reset_view(Camera& camera) const noexcept;
 
-    void update(
+    [[nodiscard]]
+    bool update(
         Camera& camera,
-        const gs3d::platform::Window& window
+        const CameraInput& input
     ) noexcept;
 
 private:

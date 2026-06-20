@@ -1,4 +1,5 @@
 #include "render/PointCloudTileGpu.hpp"
+#include "render/FrameUploadBudget.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <algorithm>
@@ -137,6 +138,15 @@ const PointCloudGpu& PointCloudTileGpu::gpu_cloud_for_tile(
     return it->second.gpu_cloud;
 }
 
+bool PointCloudTileGpu::has_resident_tile(
+    std::uint64_t tile_id
+) const noexcept {
+    const auto found = resident_tiles_.find(tile_id);
+    return
+        found != resident_tiles_.end() &&
+        found->second.gpu_cloud.valid();
+}
+
 std::uint64_t PointCloudTileGpu::tile_count() const noexcept {
     return stats_.tile_count;
 }
@@ -172,22 +182,21 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     const std::vector<std::pair<
         std::uint64_t,
         std::shared_ptr<const std::vector<gs3d::data::Gs3dPoint>>
-    >>& tiles
+    >>& tiles,
+    std::uint64_t max_upload_bytes
 ) {
     if (tiles.empty()) {
         clear();
-        return {};
+        PointCloudTileGpuSyncResult result;
+        result.complete = true;
+        return result;
     }
 
     PointCloudTileGpuSyncResult result;
-    std::unordered_set<std::uint64_t> active_tile_ids;
-    active_tile_ids.reserve(tiles.size());
-
-    loaded_tile_ids_.clear();
-    loaded_tile_ids_.reserve(tiles.size());
-
-    std::uint64_t active_point_count = 0;
-    std::uint64_t active_point_bytes = 0;
+    FrameUploadBudget upload_budget(max_upload_bytes);
+    std::vector<std::pair<std::uint64_t, ResidentTileGpu>>
+        prepared_tiles;
+    prepared_tiles.reserve(tiles.size());
 
     for (const auto& [tile_id, points] : tiles) {
         if (!points || points->empty()) {
@@ -196,35 +205,77 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
             );
         }
 
-        loaded_tile_ids_.push_back(tile_id);
-        active_tile_ids.insert(tile_id);
-        const auto current_tick = ++usage_tick_;
-
         const auto point_count =
             static_cast<std::uint64_t>(points->size());
+        const auto point_bytes =
+            point_count *
+            static_cast<std::uint64_t>(sizeof(gs3d::data::Gs3dPoint));
 
+        if (resident_tiles_.contains(tile_id)) {
+            continue;
+        }
+
+        if (!upload_budget.try_reserve(point_bytes)) {
+            continue;
+        }
+
+        ResidentTileGpu tile_gpu;
+        tile_gpu.gpu_cloud.prepare_upload(
+            context,
+            points->data(),
+            point_count
+        );
+        tile_gpu.point_count = point_count;
+        prepared_tiles.emplace_back(tile_id, std::move(tile_gpu));
+        result.uploaded_tile_count += 1;
+        result.uploaded_point_count += point_count;
+        result.uploaded_bytes = upload_budget.reserved_bytes();
+    }
+
+    if (!prepared_tiles.empty()) {
+        const VkCommandBuffer command_buffer =
+            VulkanBufferUtils::begin_single_time_commands(
+                context,
+                command_pool
+            );
+        for (const auto& [tile_id, tile] : prepared_tiles) {
+            (void)tile_id;
+            tile.gpu_cloud.record_prepared_upload(command_buffer);
+        }
+        VulkanBufferUtils::end_single_time_commands(
+            context,
+            command_pool,
+            transfer_queue,
+            command_buffer
+        );
+
+        for (auto& [tile_id, tile] : prepared_tiles) {
+            resident_tiles_.emplace(tile_id, std::move(tile));
+        }
+    }
+
+    std::unordered_set<std::uint64_t> active_tile_ids;
+    active_tile_ids.reserve(tiles.size());
+    loaded_tile_ids_.clear();
+    loaded_tile_ids_.reserve(tiles.size());
+
+    std::uint64_t active_point_count = 0;
+    std::uint64_t active_point_bytes = 0;
+    for (const auto& [tile_id, points] : tiles) {
+        const auto resident = resident_tiles_.find(tile_id);
+        if (resident == resident_tiles_.end()) {
+            continue;
+        }
+
+        resident->second.last_used_tick = ++usage_tick_;
+        loaded_tile_ids_.push_back(tile_id);
+        active_tile_ids.insert(tile_id);
+        const auto point_count =
+            static_cast<std::uint64_t>(points->size());
         active_point_count += point_count;
         active_point_bytes +=
             point_count *
             static_cast<std::uint64_t>(sizeof(gs3d::data::Gs3dPoint));
-
-        if (!resident_tiles_.contains(tile_id)) {
-            ResidentTileGpu tile_gpu;
-            tile_gpu.gpu_cloud.upload_points(
-                context,
-                command_pool,
-                transfer_queue,
-                points->data(),
-                point_count
-            );
-            tile_gpu.point_count = point_count;
-            tile_gpu.last_used_tick = current_tick;
-            resident_tiles_.emplace(tile_id, std::move(tile_gpu));
-            result.uploaded_tile_count += 1;
-            result.uploaded_point_count += point_count;
-        } else {
-            resident_tiles_.at(tile_id).last_used_tick = current_tick;
-        }
     }
 
     evict_to_budget(active_tile_ids);
@@ -245,10 +296,11 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     stats_.gpu_buffer_bytes = resident_gpu_bytes;
     stats_.resident_tile_count =
         static_cast<std::uint64_t>(resident_tiles_.size());
-    stats_.success = true;
+    stats_.success = !loaded_tile_ids_.empty();
 
     result.resident_tile_count = stats_.resident_tile_count;
     result.resident_gpu_buffer_bytes = resident_gpu_bytes;
+    result.complete = loaded_tile_ids_.size() == tiles.size();
     return result;
 }
 

@@ -1,6 +1,7 @@
 #include "data/Gs3dReader.hpp"
 
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 
 namespace gs3d::data {
@@ -60,6 +61,36 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
         );
     }
 
+    const auto actual_size = std::filesystem::file_size(path);
+    const auto expected_size =
+        Gs3dFormat::expected_file_size(result.header);
+    if (actual_size != expected_size) {
+        throw std::runtime_error(
+            "Gs3dReader: file size does not match GS3D header"
+        );
+    }
+
+    if (result.header.point_count >
+        static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()
+        )) {
+        throw std::runtime_error(
+            "Gs3dReader: point count exceeds addressable memory"
+        );
+    }
+
+    const auto point_bytes_u64 =
+        result.header.point_count *
+        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+    if (point_bytes_u64 >
+        static_cast<std::uint64_t>(
+            std::numeric_limits<std::streamsize>::max()
+        )) {
+        throw std::runtime_error(
+            "Gs3dReader: point data exceeds stream read limit"
+        );
+    }
+
     in.seekg(
         static_cast<std::streamoff>(result.header.point_data_offset),
         std::ios::beg
@@ -72,9 +103,7 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
     result.points.resize(static_cast<std::size_t>(result.header.point_count));
 
     const auto point_bytes =
-        static_cast<std::streamsize>(
-            result.points.size() * sizeof(Gs3dPoint)
-        );
+        static_cast<std::streamsize>(point_bytes_u64);
 
     if (point_bytes > 0) {
         in.read(

@@ -46,12 +46,19 @@ VulkanRenderer::~VulkanRenderer() {
 }
 
 void VulkanRenderer::draw_frame(gs3d::platform::Window& window) {
-    draw_frame(window, DrawCallback{});
+    draw_frame(window, FrameDrawCallbacks{});
 }
 
 void VulkanRenderer::draw_frame(
     gs3d::platform::Window& window,
     const DrawCallback& draw_callback
+) {
+    draw_frame(window, FrameDrawCallbacks{.in_pass = draw_callback});
+}
+
+void VulkanRenderer::draw_frame(
+    gs3d::platform::Window& window,
+    const FrameDrawCallbacks& callbacks
 ) {
     if (!framebuffer_available(window)) {
         return;
@@ -102,7 +109,7 @@ void VulkanRenderer::draw_frame(
     record_command_buffer(
         command_buffers_[current_frame_],
         image_index,
-        draw_callback
+        callbacks
     );
 
     VkSemaphore wait_semaphores[] = {
@@ -421,11 +428,10 @@ void VulkanRenderer::recreate_swapchain_resources(
 
     vkDeviceWaitIdle(context_.device());
 
-    cleanup_swapchain_resources();
+    cleanup_framebuffers_and_depth();
 
     swapchain_.recreate(window);
 
-    create_render_pass();
     depth_buffer_.create(context_, swapchain_.extent());
     create_framebuffers();
 }
@@ -433,7 +439,7 @@ void VulkanRenderer::recreate_swapchain_resources(
 void VulkanRenderer::record_command_buffer(
     VkCommandBuffer command_buffer,
     std::uint32_t image_index,
-    const DrawCallback& draw_callback
+    const FrameDrawCallbacks& callbacks
 ) {
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType =
@@ -443,6 +449,11 @@ void VulkanRenderer::record_command_buffer(
         vkBeginCommandBuffer(command_buffer, &begin_info),
         "VulkanRenderer: failed to begin command buffer"
     );
+
+    // pre_pass: offscreen render passes go here, outside the swapchain render pass.
+    if (callbacks.pre_pass) {
+        callbacks.pre_pass(command_buffer);
+    }
 
     VkClearValue clear_values[2]{};
 
@@ -479,8 +490,8 @@ void VulkanRenderer::record_command_buffer(
         VK_SUBPASS_CONTENTS_INLINE
     );
 
-    if (draw_callback) {
-        draw_callback(command_buffer);
+    if (callbacks.in_pass) {
+        callbacks.in_pass(command_buffer);
     }
 
     vkCmdEndRenderPass(command_buffer);
@@ -492,6 +503,20 @@ void VulkanRenderer::record_command_buffer(
 }
 
 void VulkanRenderer::cleanup_swapchain_resources() {
+    cleanup_framebuffers_and_depth();
+
+    if (render_pass_ != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(
+            context_.device(),
+            render_pass_,
+            nullptr
+        );
+
+        render_pass_ = VK_NULL_HANDLE;
+    }
+}
+
+void VulkanRenderer::cleanup_framebuffers_and_depth() {
     for (auto framebuffer : framebuffers_) {
         if (framebuffer != VK_NULL_HANDLE) {
             vkDestroyFramebuffer(
@@ -505,16 +530,6 @@ void VulkanRenderer::cleanup_swapchain_resources() {
     framebuffers_.clear();
 
     depth_buffer_.destroy();
-
-    if (render_pass_ != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(
-            context_.device(),
-            render_pass_,
-            nullptr
-        );
-
-        render_pass_ = VK_NULL_HANDLE;
-    }
 }
 
 void VulkanRenderer::cleanup_sync_objects() {

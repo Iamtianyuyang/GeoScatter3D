@@ -796,6 +796,12 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         );
     }
 
+    if (!dataset.has_point_data()) {
+        throw std::runtime_error(
+            "Gs3dTileWriter: source dataset has no loaded point data"
+        );
+    }
+
     if (config.tile_size_x <= 0.0f ||
         config.tile_size_y <= 0.0f) {
         throw std::runtime_error(

@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -30,8 +31,10 @@ struct PointCloudTileGpuStats {
 struct PointCloudTileGpuSyncResult {
     std::uint64_t uploaded_tile_count = 0;
     std::uint64_t uploaded_point_count = 0;
+    std::uint64_t uploaded_bytes = 0;
     std::uint64_t resident_tile_count = 0;
     std::uint64_t resident_gpu_buffer_bytes = 0;
+    bool complete = false;
 };
 
 class PointCloudTileGpu {
@@ -96,7 +99,9 @@ public:
         const std::vector<std::pair<
             std::uint64_t,
             std::shared_ptr<const std::vector<gs3d::data::Gs3dPoint>>
-        >>& tiles
+        >>& tiles,
+        std::uint64_t max_upload_bytes =
+            std::numeric_limits<std::uint64_t>::max()
     );
 
     void clear() noexcept;
@@ -117,6 +122,9 @@ public:
     const PointCloudGpu& gpu_cloud_for_tile(
         std::uint64_t tile_id
     ) const;
+
+    [[nodiscard]]
+    bool has_resident_tile(std::uint64_t tile_id) const noexcept;
 
     [[nodiscard]]
     std::uint64_t tile_count() const noexcept;

@@ -25,6 +25,13 @@ class VulkanRenderer {
 public:
     using DrawCallback = std::function<void(VkCommandBuffer command_buffer)>;
 
+    // pre_pass: recorded before vkCmdBeginRenderPass (use for offscreen render passes)
+    // in_pass:  recorded inside the main swapchain render pass (ImGui, overlays)
+    struct FrameDrawCallbacks {
+        DrawCallback pre_pass{};
+        DrawCallback in_pass{};
+    };
+
 public:
     VulkanRenderer(
         const VulkanContext& context,
@@ -41,9 +48,16 @@ public:
 
     void draw_frame(gs3d::platform::Window& window);
 
+    // Legacy: draw_callback runs inside the main render pass.
     void draw_frame(
         gs3d::platform::Window& window,
         const DrawCallback& draw_callback
+    );
+
+    // Full control: pre_pass before render pass, in_pass inside render pass.
+    void draw_frame(
+        gs3d::platform::Window& window,
+        const FrameDrawCallbacks& callbacks
     );
 
     void set_clear_color(const ClearColor& color) noexcept;
@@ -98,10 +112,11 @@ private:
     void record_command_buffer(
         VkCommandBuffer command_buffer,
         std::uint32_t image_index,
-        const DrawCallback& draw_callback
+        const FrameDrawCallbacks& callbacks
     );
 
     void cleanup_swapchain_resources();
+    void cleanup_framebuffers_and_depth();
     void cleanup_sync_objects();
 
     [[nodiscard]]

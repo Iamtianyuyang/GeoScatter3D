@@ -10,11 +10,13 @@ namespace gs3d::data {
 Gs3dDataset::Gs3dDataset(
     Gs3dHeader header,
     std::vector<Gs3dPoint> points,
-    std::filesystem::path source_path
+    std::filesystem::path source_path,
+    bool metadata_only
 )
     : header_(header)
     , points_(std::move(points))
     , source_path_(std::move(source_path))
+    , metadata_only_(metadata_only)
 {
     if (!Gs3dFormat::is_valid_header(header_)) {
         throw std::runtime_error(
@@ -23,7 +25,13 @@ Gs3dDataset::Gs3dDataset(
         );
     }
 
-    if (points_.size() != header_.point_count) {
+    if (metadata_only_ && !points_.empty()) {
+        throw std::runtime_error(
+            "Gs3dDataset: metadata-only dataset cannot contain points"
+        );
+    }
+
+    if (!metadata_only_ && points_.size() != header_.point_count) {
         throw std::runtime_error(
             "Gs3dDataset: point vector size does not match header point_count"
         );
@@ -56,7 +64,16 @@ std::uint64_t Gs3dDataset::point_bytes() const noexcept {
 }
 
 bool Gs3dDataset::empty() const noexcept {
-    return points_.empty();
+    return header_.point_count == 0;
+}
+
+bool Gs3dDataset::has_point_data() const noexcept {
+    return !points_.empty() &&
+           points_.size() == header_.point_count;
+}
+
+bool Gs3dDataset::metadata_only() const noexcept {
+    return metadata_only_;
 }
 
 const std::filesystem::path& Gs3dDataset::source_path() const noexcept {
@@ -113,7 +130,9 @@ std::string Gs3dDataset::summary() const {
     oss << "Gs3dDataset\n";
     oss << "  source_path: " << source_path_.string() << '\n';
     oss << "  point_count: " << point_count() << '\n';
-    oss << "  point_bytes: " << point_bytes() << '\n';
+    oss << "  loaded_point_bytes: " << point_bytes() << '\n';
+    oss << "  metadata_only: "
+        << (metadata_only_ ? "true" : "false") << '\n';
 
     oss << "  origin: ["
         << origin_x() << ", "
@@ -142,11 +161,11 @@ bool Gs3dDataset::is_consistent() const noexcept {
         return false;
     }
 
-    if (points_.size() != header_.point_count) {
-        return false;
+    if (metadata_only_) {
+        return points_.empty();
     }
 
-    return true;
+    return points_.size() == header_.point_count;
 }
 
 Gs3dDataset Gs3dDatasetLoader::load(const std::filesystem::path& path) {
@@ -164,19 +183,11 @@ Gs3dDataset Gs3dDatasetLoader::load_header_only(
 ) {
     const auto header = Gs3dReader::read_header(path);
 
-    std::vector<Gs3dPoint> empty_points;
-
-    if (header.point_count != 0) {
-        throw std::runtime_error(
-            "Gs3dDatasetLoader: header-only dataset cannot be constructed "
-            "with nonzero point_count in current Gs3dDataset design"
-        );
-    }
-
     return Gs3dDataset(
         header,
-        std::move(empty_points),
-        path
+        {},
+        path,
+        true
     );
 }
 

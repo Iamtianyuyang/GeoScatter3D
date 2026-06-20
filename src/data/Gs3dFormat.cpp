@@ -81,6 +81,13 @@ bool Gs3dFormat::is_valid_header(const Gs3dHeader& header) {
         return false;
     }
 
+    const std::uint64_t point_bytes =
+        header.point_count * static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+    if (header.point_data_offset >
+        std::numeric_limits<std::uint64_t>::max() - point_bytes) {
+        return false;
+    }
+
     return true;
 }
 
@@ -116,6 +123,13 @@ std::string Gs3dFormat::describe_header_error(const Gs3dHeader& header) {
 
     if (header.point_count > max_count) {
         return "GS3D point count is too large";
+    }
+
+    const std::uint64_t point_bytes =
+        header.point_count * static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+    if (header.point_data_offset >
+        std::numeric_limits<std::uint64_t>::max() - point_bytes) {
+        return "GS3D file size overflows uint64";
     }
 
     return "valid GS3D header";

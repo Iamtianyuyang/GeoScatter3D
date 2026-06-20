@@ -22,7 +22,7 @@ struct ViewerAppConfig {
     unsigned int window_height = 720;
 
     std::string window_title =
-        "GeoScatter3D Viewer";
+        "GeoScatter3D 三维散点查看器";
 
     bool window_resizable = true;
 
@@ -85,6 +85,13 @@ struct ViewerAppConfig {
         300'000ull
     };
 
+    /*
+     * 按源点数比例算 target_point_counts，不用每次数据规模变了就手调绝对值
+     * （见 include/data/Gs3dLodTargets.hpp）。非空时优先于上面的
+     * lod_target_point_counts。默认空——不设置就完全是旧行为。
+     */
+    std::vector<double> lod_target_point_ratios{};
+
     std::string lod_voxel_mode = "XY";
     float lod_voxel_scale = 1.0f;
 
@@ -92,6 +99,15 @@ struct ViewerAppConfig {
     double lod_high_delay_seconds = 0.80;
 
     bool lod_use_lowest_while_interacting = true;
+
+    /*
+     * 在 use_lowest_while_interacting 之上做帧时间自适应：交互时不固定用
+     * 最低档，而是按最近测得的帧时间在档位间爬升/回退（AIMD 风格——超预算
+     * 立刻退一档，达标若干帧才升一档），核显/独显都能自动找到合适档位。
+     */
+    bool lod_adaptive_interacting_level = false;
+    double lod_frame_time_budget_ms = 14.0;
+
     bool lod_verbose = true;
 
         bool tile_enabled = false;
@@ -113,6 +129,22 @@ struct ViewerAppConfig {
     bool tile_use_full_z_range = true;
     bool tile_verbose = true;
     std::uint32_t tile_gpu_cache_max_tiles = 256;
+    std::uint64_t tile_gpu_upload_budget_bytes =
+        8ull * 1024ull * 1024ull;
+    std::uint64_t tile_cpu_cache_max_bytes =
+        512ull * 1024ull * 1024ull;
+
+    // Number of 3D views visible at startup. More can be opened up to 4.
+    int viewport_count = 1;
+
+    /*
+     * Benchmark mode (GeoScatter3DBenchmark): drives the camera with a
+     * synthetic orbit instead of real input, exits after a fixed frame
+     * count instead of waiting for the window to close, and prints
+     * frame-time / reload-latency percentiles to stdout on exit.
+     */
+    bool benchmark_mode = false;
+    std::uint32_t benchmark_frame_count = 600;
 };
 
 class ViewerApp {

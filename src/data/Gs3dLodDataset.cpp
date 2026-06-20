@@ -365,6 +365,12 @@ Gs3dLodDataset Gs3dLodDataset::build(
         );
     }
 
+    if (!dataset.has_point_data()) {
+        throw std::runtime_error(
+            "Gs3dLodDataset: source dataset has no loaded point data"
+        );
+    }
+
     if (config.target_point_counts.empty() &&
         !config.include_full_resolution_level) {
         throw std::runtime_error(

@@ -3,6 +3,7 @@
 .claude/
 cmake-build-*/
 build/
+build-*/
 out/
 *.o
 *.obj

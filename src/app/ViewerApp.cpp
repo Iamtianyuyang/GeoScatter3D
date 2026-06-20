@@ -1,10 +1,19 @@
 #include "app/ViewerApp.hpp"
 
+#include "app/AppState.hpp"
+#include "app/TilePointCache.hpp"
+#include "app/ViewportResizeScheduler.hpp"
+#include "gui/ImGuiLayer.hpp"
+#include "render/ViewportManager.hpp"
+#include "imgui.h"
+
 #include "camera/Camera.hpp"
 #include "camera/CameraController.hpp"
+#include "camera/CameraHub.hpp"
 #include "data/Gs3dDataset.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "data/Gs3dLodReader.hpp"
+#include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dTileReader.hpp"
 
 #include "platform/Window.hpp"
@@ -19,6 +28,7 @@
 #include "render/TileSelection.hpp"
 
 #include "preprocess/Gs3dLodWriter.hpp"
+#include "util/PercentileStats.hpp"
 #include "util/Stopwatch.hpp"
 
 #include <GLFW/glfw3.h>
@@ -32,11 +42,9 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <optional>
 #include <sstream>
-#include <unordered_map>
 
 namespace gs3d::app {
 
@@ -104,44 +112,6 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
     return tile_config;
 }
 
-bool same_query_box(
-    const std::optional<gs3d::data::Gs3dTileQueryBox>& loaded_box,
-    const gs3d::data::Gs3dTileQueryBox& current_box
-) noexcept {
-    if (!loaded_box.has_value()) {
-        return false;
-    }
-
-    constexpr float epsilon = 1.0e-3f;
-    const auto close = [epsilon](float a, float b) noexcept {
-        return std::abs(a - b) <= epsilon;
-    };
-
-    const auto& box = *loaded_box;
-
-    return close(box.min_x, current_box.min_x) &&
-           close(box.min_y, current_box.min_y) &&
-           close(box.min_z, current_box.min_z) &&
-           close(box.max_x, current_box.max_x) &&
-           close(box.max_y, current_box.max_y) &&
-           close(box.max_z, current_box.max_z);
-}
-
-[[nodiscard]]
-std::string selection_cache_key(
-    const std::vector<std::uint64_t>& tile_ids
-) {
-    std::string key;
-    key.reserve(tile_ids.size() * 10);
-
-    for (const auto tid : tile_ids) {
-        key += std::to_string(tid);
-        key.push_back(',');
-    }
-
-    return key;
-}
-
 gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
     const gs3d::data::Gs3dDataset& dataset,
     const ViewerAppConfig& config
@@ -149,7 +119,11 @@ gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
     gs3d::data::Gs3dLodBuildConfig lod_config;
     lod_config.include_full_resolution_level = false;
     lod_config.target_point_counts =
-        config.lod_target_point_counts;
+        gs3d::data::resolve_lod_target_point_counts(
+            dataset.point_count(),
+            config.lod_target_point_ratios,
+            config.lod_target_point_counts
+        );
     lod_config.voxel_mode =
         parse_lod_voxel_mode(config.lod_voxel_mode);
     lod_config.voxel_scale =
@@ -292,7 +266,11 @@ void print_dataset_info(
 ) {
     std::cout << "[OK] Dataset loaded.\n";
     std::cout << "point_count = " << dataset.point_count() << '\n';
-    std::cout << "point_bytes = " << dataset.point_bytes() << '\n';
+    std::cout << "loaded_point_bytes = "
+              << dataset.point_bytes() << '\n';
+    std::cout << "metadata_only = "
+              << (dataset.metadata_only() ? "true" : "false")
+              << '\n';
 
     std::cout << "bbox_min = ["
               << dataset.bbox_min_x() << ", "
@@ -314,36 +292,73 @@ void print_controls(
     bool tile_enabled
 ){
     std::cout << "[OK] Entering render loop.\n";
-    std::cout << "Controls:\n";
-    std::cout << "  Left drag   : orbit\n";
-    std::cout << "  Right drag  : pan\n";
-    std::cout << "  Middle drag : pan\n";
-    std::cout << "  Wheel       : zoom\n";
-    std::cout << "  + / -       : point size\n";
-    std::cout << "  R           : reset view\n";
-    std::cout << "  Tab         : cycle color attribute\n";
-    std::cout << "  Esc         : quit\n";
-    std::cout << "Render mode:\n";
+    std::cout << "操作说明：\n";
+    std::cout << "  左键拖动：轨道旋转\n";
+    std::cout << "  右键/中键拖动：平移\n";
+    std::cout << "  滚轮：缩放\n";
+    std::cout << "  + / -：调整点大小\n";
+    std::cout << "  R：重置视图\n";
+    std::cout << "  Tab：切换着色属性\n";
+    std::cout << "  Esc：退出\n";
+    std::cout << "渲染模式：\n";
     std::cout << "  LOD         : "
-              << (lod_enabled ? "enabled" : "disabled")
+              << (lod_enabled ? "启用" : "关闭")
               << '\n';
-    std::cout << "  Tile full-res : "
-              << (tile_enabled ? "enabled" : "disabled")
+    std::cout << "  全分辨率瓦片："
+              << (tile_enabled ? "启用" : "关闭")
               << '\n';
 }
 
-bool window_interacting(
-    const gs3d::platform::Window& window
-) {
-    const auto& mouse = window.mouse_state();
+// Round a world-space distance to a human-readable "nice" value:
+//   1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 …
+// Follows the same algorithm used by Leaflet (BSD-2) and Cesium (Apache 2).
+float nice_scale_distance(float raw)
+{
+    if (raw <= 0.0f) return 1.0f;
+    const float mag = std::pow(10.0f, std::floor(std::log10(static_cast<double>(raw))));
+    const float n   = raw / mag;
+    if (n < 1.5f) return       mag;
+    if (n < 3.5f) return 2.0f * mag;
+    if (n < 7.5f) return 5.0f * mag;
+    return 10.0f * mag;
+}
 
-    return mouse.left_pressed ||
-           mouse.right_pressed ||
-           mouse.middle_pressed ||
-           mouse.scroll_y != 0.0;
+// Assumes the dataset coordinate unit is metres.
+std::string format_scale_distance(float d)
+{
+    char buf[48];
+    if (d >= 1000.0f) {
+        std::snprintf(buf, sizeof(buf), "%.0f 千米",
+            static_cast<double>(d / 1000.0f));
+    } else if (d >= 1.0f) {
+        std::snprintf(buf, sizeof(buf), "%.0f 米",
+            static_cast<double>(d));
+    } else if (d >= 0.01f) {
+        std::snprintf(buf, sizeof(buf), "%.0f 厘米",
+            static_cast<double>(d * 100.0f));
+    } else {
+        std::snprintf(buf, sizeof(buf), "%.0f 毫米",
+            static_cast<double>(d * 1000.0f));
+    }
+    return buf;
+}
+
+std::string format_vec3_text(const gs3d::camera::Vec3& value)
+{
+    char buf[96];
+    std::snprintf(
+        buf,
+        sizeof(buf),
+        "%.1f, %.1f, %.1f",
+        static_cast<double>(value.x),
+        static_cast<double>(value.y),
+        static_cast<double>(value.z)
+    );
+    return buf;
 }
 
 constexpr double kTileSelectionDebounceSeconds = 0.12;
+constexpr int kMaxViewportCount = 4;
 
 } // namespace
 
@@ -356,9 +371,21 @@ int ViewerApp::run() {
     try {
         gs3d::util::Stopwatch startup_timer;
 
+        const bool can_start_from_metadata =
+            config_.lod_enabled &&
+            !config_.lod_keep_full_buffer &&
+            config_.lod_auto_load_sidecar &&
+            !config_.lod_sidecar_path.empty() &&
+            std::filesystem::exists(config_.lod_sidecar_path);
+
         gs3d::util::Stopwatch dataset_load_timer;
-        const auto dataset =
-            gs3d::data::Gs3dDatasetLoader::load(config_.gs3d_path);
+        auto dataset = can_start_from_metadata
+            ? gs3d::data::Gs3dDatasetLoader::load_header_only(
+                config_.gs3d_path
+            )
+            : gs3d::data::Gs3dDatasetLoader::load(
+                config_.gs3d_path
+            );
         std::cout << "[TIME] viewer.dataset_load_seconds = "
                   << dataset_load_timer.elapsed_seconds()
                   << '\n';
@@ -368,7 +395,7 @@ int ViewerApp::run() {
             return 1;
         }
 
-        if (dataset.empty()) {
+        if (dataset.point_count() == 0) {
             std::cerr << "[FAIL] dataset is empty.\n";
             return 1;
         }
@@ -413,11 +440,35 @@ int ViewerApp::run() {
 
         if (config_.lod_enabled) {
             gs3d::util::Stopwatch lod_timer;
-            lod_dataset =
-                load_or_build_lod_dataset(
-                    dataset,
-                    config_
-                );
+            try {
+                lod_dataset =
+                    load_or_build_lod_dataset(
+                        dataset,
+                        config_
+                    );
+            } catch (const std::exception&) {
+                if (!dataset.metadata_only()) {
+                    throw;
+                }
+
+                std::cout
+                    << "[WARN] Metadata-only startup cannot build LOD; "
+                    << "loading full GS3D data.\n";
+                gs3d::util::Stopwatch fallback_load_timer;
+                dataset =
+                    gs3d::data::Gs3dDatasetLoader::load(
+                        config_.gs3d_path
+                    );
+                std::cout
+                    << "[TIME] viewer.dataset_fallback_load_seconds = "
+                    << fallback_load_timer.elapsed_seconds()
+                    << '\n';
+                lod_dataset =
+                    load_or_build_lod_dataset(
+                        dataset,
+                        config_
+                    );
+            }
             std::cout << "[TIME] viewer.lod_prepare_seconds = "
                       << lod_timer.elapsed_seconds()
                       << '\n';
@@ -447,6 +498,14 @@ int ViewerApp::run() {
 
         gs3d::render::VulkanSwapchain swapchain(context, window);
         gs3d::render::VulkanRenderer renderer(context, swapchain);
+
+        gs3d::gui::ImGuiLayer imgui_layer;
+        imgui_layer.init(
+            window.native_handle(),
+            context,
+            renderer,
+            swapchain.image_count()
+        );
 
         gs3d::render::ClearColor clear_color;
         clear_color.r = config_.clear_color[0];
@@ -486,6 +545,36 @@ int ViewerApp::run() {
                       << '\n';
         }
 
+        // Camera must be initialized before ViewportManager (which clones it).
+        // Bounds are needed for fit-mode and for the CameraController.
+        const gs3d::camera::CameraBounds bounds =
+            make_camera_bounds(dataset);
+
+        gs3d::camera::Camera initial_camera;
+        VkExtent2D initial_viewport_extent = swapchain.extent();
+        initial_camera.set_viewport(
+            initial_viewport_extent.width,
+            initial_viewport_extent.height
+        );
+        initialize_camera_from_config(initial_camera, config_, bounds);
+
+        // ViewportManager: N (OffscreenFramebuffer, Camera) pairs.
+        // All framebuffers use swapchain.image_format() → Vulkan-compatible with
+        // each other, so a single PointPipeline works for all viewports.
+        // Must be created after ImGui init (registers descriptors via AddTexture).
+        gs3d::render::ViewportManager viewport_manager;
+        viewport_manager.init(
+            context,
+            swapchain.image_format(),
+            kMaxViewportCount,
+            initial_viewport_extent,
+            initial_camera
+        );
+        viewport_manager.set_active_count(
+            std::clamp(config_.viewport_count, 1, kMaxViewportCount)
+        );
+        viewport_manager.set_clear_color(clear_color);
+
         gs3d::render::PointPipelineConfig pipeline_config;
         pipeline_config.vertex_shader_path =
             config_.vertex_shader_path;
@@ -494,26 +583,11 @@ int ViewerApp::run() {
 
         gs3d::render::PointPipeline point_pipeline(
             context,
-            renderer.render_pass(),
+            viewport_manager.render_pass(),
             pipeline_config
         );
 
         std::cout << "[OK] PointPipeline created.\n";
-
-        const gs3d::camera::CameraBounds bounds =
-            make_camera_bounds(dataset);
-
-        gs3d::camera::Camera camera;
-        camera.set_viewport(
-            config_.window_width,
-            config_.window_height
-        );
-
-        initialize_camera_from_config(
-            camera,
-            config_,
-            bounds
-        );
 
         gs3d::camera::CameraControllerConfig controller_config;
         controller_config.rotate_speed =
@@ -531,22 +605,39 @@ int ViewerApp::run() {
         controller_config.invert_pan_y =
             config_.controller_invert_pan_y;
 
-        gs3d::camera::CameraController controller(controller_config);
-        controller.set_bounds(bounds);
+        // One controller per viewport so each can be interacted with independently.
+        std::vector<gs3d::camera::CameraController> controllers;
+        controllers.reserve(
+            static_cast<std::size_t>(viewport_manager.viewport_count())
+        );
+        for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
+            controllers.emplace_back(controller_config);
+            controllers.back().set_bounds(bounds);
+        }
+
+        // Views start independent. The per-view UI can opt into sync group 0.
+        gs3d::camera::CameraHub camera_hub;
+        for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
+            camera_hub.add(
+                i,
+                &viewport_manager.camera(i),
+                gs3d::camera::CameraHub::kIndependent
+            );
+        }
 
         std::cout << "[OK] CameraController initialized.\n";
         std::cout << "camera position = ["
-                  << camera.position().x << ", "
-                  << camera.position().y << ", "
-                  << camera.position().z << "]\n";
+                  << viewport_manager.camera(0).position().x << ", "
+                  << viewport_manager.camera(0).position().y << ", "
+                  << viewport_manager.camera(0).position().z << "]\n";
 
         std::cout << "camera target = ["
-                  << camera.target().x << ", "
-                  << camera.target().y << ", "
-                  << camera.target().z << "]\n";
+                  << viewport_manager.camera(0).target().x << ", "
+                  << viewport_manager.camera(0).target().y << ", "
+                  << viewport_manager.camera(0).target().z << "]\n";
 
         std::cout << "camera distance = "
-                  << camera.distance() << '\n';
+                  << viewport_manager.camera(0).distance() << '\n';
 
         gs3d::render::PointPushConstants push{};
         push.point_size  = config_.initial_point_size;
@@ -554,15 +645,21 @@ int ViewerApp::run() {
         push.value_min   = dataset.value_min();
         push.value_range = dataset.value_max() - dataset.value_min();
         if (push.value_range <= 0.0f) push.value_range = 1.0f;
-
-        fill_push_constants(push, camera);
+        // MVP is set per-viewport inside render_all; clip_mode is zero-initialized.
 
         /*
          * Tracks the query box of the tile buffer currently on the GPU.
          * Used to clip LOD draws so LOD points don't overlap full-res tiles.
          * Reset when the tile buffer is cleared.
          */
-        std::optional<gs3d::data::Gs3dTileQueryBox> loaded_tile_query_box;
+        std::array<
+            std::vector<std::uint64_t>,
+            kMaxViewportCount
+        > viewport_tile_ids;
+        std::array<
+            std::optional<gs3d::data::Gs3dTileQueryBox>,
+            kMaxViewportCount
+        > viewport_tile_query_boxes;
 
         /*
          * 异步磁盘读取（Potree/Cesium 模式）：
@@ -571,6 +668,10 @@ int ViewerApp::run() {
          */
         struct TileLoadResult {
             std::vector<std::uint64_t>          tile_ids;
+            std::vector<std::pair<
+                std::uint64_t,
+                SharedTilePoints
+            >>                                  tiles;
             gs3d::data::Gs3dTileQueryBox        actual_bbox;
             double                              read_seconds = 0.0;
             std::size_t                         cache_hit_tiles = 0;
@@ -578,7 +679,11 @@ int ViewerApp::run() {
             std::size_t                         candidate_tiles = 0;
         };
 
+        TilePointCache tile_point_cache(
+            config_.tile_cpu_cache_max_bytes
+        );
         std::future<TileLoadResult> tile_load_future;
+        std::optional<TileLoadResult> tile_upload_pending;
         // IDs dispatched to background thread (may differ from current selection)
         std::vector<std::uint64_t> tile_loading_ids;
         std::vector<std::uint64_t> debounced_tile_ids;
@@ -586,11 +691,20 @@ int ViewerApp::run() {
             std::chrono::steady_clock::now();
         gs3d::util::Stopwatch tile_async_cycle_timer;
 
-        std::unordered_map<
-            std::uint64_t,
-            std::shared_ptr<std::vector<gs3d::data::Gs3dPoint>>
-        > tile_point_cache;
-        std::mutex tile_cache_mutex;
+        ViewportResizeScheduler viewport_resize_scheduler(0.15);
+
+        // Benchmark-mode instrumentation (no-ops when benchmark_mode is false).
+        std::uint32_t benchmark_frame_index = 0;
+        std::vector<double> benchmark_frame_times_ms;
+        std::vector<double> benchmark_reload_seconds;
+        if (config_.benchmark_mode) {
+            benchmark_frame_times_ms.reserve(config_.benchmark_frame_count);
+        }
+        // Orbit for the first 2/3 of the run (measures interaction frame
+        // time), then hold still for the last 1/3 (measures tile/LOD
+        // settle/reload latency once the camera stops moving).
+        const std::uint32_t benchmark_orbit_frames =
+            config_.benchmark_frame_count * 2 / 3;
 
         gs3d::render::LodSelector lod_selector;
 
@@ -602,11 +716,18 @@ int ViewerApp::run() {
                 config_.lod_high_delay_seconds;
             lod_selector_config.use_lowest_while_interacting =
                 config_.lod_use_lowest_while_interacting;
+            lod_selector_config.adaptive_interacting_level =
+                config_.lod_adaptive_interacting_level;
+            lod_selector_config.frame_time_budget_ms =
+                config_.lod_frame_time_budget_ms;
 
             lod_selector.set_config(lod_selector_config);
         }
 
         gs3d::render::TileSelection tile_selection;
+        gs3d::render::TileSelectionResult tile_result;
+        bool tile_selection_dirty = true;
+        int streaming_viewport_index = 0;
 
         if (config_.tile_enabled && tile_reader.has_value()) {
             tile_selection.set_config(
@@ -639,16 +760,21 @@ int ViewerApp::run() {
             float range;
         };
         const std::array<AttrDesc, 2> attr_table = {{
-            { "value (amplitude)",
+            { "数值（振幅）",
               dataset.value_min(),
               dataset.value_max() - dataset.value_min() },
-            { "z (elevation)",
+            { "Z（高程）",
               dataset.bbox_min_z(),
               dataset.bbox_max_z() - dataset.bbox_min_z() }
         }};
 
         std::size_t last_lod_level =
              static_cast<std::size_t>(-1);
+        // Hoisted out of the loop body so report_frame_time() can pair the
+        // level rendered in frame N-1 with frame N-1's measured duration
+        // (delta_seconds, computed at the top of frame N) before this
+        // frame reassigns it.
+        std::size_t lod_level_for_frame = 0;
 
         const auto log_tile_upload =
             [this](
@@ -677,6 +803,11 @@ int ViewerApp::run() {
                           << sync.uploaded_tile_count << '\n';
                 std::cout << "uploaded_point_count = "
                           << sync.uploaded_point_count << '\n';
+                std::cout << "uploaded_bytes = "
+                          << sync.uploaded_bytes << '\n';
+                std::cout << "upload_complete = "
+                          << (sync.complete ? "true" : "false")
+                          << '\n';
                 std::cout << "cache_hit_tiles = "
                           << loaded.cache_hit_tiles << '\n';
                 std::cout << "cache_miss_tiles = "
@@ -689,39 +820,75 @@ int ViewerApp::run() {
                           << total_seconds << '\n';
             };
 
-        const auto collect_cached_tile_points =
-            [&tile_point_cache, &tile_cache_mutex](
-                const std::vector<std::uint64_t>& ids
-            ) {
-                std::vector<std::pair<
-                    std::uint64_t,
-                    std::shared_ptr<const std::vector<gs3d::data::Gs3dPoint>>
-                >> tiles;
-                tiles.reserve(ids.size());
-
-                std::scoped_lock lock(tile_cache_mutex);
-                for (const auto tid : ids) {
-                    const auto it = tile_point_cache.find(tid);
-                    if (it == tile_point_cache.end() || !it->second) {
-                        throw std::runtime_error(
-                            "ViewerApp: tile cache missing expected tile"
-                        );
-                    }
-                    tiles.emplace_back(tid, it->second);
-                }
-
-                return tiles;
-            };
-
         auto previous_time =
             std::chrono::steady_clock::now();
+
+        // Smoothed FPS via exponential moving average
+        float fps_smooth = 0.0f;
 
         print_controls(
                         config_.lod_enabled,
                         config_.tile_enabled
                     );
 
-        while (!window.should_close()) {
+        gs3d::app::AppState app_state;
+        app_state.dataset.active_dataset = config_.gs3d_path.filename().string();
+        app_state.dataset.path = config_.gs3d_path.string();
+        app_state.dataset.format = "GS3D";
+        app_state.dataset.point_count = dataset.point_count();
+        app_state.dataset.loaded_points = dataset.point_count();
+        app_state.dataset.bounding_box =
+            "[" + std::to_string(dataset.bbox_min_x()) + ", " +
+            std::to_string(dataset.bbox_min_y()) + ", " +
+            std::to_string(dataset.bbox_min_z()) + "] -> [" +
+            std::to_string(dataset.bbox_max_x()) + ", " +
+            std::to_string(dataset.bbox_max_y()) + ", " +
+            std::to_string(dataset.bbox_max_z()) + "]";
+        app_state.dataset.dataset_tree = {
+            app_state.dataset.active_dataset,
+            "瓦片",
+            "细节层级",
+            "属性"
+        };
+        app_state.dataset.attributes.clear();
+        app_state.render_settings.color_by_options.clear();
+        for (const auto& attr : attr_table) {
+            app_state.dataset.attributes.emplace_back(attr.name);
+            app_state.render_settings.color_by_options.emplace_back(attr.name);
+        }
+        {
+            std::error_code ec;
+            const auto file_bytes = std::filesystem::file_size(config_.gs3d_path, ec);
+            if (!ec) {
+                const double mb = static_cast<double>(file_bytes) / (1024.0 * 1024.0);
+                std::ostringstream oss;
+                oss.setf(std::ios::fixed);
+                oss.precision(2);
+                oss << mb << " MB";
+                app_state.dataset.file_size = oss.str();
+            }
+        }
+        app_state.render_views.resize(
+            static_cast<std::size_t>(viewport_manager.viewport_count())
+        );
+        const int startup_view_count =
+            std::clamp(config_.viewport_count, 1, kMaxViewportCount);
+        for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
+            auto& view =
+                app_state.render_views[static_cast<std::size_t>(i)];
+            view.viewport_index = i;
+            view.visible = i < startup_view_count;
+            view.camera_linked = false;
+        }
+        std::vector<int> visible_viewports;
+        visible_viewports.reserve(
+            static_cast<std::size_t>(viewport_manager.viewport_count())
+        );
+
+        while (!window.should_close() &&
+               (!config_.benchmark_mode ||
+                benchmark_frame_index < config_.benchmark_frame_count)) {
+            gs3d::util::Stopwatch benchmark_frame_timer;
             const auto current_time =
                 std::chrono::steady_clock::now();
 
@@ -732,45 +899,261 @@ int ViewerApp::run() {
 
             previous_time = current_time;
 
+            // Pairs the level rendered last frame with its measured
+            // duration, driving LodSelectorConfig::adaptive_interacting_level
+            // (no-op otherwise). Must run before lod_level_for_frame is
+            // reassigned for *this* frame, further down.
+            if (config_.lod_enabled && delta_seconds > 0.0) {
+                lod_selector.report_frame_time(
+                    lod_level_for_frame,
+                    delta_seconds * 1000.0
+                );
+            }
+
             window.poll_events();
 
-            if (window.key_pressed(GLFW_KEY_ESCAPE)) {
-                window.request_close();
+            // Update FPS (exponential moving average, α=0.1)
+            if (delta_seconds > 0.0) {
+                const float frame_fps =
+                    static_cast<float>(1.0 / delta_seconds);
+                fps_smooth = fps_smooth > 0.0f
+                    ? fps_smooth * 0.9f + frame_fps * 0.1f
+                    : frame_fps;
             }
 
-            if (window.key_pressed(GLFW_KEY_EQUAL) ||
-                window.key_pressed(GLFW_KEY_KP_ADD)) {
-                push.point_size = std::min(
-                    push.point_size + 0.05f,
-                    10.0f
+            const int n_viewports = viewport_manager.viewport_count();
+            const auto& primary_camera =
+                viewport_manager.camera(streaming_viewport_index);
+
+            std::uint32_t loaded_tiles = 0;
+            std::size_t pending_tile_count = tile_loading_ids.size();
+            if (tile_upload_pending.has_value()) {
+                const auto selected =
+                    tile_upload_pending->tile_ids.size();
+                const auto uploaded =
+                    tile_gpu_cloud
+                        ? tile_gpu_cloud->loaded_tile_ids().size()
+                        : 0;
+                pending_tile_count =
+                    std::max(
+                        pending_tile_count,
+                        selected > uploaded
+                            ? selected - uploaded
+                            : std::size_t{0}
+                    );
+            }
+            const std::uint32_t pending_tiles =
+                static_cast<std::uint32_t>(
+                    std::min<std::size_t>(
+                        pending_tile_count,
+                        std::numeric_limits<std::uint32_t>::max()
+                    )
+                );
+            std::uint64_t gpu_buffer_bytes = 0;
+            std::uint64_t visible_points = dataset.point_count();
+
+            if (config_.tile_enabled && tile_gpu_cloud) {
+                const auto& ts = tile_gpu_cloud->stats();
+                loaded_tiles =
+                    static_cast<std::uint32_t>(
+                        ts.resident_tile_count
+                    );
+                gpu_buffer_bytes = ts.gpu_buffer_bytes;
+                visible_points = ts.point_count > 0 ? ts.point_count : dataset.point_count();
+            } else if (full_gpu_cloud) {
+                gpu_buffer_bytes =
+                    static_cast<std::uint64_t>(full_gpu_cloud->vertex_buffer_size());
+            } else if (lod_gpu_cloud) {
+                for (std::size_t i = 0; i < lod_gpu_cloud->level_count(); ++i) {
+                    gpu_buffer_bytes += static_cast<std::uint64_t>(
+                        lod_gpu_cloud->gpu_cloud(i).vertex_buffer_size()
+                    );
+                }
+            }
+
+            app_state.dataset.point_count = dataset.point_count();
+            app_state.dataset.loaded_points = visible_points;
+            app_state.render_settings.point_size = push.point_size;
+            app_state.render_settings.color_by_index = static_cast<int>(push.attr_index);
+            app_state.render_settings.loaded_tiles = loaded_tiles;
+            app_state.render_settings.pending_tiles = pending_tiles;
+            app_state.render_settings.cache_usage =
+                std::to_string(loaded_tiles) + " / " +
+                std::to_string(config_.tile_gpu_cache_max_tiles);
+            const auto tile_cache_stats = tile_point_cache.stats();
+            app_state.render_settings.cpu_cache_usage =
+                std::to_string(
+                    tile_cache_stats.resident_bytes /
+                    (1024ull * 1024ull)
+                ) + " / " +
+                std::to_string(
+                    tile_cache_stats.max_bytes /
+                    (1024ull * 1024ull)
+                ) + " MB";
+            const auto tile_cache_requests =
+                tile_cache_stats.hits + tile_cache_stats.misses;
+            app_state.render_settings.cache_hit_rate =
+                tile_cache_requests > 0
+                    ? 100.0f * static_cast<float>(
+                        tile_cache_stats.hits
+                    ) /
+                        static_cast<float>(tile_cache_requests)
+                    : 0.0f;
+
+            app_state.performance.fps = fps_smooth;
+            app_state.performance.frame_time_ms =
+                delta_seconds > 0.0 ? static_cast<float>(delta_seconds * 1000.0) : 0.0f;
+            app_state.performance.visible_points = visible_points;
+            app_state.performance.total_points = dataset.point_count();
+            app_state.performance.loaded_tiles = loaded_tiles;
+            app_state.performance.pending_tiles = pending_tiles;
+            app_state.performance.gpu_memory_bytes = gpu_buffer_bytes;
+            app_state.performance.lod_mode =
+                config_.lod_enabled
+                    ? "已启用细节层级"
+                    : "全分辨率";
+
+            app_state.status_bar.fps = fps_smooth;
+            app_state.status_bar.visible_points = visible_points;
+            app_state.status_bar.loaded_tiles = loaded_tiles;
+            app_state.status_bar.pending_tiles = pending_tiles;
+            app_state.status_bar.gpu_memory_bytes = gpu_buffer_bytes;
+            app_state.status_bar.camera_position = format_vec3_text(primary_camera.position());
+            app_state.status_bar.crs = "本地坐标 / 未知";
+            app_state.status_bar.ready_state = "就绪";
+
+            for (int i = 0; i < n_viewports; ++i) {
+                const auto& camera = viewport_manager.camera(i);
+                auto& view =
+                    app_state.render_views[static_cast<std::size_t>(i)];
+                view.viewport_index = i;
+                view.descriptor =
+                    viewport_manager.framebuffer(i).imgui_descriptor();
+                view.show_live_image = view.descriptor != VK_NULL_HANDLE;
+                view.image_width = camera.viewport_width();
+                view.image_height = camera.viewport_height();
+                view.points_visible = visible_points;
+                view.points_total = dataset.point_count();
+                view.frame_time_ms = app_state.performance.frame_time_ms;
+                view.camera_mode = "轨道";
+                view.position = format_vec3_text(camera.position());
+                view.fov = camera.fov_y_degrees();
+
+                const float vp_h =
+                    static_cast<float>(camera.viewport_height());
+                const float d = camera.distance();
+                const float fov_rad =
+                    camera.fov_y_degrees() * (3.14159265f / 180.0f);
+                float scale_world = 500.0f;
+                if (vp_h > 1.0f) {
+                    const float pixel_world = 2.0f * d * std::tan(fov_rad * 0.5f) / vp_h;
+                    if (pixel_world > 0.0f) {
+                        scale_world = nice_scale_distance(pixel_world * 96.0f);
+                    }
+                }
+                view.scale = format_scale_distance(scale_world);
+            }
+
+            const auto gui_cmds = imgui_layer.new_frame(app_state);
+            const double now_seconds =
+                std::chrono::duration<double>(
+                    current_time.time_since_epoch()
+                ).count();
+            for (const auto& frame : gui_cmds.viewport_frames) {
+                viewport_resize_scheduler.observe(
+                    frame.index,
+                    frame.width,
+                    frame.height,
+                    now_seconds
                 );
             }
 
-            if (window.key_pressed(GLFW_KEY_MINUS) ||
-                window.key_pressed(GLFW_KEY_KP_SUBTRACT)) {
-                push.point_size = std::max(
-                    push.point_size - 0.05f,
-                    1.0f
-                );
+            visible_viewports.clear();
+            for (const auto& view : app_state.render_views) {
+                if (view.render_requested) {
+                    visible_viewports.push_back(view.viewport_index);
+                }
             }
 
-            const bool r_pressed =
-                window.key_pressed(GLFW_KEY_R);
+            const bool imgui_wants_keyboard =
+                ImGui::GetIO().WantCaptureKeyboard;
 
-            if (r_pressed && !r_was_pressed) {
+            // Apply GUI panel commands (Polyscope pattern: UI produces commands,
+            // main loop applies them — keeps UI and app logic decoupled).
+            if (gui_cmds.reset_camera_index >= 0 &&
+                gui_cmds.reset_camera_index < n_viewports) {
                 initialize_camera_from_config(
-                    camera,
+                    viewport_manager.camera(gui_cmds.reset_camera_index),
                     config_,
                     bounds
                 );
+                camera_hub.propagate(gui_cmds.reset_camera_index);
+                streaming_viewport_index =
+                    gui_cmds.reset_camera_index;
+                tile_selection_dirty = true;
+            }
+            if (gui_cmds.point_size_changed) {
+                push.point_size = std::clamp(gui_cmds.point_size, 1.0f, 10.0f);
+            }
+            if (gui_cmds.color_by_changed) {
+                const int new_idx = std::clamp(
+                    gui_cmds.color_by_index, 0,
+                    static_cast<int>(attr_table.size()) - 1
+                );
+                push.attr_index  = static_cast<std::uint32_t>(new_idx);
+                const auto& a    = attr_table[push.attr_index];
+                push.value_min   = a.min_val;
+                push.value_range = a.range;
+                if (push.value_range <= 0.0f) push.value_range = 1.0f;
+                std::cout << "[ATTR] switched to: " << a.name << '\n';
+            }
+            if (gui_cmds.clear_cache_requested) {
+                tile_point_cache.clear();
+                std::cout << "[TILE] CPU cache cleared.\n";
+            }
 
-                std::cout << "[OK] Camera reset.\n";
+            if (!imgui_wants_keyboard && window.key_pressed(GLFW_KEY_ESCAPE)) {
+                window.request_close();
+            }
+
+            if (!imgui_wants_keyboard) {
+                if (window.key_pressed(GLFW_KEY_EQUAL) ||
+                    window.key_pressed(GLFW_KEY_KP_ADD)) {
+                    push.point_size = std::min(
+                        push.point_size + 0.05f,
+                        10.0f
+                    );
+                }
+
+                if (window.key_pressed(GLFW_KEY_MINUS) ||
+                    window.key_pressed(GLFW_KEY_KP_SUBTRACT)) {
+                    push.point_size = std::max(
+                        push.point_size - 0.05f,
+                        1.0f
+                    );
+                }
+            }
+
+            const bool r_pressed =
+                !imgui_wants_keyboard &&
+                (window.key_pressed(GLFW_KEY_R) ||
+                 ImGui::IsKeyPressed(ImGuiKey_R, false));
+
+            if (r_pressed && !r_was_pressed) {
+                initialize_camera_from_config(
+                    viewport_manager.camera(streaming_viewport_index),
+                    config_,
+                    bounds
+                );
+                camera_hub.propagate(streaming_viewport_index);
+                tile_selection_dirty = true;
             }
 
             r_was_pressed = r_pressed;
 
             // Tab: cycle through color attributes (zero GPU cost — push constant only)
-            const bool tab_pressed = window.key_pressed(GLFW_KEY_TAB);
+            const bool tab_pressed =
+                !imgui_wants_keyboard && window.key_pressed(GLFW_KEY_TAB);
             if (tab_pressed && !tab_was_pressed) {
                 push.attr_index =
                     (push.attr_index + 1u) %
@@ -785,14 +1168,69 @@ int ViewerApp::run() {
             }
             tab_was_pressed = tab_pressed;
 
-            controller.update(
-                camera,
-                window
-            );
+            for (const auto& view : app_state.render_views) {
+                camera_hub.set_group(
+                    view.viewport_index,
+                    view.camera_linked
+                        ? 0
+                        : gs3d::camera::CameraHub::kIndependent
+                );
+            }
 
-            fill_push_constants(push, camera);
+            bool interacting = false;
+            bool camera_changed = false;
+            for (const auto& frame : gui_cmds.viewport_frames) {
+                if (frame.index < 0 ||
+                    frame.index >= static_cast<int>(controllers.size())) {
+                    continue;
+                }
 
-            const bool interacting = window_interacting(window);
+                if ((frame.hovered || frame.active) &&
+                    streaming_viewport_index != frame.index) {
+                    streaming_viewport_index = frame.index;
+                    tile_selection_dirty = true;
+                }
+
+                gs3d::camera::CameraInput input;
+                input.viewport_width = frame.width;
+                input.viewport_height = frame.height;
+                input.delta_x = frame.mouse_delta_x;
+                input.delta_y = frame.mouse_delta_y;
+                input.scroll_y = frame.mouse_wheel;
+                input.rotate = frame.rotate;
+                input.pan = frame.pan;
+
+                interacting = interacting || input.interacting();
+                if (controllers[static_cast<std::size_t>(frame.index)]
+                        .update(
+                            viewport_manager.camera(frame.index),
+                            input
+                        )) {
+                    camera_changed = true;
+                    streaming_viewport_index = frame.index;
+                    camera_hub.propagate(frame.index);
+                }
+            }
+
+            if (config_.benchmark_mode &&
+                benchmark_frame_index < benchmark_orbit_frames) {
+                // Orbit + a slow zoom-in so the visible region actually
+                // shrinks — a pure yaw orbit at a fixed distance can leave
+                // the whole bbox in view the entire time, never forcing a
+                // different tile selection, which would starve the reload-
+                // latency measurement below.
+                auto& bench_camera =
+                    viewport_manager.camera(streaming_viewport_index);
+                bench_camera.orbit(0.01f, 0.0f);
+                bench_camera.zoom(0.999f);
+                camera_hub.propagate(streaming_viewport_index);
+                interacting = true;
+                camera_changed = true;
+            }
+
+            if (camera_changed) {
+                tile_selection_dirty = true;
+            }
 
             if (config_.lod_enabled) {
                 lod_selector.update(
@@ -804,326 +1242,506 @@ int ViewerApp::run() {
             if (config_.tile_enabled &&
                 tile_reader.has_value() &&
                 tile_gpu_cloud) {
-                const auto tile_result =
-                    tile_selection.update(camera, *tile_reader);
-
-                if (!tile_result.enabled) {
-                    // Tile mode disabled (camera too far away).
-                    // Cancel pending load then release GPU buffer.
-                    if (tile_load_future.valid()) {
-                        tile_load_future.wait();
-                        tile_load_future = {};
-                        tile_loading_ids.clear();
-                    }
-                    debounced_tile_ids.clear();
-                    if (tile_gpu_cloud->valid()) {
-                        renderer.wait_for_in_flight_fences();
-                        tile_gpu_cloud->clear();
-                        loaded_tile_query_box.reset();
-                        if (config_.tile_verbose) {
-                            std::cout << "[TILE] disabled, buffer cleared.\n";
-                        }
-                    }
-                } else {
-                    /*
-                     * Potree/Cesium 异步加载模式：
-                     *
-                     * 1. 每帧非阻塞检查后台磁盘读取是否完成
-                     *    → 完成后在主线程做 GPU upload（用 in-flight fence 代替
-                     *      vkDeviceWaitIdle，只等渲染帧完成而非整个 GPU 队列）
-                     *
-                     * 2. 交互停止后，若 buffer 与当前选择不一致，
-                     *    派发新的后台加载请求（不阻塞渲染循环）
-                     *
-                     * 3. 交互期间：不渲染 tile cloud（仅渲染 LOD）
-                     *    → 消除旋转/拖动/缩放时的 GPU 负载
-                     */
-
+                if (!interacting && tile_selection_dirty) {
+                    tile_result = tile_selection.update(
+                        viewport_manager.camera(streaming_viewport_index),
+                        *tile_reader
+                    );
+                    tile_selection_dirty = false;
                     if (tile_result.changed) {
                         debounced_tile_ids = tile_result.tile_ids;
                         tile_selection_changed_at = current_time;
+                        /*
+                         * Anti-flicker (docs/benchmark/flicker-audit.md
+                         * Task 5/6): do NOT clear viewport_tile_ids here.
+                         * The previously-displayed tiles are still resident
+                         * on the GPU (evict_to_budget only drops tiles once
+                         * the *new* selection has finished uploading) and
+                         * stay valid to keep drawing. Clearing them the
+                         * instant the selection changes — before the async
+                         * read+upload for the new selection completes —
+                         * caused a visible "detail drops to LOD, then pops
+                         * back" cycle on every camera-settle event, lasting
+                         * as long as the reload (0.2-0.9s on the 33M-point
+                         * baseline). The swap to the new tile set happens
+                         * below once `sync.complete` is true, not here.
+                         */
+                        if (tile_upload_pending.has_value() &&
+                            tile_upload_pending->tile_ids !=
+                                tile_result.tile_ids) {
+                            tile_upload_pending.reset();
+                        }
                     }
+                }
 
-                    // ── Step 1: apply completed load ─────────────────────
-                    if (tile_load_future.valid() &&
-                        tile_load_future.wait_for(std::chrono::seconds(0))
-                            == std::future_status::ready) {
+                if (tile_load_future.valid() &&
+                    tile_load_future.wait_for(std::chrono::seconds(0))
+                        == std::future_status::ready) {
+                    auto loaded = tile_load_future.get();
+                    tile_load_future = {};
+                    tile_loading_ids.clear();
+                    if (!tile_selection_dirty &&
+                        tile_result.enabled &&
+                        loaded.tile_ids == tile_result.tile_ids) {
+                        tile_upload_pending = std::move(loaded);
+                    }
+                }
 
-                        auto loaded = tile_load_future.get();
-                        tile_load_future = {};
+                if (!tile_selection_dirty && !tile_result.enabled) {
+                    debounced_tile_ids.clear();
+                    tile_upload_pending.reset();
+                    const auto view_index =
+                        static_cast<std::size_t>(
+                            streaming_viewport_index
+                        );
+                    viewport_tile_ids[view_index].clear();
+                    viewport_tile_query_boxes[view_index].reset();
+                } else if (tile_result.enabled && !interacting) {
+                    if (tile_upload_pending.has_value() &&
+                        tile_upload_pending->tile_ids ==
+                            tile_result.tile_ids) {
+                        gs3d::util::Stopwatch upload_timer;
+                        renderer.wait_for_in_flight_fences();
+                        const auto sync =
+                            tile_gpu_cloud->sync_from_cached_tiles(
+                                context,
+                                renderer.command_pool(),
+                                context.graphics_queue(),
+                                tile_upload_pending->tiles,
+                                config_.tile_gpu_upload_budget_bytes
+                            );
+                        const double upload_seconds =
+                            upload_timer.elapsed_seconds();
+                        if (config_.tile_verbose &&
+                            sync.uploaded_bytes > 0) {
+                            std::cout
+                                << "[TILE] upload slice: bytes="
+                                << sync.uploaded_bytes
+                                << ", seconds="
+                                << upload_seconds
+                                << ", complete="
+                                << (sync.complete ? "true" : "false")
+                                << '\n';
+                        }
 
-                        if (loaded.tile_ids == tile_result.tile_ids) {
-                            // Selection unchanged since load was dispatched
-                            const auto cached_tiles =
-                                collect_cached_tile_points(loaded.tile_ids);
-                            gs3d::util::Stopwatch upload_timer;
-                            renderer.wait_for_in_flight_fences();
-                            const auto sync =
-                                tile_gpu_cloud->sync_from_cached_tiles(
-                                    context,
-                                    renderer.command_pool(),
-                                    context.graphics_queue(),
-                                    cached_tiles
+                        if (sync.complete) {
+                            const auto view_index =
+                                static_cast<std::size_t>(
+                                    streaming_viewport_index
                                 );
-                            loaded_tile_query_box = loaded.actual_bbox;
+                            viewport_tile_ids[view_index] =
+                                tile_upload_pending->tile_ids;
+                            viewport_tile_query_boxes[view_index] =
+                                tile_upload_pending->actual_bbox;
+                            const double reload_total_seconds =
+                                tile_async_cycle_timer.elapsed_seconds();
                             log_tile_upload(
                                 tile_gpu_cloud->stats(),
-                                loaded,
+                                *tile_upload_pending,
                                 sync,
-                                upload_timer.elapsed_seconds(),
-                                tile_async_cycle_timer.elapsed_seconds()
+                                upload_seconds,
+                                reload_total_seconds
                             );
+                            if (config_.benchmark_mode) {
+                                benchmark_reload_seconds.push_back(
+                                    reload_total_seconds
+                                );
+                            }
+                            tile_upload_pending.reset();
+                            tile_loading_ids.clear();
+                        } else {
+                            viewport_tile_query_boxes[
+                                static_cast<std::size_t>(
+                                    streaming_viewport_index
+                                )
+                            ].reset();
                         }
-                        // If selection changed while loading, discard result;
-                        // a new load will be dispatched below.
-                        tile_loading_ids.clear();
                     }
 
-                    // ── Step 2: dispatch new load if needed ───────────────
-                    if (!interacting) {
-                        const auto& loaded_ids =
-                            tile_gpu_cloud->loaded_tile_ids();
+                    const auto& loaded_ids =
+                        viewport_tile_ids[
+                            static_cast<std::size_t>(
+                                streaming_viewport_index
+                            )
+                        ];
+                    const bool buffer_stale =
+                        loaded_ids.size() != tile_result.tile_ids.size() ||
+                        !std::equal(
+                            loaded_ids.begin(),
+                            loaded_ids.end(),
+                            tile_result.tile_ids.begin()
+                        );
+                    const bool load_in_progress =
+                        tile_load_future.valid();
+                    const bool upload_in_progress =
+                        tile_upload_pending.has_value();
+                    const double selection_stable_seconds =
+                        std::chrono::duration<double>(
+                            current_time - tile_selection_changed_at
+                        ).count();
+                    const bool selection_stable =
+                        selection_stable_seconds >=
+                        kTileSelectionDebounceSeconds;
 
-                        const bool buffer_stale =
-                            loaded_ids.size() != tile_result.tile_ids.size() ||
-                            !std::equal(
-                                loaded_ids.begin(), loaded_ids.end(),
-                                tile_result.tile_ids.begin()
+                    if (buffer_stale &&
+                        !load_in_progress &&
+                        !upload_in_progress &&
+                        selection_stable &&
+                        !debounced_tile_ids.empty() &&
+                        tile_loading_ids != debounced_tile_ids) {
+                        gs3d::data::Gs3dTileQueryBox actual_bbox;
+                        actual_bbox.min_x = actual_bbox.min_y =
+                            actual_bbox.min_z =
+                                std::numeric_limits<float>::max();
+                        actual_bbox.max_x = actual_bbox.max_y =
+                            actual_bbox.max_z =
+                                -std::numeric_limits<float>::max();
+                        for (const auto tile_id : debounced_tile_ids) {
+                            const auto& record =
+                                tile_reader->record(tile_id);
+                            actual_bbox.min_x = std::min(
+                                actual_bbox.min_x,
+                                record.bbox_min_x
                             );
+                            actual_bbox.min_y = std::min(
+                                actual_bbox.min_y,
+                                record.bbox_min_y
+                            );
+                            actual_bbox.min_z = std::min(
+                                actual_bbox.min_z,
+                                record.bbox_min_z
+                            );
+                            actual_bbox.max_x = std::max(
+                                actual_bbox.max_x,
+                                record.bbox_max_x
+                            );
+                            actual_bbox.max_y = std::max(
+                                actual_bbox.max_y,
+                                record.bbox_max_y
+                            );
+                            actual_bbox.max_z = std::max(
+                                actual_bbox.max_z,
+                                record.bbox_max_z
+                            );
+                        }
 
-                        const bool load_in_progress =
-                            tile_load_future.valid() &&
-                            tile_load_future.wait_for(std::chrono::seconds(0))
-                                != std::future_status::ready;
+                        tile_loading_ids = debounced_tile_ids;
+                        const auto ids = debounced_tile_ids;
+                        const auto candidate_tile_count =
+                            static_cast<std::size_t>(
+                                tile_result.total_candidate_tiles
+                            );
+                        const auto& reader = *tile_reader;
+                        tile_async_cycle_timer.reset();
 
-                        const double selection_stable_seconds =
-                            std::chrono::duration<double>(
-                                current_time - tile_selection_changed_at
-                            ).count();
-
-                        const bool selection_stable =
-                            selection_stable_seconds >=
-                            kTileSelectionDebounceSeconds;
-
-                        if (buffer_stale &&
-                            !load_in_progress &&
-                            selection_stable &&
-                            !debounced_tile_ids.empty() &&
-                            tile_loading_ids != debounced_tile_ids) {
-
-                            // Compute actual data bbox on main thread
-                            // (record metadata, no I/O)
-                            gs3d::data::Gs3dTileQueryBox actual_bbox;
-                            actual_bbox.min_x = actual_bbox.min_y =
-                                actual_bbox.min_z =
-                                    std::numeric_limits<float>::max();
-                            actual_bbox.max_x = actual_bbox.max_y =
-                                actual_bbox.max_z =
-                                    -std::numeric_limits<float>::max();
-                            for (const auto tid : debounced_tile_ids) {
-                                const auto& rec = tile_reader->record(tid);
-                                actual_bbox.min_x = std::min(actual_bbox.min_x, rec.bbox_min_x);
-                                actual_bbox.min_y = std::min(actual_bbox.min_y, rec.bbox_min_y);
-                                actual_bbox.min_z = std::min(actual_bbox.min_z, rec.bbox_min_z);
-                                actual_bbox.max_x = std::max(actual_bbox.max_x, rec.bbox_max_x);
-                                actual_bbox.max_y = std::max(actual_bbox.max_y, rec.bbox_max_y);
-                                actual_bbox.max_z = std::max(actual_bbox.max_z, rec.bbox_max_z);
+                        std::vector<std::pair<
+                            std::size_t,
+                            std::uint64_t
+                        >> missing_tiles;
+                        std::vector<SharedTilePoints>
+                            selected_tile_points(ids.size());
+                        std::size_t cache_hit_tiles = 0;
+                        for (std::size_t i = 0; i < ids.size(); ++i) {
+                            selected_tile_points[i] =
+                                tile_point_cache.get(ids[i]);
+                            if (selected_tile_points[i]) {
+                                ++cache_hit_tiles;
+                            } else {
+                                missing_tiles.emplace_back(i, ids[i]);
                             }
+                        }
 
-                            tile_loading_ids = debounced_tile_ids;
-                            const auto ids = debounced_tile_ids;
-                            const auto candidate_tile_count =
-                                static_cast<std::size_t>(
-                                    tile_result.total_candidate_tiles
+                        if (missing_tiles.empty()) {
+                            TileLoadResult cached;
+                            cached.tile_ids = ids;
+                            cached.tiles.reserve(ids.size());
+                            for (std::size_t i = 0; i < ids.size(); ++i) {
+                                cached.tiles.emplace_back(
+                                    ids[i],
+                                    selected_tile_points[i]
                                 );
-                            const auto& tr  = *tile_reader;
-                            tile_async_cycle_timer.reset();
-
-                            std::vector<std::uint64_t> missing_ids;
-                            std::size_t cache_hit_tiles = 0;
-                            {
-                                std::scoped_lock lock(tile_cache_mutex);
-                                for (const auto tid : ids) {
-                                    if (tile_point_cache.contains(tid)) {
-                                        ++cache_hit_tiles;
-                                    } else {
-                                        missing_ids.push_back(tid);
-                                    }
-                                }
                             }
-
-                            if (missing_ids.empty()) {
-                                tile_async_cycle_timer.reset();
-
-                                TileLoadResult cached;
-                                cached.tile_ids = ids;
-                                cached.actual_bbox = actual_bbox;
-                                cached.cache_hit_tiles = ids.size();
-                                cached.cache_miss_tiles = 0;
-                                cached.candidate_tiles =
-                                    candidate_tile_count;
-
-                                const auto cached_tiles =
-                                    collect_cached_tile_points(ids);
-
-                                gs3d::util::Stopwatch upload_timer;
-                                renderer.wait_for_in_flight_fences();
-                                const auto sync =
-                                    tile_gpu_cloud->sync_from_cached_tiles(
-                                        context,
-                                        renderer.command_pool(),
-                                        context.graphics_queue(),
-                                        cached_tiles
-                                    );
-                                loaded_tile_query_box = cached.actual_bbox;
-                                tile_loading_ids.clear();
-
-                                log_tile_upload(
-                                    tile_gpu_cloud->stats(),
-                                    cached,
-                                    sync,
-                                    upload_timer.elapsed_seconds(),
-                                    tile_async_cycle_timer.elapsed_seconds()
-                                );
-                                continue;
-                            }
-
+                            cached.actual_bbox = actual_bbox;
+                            cached.cache_hit_tiles = ids.size();
+                            cached.candidate_tiles =
+                                candidate_tile_count;
+                            tile_upload_pending = std::move(cached);
+                        } else {
                             tile_load_future = std::async(
                                 std::launch::async,
-                                [&tr,
+                                [&reader,
                                  &tile_point_cache,
-                                 &tile_cache_mutex,
                                  ids,
-                                 missing_ids,
-                                  actual_bbox,
+                                 missing_tiles,
+                                 selected_tile_points =
+                                    std::move(selected_tile_points),
+                                 actual_bbox,
                                  cache_hit_tiles,
                                  candidate_tile_count]() -> TileLoadResult {
                                     gs3d::util::Stopwatch read_timer;
-
-                                    for (const auto tid : missing_ids) {
+                                    auto points_by_index =
+                                        selected_tile_points;
+                                    for (const auto& [index, tile_id] :
+                                         missing_tiles) {
                                         auto points =
-                                            std::make_shared<
-                                                std::vector<gs3d::data::Gs3dPoint>
-                                            >(tr.read_tile_points(tid));
-                                        std::scoped_lock lock(tile_cache_mutex);
-                                        tile_point_cache[tid] = std::move(points);
+                                            std::make_shared<TilePoints>(
+                                                reader.read_tile_points(
+                                                    tile_id
+                                                )
+                                            );
+                                        points_by_index[index] = points;
+                                        tile_point_cache.put(
+                                            tile_id,
+                                            std::move(points)
+                                        );
                                     }
 
-                                    TileLoadResult r;
-                                    r.tile_ids = ids;
-                                    r.actual_bbox = actual_bbox;
-                                    r.cache_hit_tiles = cache_hit_tiles;
-                                    r.cache_miss_tiles = missing_ids.size();
-                                    r.candidate_tiles =
+                                    TileLoadResult loaded;
+                                    loaded.tile_ids = ids;
+                                    loaded.tiles.reserve(ids.size());
+                                    for (std::size_t i = 0;
+                                         i < ids.size();
+                                         ++i) {
+                                        loaded.tiles.emplace_back(
+                                            ids[i],
+                                            points_by_index[i]
+                                        );
+                                    }
+                                    loaded.actual_bbox = actual_bbox;
+                                    loaded.cache_hit_tiles =
+                                        cache_hit_tiles;
+                                    loaded.cache_miss_tiles =
+                                        missing_tiles.size();
+                                    loaded.candidate_tiles =
                                         candidate_tile_count;
-                                    r.read_seconds = read_timer.elapsed_seconds();
-                                    return r;
+                                    loaded.read_seconds =
+                                        read_timer.elapsed_seconds();
+                                    return loaded;
                                 }
                             );
 
                             if (config_.tile_verbose) {
-                                std::cout << "[TILE] async load dispatched, "
-                                          << ids.size() << " tiles"
-                                          << " (candidates="
-                                          << candidate_tile_count
-                                          << ")"
-                                          << " (cache_hit="
-                                          << cache_hit_tiles
-                                          << ", cache_miss="
-                                          << missing_ids.size()
-                                          << ").\n";
+                                std::cout
+                                    << "[TILE] async load dispatched, "
+                                    << ids.size() << " tiles"
+                                    << " (candidates="
+                                    << candidate_tile_count
+                                    << ", cache_hit="
+                                    << cache_hit_tiles
+                                    << ", cache_miss="
+                                    << missing_tiles.size()
+                                    << ").\n";
                             }
                         }
                     }
                 }
             }
 
+            // Select LOD level once per frame (not per-viewport) so all views
+            // use the same level and the verbose log fires at most once.
+            if (config_.lod_enabled && lod_gpu_cloud) {
+                lod_level_for_frame =
+                    lod_selector.select_level(lod_gpu_cloud->level_count());
+                if (lod_level_for_frame != last_lod_level) {
+                    if (config_.lod_verbose) {
+                        const auto& level =
+                            lod_gpu_cloud->level(lod_level_for_frame);
+                        std::cout << "[LOD] active level = "
+                                  << lod_level_for_frame
+                                  << ", points = "
+                                  << level.gpu_point_count
+                                  << ", idle_seconds = "
+                                  << lod_selector.idle_seconds()
+                                  << '\n';
+                    }
+                    last_lod_level = lod_level_for_frame;
+                }
+            }
+
             renderer.draw_frame(
                 window,
-                [&](VkCommandBuffer command_buffer) {
-                    /*
-                     * Build a LOD push-constant variant that clips out the
-                     * region covered by the loaded full-res tiles, so LOD
-                     * points no longer overlap with the precise local data.
-                     */
-                    gs3d::render::PointPushConstants lod_push = push;
-                    /*
-                     * Tile cloud 始终渲染（已在 GPU 内存中，无额外 I/O 开销）。
-                     * 交互期间 tile 选区冻结，但已加载的全精度数据持续可见，
-                     * 不会退化为 LOD —— 对比 Potree/Cesium 的流式加载场景，
-                     * 本地渲染无需牺牲视觉质量换取带宽节省。
-                     * LOD 仅补全 tile 未覆盖的区域。
-                     */
-                    const bool tile_will_render =
-                        tile_gpu_cloud &&
-                        tile_gpu_cloud->valid();
-                    if (tile_will_render &&
-                        loaded_tile_query_box.has_value()) {
-                        const auto& b = *loaded_tile_query_box;
-                        lod_push.clip_mode  = 1.0f;
-                        lod_push.clip_min[0] = b.min_x;
-                        lod_push.clip_min[1] = b.min_y;
-                        lod_push.clip_min[2] = b.min_z;
-                        lod_push.clip_min[3] = 0.0f;
-                        lod_push.clip_max[0] = b.max_x;
-                        lod_push.clip_max[1] = b.max_y;
-                        lod_push.clip_max[2] = b.max_z;
-                        lod_push.clip_max[3] = 0.0f;
-                    }
-
-                    if (config_.lod_enabled) {
-                        const std::size_t level_index =
-                            lod_selector.select_level(
-                                lod_gpu_cloud->level_count()
+                gs3d::render::VulkanRenderer::FrameDrawCallbacks{
+                    // pre_pass: all offscreen render passes execute here, before the
+                    // swapchain render pass starts. Each viewport records its own
+                    // vkCmdBeginRenderPass / draw / vkCmdEndRenderPass sequence into
+                    // cmd; none of them nest inside each other or the swapchain pass.
+                    .pre_pass = [&](VkCommandBuffer cmd) {
+                        for (const int viewport_index :
+                             visible_viewports) {
+                            auto& framebuffer =
+                                viewport_manager.framebuffer(
+                                    viewport_index
+                                );
+                            const auto& viewport_camera =
+                                viewport_manager.camera(
+                                    viewport_index
+                                );
+                            framebuffer.render(
+                                cmd,
+                                [&](VkCommandBuffer c) {
+                            // Per-viewport push: copy non-MVP fields from push,
+                            // then fill in the per-viewport MVP matrix.
+                            gs3d::render::PointPushConstants vp_push = push;
+                            fill_push_constants(
+                                vp_push,
+                                viewport_camera
                             );
-                        if (level_index != last_lod_level) {
-                            if (config_.lod_verbose) {
-                                const auto& level =
-                                    lod_gpu_cloud->level(level_index);
+                            const VkExtent2D viewport_extent =
+                                framebuffer.extent();
 
-                                std::cout << "[LOD] active level = "
-                                        << level_index
-                                        << ", points = "
-                                        << level.gpu_point_count
-                                        << ", idle_seconds = "
-                                        << lod_selector.idle_seconds()
-                                        << '\n';
+                            const auto view_index =
+                                static_cast<std::size_t>(
+                                    viewport_index
+                                );
+                            const auto& selected_tile_ids =
+                                viewport_tile_ids[view_index];
+                            const bool any_tile_resident =
+                                std::any_of(
+                                    selected_tile_ids.begin(),
+                                    selected_tile_ids.end(),
+                                    [&](std::uint64_t tile_id) {
+                                        return tile_gpu_cloud &&
+                                            tile_gpu_cloud
+                                                ->has_resident_tile(tile_id);
+                                    }
+                                );
+                            const bool all_tiles_resident =
+                                !selected_tile_ids.empty() &&
+                                std::all_of(
+                                    selected_tile_ids.begin(),
+                                    selected_tile_ids.end(),
+                                    [&](std::uint64_t tile_id) {
+                                        return tile_gpu_cloud &&
+                                            tile_gpu_cloud
+                                                ->has_resident_tile(tile_id);
+                                    }
+                                );
+                            const bool tile_will_render =
+                                !interacting &&
+                                any_tile_resident;
+
+                            gs3d::render::PointPushConstants lod_push = vp_push;
+                            if (tile_will_render &&
+                                all_tiles_resident &&
+                                viewport_tile_query_boxes[view_index]
+                                    .has_value()) {
+                                const auto& b =
+                                    *viewport_tile_query_boxes[view_index];
+                                lod_push.clip_mode   = 1.0f;
+                                lod_push.clip_min[0] = b.min_x;
+                                lod_push.clip_min[1] = b.min_y;
+                                lod_push.clip_min[2] = b.min_z;
+                                lod_push.clip_min[3] = 0.0f;
+                                lod_push.clip_max[0] = b.max_x;
+                                lod_push.clip_max[1] = b.max_y;
+                                lod_push.clip_max[2] = b.max_z;
+                                lod_push.clip_max[3] = 0.0f;
                             }
 
-                            last_lod_level = level_index;
-                        }
-                        const auto& cloud =
-                            lod_gpu_cloud->gpu_cloud(level_index);
+                            if (config_.lod_enabled) {
+                                point_pipeline.draw(
+                                    c,
+                                    lod_gpu_cloud->gpu_cloud(lod_level_for_frame),
+                                    viewport_extent,
+                                    lod_push
+                                );
+                            } else {
+                                point_pipeline.draw(
+                                    c,
+                                    *full_gpu_cloud,
+                                    viewport_extent,
+                                    lod_push
+                                );
+                            }
 
-                        point_pipeline.draw(
-                            command_buffer,
-                            cloud,
-                            renderer.extent(),
-                            lod_push
-                        );
-                    } else {
-                        point_pipeline.draw(
-                            command_buffer,
-                            *full_gpu_cloud,
-                            renderer.extent(),
-                            lod_push
-                        );
-                    }
-                    if (tile_will_render) {
-                        for (const auto tile_id : tile_gpu_cloud->loaded_tile_ids()) {
-                            point_pipeline.draw(
-                                command_buffer,
-                                tile_gpu_cloud->gpu_cloud_for_tile(tile_id),
-                                renderer.extent(),
-                                push
+                            if (tile_will_render) {
+                                for (const auto tile_id :
+                                     selected_tile_ids) {
+                                    if (!tile_gpu_cloud
+                                            ->has_resident_tile(tile_id)) {
+                                        continue;
+                                    }
+                                    point_pipeline.draw(
+                                        c,
+                                        tile_gpu_cloud->gpu_cloud_for_tile(tile_id),
+                                        viewport_extent,
+                                        vp_push
+                                    );
+                                }
+                            }
+                                }
                             );
                         }
+                    },
+                    // in_pass: only ImGui runs in the swapchain render pass.
+                    // Each ImGui::Image() samples its viewport's offscreen texture.
+                    .in_pass = [&](VkCommandBuffer cmd) {
+                        imgui_layer.render(cmd);
                     }
                 }
             );
+            // Render ImGui platform windows (docked panels torn out to separate
+            // OS windows). Must happen outside the main render pass.
+            imgui_layer.render_platform_windows();
+            // If draw_frame() returned early (minimized / swapchain out-of-date)
+            // the draw callback was never invoked, so close the dangling ImGui frame.
+            imgui_layer.discard_frame();
+
+            // Rebuild framebuffer resources only after the user stops resizing.
+            // All ready viewports share one device-idle synchronization point.
+            const auto ready_resizes =
+                viewport_resize_scheduler.take_ready(now_seconds);
+            std::vector<gs3d::render::ViewportResizeRequest>
+                resize_requests;
+            resize_requests.reserve(ready_resizes.size());
+            for (const auto& resize : ready_resizes) {
+                resize_requests.push_back({
+                    resize.index,
+                    {resize.width, resize.height}
+                });
+                if (resize.index == streaming_viewport_index) {
+                    tile_selection_dirty = true;
+                }
+            }
+            viewport_manager.resize_many(resize_requests);
+
+            if (config_.benchmark_mode) {
+                benchmark_frame_times_ms.push_back(
+                    benchmark_frame_timer.elapsed_milliseconds()
+                );
+                ++benchmark_frame_index;
+            }
         }
 
         vkDeviceWaitIdle(context.device());
+
+        if (config_.benchmark_mode) {
+            std::cout << "[BENCH] frame_count = "
+                      << benchmark_frame_times_ms.size() << '\n';
+            std::cout << "[BENCH] frame_time_ms_p50 = "
+                      << gs3d::util::percentile(benchmark_frame_times_ms, 50.0)
+                      << '\n';
+            std::cout << "[BENCH] frame_time_ms_p95 = "
+                      << gs3d::util::percentile(benchmark_frame_times_ms, 95.0)
+                      << '\n';
+            std::cout << "[BENCH] frame_time_ms_p99 = "
+                      << gs3d::util::percentile(benchmark_frame_times_ms, 99.0)
+                      << '\n';
+            if (!benchmark_reload_seconds.empty()) {
+                std::cout << "[BENCH] reload_latency_seconds_p50 = "
+                          << gs3d::util::percentile(
+                                 benchmark_reload_seconds, 50.0)
+                          << '\n';
+                std::cout << "[BENCH] reload_latency_seconds_p95 = "
+                          << gs3d::util::percentile(
+                                 benchmark_reload_seconds, 95.0)
+                          << '\n';
+            } else {
+                std::cout
+                    << "[BENCH] reload_latency: "
+                    << "no completed tile uploads captured.\n";
+            }
+        }
 
         std::cout << "[PASS] ViewerApp finished.\n";
         return 0;

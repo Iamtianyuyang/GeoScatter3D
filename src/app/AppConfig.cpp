@@ -104,6 +104,42 @@ std::vector<std::uint64_t> uint64_array_or_default(
 }
 
 [[nodiscard]]
+std::vector<double> double_array_or_default(
+    const toml::table& table,
+    std::string_view key,
+    const std::vector<double>& default_value
+) {
+    const auto* array = table[key].as_array();
+
+    if (!array) {
+        return default_value;
+    }
+
+    std::vector<double> result;
+    result.reserve(array->size());
+
+    for (std::size_t i = 0; i < array->size(); ++i) {
+        const auto node = array->get(i);
+
+        if (!node) {
+            throw std::runtime_error(
+                "AppConfig: invalid double array element"
+            );
+        }
+
+        if (const auto value = node->value<double>()) {
+            result.push_back(*value);
+        } else {
+            throw std::runtime_error(
+                "AppConfig: double array contains non-numeric value"
+            );
+        }
+    }
+
+    return result;
+}
+
+[[nodiscard]]
 bool input_mode_is_csv(const AppConfig& config) noexcept {
     return config.input_mode == "csv";
 }
@@ -617,6 +653,17 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.lod_target_point_counts
         );
 
+        /*
+         * 按源点数比例自动算 target_point_counts，不用每次数据规模变化都手调
+         * 绝对值。非空时优先于上面的 target_point_counts（解析顺序无关，
+         * 实际取哪个由 Gs3dLodTargets::resolve 决定）。
+         */
+        config.viewer.lod_target_point_ratios = double_array_or_default(
+            *lod,
+            "target_point_ratios",
+            config.viewer.lod_target_point_ratios
+        );
+
         config.viewer.lod_voxel_mode = string_or_default(
             *lod,
             "voxel_mode",
@@ -657,12 +704,36 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.lod_use_lowest_while_interacting
         );
 
+        config.viewer.lod_adaptive_interacting_level = bool_or_default(
+            *lod,
+            "adaptive_interacting_level",
+            config.viewer.lod_adaptive_interacting_level
+        );
+
+        config.viewer.lod_frame_time_budget_ms =
+            static_cast<double>(
+                float_or_default(
+                    *lod,
+                    "frame_time_budget_ms",
+                    static_cast<float>(
+                        config.viewer.lod_frame_time_budget_ms
+                    )
+                )
+            );
+
         config.viewer.lod_verbose = bool_or_default(
             *lod,
             "verbose",
             config.viewer.lod_verbose
         );
     }
+    if (const auto* viewport = root["viewport"].as_table()) {
+        config.viewer.viewport_count = static_cast<int>(
+            uint_or_default(*viewport, "count",
+                static_cast<unsigned int>(config.viewer.viewport_count))
+        );
+    }
+
     if (const auto* tile = root["tile"].as_table()) {
         config.viewer.tile_enabled = bool_or_default(
             *tile,
@@ -710,6 +781,18 @@ AppConfig AppConfigLoader::load_from_file(
             *tile,
             "gpu_cache_max_tiles",
             config.viewer.tile_gpu_cache_max_tiles
+        );
+
+        config.viewer.tile_gpu_upload_budget_bytes = uint64_or_default(
+            *tile,
+            "gpu_upload_budget_bytes",
+            config.viewer.tile_gpu_upload_budget_bytes
+        );
+
+        config.viewer.tile_cpu_cache_max_bytes = uint64_or_default(
+            *tile,
+            "cpu_cache_max_bytes",
+            config.viewer.tile_cpu_cache_max_bytes
         );
 
         config.tile_build.num_threads = uint_or_default(
@@ -959,6 +1042,18 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "]\n";
 
+    std::cout << "[CONFIG] lod.target_point_ratios = [";
+
+    for (std::size_t i = 0; i < config.viewer.lod_target_point_ratios.size(); ++i) {
+        if (i > 0) {
+            std::cout << ", ";
+        }
+
+        std::cout << config.viewer.lod_target_point_ratios[i];
+    }
+
+    std::cout << "]\n";
+
     std::cout << "[CONFIG] lod.voxel_mode = "
               << config.viewer.lod_voxel_mode << '\n';
 
@@ -976,6 +1071,15 @@ void AppConfigPrinter::print(const AppConfig& config) {
                     ? "true"
                     : "false")
               << '\n';
+
+    std::cout << "[CONFIG] lod.adaptive_interacting_level = "
+              << (config.viewer.lod_adaptive_interacting_level
+                    ? "true"
+                    : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] lod.frame_time_budget_ms = "
+              << config.viewer.lod_frame_time_budget_ms << '\n';
 
     std::cout << "[CONFIG] lod.verbose = "
               << (config.viewer.lod_verbose ? "true" : "false")
@@ -1012,8 +1116,20 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << config.viewer.tile_gpu_cache_max_tiles
               << '\n';
 
+    std::cout << "[CONFIG] tile.gpu_upload_budget_bytes = "
+              << config.viewer.tile_gpu_upload_budget_bytes
+              << '\n';
+
+    std::cout << "[CONFIG] tile.cpu_cache_max_bytes = "
+              << config.viewer.tile_cpu_cache_max_bytes
+              << '\n';
+
     std::cout << "[CONFIG] tile.num_threads = "
               << config.tile_build.num_threads
+              << '\n';
+
+    std::cout << "[CONFIG] viewport.count = "
+              << config.viewer.viewport_count
               << '\n';
 }
 

@@ -36,56 +36,59 @@ void CameraController::reset_view(Camera& camera) const noexcept {
     }
 }
 
-void CameraController::update(
+bool CameraController::update(
     Camera& camera,
-    const gs3d::platform::Window& window
+    const CameraInput& input
 ) noexcept {
-    const auto framebuffer_size = window.framebuffer_size();
-
-    if (framebuffer_size.width == 0 || framebuffer_size.height == 0) {
-        return;
+    if (input.viewport_width == 0 || input.viewport_height == 0) {
+        return false;
     }
 
     camera.set_viewport(
-        framebuffer_size.width,
-        framebuffer_size.height
+        input.viewport_width,
+        input.viewport_height
     );
 
-    const auto& mouse = window.mouse_state();
-
     const float viewport_width =
-        static_cast<float>(framebuffer_size.width);
+        static_cast<float>(input.viewport_width);
 
     const float viewport_height =
-        static_cast<float>(framebuffer_size.height);
+        static_cast<float>(input.viewport_height);
 
-    if (mouse.left_pressed &&
-        (mouse.delta_x != 0.0 || mouse.delta_y != 0.0)) {
+    bool changed = false;
+
+    if (input.rotate &&
+        (input.delta_x != 0.0f || input.delta_y != 0.0f)) {
         rotate_trackball(
             camera,
-            static_cast<float>(mouse.delta_x),
-            static_cast<float>(mouse.delta_y),
+            input.delta_x,
+            input.delta_y,
             viewport_width,
             viewport_height
         );
+        changed = true;
     }
 
-    if ((mouse.right_pressed || mouse.middle_pressed) &&
-        (mouse.delta_x != 0.0 || mouse.delta_y != 0.0)) {
+    if (input.pan &&
+        (input.delta_x != 0.0f || input.delta_y != 0.0f)) {
         pan_view(
             camera,
-            static_cast<float>(mouse.delta_x),
-            static_cast<float>(mouse.delta_y),
+            input.delta_x,
+            input.delta_y,
             viewport_height
         );
+        changed = true;
     }
 
-    if (mouse.scroll_y != 0.0) {
+    if (input.scroll_y != 0.0f) {
         zoom_view(
             camera,
-            static_cast<float>(mouse.scroll_y)
+            input.scroll_y
         );
+        changed = true;
     }
+
+    return changed;
 }
 
 void CameraController::rotate_trackball(

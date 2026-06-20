@@ -10,7 +10,7 @@ namespace gs3d::platform {
 struct WindowConfig {
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
-    std::string title = "GeoScatter3D Viewer";
+    std::string title = "GeoScatter3D 三维散点查看器";
     bool resizable = true;
 };
 

@@ -82,7 +82,6 @@ public:
         VkDeviceSize size
     );
 
-private:
     [[nodiscard]]
     static VkCommandBuffer begin_single_time_commands(
         const VulkanContext& context,

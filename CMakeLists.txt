@@ -10,12 +10,27 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(Threads REQUIRED)
 
-add_executable(GeoScatter3D
-    src/main.cpp
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+
+# Shared by GeoScatter3D (interactive) and GeoScatter3DBenchmark (manual
+# performance harness, see tests/BenchmarkSuite.cpp) — both drive the same
+# ViewerApp render loop, just with a different entry point.
+set(GEOSCATTER3D_CORE_SOURCES
+    src/gui/ImGuiLayer.cpp
+    src/ui/UiRoot.cpp
+
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 
     src/app/ViewerApp.cpp
     src/app/AppConfig.cpp
     src/app/ResourcePath.cpp
+    src/app/TilePointCache.cpp
+    src/app/ViewportResizeScheduler.cpp
 
     src/platform/Window.cpp
 
@@ -28,7 +43,6 @@ add_executable(GeoScatter3D
     src/data/Delimiter.cpp
     src/data/Gs3dFormat.cpp
     src/data/Gs3dReader.cpp
-    src/data/Gs3dReader.cpp
     src/data/Gs3dVerifier.cpp
     src/data/Gs3dDataset.cpp
     src/data/Gs3dLodDataset.cpp
@@ -39,6 +53,7 @@ add_executable(GeoScatter3D
 
     src/camera/Camera.cpp
     src/camera/CameraController.cpp
+    src/camera/CameraHub.cpp
     src/camera/MouseRay.cpp
 
     src/preprocess/StatisticsPass.cpp
@@ -58,10 +73,19 @@ add_executable(GeoScatter3D
     src/render/LodSelector.cpp
     src/render/PointCloudTileGpu.cpp
     src/render/TileSelection.cpp
+    src/render/OffscreenFramebuffer.cpp
+    src/render/ViewportManager.cpp
+
+    include/gui/ImGuiLayer.hpp
+    include/ui/UiRoot.hpp
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp
     include/app/ResourcePath.hpp
+    include/app/AppState.hpp
+    include/app/UiActions.hpp
+    include/app/TilePointCache.hpp
+    include/app/ViewportResizeScheduler.hpp
 
     include/platform/Window.hpp
 
@@ -84,6 +108,7 @@ add_executable(GeoScatter3D
 
     include/camera/Camera.hpp
     include/camera/CameraController.hpp
+    include/camera/CameraHub.hpp
     include/camera/MouseRay.hpp
 
     include/preprocess/StatisticsPass.hpp
@@ -102,15 +127,26 @@ add_executable(GeoScatter3D
     include/render/PointCloudLodGpu.hpp
     include/render/LodSelector.hpp
     include/render/PointCloudTileGpu.hpp
+    include/render/FrameUploadBudget.hpp
     include/render/TileSelection.hpp
+    include/render/OffscreenFramebuffer.hpp
+    include/render/ViewportManager.hpp
 
     include/util/ThreadPool.hpp
     include/util/Stopwatch.hpp
+    include/util/PercentileStats.hpp
+)
+
+add_executable(GeoScatter3D
+    src/main.cpp
+    ${GEOSCATTER3D_CORE_SOURCES}
 )
 
 target_include_directories(GeoScatter3D PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
 )
 
 target_link_libraries(GeoScatter3D PRIVATE
@@ -118,3 +154,67 @@ target_link_libraries(GeoScatter3D PRIVATE
     glfw
     Threads::Threads
 )
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_executable(GeoScatter3DDataTests
+        tests/Gs3dFormatTests.cpp
+        src/data/Gs3dFormat.cpp
+        src/data/Gs3dReader.cpp
+        src/data/Gs3dDataset.cpp
+    )
+
+    target_include_directories(GeoScatter3DDataTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME GeoScatter3D.DataFormat
+        COMMAND GeoScatter3DDataTests
+    )
+
+    add_executable(GeoScatter3DRuntimeTests
+        tests/RuntimePerformanceTests.cpp
+        src/app/TilePointCache.cpp
+        src/app/ViewportResizeScheduler.cpp
+        src/camera/Camera.cpp
+        src/camera/CameraController.cpp
+        src/render/LodSelector.cpp
+    )
+
+    target_include_directories(GeoScatter3DRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DRuntimeTests PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME GeoScatter3D.RuntimePerformance
+        COMMAND GeoScatter3DRuntimeTests
+    )
+
+    # Manual GPU performance harness — not registered with add_test()/ctest
+    # (needs a real Vulkan device and takes seconds, not milliseconds; see
+    # docs/plan/geoscatter3d-tasks.md Task 1). Run directly:
+    #   ./build/GeoScatter3DBenchmark --config config/viewer.toml [frame_count]
+    add_executable(GeoScatter3DBenchmark
+        tests/BenchmarkSuite.cpp
+        ${GEOSCATTER3D_CORE_SOURCES}
+    )
+
+    target_include_directories(GeoScatter3DBenchmark PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
+    )
+
+    target_link_libraries(GeoScatter3DBenchmark PRIVATE
+        Vulkan::Vulkan
+        glfw
+        Threads::Threads
+    )
+endif()

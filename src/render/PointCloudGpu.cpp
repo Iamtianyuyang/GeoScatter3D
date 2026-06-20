@@ -117,6 +117,12 @@ void PointCloudGpu::upload(
         );
     }
 
+    if (!dataset.has_point_data()) {
+        throw std::runtime_error(
+            "PointCloudGpu: dataset has no loaded point data"
+        );
+    }
+
     upload_points(
         context,
         command_pool,
@@ -130,6 +136,27 @@ void PointCloudGpu::upload_points(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
+    const gs3d::data::Gs3dPoint* points,
+    std::uint64_t point_count
+) {
+    prepare_upload(context, points, point_count);
+
+    const VkCommandBuffer command_buffer =
+        VulkanBufferUtils::begin_single_time_commands(
+            context,
+            command_pool
+        );
+    record_prepared_upload(command_buffer);
+    VulkanBufferUtils::end_single_time_commands(
+        context,
+        command_pool,
+        transfer_queue,
+        command_buffer
+    );
+}
+
+void PointCloudGpu::prepare_upload(
+    const VulkanContext& context,
     const gs3d::data::Gs3dPoint* points,
     std::uint64_t point_count
 ) {
@@ -168,17 +195,54 @@ void PointCloudGpu::upload_points(
         vertex_buffer_capacity_ = point_bytes;
     }
 
-    VulkanBufferUtils::copy_buffer(
-        context,
-        command_pool,
-        transfer_queue,
-        staging_buffer_.handle(),
-        vertex_buffer_.handle(),
-        point_bytes
-    );
-
     point_count_         = point_count;
     vertex_buffer_size_  = point_bytes;
+}
+
+void PointCloudGpu::record_prepared_upload(
+    VkCommandBuffer command_buffer
+) const {
+    if (command_buffer == VK_NULL_HANDLE ||
+        !staging_buffer_.valid() ||
+        !vertex_buffer_.valid() ||
+        vertex_buffer_size_ == 0) {
+        throw std::runtime_error(
+            "PointCloudGpu: no prepared upload to record"
+        );
+    }
+
+    VkBufferCopy copy_region{};
+    copy_region.size = vertex_buffer_size_;
+    vkCmdCopyBuffer(
+        command_buffer,
+        staging_buffer_.handle(),
+        vertex_buffer_.handle(),
+        1,
+        &copy_region
+    );
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = vertex_buffer_.handle();
+    barrier.offset = 0;
+    barrier.size = vertex_buffer_size_;
+
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        0,
+        0,
+        nullptr,
+        1,
+        &barrier,
+        0,
+        nullptr
+    );
 }
 
 void PointCloudGpu::ensure_staging(
