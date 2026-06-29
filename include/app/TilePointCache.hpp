@@ -7,6 +7,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -30,6 +31,11 @@ public:
 
     [[nodiscard]]
     SharedTilePoints get(std::uint64_t tile_id);
+
+    // Read-only lookup (no LRU update). Safe to call concurrently with other
+    // readers. Use when the caller only needs the data, not LRU recency.
+    [[nodiscard]]
+    SharedTilePoints find(std::uint64_t tile_id) const;
 
     void put(
         std::uint64_t tile_id,
@@ -59,7 +65,7 @@ private:
     std::uint64_t evictions_ = 0;
     std::list<std::uint64_t> lru_;
     std::unordered_map<std::uint64_t, Entry> entries_;
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
 };
 
 } // namespace gs3d::app

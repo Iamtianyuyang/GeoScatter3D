@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/CsvChunkPlanner.hpp"
+#include "data/CsvSniffer.hpp"
 #include "data/CsvStreamReader.hpp"
 #include "data/Gs3dDataset.hpp"
 
@@ -48,10 +49,13 @@ private:
         const std::filesystem::path& gs3d_path
     ) const;
 
+    // Parallel convert with pre-computed sniff/chunks to avoid double I/O.
     [[nodiscard]]
     std::pair<CsvConvertResult, gs3d::data::Gs3dDataset> convert_parallel(
         const std::filesystem::path& csv_path,
-        const std::filesystem::path& gs3d_path
+        const std::filesystem::path& gs3d_path,
+        const gs3d::data::CsvSniffResult& sniff,
+        const std::vector<gs3d::data::CsvByteChunk>& chunks
     ) const;
 };
 

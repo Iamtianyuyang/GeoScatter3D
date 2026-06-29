@@ -828,6 +828,24 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.tile_cpu_cache_max_bytes
         );
 
+        config.viewer.tile_preload_all = bool_or_default(
+            *tile,
+            "preload_all",
+            config.viewer.tile_preload_all
+        );
+
+        config.viewer.tile_preload_max_bytes = uint64_or_default(
+            *tile,
+            "preload_max_bytes",
+            config.viewer.tile_preload_max_bytes
+        );
+
+        config.viewer.tile_preload_upload_budget_bytes = uint64_or_default(
+            *tile,
+            "preload_upload_budget_bytes",
+            config.viewer.tile_preload_upload_budget_bytes
+        );
+
         config.tile_build.num_threads = uint_or_default(
             *tile,
             "num_threads",
@@ -1169,6 +1187,18 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] tile.cpu_cache_max_bytes = "
               << config.viewer.tile_cpu_cache_max_bytes
+              << '\n';
+
+    std::cout << "[CONFIG] tile.preload_all = "
+              << (config.viewer.tile_preload_all ? "true" : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] tile.preload_max_bytes = "
+              << config.viewer.tile_preload_max_bytes
+              << '\n';
+
+    std::cout << "[CONFIG] tile.preload_upload_budget_bytes = "
+              << config.viewer.tile_preload_upload_budget_bytes
               << '\n';
 
     std::cout << "[CONFIG] tile.num_threads = "

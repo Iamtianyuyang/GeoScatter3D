@@ -22,6 +22,14 @@ public:
         DelimiterMode mode
     );
 
+    // Zero-allocation split: populates an existing vector without heap alloc.
+    // Caller must ensure `out` is empty (or will be cleared internally).
+    static void split_to(
+        std::string_view line,
+        DelimiterMode mode,
+        std::vector<std::string_view>& out
+    );
+
     static std::string trim_copy(std::string_view text);
 
     static std::string_view trim_view(std::string_view text);
@@ -39,6 +47,17 @@ private:
 
     static std::vector<std::string_view> split_by_whitespace(
         std::string_view line
+    );
+
+    static void split_by_char_to(
+        std::string_view line,
+        char delimiter,
+        std::vector<std::string_view>& out
+    );
+
+    static void split_by_whitespace_to(
+        std::string_view line,
+        std::vector<std::string_view>& out
     );
 };
 

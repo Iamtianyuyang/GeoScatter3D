@@ -312,13 +312,6 @@ std::vector<char> read_chunk_buffer(
         );
     }
 
-    constexpr std::size_t kReadBufSize = 16 * 1024 * 1024;
-    std::vector<char> stream_buf(kReadBufSize);
-    file.rdbuf()->pubsetbuf(
-        stream_buf.data(),
-        static_cast<std::streamsize>(stream_buf.size())
-    );
-
     const auto byte_count = chunk.aligned_end - chunk.aligned_begin;
     if (byte_count >
         static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
@@ -461,6 +454,12 @@ CsvChunkPointResult CsvChunkReader::parse_chunk_for_points(
 
     const auto buffer = read_chunk_buffer(path, chunk);
 
+    // Pre-reserve: ~50 bytes/line for 4-field numeric CSV (x,y,fold,elevation).
+    constexpr std::size_t kBytesPerLineEstimate = 50;
+    const std::size_t estimated_points =
+        std::max<std::size_t>(buffer.size() / kBytesPerLineEstimate, 1);
+    result.points.reserve(estimated_points);
+
     for_each_chunk_line(
         buffer,
         chunk.aligned_begin,
@@ -518,6 +517,12 @@ CsvChunkBufferedPointResult CsvChunkReader::parse_chunk_buffered_points(
     result.chunk_id = chunk.chunk_id;
 
     const auto buffer = read_chunk_buffer(path, chunk);
+
+    // Pre-reserve: ~50 bytes/line for 4-field numeric CSV (x,y,fold,elevation).
+    constexpr std::size_t kBytesPerLineEstimate = 50;
+    const std::size_t estimated_points =
+        std::max<std::size_t>(buffer.size() / kBytesPerLineEstimate, 1);
+    result.points.reserve(estimated_points);
 
     for_each_chunk_line(
         buffer,

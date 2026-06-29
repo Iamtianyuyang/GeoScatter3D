@@ -84,6 +84,19 @@ public:
         const PointPushConstants& push_constants
     ) const;
 
+    // Bind pipeline + viewport + scissor once, then call draw_per_tile() per tile.
+    // Avoids redundant state binding in tile loops (20+ tiles per viewport).
+    void bind_for_viewport(
+        VkCommandBuffer command_buffer,
+        VkExtent2D extent
+    ) const;
+
+    void draw_per_tile(
+        VkCommandBuffer command_buffer,
+        const PointCloudGpu& point_cloud,
+        const PointPushConstants& push_constants
+    ) const;
+
     [[nodiscard]]
     VkPipeline pipeline() const noexcept;
 

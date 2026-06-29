@@ -613,7 +613,12 @@ void print_controls(
 float nice_scale_distance(float raw)
 {
     if (raw <= 0.0f) return 1.0f;
-    const float mag = std::pow(10.0f, std::floor(std::log10(static_cast<double>(raw))));
+    // Guard against denormalized floats: log10(very small) -> pow underflow -> 0.
+    constexpr float kMinRaw = 1.0e-30f;
+    if (raw < kMinRaw) return kMinRaw;
+    const double mag_d = std::pow(10.0, std::floor(std::log10(static_cast<double>(raw))));
+    if (mag_d <= 0.0) return 1.0f;
+    const float mag = static_cast<float>(mag_d);
     const float n   = raw / mag;
     if (n < 1.5f) return       mag;
     if (n < 3.5f) return 2.0f * mag;
@@ -994,6 +999,52 @@ int ViewerApp::run() {
         auto interacting_debounce_until =
             std::chrono::steady_clock::now();
         gs3d::util::Stopwatch tile_async_cycle_timer;
+
+        /*
+         * 全量预加载状态(tile_preload_all):后台一次性读取全部瓦片,主循环
+         * 用大预算渐进上传到 GPU 常驻;全部驻留后 tiles_fully_resident=true,
+         * 之后走"每帧选择可见子集、零加载"的快路径,不再碰流式状态机。
+         * 仅在所有瓦片总字节 <= tile_preload_max_bytes 时启用,否则保持 false
+         * 走原有按需流式。
+         */
+        const bool tile_preload_enabled =
+            config_.tile_enabled &&
+            config_.tile_preload_all &&
+            !config_.benchmark_mode &&
+            tile_reader.has_value() &&
+            !tile_reader->records().empty() &&
+            tile_reader->stats().total_point_bytes <=
+                config_.tile_preload_max_bytes;
+        std::future<std::vector<std::pair<
+            std::uint64_t, SharedTilePoints>>> tile_preload_future;
+        std::vector<std::pair<std::uint64_t, SharedTilePoints>>
+            tile_preload_tiles;
+        bool tile_preload_dispatched = false;
+        bool tile_preload_failed = false;
+        bool tiles_fully_resident = false;
+        int tile_preload_stall_frames = 0;
+        gs3d::util::Stopwatch tile_preload_timer;
+
+        // 从瓦片 id 列表算并集包围盒(供 clip 用)。
+        const auto compute_tiles_bbox =
+            [&tile_reader](const std::vector<std::uint64_t>& ids)
+                -> gs3d::data::Gs3dTileQueryBox {
+            gs3d::data::Gs3dTileQueryBox box;
+            box.min_x = box.min_y = box.min_z =
+                std::numeric_limits<float>::max();
+            box.max_x = box.max_y = box.max_z =
+                -std::numeric_limits<float>::max();
+            for (const auto tile_id : ids) {
+                const auto& r = tile_reader->record(tile_id);
+                box.min_x = std::min(box.min_x, r.bbox_min_x);
+                box.min_y = std::min(box.min_y, r.bbox_min_y);
+                box.min_z = std::min(box.min_z, r.bbox_min_z);
+                box.max_x = std::max(box.max_x, r.bbox_max_x);
+                box.max_y = std::max(box.max_y, r.bbox_max_y);
+                box.max_z = std::max(box.max_z, r.bbox_max_z);
+            }
+            return box;
+        };
 
         ViewportResizeScheduler viewport_resize_scheduler(0.15);
 
@@ -1456,6 +1507,16 @@ int ViewerApp::run() {
                 std::cout << "[ATTR] switched to: " << a.name << '\n';
             }
             if (gui_cmds.clear_cache_requested) {
+                if (tile_preload_enabled && !tiles_fully_resident &&
+                    !tile_preload_failed) {
+                    // Cancel preload so clear() isn't immediately defeated
+                    // by the background thread re-inserting tiles.
+                    tile_preload_failed = true;
+                    if (tile_preload_future.valid()) {
+                        tile_preload_future.wait();
+                    }
+                    std::cout << "[TILE] preload cancelled for cache clear.\n";
+                }
                 tile_point_cache.clear();
                 std::cout << "[TILE] CPU cache cleared.\n";
             }
@@ -1681,9 +1742,139 @@ int ViewerApp::run() {
                 );
             }
 
-            if (config_.tile_enabled &&
+            /*
+             * 全量预加载阶段:后台一次性读取全部瓦片,主循环用大预算逐帧
+             * 上传到 GPU 常驻。全部驻留后切到快路径(下方),不再走流式。
+             */
+            if (tile_preload_enabled && !tiles_fully_resident &&
+                !tile_preload_failed && tile_gpu_cloud) {
+                if (!tile_preload_dispatched) {
+                    tile_preload_dispatched = true;
+                    tile_preload_timer.reset();
+                    const auto& reader = *tile_reader;
+                    tile_preload_future = std::async(
+                        std::launch::async,
+                        [&reader, &tile_point_cache]()
+                            -> std::vector<std::pair<
+                                std::uint64_t, SharedTilePoints>> {
+                            std::vector<std::pair<
+                                std::uint64_t, SharedTilePoints>> all;
+                            all.reserve(reader.records().size());
+                            for (const auto& rec : reader.records()) {
+                                // Use find() (shared lock) for the check to
+                                // avoid serializing against main-thread
+                                // find()/stats() calls. Only put() (exclusive)
+                                // on cache miss.
+                                SharedTilePoints pts =
+                                    tile_point_cache.find(rec.tile_id);
+                                if (!pts) {
+                                    auto loaded =
+                                        std::make_shared<TilePoints>(
+                                            reader.read_tile_points(
+                                                rec.tile_id));
+                                    tile_point_cache.put(rec.tile_id, loaded);
+                                    pts = loaded;
+                                }
+                                all.emplace_back(rec.tile_id, pts);
+                            }
+                            return all;
+                        });
+                }
+
+                if (tile_preload_tiles.empty() &&
+                    tile_preload_future.valid() &&
+                    tile_preload_future.wait_for(std::chrono::seconds(0)) ==
+                        std::future_status::ready) {
+                    try {
+                        tile_preload_tiles = tile_preload_future.get();
+                    } catch (const std::exception& e) {
+                        std::cerr
+                            << "[TILE] preload failed: " << e.what()
+                            << " — falling back to streaming mode.\n";
+                        tile_preload_failed = true;
+                    }
+                }
+
+                if (!tile_preload_tiles.empty()) {
+                    renderer.wait_for_in_flight_fences();
+                    const auto sync =
+                        tile_gpu_cloud->sync_from_cached_tiles(
+                            context,
+                            renderer.command_pool(),
+                            context.graphics_queue(),
+                            tile_preload_tiles,
+                            config_.tile_preload_upload_budget_bytes
+                        );
+                    if (config_.tile_verbose && sync.uploaded_bytes > 0) {
+                        std::cout
+                            << "[TILE] preload upload: bytes="
+                            << sync.uploaded_bytes
+                            << ", resident="
+                            << sync.resident_tile_count << "/"
+                            << tile_preload_tiles.size()
+                            << ", complete="
+                            << (sync.complete ? "true" : "false")
+                            << '\n';
+                    }
+                    if (sync.complete) {
+                        tiles_fully_resident = true;
+                        tile_selection_dirty = true;
+                        std::cout
+                            << "[TILE] preload complete: "
+                            << sync.resident_tile_count
+                            << " tiles resident on GPU ("
+                            << sync.resident_gpu_buffer_bytes
+                            << " bytes) in "
+                            << tile_preload_timer.elapsed_seconds()
+                            << "s — interactive streaming disabled.\n";
+                    } else if (sync.uploaded_bytes == 0) {
+                        ++tile_preload_stall_frames;
+                        if (tile_preload_stall_frames >= 3) {
+                            std::cerr
+                                << "[TILE] preload stalled ("
+                                << sync.resident_tile_count << "/"
+                                << tile_preload_tiles.size()
+                                << " tiles uploaded, budget="
+                                << config_.tile_preload_upload_budget_bytes
+                                << " bytes/frame)"
+                                << " — falling back to streaming.\n";
+                            tile_preload_failed = true;
+                        }
+                    } else {
+                        tile_preload_stall_frames = 0;
+                    }
+                }
+            }
+
+            /*
+             * 快路径:全部瓦片已常驻 GPU。瓦片选择(纯 CPU frustum/屏幕尺寸,
+             * 无 I/O)每帧都跑,包括交互期间,把可见子集直接设为绘制集——
+             * 无异步读、无上传节流、无去抖等待。绘制仍只画可见子集,开销有界。
+             */
+            if (tiles_fully_resident) {
+                if (camera_changed || tile_selection_dirty) {
+                    tile_result = tile_selection.update(
+                        viewport_manager.camera(streaming_viewport_index),
+                        *tile_reader
+                    );
+                    tile_selection_dirty = false;
+                    const auto view_index =
+                        static_cast<std::size_t>(streaming_viewport_index);
+                    if (tile_result.enabled &&
+                        !tile_result.tile_ids.empty()) {
+                        viewport_tile_ids[view_index] =
+                            tile_result.tile_ids;
+                        viewport_tile_query_boxes[view_index] =
+                            compute_tiles_bbox(tile_result.tile_ids);
+                    } else {
+                        viewport_tile_ids[view_index].clear();
+                        viewport_tile_query_boxes[view_index].reset();
+                    }
+                }
+            } else if (config_.tile_enabled &&
                 tile_reader.has_value() &&
-                tile_gpu_cloud) {
+                tile_gpu_cloud &&
+                (!tile_preload_enabled || tile_preload_failed)) {
                 if (!interacting && tile_selection_dirty) {
                     tile_result = tile_selection.update(
                         viewport_manager.camera(streaming_viewport_index),
@@ -1884,6 +2075,8 @@ int ViewerApp::run() {
                             selected_tile_points(ids.size());
                         std::size_t cache_hit_tiles = 0;
                         for (std::size_t i = 0; i < ids.size(); ++i) {
+                            // Use get() (not find()) to promote tile in LRU —
+                            // actively rendered tiles must stay warm in cache.
                             selected_tile_points[i] =
                                 tile_point_cache.get(ids[i]);
                             if (selected_tile_points[i]) {
@@ -2046,15 +2239,23 @@ int ViewerApp::run() {
              * 供下一帧 UiRoot 渲染——同一个"UI 出命令、主循环写回状态"
              * 的模式）。
              *
-             * 候选点集合只用当前 LOD 档位的点（≤ 阶梯最高档，目前 ≤1.5M
-             * 点），不用当前驻留的全分辨率 tile——驻留 tile 的总点数在
-             * 缩小视野时可以逼近整个可见区域的全分辨率数据（实测一次到
-             * 过 140 个 tile、共 2600 万+点），把它们全部拿来做逐点投影
-             * 会让每个悬停帧的开销失控（已经在压测里炸过一次：1800 帧
-             * 跑到 90 秒还没完）。代价是 tooltip 显示的是 LOD 降采样后的
-             * 最近点，不一定是原始全分辨率点——这是为了保证悬停永远不卡
-             * 帧而接受的精度妥协，不是后续优化项。
+             * 候选点集合优先用当前 LOD 档位的点（≤ 阶梯最高档，目前
+             * ≤1.5M 点）。但放大到能看清单个点时，画面上实际显示的是
+             * 全分辨率 tile 的点，而不是稀疏的 LOD 降采样点——这时 LOD
+             * 候选点在屏幕上彼此相距很远，鼠标 12px 半径内很可能一个都
+             * 没有，悬浮 tooltip 因此消失，即使光标正对着一个清晰可见的
+             * 点。所以再把"当前视口实际选中渲染的 tile"的真实点加入候选
+             * 集合——这些点已经常驻 CPU 缓存（用于渲染上传），取用零额外
+             * I/O。
+             *
+             * 仍按总点数设预算（kHoverTileCandidateBudget）只在选中 tile
+             * 集合不大时合并：缩小视野时选中 tile 可逼近整个可见区域的
+             * 全分辨率数据（实测一次到过 140 个 tile、共 2600 万+点），
+             * 全部拿来逐点投影会让悬浮帧开销失控（压测炸过：1800 帧跑到
+             * 90 秒还没完）。超预算时退回旧行为：只用 LOD 候选点，接受
+             * "tooltip 显示降采样后的最近点"的精度妥协。
              */
+            constexpr std::uint64_t kHoverTileCandidateBudget = 3'000'000;
             for (const auto& frame : gui_cmds.viewport_frames) {
                 if (frame.index < 0 ||
                     frame.index >= static_cast<int>(app_state.render_views.size())) {
@@ -2079,6 +2280,36 @@ int ViewerApp::run() {
                     );
                 } else if (!config_.lod_enabled && dataset.has_point_data()) {
                     candidate_point_sets.push_back(&dataset.points());
+                }
+
+                // 真实渲染的全分辨率 tile 点，仅当总点数在预算内才合并
+                // （见上方注释）；保活到本次查询结束。
+                std::vector<SharedTilePoints> hover_tile_keepalive;
+                if (config_.tile_enabled && tile_reader.has_value()) {
+                    const auto& view_tile_ids =
+                        viewport_tile_ids[
+                            static_cast<std::size_t>(frame.index)
+                        ];
+                    std::uint64_t total_points = 0;
+                    for (const auto tile_id : view_tile_ids) {
+                        total_points +=
+                            tile_reader->record(tile_id).point_count;
+                    }
+                    if (!view_tile_ids.empty() &&
+                        total_points <= kHoverTileCandidateBudget) {
+                        hover_tile_keepalive.reserve(view_tile_ids.size());
+                        for (const auto tile_id : view_tile_ids) {
+                            auto pts = tile_point_cache.find(tile_id);
+                            if (pts) {
+                                hover_tile_keepalive.push_back(
+                                    std::move(pts)
+                                );
+                            }
+                        }
+                        for (const auto& pts : hover_tile_keepalive) {
+                            candidate_point_sets.push_back(pts.get());
+                        }
+                    }
                 }
 
                 const gs3d::camera::Viewport hover_viewport{
@@ -2150,27 +2381,20 @@ int ViewerApp::run() {
                                 );
                             const auto& selected_tile_ids =
                                 viewport_tile_ids[view_index];
-                            const bool any_tile_resident =
-                                std::any_of(
-                                    selected_tile_ids.begin(),
-                                    selected_tile_ids.end(),
-                                    [&](std::uint64_t tile_id) {
-                                        return tile_gpu_cloud &&
-                                            tile_gpu_cloud
-                                                ->has_resident_tile(tile_id);
-                                    }
-                                );
-                            const bool all_tiles_resident =
-                                !selected_tile_ids.empty() &&
-                                std::all_of(
-                                    selected_tile_ids.begin(),
-                                    selected_tile_ids.end(),
-                                    [&](std::uint64_t tile_id) {
-                                        return tile_gpu_cloud &&
-                                            tile_gpu_cloud
-                                                ->has_resident_tile(tile_id);
-                                    }
-                                );
+                            // Single pass: compute both any/all resident flags
+                            bool any_tile_resident = false;
+                            bool all_tiles_resident =
+                                !selected_tile_ids.empty();
+                            for (const auto tile_id : selected_tile_ids) {
+                                const bool resident =
+                                    tile_gpu_cloud &&
+                                    tile_gpu_cloud
+                                        ->has_resident_tile(tile_id);
+                                any_tile_resident =
+                                    any_tile_resident || resident;
+                                all_tiles_resident =
+                                    all_tiles_resident && resident;
+                            }
                             /*
                              * KeepStableHighQuality:交互期间继续绘制已驻留
                              * 的全分辨率 tile —— 新 tile 流式本就在交互期
@@ -2204,18 +2428,21 @@ int ViewerApp::run() {
                                 lod_push.clip_max[3] = 0.0f;
                             }
 
+                            point_pipeline.bind_for_viewport(
+                                c,
+                                viewport_extent
+                            );
+
                             if (config_.lod_enabled) {
-                                point_pipeline.draw(
+                                point_pipeline.draw_per_tile(
                                     c,
                                     lod_gpu_cloud->gpu_cloud(lod_level_for_frame),
-                                    viewport_extent,
                                     lod_push
                                 );
                             } else {
-                                point_pipeline.draw(
+                                point_pipeline.draw_per_tile(
                                     c,
                                     *full_gpu_cloud,
-                                    viewport_extent,
                                     lod_push
                                 );
                             }
@@ -2227,10 +2454,9 @@ int ViewerApp::run() {
                                             ->has_resident_tile(tile_id)) {
                                         continue;
                                     }
-                                    point_pipeline.draw(
+                                    point_pipeline.draw_per_tile(
                                         c,
                                         tile_gpu_cloud->gpu_cloud_for_tile(tile_id),
-                                        viewport_extent,
                                         vp_push
                                     );
                                 }

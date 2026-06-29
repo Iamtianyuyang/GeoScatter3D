@@ -41,6 +41,83 @@ std::vector<std::string_view> Delimiter::split(
     }
 }
 
+void Delimiter::split_to(
+    std::string_view line,
+    DelimiterMode mode,
+    std::vector<std::string_view>& out
+) {
+    if (mode == DelimiterMode::Auto) {
+        mode = detect(line);
+    }
+
+    switch (mode) {
+    case DelimiterMode::Comma:
+        split_by_char_to(line, ',', out);
+        return;
+    case DelimiterMode::Tab:
+        split_by_char_to(line, '\t', out);
+        return;
+    case DelimiterMode::Whitespace:
+        split_by_whitespace_to(line, out);
+        return;
+    case DelimiterMode::Auto:
+    default:
+        split_by_whitespace_to(line, out);
+        return;
+    }
+}
+
+void Delimiter::split_by_char_to(
+    std::string_view line,
+    char delimiter,
+    std::vector<std::string_view>& out
+) {
+    out.clear();
+
+    std::size_t start = 0;
+
+    while (start <= line.size()) {
+        const std::size_t pos = line.find(delimiter, start);
+
+        if (pos == std::string_view::npos) {
+            out.push_back(trim_view(line.substr(start)));
+            break;
+        }
+
+        out.push_back(trim_view(line.substr(start, pos - start)));
+        start = pos + 1;
+    }
+}
+
+void Delimiter::split_by_whitespace_to(
+    std::string_view line,
+    std::vector<std::string_view>& out
+) {
+    out.clear();
+
+    std::size_t i = 0;
+
+    while (i < line.size()) {
+        while (i < line.size() &&
+               std::isspace(static_cast<unsigned char>(line[i]))) {
+            ++i;
+        }
+
+        if (i >= line.size()) {
+            break;
+        }
+
+        const std::size_t start = i;
+
+        while (i < line.size() &&
+               !std::isspace(static_cast<unsigned char>(line[i]))) {
+            ++i;
+        }
+
+        out.push_back(line.substr(start, i - start));
+    }
+}
+
 std::string Delimiter::trim_copy(std::string_view text) {
     const auto trimmed = trim_view(text);
     return std::string(trimmed);

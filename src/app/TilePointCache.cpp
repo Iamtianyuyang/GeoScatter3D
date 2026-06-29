@@ -1,6 +1,7 @@
 #include "app/TilePointCache.hpp"
 
 #include <limits>
+#include <shared_mutex>
 
 namespace gs3d::app {
 
@@ -11,7 +12,7 @@ TilePointCache::TilePointCache(std::uint64_t max_bytes)
 
 SharedTilePoints TilePointCache::get(std::uint64_t tile_id)
 {
-    std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     const auto found = entries_.find(tile_id);
     if (found == entries_.end()) {
         ++misses_;
@@ -20,6 +21,16 @@ SharedTilePoints TilePointCache::get(std::uint64_t tile_id)
 
     ++hits_;
     lru_.splice(lru_.begin(), lru_, found->second.lru_position);
+    return found->second.points;
+}
+
+SharedTilePoints TilePointCache::find(std::uint64_t tile_id) const
+{
+    std::shared_lock lock(mutex_);
+    const auto found = entries_.find(tile_id);
+    if (found == entries_.end()) {
+        return {};
+    }
     return found->second.points;
 }
 
@@ -41,7 +52,7 @@ void TilePointCache::put(
     const auto bytes =
         point_count * sizeof(gs3d::data::Gs3dPoint);
 
-    std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     if (const auto existing = entries_.find(tile_id);
         existing != entries_.end()) {
         erase_entry(existing);
@@ -77,7 +88,7 @@ void TilePointCache::put(
 
 void TilePointCache::clear() noexcept
 {
-    std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     entries_.clear();
     lru_.clear();
     resident_bytes_ = 0;
@@ -88,7 +99,7 @@ void TilePointCache::clear() noexcept
 
 TilePointCacheStats TilePointCache::stats() const noexcept
 {
-    std::scoped_lock lock(mutex_);
+    std::shared_lock lock(mutex_);
     return {
         max_bytes_,
         resident_bytes_,

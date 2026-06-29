@@ -115,3 +115,11 @@ gpu_upload_budget_bytes = 8388608
 # Raised from 512MB -> 4GB so most/all tiles stay CPU-resident at larger
 # scale, cutting repeat disk reads (helps the reload-latency goal).
 cpu_cache_max_bytes = 4294967296
+
+# 全量预加载:启动后一次性把所有瓦片读入并常驻 GPU(仅当总字节数 <=
+# preload_max_bytes,装得进显存时),之后缩放/平移/旋转零加载延迟——不再
+# 按需流式、不再受逐帧上传节流限制。瓦片选择(画哪些可见子集)改为每帧运行
+# (纯 CPU,无 I/O),交互期间也实时跟随相机。超过预算时自动回退到按需流式。
+preload_all = false
+preload_max_bytes = 1610612736          # 1.5 GiB
+preload_upload_budget_bytes = 67108864  # 64 MiB/帧(预加载阶段,几帧传完)

@@ -72,7 +72,8 @@ CsvReadStats CsvStreamReader::read(
         delimiter_mode = Delimiter::detect(header_line);
     }
 
-    const auto header_views = Delimiter::split(header_line, delimiter_mode);
+    std::vector<std::string_view> header_views;
+    Delimiter::split_to(header_line, delimiter_mode, header_views);
 
     std::vector<std::string> header_fields;
     header_fields.reserve(header_views.size());
@@ -89,6 +90,9 @@ CsvReadStats CsvStreamReader::read(
     const ResolvedDataSchema resolved_schema =
         config_.schema.resolve(field_map, header_fields);
 
+    std::vector<std::string_view> fields;
+    fields.reserve(header_fields.size());
+
     while (std::getline(file, line)) {
         ++stats.total_lines;
 
@@ -102,7 +106,7 @@ CsvReadStats CsvStreamReader::read(
 
         ++stats.data_lines;
 
-        const auto fields = Delimiter::split(line, delimiter_mode);
+        Delimiter::split_to(line, delimiter_mode, fields);
 
         CsvPointRecord record;
         if (parse_record(fields, resolved_schema, record)) {
@@ -127,7 +131,7 @@ bool CsvStreamReader::is_blank_line(const std::string& line) {
 }
 
 bool CsvStreamReader::is_comment_line(const std::string& line) const {
-    const auto trimmed = Delimiter::trim_copy(line);
+    const auto trimmed = Delimiter::trim_view(line);
 
     if (trimmed.empty()) {
         return false;

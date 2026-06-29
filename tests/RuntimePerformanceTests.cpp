@@ -108,12 +108,16 @@ void test_frame_upload_budget()
 
     gs3d::render::FrameUploadBudget oversized(8);
     expect(
-        oversized.try_reserve(12),
-        "upload budget allows one oversized tile to make progress"
+        !oversized.try_reserve(12),
+        "upload budget rejects oversized tile exceeding budget"
     );
     expect(
-        !oversized.try_reserve(1),
-        "oversized tile consumes the frame budget"
+        oversized.try_reserve(7),
+        "upload budget accepts tile within budget after rejection"
+    );
+    expect(
+        !oversized.try_reserve(2),
+        "remaining budget is 1, rejects 2-byte tile"
     );
 }
 

@@ -296,14 +296,15 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert(
               << worker_count
               << '\n';
 
-    return convert_parallel(csv_path, gs3d_path);
+    return convert_parallel(csv_path, gs3d_path, sniff, chunks);
 }
 
 std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     const std::filesystem::path& csv_path,
     const std::filesystem::path& gs3d_path
 ) const {
-    constexpr std::size_t kBytesPerLineEstimate = 20;
+    // ~50 bytes/line for 4-field numeric CSV (x,y,fold,elevation).
+    constexpr std::size_t kBytesPerLineEstimate = 50;
     std::error_code size_ec;
     const auto file_bytes = std::filesystem::file_size(csv_path, size_ec);
     const std::size_t estimated_points =
@@ -391,17 +392,10 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
 
 std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     const std::filesystem::path& csv_path,
-    const std::filesystem::path& gs3d_path
+    const std::filesystem::path& gs3d_path,
+    const gs3d::data::CsvSniffResult& sniff,
+    const std::vector<gs3d::data::CsvByteChunk>& chunks
 ) const {
-    gs3d::data::CsvSniffer sniffer(config_);
-    const auto sniff = sniffer.sniff(csv_path);
-
-    const auto chunks = gs3d::data::CsvChunkPlanner::plan(
-        csv_path,
-        sniff,
-        chunk_plan_config_
-    );
-
     const auto worker_count = resolve_thread_count(
         chunk_plan_config_.num_threads,
         chunks.size()

@@ -18,6 +18,11 @@ public:
     [[nodiscard]]
     bool try_reserve(std::uint64_t bytes) noexcept
     {
+        if (max_bytes_ != std::numeric_limits<std::uint64_t>::max() &&
+            bytes > max_bytes_) {
+            return false;
+        }
+
         if (reserved_bytes_ == 0) {
             reserved_bytes_ = bytes;
             return true;

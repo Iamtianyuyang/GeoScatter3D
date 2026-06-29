@@ -47,10 +47,14 @@ void PointPipeline::draw(
     VkExtent2D extent,
     const PointPushConstants& push_constants
 ) const {
-    if (!point_cloud.valid()) {
-        return;
-    }
+    bind_for_viewport(command_buffer, extent);
+    draw_per_tile(command_buffer, point_cloud, push_constants);
+}
 
+void PointPipeline::bind_for_viewport(
+    VkCommandBuffer command_buffer,
+    VkExtent2D extent
+) const {
     vkCmdBindPipeline(
         command_buffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -72,6 +76,16 @@ void PointPipeline::draw(
     scissor.extent = extent;
 
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+}
+
+void PointPipeline::draw_per_tile(
+    VkCommandBuffer command_buffer,
+    const PointCloudGpu& point_cloud,
+    const PointPushConstants& push_constants
+) const {
+    if (!point_cloud.valid()) {
+        return;
+    }
 
     vkCmdPushConstants(
         command_buffer,

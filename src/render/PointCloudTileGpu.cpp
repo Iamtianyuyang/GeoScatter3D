@@ -375,8 +375,8 @@ PointCloudTileGpu::read_and_merge_tiles(
         if (!filter_box) {
             merged_points.insert(
                 merged_points.end(),
-                tile_points.begin(),
-                tile_points.end()
+                std::make_move_iterator(tile_points.begin()),
+                std::make_move_iterator(tile_points.end())
             );
             continue;
         }

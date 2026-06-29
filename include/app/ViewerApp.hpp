@@ -169,6 +169,23 @@ struct ViewerAppConfig {
     std::uint64_t tile_cpu_cache_max_bytes =
         512ull * 1024ull * 1024ull;
 
+    /*
+     * 全量预加载:启动后一次性把所有瓦片读入并常驻 GPU(数据集能装进显存
+     * 时),之后缩放/平移/旋转零加载延迟——不再按需流式、不再受逐帧上传
+     * 节流限制。瓦片选择(决定画哪些可见子集)改为每帧运行(纯 CPU,无 I/O),
+     * 交互期间也实时跟随相机。
+     *
+     * 仅当所有瓦片字节数 <= tile_preload_max_bytes 时启用,否则自动回退到
+     * 按需流式(数据集大于显存预算时)。默认 1.5 GiB,覆盖竞赛级数据集且远
+     * 小于常见独显显存。
+     */
+    bool tile_preload_all = true;
+    std::uint64_t tile_preload_max_bytes =
+        1536ull * 1024ull * 1024ull;
+    // 预加载阶段每帧上传预算(比交互流式的 8 MiB 大得多,几帧内传完全量)。
+    std::uint64_t tile_preload_upload_budget_bytes =
+        64ull * 1024ull * 1024ull;
+
     // Number of 3D views visible at startup. More can be opened up to 4.
     int viewport_count = 1;
 

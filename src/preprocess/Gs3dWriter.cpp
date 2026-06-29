@@ -102,23 +102,50 @@ Gs3dWriteResult Gs3dWriter::write_sequential(
 
     gs3d::data::CsvStreamReader reader(config_);
 
+    // Buffer points for bulk write (avoids per-point write() overhead)
+    constexpr std::size_t kWriteBufferSize = 65536; // 1MB / 16 bytes per point
+    std::vector<gs3d::data::Gs3dPoint> write_buf;
+    write_buf.reserve(kWriteBufferSize);
+
     const auto read_stats = reader.read(
         csv_path,
         [&](const gs3d::data::CsvPointRecord& record, std::uint64_t) {
-            const auto point = make_point(record, statistics);
+            write_buf.push_back(make_point(record, statistics));
 
-            out.write(
-                reinterpret_cast<const char*>(&point),
-                static_cast<std::streamsize>(sizeof(gs3d::data::Gs3dPoint))
-            );
-
-            if (!out.good()) {
-                throw std::runtime_error("Gs3dWriter: failed to write GS3D point");
+            if (write_buf.size() >= kWriteBufferSize) {
+                out.write(
+                    reinterpret_cast<const char*>(write_buf.data()),
+                    static_cast<std::streamsize>(
+                        write_buf.size() * sizeof(gs3d::data::Gs3dPoint)
+                    )
+                );
+                if (!out.good()) {
+                    throw std::runtime_error(
+                        "Gs3dWriter: failed to write GS3D points"
+                    );
+                }
+                result.written_points += write_buf.size();
+                write_buf.clear();
             }
-
-            ++result.written_points;
         }
     );
+
+    // Flush remaining points
+    if (!write_buf.empty()) {
+        out.write(
+            reinterpret_cast<const char*>(write_buf.data()),
+            static_cast<std::streamsize>(
+                write_buf.size() * sizeof(gs3d::data::Gs3dPoint)
+            )
+        );
+        if (!out.good()) {
+            throw std::runtime_error(
+                "Gs3dWriter: failed to write GS3D points"
+            );
+        }
+        result.written_points += write_buf.size();
+        write_buf.clear();
+    }
 
     result.invalid_records = read_stats.invalid_records;
 
