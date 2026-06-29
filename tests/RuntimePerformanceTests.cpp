@@ -9,6 +9,8 @@
 #include "render/FrameUploadBudget.hpp"
 #include "render/LodSelector.hpp"
 #include "render/NearestPointQuery.hpp"
+#include "scene/SceneState.hpp"
+#include "ui/UiRoot.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -30,7 +32,66 @@ void expect(bool condition, std::string_view name)
 
 std::shared_ptr<gs3d::app::TilePoints> make_points(std::size_t count)
 {
-    return std::make_shared<gs3d::app::TilePoints>(count);
+    auto points = std::make_shared<gs3d::app::TilePoints>();
+    points->points.resize(count);
+    points->point_ids.resize(count);
+    return points;
+}
+
+float dot(
+    const gs3d::camera::Vec3& a,
+    const gs3d::camera::Vec3& b
+)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+gs3d::camera::Vec3 sub(
+    const gs3d::camera::Vec3& a,
+    const gs3d::camera::Vec3& b
+)
+{
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+gs3d::camera::Vec3 normalize(const gs3d::camera::Vec3& v)
+{
+    const float len = std::sqrt(dot(v, v));
+    if (len <= 1.0e-8f) {
+        return {0.0f, 0.0f, 0.0f};
+    }
+
+    return {v.x / len, v.y / len, v.z / len};
+}
+
+float max_scene_depth_along_view(
+    const gs3d::camera::CameraBounds& bounds,
+    const gs3d::camera::Camera& camera
+)
+{
+    const auto& min = bounds.min;
+    const auto& max = bounds.max;
+    const gs3d::camera::Vec3 corners[] = {
+        {min.x, min.y, min.z},
+        {min.x, min.y, max.z},
+        {min.x, max.y, min.z},
+        {min.x, max.y, max.z},
+        {max.x, min.y, min.z},
+        {max.x, min.y, max.z},
+        {max.x, max.y, min.z},
+        {max.x, max.y, max.z},
+    };
+
+    const auto forward = normalize(sub(camera.target(), camera.position()));
+    float max_depth = 0.0f;
+    for (const auto& corner : corners) {
+        max_depth = std::max(
+            max_depth,
+            dot(sub(corner, camera.position()), forward)
+        );
+    }
+
+    return max_depth;
 }
 
 void test_resize_debounce()
@@ -68,7 +129,7 @@ void test_resize_batch()
 void test_tile_cache_budget_and_lru()
 {
     constexpr std::uint64_t tile_bytes =
-        4 * sizeof(gs3d::data::Gs3dPoint);
+        4 * (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t));
     gs3d::app::TilePointCache cache(tile_bytes * 2);
 
     cache.put(1, make_points(4));
@@ -93,10 +154,42 @@ void test_tile_cache_budget_and_lru()
 
 void test_oversized_tile_is_not_cached()
 {
-    gs3d::app::TilePointCache cache(sizeof(gs3d::data::Gs3dPoint));
+    gs3d::app::TilePointCache cache(
+        sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t)
+    );
     cache.put(9, make_points(2));
     expect(!cache.get(9), "oversized tile bypasses cache");
     expect(cache.stats().resident_bytes == 0, "oversized tile uses no cache bytes");
+}
+
+void test_scene_state_is_constructible_without_dataset_io()
+{
+    gs3d::scene::SceneState scene_state;
+    expect(
+        scene_state.active_dataset == nullptr,
+        "scene state defaults to no active dataset descriptor"
+    );
+    expect(
+        scene_state.active_attribute_index == 0,
+        "scene state starts with a zero active attribute index"
+    );
+
+    gs3d::core::DatasetDescriptor descriptor;
+    descriptor.display_name = "unit-test";
+    descriptor.point_count = 42;
+    descriptor.attributes.push_back({"Fold"});
+
+    scene_state.active_dataset = &descriptor;
+    scene_state.active_attribute_index = 1;
+
+    expect(
+        scene_state.active_dataset->point_count == 42,
+        "scene state can bind a lightweight dataset descriptor without file IO"
+    );
+    expect(
+        scene_state.active_attribute_index == 1,
+        "scene state keeps only the selected attribute index, not the schema"
+    );
 }
 
 void test_frame_upload_budget()
@@ -282,6 +375,130 @@ void test_fit_bounds_distance_is_orientation_independent()
         ratio < 1.05f,
         "fit_bounds() picks a distance independent of view orientation "
         "(bounding-sphere convention), not skewed by camera tilt"
+    );
+}
+
+void test_fit_bounds_keeps_panorama_far_end_visible()
+{
+    gs3d::camera::CameraBounds bounds;
+    bounds.min = {-20000.0f, -20000.0f, -500.0f};
+    bounds.max = {20000.0f, 20000.0f, 500.0f};
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.1f, 1000.0f);
+    camera.look_at(
+        {0.0f, -60000.0f, 30000.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+    camera.fit_bounds(bounds);
+
+    const float far_scene_depth = max_scene_depth_along_view(bounds, camera);
+    expect(
+        camera.far_plane() >= far_scene_depth,
+        "fit_bounds() keeps the far plane beyond the scene's far end in "
+        "panorama views"
+    );
+    expect(
+        camera.far_plane() / camera.near_plane() <=
+            gs3d::camera::kMaxDepthRatio * 1.001f,
+        "fit_bounds() also keeps the far/near ratio within kMaxDepthRatio"
+    );
+}
+
+void test_zoom_caps_depth_ratio_for_close_large_scene()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 1.0e-4f, 1.0e8f);
+    camera.look_at(
+        {0.0f, -0.02f, 0.01f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    controller.set_bounds({
+        {-20000.0f, -20000.0f, -500.0f},
+        {20000.0f, 20000.0f, 500.0f}
+    });
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.scroll_y = 1.0f;
+    input.mouse_x = 400.0f;
+    input.mouse_y = 300.0f;
+    static_cast<void>(controller.update(camera, input));
+
+    expect(
+        camera.far_plane() / camera.near_plane() <=
+            gs3d::camera::kMaxDepthRatio * 1.001f,
+        "zoom updates cap the far/near ratio even for close views of a "
+        "large scene"
+    );
+}
+
+void test_rotate_refreshes_depth_ratio()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 1.0e-4f, 1.0e8f);
+    camera.look_at(
+        {0.0f, -5.0f, 2.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    controller.set_bounds({
+        {-20000.0f, -20000.0f, -500.0f},
+        {20000.0f, 20000.0f, 500.0f}
+    });
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.delta_x = 8.0f;
+    input.rotate = true;
+    static_cast<void>(controller.update(camera, input));
+
+    expect(
+        camera.far_plane() / camera.near_plane() <=
+            gs3d::camera::kMaxDepthRatio * 1.001f,
+        "rotate updates refresh near/far instead of leaving a stale bad ratio"
+    );
+}
+
+void test_pan_refreshes_depth_ratio()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 1.0e-4f, 1.0e8f);
+    camera.look_at(
+        {0.0f, -5.0f, 2.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    controller.set_bounds({
+        {-20000.0f, -20000.0f, -500.0f},
+        {20000.0f, 20000.0f, 500.0f}
+    });
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.delta_x = 8.0f;
+    input.pan = true;
+    static_cast<void>(controller.update(camera, input));
+
+    expect(
+        camera.far_plane() / camera.near_plane() <=
+            gs3d::camera::kMaxDepthRatio * 1.001f,
+        "pan updates refresh near/far instead of leaving a stale bad ratio"
     );
 }
 
@@ -491,6 +708,301 @@ void test_axis_ticks_step_is_a_nice_round_number()
             std::abs(normalized - 5.0f) < 1.0e-3f;
         expect(is_nice, "tick step rounds to 1/2/5 * 10^n, not an arbitrary fraction");
     }
+}
+
+void test_axis_ticks_huge_origin_with_tiny_step_terminates()
+{
+    // Regression guard for the UiRoot "stuck in tick loop" hang:
+    // when the axis range sits at a large absolute value (e.g.
+    // -14544) but the user zoomed in to a tiny window, the nice
+    // step collapses to ~1e-3 — at which point float's unit-roundoff
+    // at magnitude 1e4 is already >= step, and a `tick += step`
+    // loop never advances. compute_axis_ticks must terminate even
+    // on these inputs and produce a sane (small) number of ticks.
+    constexpr float kMin = -14544.0f;
+    constexpr float kMax = -14543.9912f;   // range ≈ 0.0088
+    const auto ticks = gs3d::render::compute_axis_ticks(
+        kMin, kMax, /*target_tick_count=*/5);
+
+    expect(!ticks.empty(),
+           "huge origin + tiny range still produces at least one tick");
+
+    // Defensive cap: even pathological inputs must not explode.
+    constexpr std::size_t kHardCap = 500;
+    expect(ticks.size() <= kHardCap,
+           "huge origin + tiny range is hard-capped");
+
+    for (const float tick : ticks) {
+        expect(std::isfinite(tick), "every produced tick is finite");
+        expect(
+            tick >= kMin - 1.0e-3f && tick <= kMax + 1.0e-3f,
+            "every tick falls inside the requested range"
+        );
+    }
+}
+
+void test_axis_ticks_huge_origin_with_tiny_step_is_capped()
+{
+    // The other end of the spectrum: same huge origin, but the user
+    // requests an absurd target_tick_count that the nice_step would
+    // happily accept. The internal safety cap must still bound the
+    // produced tick count.
+    constexpr float kMin = -100000.0f;
+    constexpr float kMax = 100000.0f;
+    const auto ticks = gs3d::render::compute_axis_ticks(
+        kMin, kMax, /*target_tick_count=*/1000000);
+
+    constexpr std::size_t kHardCap = 500;
+    expect(ticks.size() <= kHardCap,
+           "huge range with absurd target_tick_count is hard-capped");
+
+    // First and last ticks should still bracket [min, max].
+    if (!ticks.empty()) {
+        expect(ticks.front() >= kMin,
+               "first tick is at or after min");
+        expect(ticks.back() <= kMax,
+               "last tick is at or before max");
+    }
+}
+
+void test_mouse_mapping_without_map_axis_uses_canvas_rect()
+{
+    const gs3d::ui::ViewportScreenRect canvas_rect{
+        100.0f, 50.0f, 900.0f, 650.0f
+    };
+    const auto mapping = gs3d::ui::map_screen_mouse_to_framebuffer(
+        300.0f,
+        200.0f,
+        canvas_rect,
+        false,
+        800,
+        600
+    );
+
+    expect(mapping.mouse_on_image,
+           "mouse inside canvas maps onto image when map axis is off");
+    expect(std::abs(mapping.framebuffer_x - 200.0f) < 1.0e-4f,
+           "map-axis-off X uses canvas origin directly");
+    expect(std::abs(mapping.framebuffer_y - 150.0f) < 1.0e-4f,
+           "map-axis-off Y uses canvas origin directly");
+}
+
+void test_mouse_mapping_with_map_axis_uses_plot_rect()
+{
+    const gs3d::ui::ViewportScreenRect canvas_rect{
+        100.0f, 50.0f, 900.0f, 650.0f
+    };
+    const auto plot_rect =
+        gs3d::ui::compute_plot_rect(true, canvas_rect);
+    const auto mapping = gs3d::ui::map_screen_mouse_to_framebuffer(
+        plot_rect.min_x + 100.0f,
+        plot_rect.min_y + 50.0f,
+        canvas_rect,
+        true,
+        800,
+        600
+    );
+
+    expect(mapping.mouse_on_image,
+           "mouse inside plot rect maps onto image when map axis is on");
+    expect(std::abs(mapping.framebuffer_x -
+                    (100.0f * 800.0f / plot_rect.width())) < 1.0e-4f,
+           "map-axis-on X is normalized against plot rect width");
+    expect(std::abs(mapping.framebuffer_y -
+                    (50.0f * 600.0f / plot_rect.height())) < 1.0e-4f,
+           "map-axis-on Y is normalized against plot rect height");
+}
+
+void test_mouse_mapping_with_map_axis_rejects_axis_margin()
+{
+    const gs3d::ui::ViewportScreenRect canvas_rect{
+        100.0f, 50.0f, 900.0f, 650.0f
+    };
+    const auto mapping = gs3d::ui::map_screen_mouse_to_framebuffer(
+        canvas_rect.min_x + 10.0f,
+        canvas_rect.min_y + 120.0f,
+        canvas_rect,
+        true,
+        800,
+        600
+    );
+
+    expect(!mapping.mouse_on_image,
+           "axis margin is treated as outside the image");
+}
+
+// Local copy of the front-most pick semantics used by BenchmarkSuite
+    // and the production GPU pick contract: among rendered points
+    // whose screen projection falls inside an NxN neighborhood of the
+    // cursor (here: 11x11 ≈ 5 px radius), return the one with the
+    // smallest depth, or nullopt if none fall inside.
+    [[nodiscard]]
+    std::optional<gs3d::core::PointRecord> pick_front_most_in_neighborhood(
+        const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
+        float mouse_x,
+        float mouse_y,
+        const gs3d::camera::Viewport& viewport,
+        const gs3d::camera::Camera& camera,
+        int half_radius_px
+    ) {
+        constexpr int kScreenRadius = 5; // matches kPickRadiusPx after the 5x5 -> 11x11 bump
+        if (half_radius_px <= 0) {
+            half_radius_px = kScreenRadius;
+        }
+        const float width =
+            static_cast<float>(viewport.width > 0 ? viewport.width : 1);
+        const float height =
+            static_cast<float>(viewport.height > 0 ? viewport.height : 1);
+        const auto view_projection = camera.view_projection_matrix();
+        const int center_x = static_cast<int>(std::floor(mouse_x));
+        const int center_y = static_cast<int>(std::floor(mouse_y));
+
+        std::optional<gs3d::core::PointRecord> best;
+        float best_depth = 1.0f;
+        for (const auto& points : candidate_point_sets) {
+            if (!points.valid() || points.empty()) {
+                continue;
+            }
+            for (std::uint64_t i = 0; i < points.point_count; ++i) {
+                const auto point = points.point_at(i);
+                const auto screen = gs3d::camera::MouseRay::world_to_screen(
+                    view_projection,
+                    point.x,
+                    point.y,
+                    point.z,
+                    width,
+                    height
+                );
+                if (!screen) {
+                    continue;
+                }
+                const int pixel_x = static_cast<int>(std::floor(screen->x));
+                const int pixel_y = static_cast<int>(std::floor(screen->y));
+                if (std::abs(pixel_x - center_x) > half_radius_px ||
+                    std::abs(pixel_y - center_y) > half_radius_px) {
+                    continue;
+                }
+
+                // crude but monotone NDC depth; sufficient for
+                // ordering, which is all front-most needs.
+                const float* m = view_projection.m.data();
+                const float clip_z =
+                    m[2] * point.x + m[6] * point.y +
+                    m[10] * point.z + m[14];
+                const float clip_w =
+                    m[3] * point.x + m[7] * point.y +
+                    m[11] * point.z + m[15];
+                if (clip_w <= 1.0e-6f) {
+                    continue;
+                }
+                const float depth = clip_z / clip_w;
+                if (!best || depth < best_depth) {
+                    best = point;
+                    best_depth = depth;
+                }
+            }
+        }
+        return best;
+    }
+
+void test_pick_11x11_neighborhood_hits_sparse_isolated_point()
+{
+    // Regression guard for the "sparse / 1-px points are visible but
+    // not pickable" report: with the old 5x5 / 2 px neighborhood the
+    // cursor had to land within ±2 px of the screen-projected pixel
+    // to register a hit. After bumping to 11x11 (5 px radius) a 4-px
+    // offset should still hit the only rendered point in the scene.
+    const auto camera = make_top_down_camera();
+    const gs3d::camera::Viewport viewport{800, 600};
+
+    // First project a known world point so the cursor can be placed
+    // deterministically relative to it.
+    const gs3d::core::PointRecord isolated{0.0f, 0.0f, 0.0f, 0.0f, 1u};
+    const auto projected = gs3d::camera::MouseRay::to_screen(
+        {isolated.x, isolated.y, isolated.z}, viewport, camera);
+    expect(projected.has_value(),
+           "isolated world point must project to a screen position");
+    if (!projected) {
+        return;
+    }
+    // Confirm the 4-px offset is in fact outside the old 2-px radius.
+    expect(
+        std::abs(static_cast<int>(std::floor(projected->x)) -
+                 static_cast<int>(std::floor(projected->x)) + 4) > 2,
+        "test fixture: 4-px offset is outside the old 5x5 (2-px) radius"
+    );
+
+    const std::vector<gs3d::data::Gs3dPoint> points = {
+        {isolated.x, isolated.y, isolated.z, 0.0f}
+    };
+    const auto view = gs3d::data::make_point_data_view(
+        points.data(), points.size());
+
+    // Cursor 4 px below the point — well inside 11x11 but outside 5x5.
+    const auto hit_11x11 = pick_front_most_in_neighborhood(
+        {view},
+        projected->x,
+        projected->y + 4.0f,
+        viewport,
+        camera,
+        /*half_radius_px=*/5
+    );
+    expect(hit_11x11.has_value(),
+           "11x11 pick radius hits an isolated point 4 px from cursor");
+    if (hit_11x11) {
+        expect(
+            hit_11x11->x == isolated.x &&
+                hit_11x11->y == isolated.y &&
+                hit_11x11->z == isolated.z,
+            "11x11 pick returns the isolated point"
+        );
+    }
+
+    const auto hit_5x5 = pick_front_most_in_neighborhood(
+        {view},
+        projected->x,
+        projected->y + 4.0f,
+        viewport,
+        camera,
+        /*half_radius_px=*/2
+    );
+    expect(!hit_5x5.has_value(),
+           "old 5x5 / 2-px radius cannot reach an isolated point 4 px away");
+}
+
+void test_pick_11x11_neighborhood_misses_point_outside_radius()
+{
+    // The flip side: a point sitting 7 px from the cursor must NOT
+    // be hit, regardless of the new neighborhood size. Guards
+    // against accidental over-reach where the radius expands to
+    // "everything visible".
+    const auto camera = make_top_down_camera();
+    const gs3d::camera::Viewport viewport{800, 600};
+
+    const auto projected = gs3d::camera::MouseRay::to_screen(
+        {0.0f, 0.0f, 0.0f}, viewport, camera);
+    expect(projected.has_value(),
+           "origin projects to a screen position");
+    if (!projected) {
+        return;
+    }
+
+    const std::vector<gs3d::data::Gs3dPoint> points = {
+        {0.0f, 0.0f, 0.0f, 0.0f}
+    };
+    const auto view = gs3d::data::make_point_data_view(
+        points.data(), points.size());
+
+    const auto hit = pick_front_most_in_neighborhood(
+        {view},
+        projected->x + 7.0f,
+        projected->y,
+        viewport,
+        camera,
+        /*half_radius_px=*/5
+    );
+    expect(!hit.has_value(),
+           "11x11 (5 px radius) does not reach a point 7 px away");
 }
 
 void test_mouse_ray_to_screen_projects_target_near_center()
@@ -743,6 +1255,145 @@ void test_nearest_point_query_skips_points_behind_camera()
     );
 }
 
+void test_nearest_point_query_depth_tie_is_order_sensitive()
+{
+    const auto camera = make_top_down_camera();
+    const gs3d::camera::Viewport viewport{800, 600};
+
+    const std::vector<gs3d::data::Gs3dPoint> first_then_second = {
+        {0.0f, 0.0f, 8.0f, 101.0f},
+        {0.0f, 0.0f, -8.0f, 102.0f},
+    };
+    const std::vector<gs3d::data::Gs3dPoint> second_then_first = {
+        {0.0f, 0.0f, -8.0f, 102.0f},
+        {0.0f, 0.0f, 8.0f, 101.0f},
+    };
+
+    const auto screen = gs3d::camera::MouseRay::to_screen(
+        {0.0f, 0.0f, 8.0f},
+        viewport,
+        camera
+    );
+    expect(
+        screen.has_value(),
+        "depth-tie test point projects into the viewport"
+    );
+    if (!screen) {
+        return;
+    }
+
+    const auto first_hit = gs3d::render::find_nearest_point_on_screen(
+        {gs3d::data::make_point_data_view(first_then_second)},
+        screen->x,
+        screen->y,
+        viewport,
+        camera,
+        12.0f
+    );
+    const auto second_hit = gs3d::render::find_nearest_point_on_screen(
+        {gs3d::data::make_point_data_view(second_then_first)},
+        screen->x,
+        screen->y,
+        viewport,
+        camera,
+        12.0f
+    );
+
+    expect(first_hit.has_value(), "tie test finds the first permutation");
+    expect(second_hit.has_value(), "tie test finds the second permutation");
+    if (first_hit && second_hit) {
+        expect(
+            first_hit->point.value == 101.0f,
+            "equal screen-distance points keep the first encountered candidate"
+        );
+        expect(
+            second_hit->point.value == 102.0f,
+            "reversing candidate order flips the result because there is no depth tie-breaker"
+        );
+    }
+}
+
+void test_continuous_zoom_in_flies_forward_without_stalling()
+{
+    // Verify that consecutive zoom-in steps keep moving the camera forward
+    // (distance to scene monotonically decreases) and never get stuck at
+    // min_distance or a fixed target.  The forward-together dolly must keep
+    // camera–target distance invariant so the camera "flies" into the scene
+    // rather than converging toward a fixed point.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},   // position: oblique view
+        {0.0f, 0.0f, 0.0f},      // target: origin
+        {0.0f, 0.0f, 1.0f}       // Z-up
+    );
+
+    gs3d::camera::CameraController controller;
+    gs3d::camera::CameraBounds bounds;
+    bounds.min = {-50.0f, -50.0f, -10.0f};
+    bounds.max = {50.0f, 50.0f, 10.0f};
+    controller.set_bounds(bounds);
+
+    const float initial_distance = camera.distance();
+    const auto initial_position = camera.position();
+
+    // Forward direction: from position toward target.
+    const auto forward = normalize(sub(camera.target(), camera.position()));
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.scroll_y = 1.0f;        // zoom in
+    input.mouse_x = 400.0f;       // screen center
+    input.mouse_y = 300.0f;
+
+    float prev_scene_proximity = 0.0f;
+    for (int i = 0; i < 40; ++i) {
+        static_cast<void>(controller.update(camera, input));
+
+        const float current_distance = camera.distance();
+        const auto pos_delta = sub(camera.position(), initial_position);
+        const float forward_progress = dot(pos_delta, forward);
+
+        // Camera must move forward (into the scene) on every step.
+        expect(
+            forward_progress > prev_scene_proximity - 1.0e-4f,
+            "continuous zoom-in must fly forward monotonically "
+            "(step index baked into loop to aid debugging)"
+        );
+        prev_scene_proximity = forward_progress;
+
+        // Camera–target distance must stay close to the initial value
+        // (forward-together dolly keeps it invariant).
+        const float dist_ratio = current_distance / initial_distance;
+        expect(
+            dist_ratio > 0.99f && dist_ratio < 1.01f,
+            "camera–target distance stays nearly invariant under "
+            "forward-together dolly (not converging toward a fixed target)"
+        );
+
+        // Must never be clamped to min_distance (1e-6).
+        expect(
+            current_distance > 0.01f,
+            "camera distance must not collapse to near-zero (not stuck)"
+        );
+    }
+
+    // After 40 consecutive zoom-in steps, the camera must have advanced
+    // significantly forward — at least 3× the initial distance (geometric
+    // series sum: ~40 × 0.25 × dist ≈ 10 × dist at center with no delta).
+    // We use a conservative floor (3×) to guard against the delta
+    // compensation canceling too much forward movement.
+    const auto total_pos_delta = sub(camera.position(), initial_position);
+    const float total_forward = dot(total_pos_delta, forward);
+    expect(
+        total_forward > initial_distance * 3.0f,
+        "after 40 zooms the camera flies forward substantially (not stalled)"
+    );
+}
+
 } // namespace
 
 int main()
@@ -751,16 +1402,28 @@ int main()
     test_resize_batch();
     test_tile_cache_budget_and_lru();
     test_oversized_tile_is_not_cached();
+    test_scene_state_is_constructible_without_dataset_io();
     test_frame_upload_budget();
     test_camera_uses_view_local_input();
     test_zoom_converges_toward_cursor_pivot_not_target();
     test_zoom_respects_max_distance_from_bounds();
     test_fit_bounds_distance_is_orientation_independent();
+    test_fit_bounds_keeps_panorama_far_end_visible();
+    test_zoom_caps_depth_ratio_for_close_large_scene();
+    test_rotate_refreshes_depth_ratio();
+    test_pan_refreshes_depth_ratio();
     test_box_select_falls_back_at_grazing_pitch();
     test_box_select_stays_within_scene_bounds_under_camera_tilt();
     test_axis_ticks_returns_empty_for_degenerate_range();
     test_axis_ticks_are_evenly_spaced_and_within_range();
     test_axis_ticks_step_is_a_nice_round_number();
+    test_axis_ticks_huge_origin_with_tiny_step_terminates();
+    test_axis_ticks_huge_origin_with_tiny_step_is_capped();
+    test_mouse_mapping_without_map_axis_uses_canvas_rect();
+    test_mouse_mapping_with_map_axis_uses_plot_rect();
+    test_mouse_mapping_with_map_axis_rejects_axis_margin();
+    test_pick_11x11_neighborhood_hits_sparse_isolated_point();
+    test_pick_11x11_neighborhood_misses_point_outside_radius();
     test_mouse_ray_to_screen_projects_target_near_center();
     test_mouse_ray_to_screen_skips_points_behind_camera();
     test_mouse_ray_to_screen_round_trips_with_from_screen();
@@ -771,11 +1434,13 @@ int main()
     test_nearest_point_query_picks_screen_closest_candidate();
     test_nearest_point_query_respects_max_screen_distance();
     test_nearest_point_query_skips_points_behind_camera();
+    test_nearest_point_query_depth_tie_is_order_sensitive();
     test_lod_adaptive_level_starts_at_lowest_while_interacting();
     test_lod_adaptive_level_climbs_after_good_frame_streak();
     test_lod_adaptive_level_drops_immediately_when_over_budget();
     test_lod_adaptive_level_ignores_stale_feedback();
     test_lod_non_adaptive_mode_still_pins_to_lowest();
+    test_continuous_zoom_in_flies_forward_without_stalling();
 
     if (failures == 0) {
         std::cout << "[PASS] runtime performance tests\n";
