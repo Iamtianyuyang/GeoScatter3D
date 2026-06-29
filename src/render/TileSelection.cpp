@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <tuple>
+#include <unordered_set>
 
 namespace gs3d::render {
 
@@ -166,7 +167,8 @@ TileSelectionResult TileSelection::update(
         result.query_bounds.max_z = sel_max_z;
     }
 
-    std::sort(result.tile_ids.begin(), result.tile_ids.end());
+    // Keep candidates' projected-pixels-descending order for upload
+    // priority (no re-sort by tile_id).
 
     result.changed =
         !active_ ||
@@ -227,7 +229,15 @@ bool TileSelection::same_tile_ids(
         return false;
     }
 
-    return std::equal(a.begin(), a.end(), b.begin());
+    // Order-independent set comparison — preserves the priority-sorted
+    // order in result.tile_ids for the upload queue.
+    const std::unordered_set<std::uint64_t> set_a(a.begin(), a.end());
+    for (const auto id : b) {
+        if (set_a.find(id) == set_a.end()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 TileSelection::Frustum TileSelection::extract_frustum(

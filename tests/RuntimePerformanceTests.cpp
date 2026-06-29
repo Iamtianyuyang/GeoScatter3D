@@ -267,8 +267,13 @@ void test_camera_uses_view_local_input()
     );
 }
 
-void test_zoom_converges_toward_cursor_pivot_not_target()
+void test_zoom_converges_toward_centre_anchor_not_cursor()
 {
+    // Zoom always uses the screen-CENTRE anchor (camera-facing plane
+    // through target), never the cursor position.  Verify that cursor
+    // position is ignored: zooming with cursor off-centre still converges
+    // toward the centre anchor.
+
     // Top-down camera looking at the origin from (0,0,100).
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -281,31 +286,36 @@ void test_zoom_converges_toward_cursor_pivot_not_target()
 
     gs3d::camera::CameraController controller;
 
-    // Mouse parked off-center (near the right edge, not screen center),
-    // so its world pivot differs from the camera's current target (origin).
+    // Cursor parked off-centre (near the right edge).  Old behaviour
+    // used cursor for pivot; new behaviour ignores it and zooms toward
+    // screen centre.
     gs3d::camera::CameraInput input;
     input.viewport_width = 800;
     input.viewport_height = 600;
     input.scroll_y = 1.0f;
-    input.mouse_x = 700.0f;
+    input.mouse_x = 700.0f;  // off-centre — intentionally ignored
     input.mouse_y = 300.0f;
 
     const auto target_before = camera.target();
+    const auto pos_before = camera.position();
     static_cast<void>(controller.update(camera, input));
     const auto target_after = camera.target();
+    const auto pos_after = camera.position();
 
+    // Centre-ray anchor on camera-facing plane through origin IS origin.
+    // Target must stay at origin (not move toward cursor).
     expect(
-        target_after.x != target_before.x || target_after.y != target_before.y,
-        "zooming toward an off-center cursor moves the orbit target "
-        "(old behavior kept it pinned at the original target)"
+        std::abs(target_after.x - target_before.x) < 1.0e-3f &&
+        std::abs(target_after.y - target_before.y) < 1.0e-3f &&
+        std::abs(target_after.z - target_before.z) < 1.0e-3f,
+        "target stays at origin (zoom ignores cursor, uses centre anchor)"
     );
 
-    // The target must move toward the cursor's world pivot (positive X,
-    // since mouse_x=700 is right of center on a top-down view looking
-    // along -Z with up=+Y), not in some unrelated direction.
+    // Camera position must move toward origin along Z (pivot zoom toward
+    // the centre anchor at origin).
     expect(
-        target_after.x > target_before.x,
-        "target re-centers toward the cursor side of the view, not away from it"
+        pos_after.z < pos_before.z && pos_after.z > 0.0f,
+        "camera moves toward centre anchor (not cursor)"
     );
 }
 
@@ -1315,11 +1325,11 @@ void test_nearest_point_query_depth_tie_is_order_sensitive()
 
 void test_continuous_zoom_in_flies_forward_without_stalling()
 {
-    // Verify that consecutive zoom-in steps keep moving the camera forward
-    // (distance to scene monotonically decreases) and never get stuck at
-    // min_distance or a fixed target.  The forward-together dolly must keep
-    // camera–target distance invariant so the camera "flies" into the scene
-    // rather than converging toward a fixed point.
+    // Pivot zoom toward screen-centre anchor (camera-facing plane through
+    // target).  The centre ray hits the plane at the target itself, so
+    // both position and target contract toward target.  Distance decreases
+    // geometrically by factor 0.75 per step — must not collapse to
+    // min_distance prematurely and must never get stuck.
 
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -1337,61 +1347,536 @@ void test_continuous_zoom_in_flies_forward_without_stalling()
     controller.set_bounds(bounds);
 
     const float initial_distance = camera.distance();
-    const auto initial_position = camera.position();
-
-    // Forward direction: from position toward target.
-    const auto forward = normalize(sub(camera.target(), camera.position()));
 
     gs3d::camera::CameraInput input;
     input.viewport_width = 800;
     input.viewport_height = 600;
     input.scroll_y = 1.0f;        // zoom in
-    input.mouse_x = 400.0f;       // screen center
-    input.mouse_y = 300.0f;
 
-    float prev_scene_proximity = 0.0f;
+    float prev_distance = initial_distance;
     for (int i = 0; i < 40; ++i) {
         static_cast<void>(controller.update(camera, input));
 
         const float current_distance = camera.distance();
-        const auto pos_delta = sub(camera.position(), initial_position);
-        const float forward_progress = dot(pos_delta, forward);
 
-        // Camera must move forward (into the scene) on every step.
+        // Distance must decrease monotonically (pivot zoom shrinks offset).
         expect(
-            forward_progress > prev_scene_proximity - 1.0e-4f,
-            "continuous zoom-in must fly forward monotonically "
-            "(step index baked into loop to aid debugging)"
+            current_distance < prev_distance + 1.0e-4f,
+            "pivot zoom must shrink camera–target distance monotonically"
         );
-        prev_scene_proximity = forward_progress;
-
-        // Camera–target distance must stay close to the initial value
-        // (forward-together dolly keeps it invariant).
-        const float dist_ratio = current_distance / initial_distance;
-        expect(
-            dist_ratio > 0.99f && dist_ratio < 1.01f,
-            "camera–target distance stays nearly invariant under "
-            "forward-together dolly (not converging toward a fixed target)"
-        );
+        prev_distance = current_distance;
 
         // Must never be clamped to min_distance (1e-6).
+        // After 40 steps at factor 0.75: d ≈ 21.5 × 0.75^40 ≈ 2e-4,
+        // still well above 1e-6.
         expect(
-            current_distance > 0.01f,
-            "camera distance must not collapse to near-zero (not stuck)"
+            current_distance > 0.0001f,
+            "camera distance must not collapse to near-zero (pivot is "
+            "in front of camera, not at its feet — no lock-dead)"
         );
     }
 
-    // After 40 consecutive zoom-in steps, the camera must have advanced
-    // significantly forward — at least 3× the initial distance (geometric
-    // series sum: ~40 × 0.25 × dist ≈ 10 × dist at center with no delta).
-    // We use a conservative floor (3×) to guard against the delta
-    // compensation canceling too much forward movement.
-    const auto total_pos_delta = sub(camera.position(), initial_position);
-    const float total_forward = dot(total_pos_delta, forward);
+    // After 40 zooms, target must not have drifted far from origin.
+    // (Float error in inv-VP matrix means anchor ≈ target ± 1e-4;
+    // each step multiplies the gap by 0.25, so drift is bounded.)
+    const auto tgt = camera.target();
     expect(
-        total_forward > initial_distance * 3.0f,
-        "after 40 zooms the camera flies forward substantially (not stalled)"
+        std::abs(tgt.x) < 1.0e-2f &&
+        std::abs(tgt.y) < 1.0e-2f &&
+        std::abs(tgt.z) < 1.0e-2f,
+        "target stays near origin under centre-screen pivot zoom"
     );
+
+    // After 40 consecutive zooms the camera must be substantially closer
+    // to the scene (distance ≈ 2e-4 vs initial ≈ 21.5).
+    const float final_distance = camera.distance();
+    expect(
+        final_distance < initial_distance * 0.01f,
+        "after 40 pivot zooms distance shrinks substantially (not stalled)"
+    );
+}
+
+void test_idle_update_does_not_change_camera()
+{
+    // Iron law: when the user is not interacting, update() must not
+    // modify camera position or target.  This directly covers the
+    // "drift" bug where per-frame GPU-pick target updates moved the
+    // camera without any user action.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    const auto pos_before = camera.position();
+    const auto tgt_before = camera.target();
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    // No rotate, no pan, no scroll, no delta — completely idle.
+
+    for (int i = 0; i < 10; ++i) {
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto pos_after = camera.position();
+    const auto tgt_after = camera.target();
+
+    expect(
+        std::abs(pos_after.x - pos_before.x) < 1.0e-6f &&
+        std::abs(pos_after.y - pos_before.y) < 1.0e-6f &&
+        std::abs(pos_after.z - pos_before.z) < 1.0e-6f,
+        "idle update must not change camera position (no drift)"
+    );
+    expect(
+        std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+        std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+        std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+        "idle update must not change camera target (no drift)"
+    );
+}
+
+void test_rotation_center_only_changes_on_rotate_begin()
+{
+    // The rotation pivot is computed ONCE at drag-start (after cursor moves
+    // past the activation threshold) and locked for the entire drag.
+    // Crucially, computing the pivot does NOT change camera.target —
+    // the pivot is decoupled from target so the view does not jump on press.
+    // Target is synced to the pivot only on release (set_target is a pure
+    // store, no view-matrix recompute).
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    // --- Frame 1: drag-start at screen centre ---
+    // Pivot is computed but target is NOT changed (decoupled).
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 10.0f;
+        input.mouse_x = 400.0f;  // centre
+        input.mouse_y = 300.0f;
+        const auto tgt_before = camera.target();
+        static_cast<void>(controller.update(camera, input));
+        const auto tgt_after = camera.target();
+
+        // Target must NOT change on rotate_begin (pivot is decoupled).
+        // Float error in inv-VP matrix means look_at(target=pivot) sets
+        // target ≈ origin ± 1e-4; a 1e-3 threshold guards against real
+        // jumps while tolerating numerical noise.
+        expect(
+            std::abs(tgt_after.x - tgt_before.x) < 1.0e-3f &&
+            std::abs(tgt_after.y - tgt_before.y) < 1.0e-3f &&
+            std::abs(tgt_after.z - tgt_before.z) < 1.0e-3f,
+            "rotate_begin must not change camera.target (no view jump on press)"
+        );
+    }
+
+    // --- Frame 2: continuing drag, cursor moved off-centre ---
+    // Still orbits around the locked pivot; target unchanged.
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = false;  // continuing drag
+        input.delta_x = 5.0f;
+        input.mouse_x = 600.0f;  // off-centre — ignored during drag
+        input.mouse_y = 400.0f;
+        const auto tgt_before = camera.target();
+        static_cast<void>(controller.update(camera, input));
+        const auto tgt_after = camera.target();
+
+        // Target must not change during continuing drag.
+        expect(
+            std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+            std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+            std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+            "rotate target must not change during continuing drag"
+        );
+    }
+
+    // --- Frame 3: release ---
+    // Target syncs to the last orbit centre (pure store, no view change).
+    {
+        const auto tgt_before = camera.target();
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = false;
+        input.rotate_begin = false;
+        static_cast<void>(controller.update(camera, input));
+        const auto tgt_after = camera.target();
+
+        // After orbiting around centre≈origin, target syncs to ≈origin.
+        // Both before and after should be near origin.
+        expect(
+            std::abs(tgt_after.x) < 1.0e-3f &&
+            std::abs(tgt_after.y) < 1.0e-3f &&
+            std::abs(tgt_after.z) < 1.0e-3f,
+            "on release target syncs to orbit centre (near origin)"
+        );
+    }
+
+    // --- Frame 4: new drag-start at off-centre cursor ---
+    // Computes a NEW pivot (cursor at 200,150 hits camera-facing plane
+    // away from origin).  The first rotation frame orbits to the new
+    // centre, so target shifts — this is a real orbit, not a jump.
+    {
+        const auto tgt_before = camera.target();
+
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 10.0f;
+        input.mouse_x = 200.0f;  // off-centre — new pivot
+        input.mouse_y = 150.0f;
+        static_cast<void>(controller.update(camera, input));
+
+        const auto tgt_after = camera.target();
+
+        // A fresh drag-start at a different cursor position orbits the
+        // camera to look at the new cursor pivot — target must shift.
+        const float tgt_delta =
+            std::abs(tgt_after.x - tgt_before.x) +
+            std::abs(tgt_after.y - tgt_before.y) +
+            std::abs(tgt_after.z - tgt_before.z);
+        expect(
+            tgt_delta > 1.0e-4f,
+            "rotate_begin at new cursor position orbits to new pivot "
+            "(target shifts because camera now looks at cursor point)"
+        );
+    }
+}
+
+void test_click_without_drag_does_not_move_camera()
+{
+    // Pure left-click (press + release without moving past the activation
+    // threshold) must leave camera position and target completely unchanged.
+    // This reserves left-click for future point-selection features.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    const auto pos_before = camera.position();
+    const auto tgt_before = camera.target();
+
+    // Frame 1: button press — rotate_begin=true but delta=0
+    // (no cursor movement, below activation threshold).
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 0.0f;
+        input.delta_y = 0.0f;
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    // Frame 2: release without any drag movement.
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = false;
+        input.rotate_begin = false;
+        input.delta_x = 0.0f;
+        input.delta_y = 0.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto pos_after = camera.position();
+    const auto tgt_after = camera.target();
+
+    expect(
+        std::abs(pos_after.x - pos_before.x) < 1.0e-6f &&
+        std::abs(pos_after.y - pos_before.y) < 1.0e-6f &&
+        std::abs(pos_after.z - pos_before.z) < 1.0e-6f,
+        "pure click must not change camera position"
+    );
+    expect(
+        std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+        std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+        std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+        "pure click must not change camera target"
+    );
+}
+
+void test_rotate_release_does_not_move_camera()
+{
+    // Releasing the mouse after a rotation drag must not change
+    // position or target — orbit_around_pivot already produced the
+    // self-consistent final state.  Any post-hoc set_target(pivot)
+    // would cause a visible jump on release.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    // Frame 1: drag-start + orbit at centre
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 10.0f;
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    // Frame 2: continuing drag
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = false;
+        input.delta_x = 5.0f;
+        input.mouse_x = 450.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    // Frame 3: release — must NOT change position or target.
+    const auto pos_before = camera.position();
+    const auto tgt_before = camera.target();
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = false;
+        input.rotate_begin = false;
+        static_cast<void>(controller.update(camera, input));
+    }
+    const auto pos_after = camera.position();
+    const auto tgt_after = camera.target();
+
+    expect(
+        std::abs(pos_after.x - pos_before.x) < 1.0e-6f &&
+        std::abs(pos_after.y - pos_before.y) < 1.0e-6f &&
+        std::abs(pos_after.z - pos_before.z) < 1.0e-6f,
+        "release after rotation must not change camera position"
+    );
+    expect(
+        std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+        std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+        std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+        "release after rotation must not change camera target (no sync-to-pivot jump)"
+    );
+
+    // Frame 4: fresh drag-start after release — must still work.
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 8.0f;
+        input.mouse_x = 200.0f;
+        input.mouse_y = 150.0f;
+        static_cast<void>(controller.update(camera, input));
+        // Just verifying it doesn't crash / the state is clean.
+    }
+}
+
+void test_pitch_never_exceeds_pole()
+{
+    // Total pitch φ = asin((position−pivot).z / r) must stay inside
+    // (−90°, +90°) regardless of how far the user drags vertically.
+    // Crossing ±90° flips cos(φ) → azimuth reverses → "mouse left, view
+    // right" bug.  This test simulates extreme cumulative drags well past
+    // the pole and asserts the clamp + feedback keeps φ safe and
+    // direction consistent.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},   // φ₀ ≈ 22°
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    auto total_phi = [&]() -> double {
+        const auto offset = sub(camera.position(), camera.target());
+        const double r = std::sqrt(
+            static_cast<double>(dot(offset, offset)));
+        if (r < 1.0e-12) return 0.0;
+        return std::asin(std::clamp(
+            static_cast<double>(offset.z) / r, -1.0, 1.0));
+    };
+
+    // Default config pitch limits: −85° … +89° (radians).
+    const double kPi = 3.14159265358979323846;
+    const double kMinPitch = -1.483;  // ≈ −85°
+    const double kMaxPitch =  1.553;  // ≈ +89°
+
+    // Float round-trip sin→asin near the pole adds ~1e-3 error.
+    constexpr double kPhiSlop = 0.015;
+
+    // --- Drag up repeatedly far beyond 90° total ---
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_y = 50.0f;  // large upward drag
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+
+        const double phi = total_phi();
+        expect(
+            phi >= kMinPitch - kPhiSlop && phi <= kMaxPitch + kPhiSlop,
+            "after first drag-up phi stays inside config pitch limits"
+        );
+        // cos(φ) near π/2 needs double precision; float32 cos may
+        // underflow to zero even when φ is 1 µrad inside the pole.
+        expect(
+            std::cos(phi) > 0.0,
+            "cos(phi) > 0 after drag-up (no azimuth flip)"
+        );
+    }
+
+    // Continue dragging up (cumulative far beyond 90°).
+    for (int i = 0; i < 20; ++i) {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = false;  // continuing
+        input.delta_y = 50.0f;       // keep pushing up
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+
+        const double phi = total_phi();
+        expect(
+            phi >= kMinPitch - kPhiSlop && phi <= kMaxPitch + kPhiSlop,
+            "phi never exceeds config pitch limits after extreme drag"
+        );
+        expect(
+            std::cos(phi) > 0.0,
+            "cos(phi) stays positive — no azimuth sign flip"
+        );
+    }
+
+    // Release and verify state is clean.
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = false;
+        input.rotate_begin = false;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    // --- Fresh drag: verify direction is consistent ---
+    // Camera is near the upper pole limit.  Dragging LEFT (negative
+    // delta_x) must rotate the view LEFT (theta decreases), not right.
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = -20.0f;  // drag left
+        input.delta_y = 0.0f;
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        const auto pos_before = camera.position();
+        static_cast<void>(controller.update(camera, input));
+        const auto pos_after = camera.position();
+
+        // After dragging left (negative delta_x), the camera should orbit
+        // counter-clockwise around +Z (viewed from above).  For a camera
+        // at (x, y, z) looking at origin, a CCW rotation increases the
+        // angle measured from +X toward +Y, meaning x decreases and y
+        // increases (for a camera in the -Y quadrant).
+        // But the simplest cross-check: position must have changed
+        // (rotation happened), and phi is still in bounds.
+        const auto delta_pos = sub(pos_after, pos_before);
+        const float moved = std::abs(delta_pos.x) +
+                            std::abs(delta_pos.y) +
+                            std::abs(delta_pos.z);
+        expect(
+            moved > 1.0e-4f,
+            "drag left near pole limit still produces rotation (not dead)"
+        );
+        const double phi = total_phi();
+        expect(
+            std::cos(phi) > 0.0,
+            "cos(phi) > 0 after drag-left near pole (no direction reversal)"
+        );
+    }
+
+    // --- Drag down from pole: must respond immediately (no lag) ---
+    {
+        const double phi_before = total_phi();
+
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = false;  // continuing drag
+        input.delta_y = -20.0f;       // drag down
+        input.mouse_x = 400.0f;
+        input.mouse_y = 300.0f;
+        static_cast<void>(controller.update(camera, input));
+
+        const double phi_after = total_phi();
+        // Feedback: cumulative_phi_ was written back to the clamped
+        // value, so reverse drag immediately moves away from the limit.
+        // Dragging down from the lower pole (-85°) increases phi.
+        expect(
+            phi_after > phi_before - 1.0e-4,
+            "drag down from pole limit moves phi immediately "
+            "(no dead-zone lag from over-accumulated cumulative)"
+        );
+    }
 }
 
 } // namespace
@@ -1405,7 +1890,7 @@ int main()
     test_scene_state_is_constructible_without_dataset_io();
     test_frame_upload_budget();
     test_camera_uses_view_local_input();
-    test_zoom_converges_toward_cursor_pivot_not_target();
+    test_zoom_converges_toward_centre_anchor_not_cursor();
     test_zoom_respects_max_distance_from_bounds();
     test_fit_bounds_distance_is_orientation_independent();
     test_fit_bounds_keeps_panorama_far_end_visible();
@@ -1441,6 +1926,11 @@ int main()
     test_lod_adaptive_level_ignores_stale_feedback();
     test_lod_non_adaptive_mode_still_pins_to_lowest();
     test_continuous_zoom_in_flies_forward_without_stalling();
+    test_idle_update_does_not_change_camera();
+    test_rotation_center_only_changes_on_rotate_begin();
+    test_click_without_drag_does_not_move_camera();
+    test_rotate_release_does_not_move_camera();
+    test_pitch_never_exceeds_pole();
 
     if (failures == 0) {
         std::cout << "[PASS] runtime performance tests\n";

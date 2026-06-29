@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 
 namespace gs3d::camera {
 
@@ -15,13 +16,17 @@ struct CameraInput {
     float delta_y = 0.0f;
     float scroll_y = 0.0f;
 
-    // 鼠标在视口本地像素坐标（原点左上角，向下为正），用于缩放到光标。
+    // 鼠标在视口本地像素坐标（原点左上角，向下为正）。
     // 与 MouseRay::from_screen 的 mouse_x/mouse_y 约定一致。
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
 
     bool rotate = false;
     bool pan = false;
+
+    // True only on the first frame of a left-drag (mouse just pressed).
+    // Used by CameraController to compute and lock a rotation anchor.
+    bool rotate_begin = false;
 
     [[nodiscard]]
     bool interacting() const noexcept {
@@ -75,13 +80,26 @@ private:
     CameraBounds bounds_{};
     bool has_bounds_ = false;
 
+    // --- Cumulative orbit state (per-viewport, per-drag) ---
+    // Locked at drag-start when cursor moves past activation threshold;
+    // all discarded on release.
+    std::optional<Vec3> active_rotate_center_{};
+    Vec3 position_at_lock_{};
+    Vec3 target_at_lock_{};
+    float cumulative_theta_ = 0.0f;
+    float cumulative_phi_   = 0.0f;
+
 private:
-    void rotate_trackball(
+    // Apply a cumulative spherical rotation of (position_ref, target_ref)
+    // around |pivot| and commit via look_at.  When cumulative angles are
+    // zero this is a no-op — the view does not jump.
+    void orbit_around_pivot(
         Camera& camera,
-        float delta_x,
-        float delta_y,
-        float viewport_width,
-        float viewport_height
+        float cumulative_theta,
+        float cumulative_phi,
+        const Vec3& pivot,
+        const Vec3& position_ref,
+        const Vec3& target_ref
     ) const noexcept;
 
     void pan_view(
@@ -94,8 +112,6 @@ private:
     void zoom_view(
         Camera& camera,
         float scroll_y,
-        float mouse_x,
-        float mouse_y,
         float viewport_width,
         float viewport_height
     ) const noexcept;

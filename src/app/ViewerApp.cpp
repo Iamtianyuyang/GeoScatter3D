@@ -2321,6 +2321,14 @@ int ViewerApp::run() {
             latest_gpu_hover_points(
                 static_cast<std::size_t>(viewport_manager.viewport_count())
             );
+        std::vector<float> latest_gpu_capture_x(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0.0f
+        );
+        std::vector<float> latest_gpu_capture_y(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0.0f
+        );
         std::vector<GpuPickRequest> gpu_pick_requests(
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
@@ -2380,6 +2388,31 @@ int ViewerApp::run() {
             controllers.emplace_back(controller_config);
             controllers.back().set_bounds(bounds);
         }
+
+        // Per-viewport previous-frame rotate state for rotate_begin detection.
+        std::vector<bool> prev_rotate(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
+
+        // Per-viewport click-vs-drag tracking: rotation pivot is only locked
+        // after the cursor moves ≥ kRotateActivationPx from the button-down
+        // position.  Pure clicks (press + release without drag) skip rotation
+        // entirely — leaves camera unchanged and reserves left-click for
+        // future point-selection features.
+        constexpr float kRotateActivationPx = 5.0f;
+        std::vector<float> mouse_down_x(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0.0f
+        );
+        std::vector<float> mouse_down_y(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0.0f
+        );
+        std::vector<bool> rotation_activated(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
 
         // Views start independent. The per-view UI can opt into sync group 0.
         gs3d::camera::CameraHub camera_hub;
@@ -3265,6 +3298,44 @@ int ViewerApp::run() {
                 input.rotate = frame.rotate;
                 input.pan = frame.pan;
 
+                // rotate_begin: deferred until cursor moves ≥ kRotateActivationPx
+                // from the button-down position.  Pure clicks skip rotation.
+                {
+                    const auto idx =
+                        static_cast<std::size_t>(frame.index);
+                    if (idx < prev_rotate.size()) {
+                        const bool pressed =
+                            frame.rotate && !prev_rotate[idx];
+                        if (pressed) {
+                            mouse_down_x[idx] = frame.mouse_local_x;
+                            mouse_down_y[idx] = frame.mouse_local_y;
+                            rotation_activated[idx] = false;
+                        }
+
+                        if (frame.rotate) {
+                            if (!rotation_activated[idx]) {
+                                const float dx =
+                                    frame.mouse_local_x - mouse_down_x[idx];
+                                const float dy =
+                                    frame.mouse_local_y - mouse_down_y[idx];
+                                if (dx * dx + dy * dy >=
+                                    kRotateActivationPx * kRotateActivationPx) {
+                                    rotation_activated[idx] = true;
+                                    input.rotate_begin = true;
+                                } else {
+                                    // Not yet a drag — suppress rotation.
+                                    input.delta_x = 0.0f;
+                                    input.delta_y = 0.0f;
+                                }
+                            }
+                        } else {
+                            rotation_activated[idx] = false;
+                        }
+
+                        prev_rotate[idx] = frame.rotate;
+                    }
+                }
+
                 interacting = interacting || input.interacting();
                 if (controllers[static_cast<std::size_t>(frame.index)]
                         .update(
@@ -3972,6 +4043,10 @@ int ViewerApp::run() {
                             if (result.request.kind ==
                                 GpuPickRequestKind::Hover) {
                                 latest_gpu_hover_points[view_index] = hit_point;
+                                latest_gpu_capture_x[view_index] =
+                                    result.request.mouse_x;
+                                latest_gpu_capture_y[view_index] =
+                                    result.request.mouse_y;
                                 if (benchmark_pick_enabled &&
                                     result.request.benchmark_query_index >= 0) {
                                     const auto query_index =
@@ -4150,6 +4225,25 @@ int ViewerApp::run() {
                                 c,
                                 viewport_extent
                             );
+
+                            // --- LOD safety net: coarsest level, always drawn ---
+                            // Renders with clip_mode=0 (never clipped) and
+                            // enlarged point size so even the sparsest LOD
+                            // covers the full data extent.  "Blurry beats
+                            // black" — guarantees no clear-colour holes
+                            // regardless of tile residency.
+                            if (config_.lod_enabled) {
+                                gs3d::render::PointPushConstants safety_push =
+                                    lod_push;
+                                safety_push.clip_mode = 0.0f;
+                                safety_push.point_size =
+                                    lod_push.point_size * 2.0f;
+                                point_pipeline.draw_per_tile(
+                                    c,
+                                    lod_gpu_cloud->lowest_detail().gpu_cloud,
+                                    safety_push
+                                );
+                            }
 
                             if (config_.lod_enabled) {
                                 point_pipeline.draw_per_tile(
