@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/Window.hpp"
+#include "render/GpuFrameTimer.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
 #include "render/VulkanDepthBuffer.hpp"
@@ -24,10 +25,12 @@ struct ClearColor {
 class VulkanRenderer {
 public:
     using DrawCallback = std::function<void(VkCommandBuffer command_buffer)>;
+    using FrameReadyCallback = std::function<void(std::uint32_t frame_slot)>;
 
     // pre_pass: recorded before vkCmdBeginRenderPass (use for offscreen render passes)
     // in_pass:  recorded inside the main swapchain render pass (ImGui, overlays)
     struct FrameDrawCallbacks {
+        FrameReadyCallback frame_ready{};
         DrawCallback pre_pass{};
         DrawCallback in_pass{};
     };
@@ -78,6 +81,21 @@ public:
     double last_acquire_wait_ms() const noexcept;
 
     [[nodiscard]]
+    double last_frame_fence_wait_ms() const noexcept;
+
+    [[nodiscard]]
+    double last_upload_fence_wait_ms() const noexcept;
+
+    [[nodiscard]]
+    double last_draw_record_cpu_ms() const noexcept;
+
+    [[nodiscard]]
+    bool has_last_gpu_frame_ms() const noexcept;
+
+    [[nodiscard]]
+    double last_gpu_frame_ms() const noexcept;
+
+    [[nodiscard]]
     VkRenderPass render_pass() const noexcept;
 
     [[nodiscard]]
@@ -85,6 +103,9 @@ public:
 
     [[nodiscard]]
     VkExtent2D extent() const noexcept;
+
+    [[nodiscard]]
+    std::uint32_t frames_in_flight() const noexcept;
 
 private:
     static constexpr std::uint32_t MAX_FRAMES_IN_FLIGHT = 2;
@@ -104,10 +125,15 @@ private:
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphores_{};
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_{};
 
+    GpuFrameTimer gpu_frame_timer_;
+
     std::uint32_t current_frame_ = 0;
 
     // vkAcquireNextImageKHR 阻塞时长（毫秒），用于 FIFO vsync 补偿
     double last_acquire_wait_ms_ = 0.0;
+    double last_frame_fence_wait_ms_ = 0.0;
+    double last_upload_fence_wait_ms_ = 0.0;
+    double last_draw_record_cpu_ms_ = 0.0;
 
     ClearColor clear_color_{};
 

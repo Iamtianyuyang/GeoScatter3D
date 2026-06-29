@@ -197,6 +197,17 @@ struct ViewerAppConfig {
      */
     bool benchmark_mode = false;
     std::uint32_t benchmark_frame_count = 600;
+    std::string benchmark_present_mode = "auto";
+    std::filesystem::path benchmark_pick_script_path{};
+    std::filesystem::path benchmark_pick_result_path{};
+
+    // Diagnostic-only dump of the current frame's visible color image
+    // and the matching R32_UINT pick-id attachment. Used to check
+    // whether a point that is visibly rendered also writes a non-zero
+    // pixel into the pick image.
+    bool pick_debug_dump_enabled = false;
+    std::filesystem::path pick_debug_dump_dir = "bench/.pick_debug";
+    bool pick_debug_dump_once_on_hover = true;
 };
 
 class ViewerApp {

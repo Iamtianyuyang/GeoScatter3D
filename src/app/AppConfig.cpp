@@ -852,6 +852,24 @@ AppConfig AppConfigLoader::load_from_file(
             config.tile_build.num_threads
         );
     }
+
+    if (const auto* debug = root["debug"].as_table()) {
+        config.viewer.pick_debug_dump_enabled = bool_or_default(
+            *debug,
+            "pick_debug_dump_enabled",
+            config.viewer.pick_debug_dump_enabled
+        );
+        config.viewer.pick_debug_dump_dir = path_or_default(
+            *debug,
+            "pick_debug_dump_dir",
+            config.viewer.pick_debug_dump_dir
+        );
+        config.viewer.pick_debug_dump_once_on_hover = bool_or_default(
+            *debug,
+            "pick_debug_dump_once_on_hover",
+            config.viewer.pick_debug_dump_once_on_hover
+        );
+    }
     return config;
 }
 
@@ -1003,6 +1021,19 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] window.ui_layout_ini_path = "
               << config.viewer.ui_layout_ini_path.string() << '\n';
+
+    std::cout << "[CONFIG] debug.pick_debug_dump_enabled = "
+              << (config.viewer.pick_debug_dump_enabled ? "true" : "false")
+              << '\n';
+
+    std::cout << "[CONFIG] debug.pick_debug_dump_dir = "
+              << config.viewer.pick_debug_dump_dir.string() << '\n';
+
+    std::cout << "[CONFIG] debug.pick_debug_dump_once_on_hover = "
+              << (config.viewer.pick_debug_dump_once_on_hover
+                      ? "true"
+                      : "false")
+              << '\n';
 
     std::cout << "[CONFIG] vulkan.validation_layers = "
               << (config.viewer.enable_validation_layers ? "true" : "false")

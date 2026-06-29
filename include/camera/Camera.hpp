@@ -33,6 +33,26 @@ struct CameraBounds {
     Vec3 max;
 };
 
+inline constexpr float kMinNearPlane = 1.0e-4f;
+inline constexpr float kMaxDepthRatio = 1.0e5f;
+inline constexpr float kNearDistanceFactor = 1.0e-3f;
+inline constexpr float kFarDistanceFactor = 2.0f;
+inline constexpr float kFarRadiusPadding = 1.0f;
+
+struct ClipPlanes {
+    float near_plane = kMinNearPlane;
+    float far_plane = kMinNearPlane + 1.0f;
+};
+
+[[nodiscard]]
+float bounding_sphere_radius(const CameraBounds& bounds) noexcept;
+
+[[nodiscard]]
+ClipPlanes compute_clip_planes(
+    float distance,
+    float scene_radius
+) noexcept;
+
 class Camera {
 public:
     Camera() = default;

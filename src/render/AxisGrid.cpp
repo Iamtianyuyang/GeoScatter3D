@@ -40,15 +40,41 @@ std::vector<float> compute_axis_ticks(
         nice_step(range / static_cast<float>(target_tick_count));
 
     std::vector<float> ticks;
-    const float first_tick = std::ceil(min_value / step) * step;
+    if (step <= 0.0f || !std::isfinite(step)) {
+        return ticks;
+    }
 
-    // Cap iterations defensively — step is always > 0 here, but guards
-    // against float-precision edge cases turning this into a long loop.
-    constexpr int kMaxTicks = 1000;
-    for (float tick = first_tick;
-         tick <= max_value + step * 1.0e-4f && static_cast<int>(ticks.size()) < kMaxTicks;
-         tick += step) {
-        ticks.push_back(tick);
+    // Compute in double to avoid the classic
+    // "big absolute value + tiny step" stall: when the cursor is, say,
+    // -14544 and the nice step is ~0.002, float's unit-roundoff at
+    // that magnitude is already >= step, so a `tick += step` loop
+    // never advances and never terminates. Driving iteration by an
+    // integer index in double space and projecting back to float is
+    // exact for any (first_tick, step) pair produced by nice_step().
+    //
+    // Cap iteration count defensively as a hard safety net against
+    // pathological inputs (e.g. min_value == max_value-ish with a
+    // tiny step); step > 0 is enforced above so the loop body must
+    // terminate eventually even without the cap.
+    constexpr int kMaxTicks = 200;
+    const double step_d = static_cast<double>(step);
+    const double first_tick_d =
+        std::ceil(static_cast<double>(min_value) / step_d) * step_d;
+    const double max_value_d = static_cast<double>(max_value);
+
+    int count = static_cast<int>(
+        std::ceil((max_value_d - first_tick_d) / step_d));
+    if (count < 0) {
+        count = 0;
+    }
+    if (count > kMaxTicks) {
+        count = kMaxTicks;
+    }
+
+    ticks.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const double v = first_tick_d + static_cast<double>(i) * step_d;
+        ticks.push_back(static_cast<float>(v));
     }
 
     return ticks;

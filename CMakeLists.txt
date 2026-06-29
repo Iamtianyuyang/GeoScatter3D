@@ -68,6 +68,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/render/VulkanSwapchain.cpp
     src/render/VulkanRenderer.cpp
     src/render/VulkanBuffer.cpp
+    src/render/GpuFrameTimer.cpp
     src/render/PointCloudGpu.cpp
     src/render/PointPipeline.cpp
     src/render/VulkanDepthBuffer.cpp
@@ -128,6 +129,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/render/VulkanSwapchain.hpp
     include/render/VulkanRenderer.hpp
     include/render/VulkanBuffer.hpp
+    include/render/GpuFrameTimer.hpp
     include/render/PointCloudGpu.hpp  
     include/render/PointPipeline.hpp
     include/render/VulkanDepthBuffer.hpp
@@ -141,6 +143,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/render/NearestPointQuery.hpp
     include/render/AxisGrid.hpp
 
+    include/core/DatasetDescriptor.hpp
     include/core/PointData.hpp
     include/core/TileData.hpp
     include/scene/SceneState.hpp

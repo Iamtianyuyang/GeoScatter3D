@@ -57,6 +57,20 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    依赖 GLFW 主窗口鼠标坐标。
 7. resize 请求稳定 150 ms 后批量处理，一批只执行一次 GPU 空闲同步。
 
+## GPU Pick Contract
+
+- 生产 hover 与 box-select anchor 现在走 GPU pick，而不是 CPU
+  `NearestPointQuery`。
+- 每个渲染点会写出一个 `point_id` 到离屏 pick attachment。这个
+  `point_id` 只保证**单次运行内稳定**，用于本次进程中的 hover/框选反查；
+  它不是跨运行、跨文件的持久 ID，不能拿去做选中结果存盘或长期引用。
+- pick 规则是**纯 front-most**：围绕光标回读 `5 x 5` 邻域，只看命中的像素，
+  在这些像素里选择深度最小的那个点。
+- 这个规则不会先按屏幕距离挑像素，所以当前后点在邻域内并排出现时，会优先选中
+  更靠前的已渲染点，而不是更靠后的“屏幕更近像素”。
+- `NearestPointQuery` 仍保留，语义依旧是“屏幕空间 2D 最近且带阈值”；它现在主要
+  用于历史测试/对照，不再代表生产 hover 契约。
+
 ## 已完成的性能优化
 
 - 3302 万点样例在 LOD sidecar 模式下，GS3D 读取由约 `0.57 s` 降至

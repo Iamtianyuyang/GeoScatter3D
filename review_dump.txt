@@ -1,0 +1,98 @@
+===== 1. 改动概览(相对重构前的提交) =====
+7a5ec28 Introduce scene data boundaries
+d21cc3a feat: tile preload-all mode + zero-alloc CSV split + hover/upload/perf fixes
+bf2f20f feat: stable-quality interaction display, map axis, hover pick, camera zoom/box-select fixes
+69f533a feat: multi-viewport ImGui docking workbench, perf benchmarking, adaptive LOD
+c37b924 perf: speed up csv chunk parsing and profile tile writing
+9014754 feat: cap visible tiles by screen-space priority
+bd18ba4 feat: parallelize csv pipeline and incremental tile streaming
+546e810 feat: add csv preprocessing and parallel tile pipeline
+20b8747 feat: viewport-complete full-res tile rendering with Potree-style selection
+4e1b28d Add point color attribute switching
+23a2352 perf: persistent staging buffer + vertex buffer reuse for faster tile upload
+0eb8c92 fix: black screen when holding mouse button during interaction
+977c559 perf: async tile loading + interaction-aware rendering (Potree/Cesium pattern)
+8136041 feat: viewport-complete full-res tile rendering with Potree-style selection
+684f47f feat: add gs3d tile and lod pipeline
+
+改动文件统计(把 HEAD~N 换成重构前那个提交):
+ src/app/ViewportResizeScheduler.cpp       |   76 +
+ src/camera/BoxSelect.cpp                  |  153 ++
+ src/camera/Camera.cpp                     |   47 +-
+ src/camera/CameraController.cpp           |  221 ++-
+ src/camera/CameraHub.cpp                  |  106 ++
+ src/camera/MouseRay.cpp                   |   68 +-
+ src/data/CsvChunkPlanner.cpp              |  108 ++
+ src/data/CsvChunkReader.cpp               |  605 ++++++++
+ src/data/CsvChunkUtils.cpp                |  108 ++
+ src/data/CsvSniffer.cpp                   |  145 ++
+ src/data/CsvStreamReader.cpp              |   31 +-
+ src/data/Delimiter.cpp                    |   77 +
+ src/data/Gs3dDataset.cpp                  |   49 +-
+ src/data/Gs3dFormat.cpp                   |   16 +-
+ src/data/Gs3dLodDataset.cpp               |  122 +-
+ src/data/Gs3dReader.cpp                   |   37 +-
+ src/gui/ImGuiLayer.cpp                    |  263 ++++
+ src/main.cpp                              |  131 +-
+ src/preprocess/CsvToGs3dConverter.cpp     |  485 ++++++
+ src/preprocess/Gs3dTileWriter.cpp         |  333 +++-
+ src/preprocess/Gs3dWriter.cpp             |  210 ++-
+ src/preprocess/StatisticsPass.cpp         |  138 +-
+ src/render/AxisGrid.cpp                   |   57 +
+ src/render/LodSelector.cpp                |  129 +-
+ src/render/NearestPointQuery.cpp          |   78 +
+ src/render/OffscreenFramebuffer.cpp       |  397 +++++
+ src/render/PointCloudGpu.cpp              |  135 +-
+ src/render/PointCloudLodGpu.cpp           |   29 +-
+ src/render/PointCloudTileGpu.cpp          |  371 ++---
+ src/render/PointPipeline.cpp              |   30 +-
+ src/render/TileSelection.cpp              |  142 +-
+ src/render/ViewportManager.cpp            |  141 ++
+ src/render/VulkanContext.cpp              |   10 +-
+ src/render/VulkanRenderer.cpp             |   61 +-
+ src/ui/UiRoot.cpp                         | 1138 ++++++++++++++
+ tests/BenchmarkSuite.cpp                  |  128 ++
+ tests/Gs3dFormatTests.cpp                 |  241 +++
+ tests/RuntimePerformanceTests.cpp         |  784 ++++++++++
+ third_party/imgui                         |    1 +
+ 106 files changed, 13179 insertions(+), 932 deletions(-)
+
+===== 2. 当前目录结构 =====
+include
+include/app
+include/camera
+include/core
+include/data
+include/gui
+include/platform
+include/preprocess
+include/render
+include/scene
+include/ui
+include/util
+src
+src/app
+src/camera
+src/data
+src/gui
+src/platform
+src/preprocess
+src/render
+src/ui
+
+===== 3. scene层是否纯净(应为空输出 = 没依赖Vulkan/具体格式) =====
+include/scene/SceneState.hpp:9:namespace gs3d::scene {
+include/scene/SceneState.hpp:23:    std::string format = "GS3D";
+include/scene/SceneState.hpp:39:} // namespace gs3d::scene
+include/core/PointData.hpp:8:namespace gs3d::core {
+include/core/PointData.hpp:194:} // namespace gs3d::core
+include/core/TileData.hpp:6:namespace gs3d::core {
+include/core/TileData.hpp:51:} // namespace gs3d::core
+
+===== 4. render是否还认识data具体类型(应为空 = 已解耦) =====
+
+===== 5. ViewerApp是否瘦下来 =====
+  2620 src/app/ViewerApp.cpp
+  2620 总计
+
+===== 6. AppState是否还是全局单例(关注 static/instance/单例迹象) =====

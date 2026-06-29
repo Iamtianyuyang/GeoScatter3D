@@ -44,13 +44,17 @@ void TilePointCache::put(
 
     const auto point_count =
         static_cast<std::uint64_t>(points->size());
+    if (point_count != points->point_ids.size()) {
+        return;
+    }
     if (point_count >
         std::numeric_limits<std::uint64_t>::max() /
-            sizeof(gs3d::data::Gs3dPoint)) {
+            (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t))) {
         return;
     }
     const auto bytes =
-        point_count * sizeof(gs3d::data::Gs3dPoint);
+        point_count *
+        (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t));
 
     std::unique_lock lock(mutex_);
     if (const auto existing = entries_.find(tile_id);

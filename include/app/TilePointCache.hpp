@@ -13,7 +13,21 @@
 
 namespace gs3d::app {
 
-using TilePoints = std::vector<gs3d::data::Gs3dPoint>;
+struct TilePoints {
+    std::vector<gs3d::data::Gs3dPoint> points{};
+    std::vector<std::uint32_t> point_ids{};
+
+    [[nodiscard]]
+    std::size_t size() const noexcept {
+        return points.size();
+    }
+
+    [[nodiscard]]
+    bool empty() const noexcept {
+        return points.empty();
+    }
+};
+
 using SharedTilePoints = std::shared_ptr<const TilePoints>;
 
 struct TilePointCacheStats {

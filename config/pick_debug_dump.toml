@@ -1,0 +1,89 @@
+# config/pick_debug_dump.toml
+
+[input]
+mode = "gs3d"
+gs3d_path = "data/test.gs3d"
+csv_path = "data/test.csv"
+
+[csv_convert]
+num_threads = 12
+chunk_bytes = 16777216
+min_parallel_file_bytes = 67108864
+
+[shader]
+vertex_shader_path = "assets/shaders/point.vert.spv"
+fragment_shader_path = "assets/shaders/point.frag.spv"
+
+[window]
+width = 1280
+height = 720
+title = "GeoScatter3D 三维散点查看器"
+resizable = true
+ui_layout_ini_path = "config/imgui_layout.ini"
+
+[vulkan]
+validation_layers = true
+
+[render]
+clear_color = [0.015, 0.018, 0.025, 1.0]
+initial_point_size = 1.0
+
+[camera]
+mode = "fixed"
+position = [0.0, -14000.0, 6000.0]
+target = [0.0, 0.0, 0.0]
+up = [0.0, 0.0, 1.0]
+fov_y = 45.0
+near = 1.0
+far = 100000.0
+
+[controller]
+rotate_speed = 1.0
+pan_speed = 1.0
+zoom_speed = 1.0
+invert_rotate_x = false
+invert_rotate_y = false
+invert_pan_x = false
+invert_pan_y = true
+
+[lod]
+enabled = true
+keep_full_buffer = false
+sidecar_path = "data/test.gs3dlod"
+auto_load_sidecar = true
+auto_save_sidecar = true
+target_point_counts = [3000000, 2000000, 1500000, 1000000]
+target_point_ratios = [0.09, 0.06, 0.045, 0.03]
+voxel_mode = "XY"
+voxel_scale = 1.0
+medium_delay_seconds = 0.20
+high_delay_seconds = 0.80
+use_lowest_while_interacting = true
+adaptive_interacting_level = true
+frame_time_budget_ms = 14.0
+interactive_display_mode = "keep_stable"
+verbose = true
+
+[viewport]
+count = 1
+
+[tile]
+enabled = true
+index_path = "data/test.gs3dtiles.index"
+data_path = "data/test.gs3dtiles"
+num_threads = 12
+min_tile_pixel_size = 50
+max_visible_tiles = 160
+use_full_z_range = true
+verbose = true
+gpu_cache_max_tiles = 512
+gpu_upload_budget_bytes = 8388608
+cpu_cache_max_bytes = 4294967296
+preload_all = false
+preload_max_bytes = 1610612736
+preload_upload_budget_bytes = 67108864
+
+[debug]
+pick_debug_dump_enabled = true
+pick_debug_dump_dir = "bench/.pick_debug"
+pick_debug_dump_once_on_hover = true

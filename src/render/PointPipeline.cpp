@@ -161,7 +161,7 @@ void PointPipeline::create_graphics_pipeline(
     binding_description.stride = sizeof(PointVertex);
     binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attribute_descriptions[2]{};
+    VkVertexInputAttributeDescription attribute_descriptions[3]{};
 
     attribute_descriptions[0].binding = 0;
     attribute_descriptions[0].location = 0;
@@ -179,12 +179,20 @@ void PointPipeline::create_graphics_pipeline(
             offsetof(PointVertex, value)
         );
 
+    attribute_descriptions[2].binding = 0;
+    attribute_descriptions[2].location = 2;
+    attribute_descriptions[2].format = VK_FORMAT_R32_UINT;
+    attribute_descriptions[2].offset =
+        static_cast<std::uint32_t>(
+            offsetof(PointVertex, point_id)
+        );
+
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.pVertexBindingDescriptions = &binding_description;
-    vertex_input_info.vertexAttributeDescriptionCount = 2;
+    vertex_input_info.vertexAttributeDescriptionCount = 3;
     vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
@@ -218,20 +226,26 @@ void PointPipeline::create_graphics_pipeline(
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState color_blend_attachment{};
-    color_blend_attachment.colorWriteMask =
+    VkPipelineColorBlendAttachmentState color_blend_attachments[3]{};
+    color_blend_attachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT |
         VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT |
         VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = VK_FALSE;
+    color_blend_attachments[0].blendEnable = VK_FALSE;
+    color_blend_attachments[1].colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT;
+    color_blend_attachments[1].blendEnable = VK_FALSE;
+    color_blend_attachments[2].colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT;
+    color_blend_attachments[2].blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo color_blending{};
     color_blending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     color_blending.logicOpEnable = VK_FALSE;
-    color_blending.attachmentCount = 1;
-    color_blending.pAttachments = &color_blend_attachment;
+    color_blending.attachmentCount = 3;
+    color_blending.pAttachments = color_blend_attachments;
 
     VkDynamicState dynamic_states[] = {
         VK_DYNAMIC_STATE_VIEWPORT,

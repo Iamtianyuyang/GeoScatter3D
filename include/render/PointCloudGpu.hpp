@@ -15,6 +15,7 @@ struct PointVertex {
     float y = 0.0f;
     float z = 0.0f;
     float value = 0.0f;
+    std::uint32_t point_id = 0;
 };
 
 class PointCloudGpu {

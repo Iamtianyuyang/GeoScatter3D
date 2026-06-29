@@ -5,6 +5,91 @@
 
 namespace gs3d::ui {
 
+struct ViewportScreenRect {
+    float min_x = 0.0f;
+    float min_y = 0.0f;
+    float max_x = 0.0f;
+    float max_y = 0.0f;
+
+    [[nodiscard]]
+    float width() const noexcept {
+        return max_x - min_x;
+    }
+
+    [[nodiscard]]
+    float height() const noexcept {
+        return max_y - min_y;
+    }
+};
+
+struct ViewportMouseMapping {
+    bool mouse_on_image = false;
+    float framebuffer_x = 0.0f;
+    float framebuffer_y = 0.0f;
+    ViewportScreenRect plot_rect{};
+};
+
+[[nodiscard]]
+inline ViewportScreenRect compute_plot_rect(
+    bool show_map_axis,
+    const ViewportScreenRect& canvas_rect
+) noexcept
+{
+    ViewportScreenRect plot_rect = canvas_rect;
+    if (!show_map_axis) {
+        return plot_rect;
+    }
+
+    constexpr float kLeftAxis = 62.0f;
+    constexpr float kBottomAxis = 40.0f;
+    constexpr float kTopPad = 12.0f;
+    constexpr float kRightPad = 12.0f;
+    plot_rect.min_x += kLeftAxis;
+    plot_rect.min_y += kTopPad;
+    plot_rect.max_x -= kRightPad;
+    plot_rect.max_y -= kBottomAxis;
+    return plot_rect;
+}
+
+[[nodiscard]]
+inline ViewportMouseMapping map_screen_mouse_to_framebuffer(
+    float mouse_screen_x,
+    float mouse_screen_y,
+    const ViewportScreenRect& canvas_rect,
+    bool show_map_axis,
+    std::uint32_t framebuffer_width,
+    std::uint32_t framebuffer_height
+) noexcept
+{
+    ViewportMouseMapping mapping;
+    mapping.plot_rect = compute_plot_rect(show_map_axis, canvas_rect);
+
+    const float plot_width = mapping.plot_rect.width();
+    const float plot_height = mapping.plot_rect.height();
+    if (plot_width <= 0.0f ||
+        plot_height <= 0.0f ||
+        framebuffer_width == 0 ||
+        framebuffer_height == 0) {
+        return mapping;
+    }
+
+    if (mouse_screen_x < mapping.plot_rect.min_x ||
+        mouse_screen_x >= mapping.plot_rect.max_x ||
+        mouse_screen_y < mapping.plot_rect.min_y ||
+        mouse_screen_y >= mapping.plot_rect.max_y) {
+        return mapping;
+    }
+
+    const float local_x = mouse_screen_x - mapping.plot_rect.min_x;
+    const float local_y = mouse_screen_y - mapping.plot_rect.min_y;
+    mapping.mouse_on_image = true;
+    mapping.framebuffer_x =
+        local_x * static_cast<float>(framebuffer_width) / plot_width;
+    mapping.framebuffer_y =
+        local_y * static_cast<float>(framebuffer_height) / plot_height;
+    return mapping;
+}
+
 class UiRoot {
 public:
     UiRoot() = default;

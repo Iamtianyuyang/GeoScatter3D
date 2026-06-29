@@ -2,9 +2,11 @@
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in float in_value;
+layout(location = 2) in uint in_point_id;
 
 layout(location = 0) out float out_value;
 layout(location = 1) out vec3  out_world_pos;
+layout(location = 2) flat out uint out_point_id;
 
 layout(push_constant) uniform PointPushConstants {
     mat4  mvp;
@@ -21,6 +23,7 @@ void main() {
     gl_Position  = pc.mvp * vec4(in_position, 1.0);
     gl_PointSize = pc.point_size;
     out_world_pos = in_position;
+    out_point_id = in_point_id;
 
     // Select attribute for color mapping (Potree / CloudCompare pattern:
     // switch active attribute via uniform, no GPU data re-upload needed).

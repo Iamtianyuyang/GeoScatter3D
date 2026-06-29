@@ -25,7 +25,8 @@ public:
 
     void create(
         const VulkanContext& context,
-        VkExtent2D extent
+        VkExtent2D extent,
+        VkImageUsageFlags extra_usage = 0
     );
 
     void destroy() noexcept;

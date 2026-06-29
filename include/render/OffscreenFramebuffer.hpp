@@ -59,6 +59,13 @@ public:
     [[nodiscard]] VkRenderPass    render_pass()      const noexcept;
     [[nodiscard]] VkExtent2D      extent()           const noexcept;
     [[nodiscard]] VkDescriptorSet imgui_descriptor() const noexcept;
+    [[nodiscard]] VkImage         color_image()      const noexcept;
+    [[nodiscard]] VkImage         pick_image()       const noexcept;
+    [[nodiscard]] VkImage         pick_depth_image() const noexcept;
+    [[nodiscard]] VkFormat        color_format()     const noexcept;
+    [[nodiscard]] VkFormat        pick_format()      const noexcept;
+    [[nodiscard]] VkFormat        pick_depth_format() const noexcept;
+    [[nodiscard]] const VulkanDepthBuffer& depth_buffer() const noexcept;
     [[nodiscard]] bool            valid()            const noexcept;
 
 private:
@@ -71,6 +78,16 @@ private:
     VkDeviceMemory color_memory_ = VK_NULL_HANDLE;
     VkImageView    color_view_   = VK_NULL_HANDLE;
 
+    VkImage        pick_image_   = VK_NULL_HANDLE;
+    VkDeviceMemory pick_memory_  = VK_NULL_HANDLE;
+    VkImageView    pick_view_    = VK_NULL_HANDLE;
+    VkFormat       pick_format_  = VK_FORMAT_R32_UINT;
+
+    VkImage        pick_depth_image_   = VK_NULL_HANDLE;
+    VkDeviceMemory pick_depth_memory_  = VK_NULL_HANDLE;
+    VkImageView    pick_depth_view_    = VK_NULL_HANDLE;
+    VkFormat       pick_depth_format_  = VK_FORMAT_R32_SFLOAT;
+
     VulkanDepthBuffer depth_buffer_{};
 
     VkRenderPass  render_pass_  = VK_NULL_HANDLE;
@@ -80,6 +97,8 @@ private:
 
 private:
     void create_color_image();
+    void create_pick_image();
+    void create_pick_depth_image();
     void create_render_pass();
     void create_framebuffer();
     void register_imgui_texture();
@@ -92,6 +111,25 @@ private:
         VkPhysicalDevice      physical_device,
         std::uint32_t         type_filter,
         VkMemoryPropertyFlags properties
+    );
+
+    [[nodiscard]]
+    static VkFormat find_supported_format(
+        VkPhysicalDevice physical_device,
+        const VkFormat* candidates,
+        std::uint32_t candidate_count,
+        VkImageTiling tiling,
+        VkFormatFeatureFlags features
+    );
+
+    [[nodiscard]]
+    static VkFormat find_supported_pick_format(
+        VkPhysicalDevice physical_device
+    );
+
+    [[nodiscard]]
+    static VkFormat find_supported_pick_depth_format(
+        VkPhysicalDevice physical_device
     );
 };
 

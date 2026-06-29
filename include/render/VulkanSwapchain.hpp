@@ -21,11 +21,20 @@ struct SwapchainSupportDetails {
     }
 };
 
+enum class SwapchainPresentModeHint {
+    Auto,
+    Immediate,
+    Mailbox,
+    Fifo
+};
+
 class VulkanSwapchain {
 public:
     VulkanSwapchain(
         const VulkanContext& context,
-        const gs3d::platform::Window& window
+        const gs3d::platform::Window& window,
+        SwapchainPresentModeHint present_mode_hint =
+            SwapchainPresentModeHint::Auto
     );
 
     ~VulkanSwapchain();
@@ -57,6 +66,9 @@ public:
     std::uint32_t image_count() const noexcept;
 
     [[nodiscard]]
+    VkPresentModeKHR present_mode() const noexcept;
+
+    [[nodiscard]]
     static SwapchainSupportDetails query_support(
         VkPhysicalDevice physical_device,
         VkSurfaceKHR surface
@@ -72,6 +84,9 @@ private:
 
     VkFormat image_format_ = VK_FORMAT_UNDEFINED;
     VkExtent2D extent_{};
+    VkPresentModeKHR present_mode_ = VK_PRESENT_MODE_FIFO_KHR;
+    SwapchainPresentModeHint present_mode_hint_ =
+        SwapchainPresentModeHint::Auto;
 
 private:
     void create(const gs3d::platform::Window& window);

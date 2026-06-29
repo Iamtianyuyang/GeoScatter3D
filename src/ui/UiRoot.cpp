@@ -123,6 +123,10 @@ namespace AxisStyle {
     constexpr float kYTickToLabel = 7.0f;
 } // namespace AxisStyle
 
+} // namespace
+
+namespace {
+
 void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
 {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -335,19 +339,25 @@ void draw_viewport_window(
     );
     const ImVec2 canvas_min = ImGui::GetItemRectMin();
     const ImVec2 canvas_max = ImGui::GetItemRectMax();
+    const ViewportScreenRect canvas_rect{
+        canvas_min.x,
+        canvas_min.y,
+        canvas_max.x,
+        canvas_max.y
+    };
     const bool hovered = ImGui::IsItemHovered();
     const bool active = ImGui::IsItemActive();
 
     // ── 地图轴模式：点在缩小的 plot_rect 内显示，轴在边距中绘制 ──
-    ImVec2 plot_min = canvas_min;
-    ImVec2 plot_max = canvas_max;
+    const auto plot_rect = compute_plot_rect(
+        view.show_map_axis,
+        canvas_rect
+    );
+    ImVec2 plot_min{plot_rect.min_x, plot_rect.min_y};
+    ImVec2 plot_max{plot_rect.max_x, plot_rect.max_y};
     bool using_map_axis = false;
     if (view.show_map_axis) {
         using_map_axis = true;
-        plot_min.x += LayoutMetrics::kLeftAxis;
-        plot_min.y += LayoutMetrics::kTopPad;
-        plot_max.x -= LayoutMetrics::kRightPad;
-        plot_max.y -= LayoutMetrics::kBottomAxis;
     }
 
     if (view.show_live_image &&
@@ -402,24 +412,75 @@ void draw_viewport_window(
         };
 
         // ---- 辅助 lambda：生成 minor ticks ----
+        //
+        // 必须用 double + 整数索引步进：之前用 `v += minor_step` 的
+        // float 累加，在缩放视野下（如 first_major≈-14544、
+        // minor_step≈0.002）float 的精度间隙已经 >= step，循环永不
+        // 终止 → 主线程死循环 → UI 卡死。这里把迭代改成 `i * step`
+        // 索引步进，强制上限，并处理退化（range 极小而 step 极小）。
         const auto make_minors = [](float major_step, float first_major,
                                      float range_min, float range_max)
             -> std::vector<float>
         {
+            std::vector<float> minors;
+            if (major_step <= 0.0f || !std::isfinite(major_step)) {
+                return minors;
+            }
             const float minor_step =
                 major_step / static_cast<float>(AxisStyle::kMinorPerMajor);
-            std::vector<float> minors;
-            // 从 first_major 向左（向 range_min）生成
-            for (float v = first_major - minor_step;
-                 v > range_min + minor_step * 0.5f;
-                 v -= minor_step) {
-                minors.push_back(v);
+            if (minor_step <= 0.0f || !std::isfinite(minor_step)) {
+                return minors;
             }
-            // 从 first_major 向右（向 range_max）生成
-            for (float v = first_major + minor_step;
-                 v < range_max - minor_step * 0.5f;
-                 v += minor_step) {
-                minors.push_back(v);
+
+            constexpr int kMaxMinorsPerSide = 200;
+
+            const double minor_step_d = static_cast<double>(minor_step);
+            const double first_major_d = static_cast<double>(first_major);
+            const double range_min_d = static_cast<double>(range_min);
+            const double range_max_d = static_cast<double>(range_max);
+            // 阈值用 double 算，避免在边界上漏一根 / 多一根
+            const double end_threshold =
+                minor_step_d * 0.5;
+
+            // 向左（向 range_min）
+            int left_count = static_cast<int>(
+                std::floor((first_major_d - range_min_d) / minor_step_d));
+            if (left_count < 0) left_count = 0;
+            if (left_count > kMaxMinorsPerSide) left_count = kMaxMinorsPerSide;
+            minors.reserve(
+                static_cast<std::size_t>(left_count + kMaxMinorsPerSide));
+            for (int i = 1; i <= left_count; ++i) {
+                const double v = first_major_d -
+                                 static_cast<double>(i) * minor_step_d;
+                if (v <= range_min_d + end_threshold) {
+                    break;
+                }
+                minors.push_back(static_cast<float>(v));
+            }
+
+            // 向右（向 range_max）
+            int right_count = static_cast<int>(
+                std::floor((range_max_d - first_major_d) / minor_step_d));
+            if (right_count < 0) right_count = 0;
+            if (right_count > kMaxMinorsPerSide) {
+                right_count = kMaxMinorsPerSide;
+            }
+            for (int i = 1; i <= right_count; ++i) {
+                const double v = first_major_d +
+                                 static_cast<double>(i) * minor_step_d;
+                if (v >= range_max_d - end_threshold) {
+                    break;
+                }
+                minors.push_back(static_cast<float>(v));
+            }
+
+            // 退化降级：上面两侧迭代都已经有迭代上限 kMaxMinorsPerSide
+            // 作为死循环安全网。若 range_min/range_max 与 first_major
+            // 都几乎重合（极度病态视野），仍保证输出最多 2*kMaxMinorsPerSide
+            // 个 tick，且都不会让 v += step 的累加逻辑出现。
+            if (minors.size() >
+                static_cast<std::size_t>(2 * kMaxMinorsPerSide)) {
+                minors.resize(2 * kMaxMinorsPerSide);
             }
             return minors;
         };
@@ -564,11 +625,36 @@ void draw_viewport_window(
     }
 
     draw_viewport_overlay(view, canvas_min, canvas_max, plot_min, plot_max);
-    if (hovered || active) {
+
+    const ImGuiIO& io = ImGui::GetIO();
+    gs3d::app::ViewportFrameCmd frame;
+    frame.index = view.viewport_index;
+    frame.width = static_cast<std::uint32_t>(available.x);
+    frame.height = static_cast<std::uint32_t>(available.y);
+    const auto mouse_mapping = map_screen_mouse_to_framebuffer(
+        io.MousePos.x,
+        io.MousePos.y,
+        canvas_rect,
+        view.show_map_axis,
+        frame.width,
+        frame.height
+    );
+    frame.hovered = hovered && mouse_mapping.mouse_on_image;
+    frame.active =
+        active &&
+        (mouse_mapping.mouse_on_image || view.box_select_dragging);
+    frame.mouse_delta_x = active ? io.MouseDelta.x : 0.0f;
+    frame.mouse_delta_y = active ? io.MouseDelta.y : 0.0f;
+    frame.mouse_wheel = frame.hovered ? io.MouseWheel : 0.0f;
+    frame.mouse_local_x = mouse_mapping.framebuffer_x;
+    frame.mouse_local_y = mouse_mapping.framebuffer_y;
+    frame.mouse_on_image = mouse_mapping.mouse_on_image;
+
+    if (frame.hovered || frame.active) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     }
 
-    if (hovered && !active && view.hover_tooltip_visible) {
+    if (frame.hovered && !frame.active && view.hover_tooltip_visible) {
         ImGui::SetTooltip(
             "x: %.2f\ny: %.2f\nfold: %.3f\nelevation: %.2f",
             static_cast<double>(view.hover_x),
@@ -578,29 +664,21 @@ void draw_viewport_window(
         );
     }
 
-    const ImGuiIO& io = ImGui::GetIO();
-    gs3d::app::ViewportFrameCmd frame;
-    frame.index = view.viewport_index;
-    frame.hovered = hovered;
-    frame.active = active;
-    frame.width = static_cast<std::uint32_t>(available.x);
-    frame.height = static_cast<std::uint32_t>(available.y);
-    frame.mouse_delta_x = active ? io.MouseDelta.x : 0.0f;
-    frame.mouse_delta_y = active ? io.MouseDelta.y : 0.0f;
-    frame.mouse_wheel = hovered ? io.MouseWheel : 0.0f;
-    frame.mouse_local_x = io.MousePos.x - canvas_min.x;
-    frame.mouse_local_y = io.MousePos.y - canvas_min.y;
-
     // Ctrl+左键 = 框选放大，普通左键 = 轨道旋转；两者互斥，框选时不旋转。
     const bool box_select_button_down =
-        active && io.KeyCtrl && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        active &&
+        frame.mouse_on_image &&
+        io.KeyCtrl &&
+        ImGui::IsMouseDown(ImGuiMouseButton_Left);
 
     frame.rotate =
         active &&
+        frame.mouse_on_image &&
         ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
         !io.KeyCtrl;
     frame.pan =
         active &&
+        frame.mouse_on_image &&
         (ImGui::IsMouseDown(ImGuiMouseButton_Right) ||
          ImGui::IsMouseDown(ImGuiMouseButton_Middle));
 
@@ -632,7 +710,9 @@ void draw_viewport_window(
             const float max_y = std::max(view.box_select_start_y, frame.mouse_local_y);
 
             // Ignore accidental clicks/tiny drags (< 4px on either axis).
-            if (max_x - min_x >= 4.0f && max_y - min_y >= 4.0f) {
+            if (frame.mouse_on_image &&
+                max_x - min_x >= 4.0f &&
+                max_y - min_y >= 4.0f) {
                 frame.box_select_completed = true;
                 frame.box_select_min_x = min_x;
                 frame.box_select_min_y = min_y;
@@ -900,28 +980,59 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         ImGui::GetMainViewport()->WorkSize
     );
 
-    ImGuiID center_id = dockspace_id;
-    const ImGuiID left_id = ImGui::DockBuilderSplitNode(
-        center_id,
-        ImGuiDir_Left,
-        0.19f,
-        nullptr,
-        &center_id
-    );
-    const ImGuiID right_id = ImGui::DockBuilderSplitNode(
-        center_id,
-        ImGuiDir_Right,
-        0.24f,
-        nullptr,
-        &center_id
-    );
+    const bool has_left_panels =
+        state.panels.dataset ||
+        state.panels.tile_inspector ||
+        state.panels.lod_view;
+    const bool has_right_panels =
+        state.panels.render_settings ||
+        state.panels.performance ||
+        state.panels.debug_log;
 
-    ImGui::DockBuilderDockWindow(kDatasetWindowName, left_id);
-    ImGui::DockBuilderDockWindow(kTileInspectorWindowName, left_id);
-    ImGui::DockBuilderDockWindow(kLodViewWindowName, left_id);
-    ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
-    ImGui::DockBuilderDockWindow(kPerformanceWindowName, right_id);
-    ImGui::DockBuilderDockWindow(kDebugLogWindowName, right_id);
+    ImGuiID center_id = dockspace_id;
+    ImGuiID left_id = 0;
+    ImGuiID right_id = 0;
+    if (has_left_panels) {
+        left_id = ImGui::DockBuilderSplitNode(
+            center_id,
+            ImGuiDir_Left,
+            0.19f,
+            nullptr,
+            &center_id
+        );
+    }
+    if (has_right_panels) {
+        right_id = ImGui::DockBuilderSplitNode(
+            center_id,
+            ImGuiDir_Right,
+            0.24f,
+            nullptr,
+            &center_id
+        );
+    }
+
+    if (left_id != 0) {
+        if (state.panels.dataset) {
+            ImGui::DockBuilderDockWindow(kDatasetWindowName, left_id);
+        }
+        if (state.panels.tile_inspector) {
+            ImGui::DockBuilderDockWindow(kTileInspectorWindowName, left_id);
+        }
+        if (state.panels.lod_view) {
+            ImGui::DockBuilderDockWindow(kLodViewWindowName, left_id);
+        }
+    }
+    if (right_id != 0) {
+        if (state.panels.render_settings) {
+            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
+        }
+        if (state.panels.performance) {
+            ImGui::DockBuilderDockWindow(kPerformanceWindowName, right_id);
+        }
+        if (state.panels.debug_log) {
+            ImGui::DockBuilderDockWindow(kDebugLogWindowName, right_id);
+        }
+    }
 
     for (const auto& view : state.render_views) {
         if (view.visible) {

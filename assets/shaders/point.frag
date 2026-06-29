@@ -2,8 +2,11 @@
 
 layout(location = 0) in float in_value;
 layout(location = 1) in vec3  in_world_pos;
+layout(location = 2) flat in uint in_point_id;
 
 layout(location = 0) out vec4 out_color;
+layout(location = 1) out uint out_pick_id;
+layout(location = 2) out float out_pick_depth;
 
 layout(push_constant) uniform PointPushConstants {
     mat4  mvp;
@@ -46,4 +49,6 @@ void main() {
     }
 
     out_color = vec4(colormap(in_value), 1.0);
+    out_pick_id = in_point_id;
+    out_pick_depth = gl_FragCoord.z;
 }

@@ -47,7 +47,8 @@ void copy_points_to_staging(
             point.x,
             point.y,
             point.z,
-            point.value
+            point.value,
+            point.point_id
         };
     }
 }

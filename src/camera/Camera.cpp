@@ -156,6 +156,42 @@ Mat4 Mat4::identity() noexcept {
     return out;
 }
 
+float bounding_sphere_radius(const CameraBounds& bounds) noexcept {
+    const Vec3 extent{
+        bounds.max.x - bounds.min.x,
+        bounds.max.y - bounds.min.y,
+        bounds.max.z - bounds.min.z
+    };
+
+    return 0.5f * std::sqrt(
+        extent.x * extent.x +
+        extent.y * extent.y +
+        extent.z * extent.z
+    );
+}
+
+ClipPlanes compute_clip_planes(
+    float distance,
+    float scene_radius
+) noexcept {
+    const float safe_distance = std::max(distance, 0.0f);
+    const float safe_radius = std::max(scene_radius, 1.0f);
+
+    const float far_plane = std::max(
+        safe_distance * kFarDistanceFactor +
+            safe_radius * kFarRadiusPadding,
+        kMinNearPlane + 1.0f
+    );
+
+    float near_plane = std::max(
+        kMinNearPlane,
+        safe_distance * kNearDistanceFactor
+    );
+    near_plane = std::max(near_plane, far_plane / kMaxDepthRatio);
+
+    return {near_plane, far_plane};
+}
+
 void Camera::set_viewport(
     std::uint32_t width,
     std::uint32_t height
@@ -226,13 +262,10 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
      * 不管轨道转到哪个角度，这个距离都能让包围盒刚好填满视口（取水平/
      * 垂直视场角中更窄的一个，保证两个方向都不溢出）。
      */
-    const float radius =
-        0.5f * std::sqrt(
-            extent.x * extent.x +
-            extent.y * extent.y +
-            extent.z * extent.z
-        );
-    const float safe_radius = std::max(radius, 1.0f);
+    const float safe_radius = std::max(
+        bounding_sphere_radius(bounds),
+        1.0f
+    );
 
     const float half_fov_v = tan_half;
     const float half_fov_h = tan_half * aspect;
@@ -256,11 +289,10 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
     }
     position_ = add(target_, mul(dir, dist * 1.0f));
 
-    near_plane_ = std::max(dist * 0.001f, 1.0e-4f);
-    far_plane_  = std::max(
-        dist * 10.0f + safe_radius * 4.0f,
-        near_plane_ + 1.0f
-    );
+    const ClipPlanes clip_planes =
+        compute_clip_planes(dist, safe_radius);
+    near_plane_ = clip_planes.near_plane;
+    far_plane_ = clip_planes.far_plane;
 
     up_ = {0.0f, 0.0f, 1.0f};
 }

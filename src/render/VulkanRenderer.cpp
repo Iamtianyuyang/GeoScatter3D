@@ -22,6 +22,7 @@ VulkanRenderer::VulkanRenderer(
 )
     : context_(context)
     , swapchain_(swapchain)
+    , gpu_frame_timer_(context, MAX_FRAMES_IN_FLIGHT)
 {
     create_render_pass();
     depth_buffer_.create(context_, swapchain_.extent());
@@ -61,10 +62,14 @@ void VulkanRenderer::draw_frame(
     gs3d::platform::Window& window,
     const FrameDrawCallbacks& callbacks
 ) {
+    last_frame_fence_wait_ms_ = 0.0;
+    last_draw_record_cpu_ms_ = 0.0;
+
     if (!framebuffer_available(window)) {
         return;
     }
 
+    const auto frame_fence_wait_t0 = std::chrono::steady_clock::now();
     vkWaitForFences(
         context_.device(),
         1,
@@ -72,6 +77,16 @@ void VulkanRenderer::draw_frame(
         VK_TRUE,
         UINT64_MAX
     );
+    last_frame_fence_wait_ms_ =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - frame_fence_wait_t0
+        ).count();
+
+    if (callbacks.frame_ready) {
+        callbacks.frame_ready(current_frame_);
+    }
+
+    gpu_frame_timer_.collect_frame(current_frame_);
 
     std::uint32_t image_index = 0;
 
@@ -114,11 +129,18 @@ void VulkanRenderer::draw_frame(
         0
     );
 
-    record_command_buffer(
-        command_buffers_[current_frame_],
-        image_index,
-        callbacks
-    );
+    {
+        const auto record_t0 = std::chrono::steady_clock::now();
+        record_command_buffer(
+            command_buffers_[current_frame_],
+            image_index,
+            callbacks
+        );
+        last_draw_record_cpu_ms_ =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - record_t0
+            ).count();
+    }
 
     VkSemaphore wait_semaphores[] = {
         image_available_semaphores_[current_frame_]
@@ -193,6 +215,7 @@ void VulkanRenderer::set_clear_color(const ClearColor& color) noexcept {
 }
 
 void VulkanRenderer::wait_for_in_flight_fences() {
+    const auto wait_t0 = std::chrono::steady_clock::now();
     for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         if (in_flight_fences_[i] != VK_NULL_HANDLE) {
             vkWaitForFences(
@@ -204,10 +227,34 @@ void VulkanRenderer::wait_for_in_flight_fences() {
             );
         }
     }
+    last_upload_fence_wait_ms_ =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - wait_t0
+        ).count();
 }
 
 double VulkanRenderer::last_acquire_wait_ms() const noexcept {
     return last_acquire_wait_ms_;
+}
+
+double VulkanRenderer::last_frame_fence_wait_ms() const noexcept {
+    return last_frame_fence_wait_ms_;
+}
+
+double VulkanRenderer::last_upload_fence_wait_ms() const noexcept {
+    return last_upload_fence_wait_ms_;
+}
+
+double VulkanRenderer::last_draw_record_cpu_ms() const noexcept {
+    return last_draw_record_cpu_ms_;
+}
+
+bool VulkanRenderer::has_last_gpu_frame_ms() const noexcept {
+    return gpu_frame_timer_.has_last_frame_time();
+}
+
+double VulkanRenderer::last_gpu_frame_ms() const noexcept {
+    return gpu_frame_timer_.last_frame_time_ms();
 }
 
 VkRenderPass VulkanRenderer::render_pass() const noexcept {
@@ -220,6 +267,10 @@ VkCommandPool VulkanRenderer::command_pool() const noexcept {
 
 VkExtent2D VulkanRenderer::extent() const noexcept {
     return swapchain_.extent();
+}
+
+std::uint32_t VulkanRenderer::frames_in_flight() const noexcept {
+    return MAX_FRAMES_IN_FLIGHT;
 }
 
 void VulkanRenderer::create_render_pass() {
@@ -462,6 +513,8 @@ void VulkanRenderer::record_command_buffer(
         "VulkanRenderer: failed to begin command buffer"
     );
 
+    gpu_frame_timer_.begin_frame(current_frame_, command_buffer);
+
     // pre_pass: offscreen render passes go here, outside the swapchain render pass.
     if (callbacks.pre_pass) {
         callbacks.pre_pass(command_buffer);
@@ -507,6 +560,7 @@ void VulkanRenderer::record_command_buffer(
     }
 
     vkCmdEndRenderPass(command_buffer);
+    gpu_frame_timer_.end_frame(current_frame_, command_buffer);
 
     check_vk(
         vkEndCommandBuffer(command_buffer),

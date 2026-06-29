@@ -17,10 +17,11 @@ struct ViewportFrameCmd {
     float mouse_wheel = 0.0f;
 
     // Mouse position in viewport-local pixels (origin top-left), valid
-    // whenever `hovered` is true — used for the hover tooltip, which
-    // should track the cursor even when not dragging/active.
+    // only when `mouse_on_image` is true. These coordinates are in the
+    // framebuffer/image space consumed by MouseRay::from_screen.
     float mouse_local_x = 0.0f;
     float mouse_local_y = 0.0f;
+    bool mouse_on_image = false;
 
     bool rotate = false;
     bool pan = false;

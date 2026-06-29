@@ -18,9 +18,11 @@ void check_vk(VkResult result, const char* message) {
 
 VulkanSwapchain::VulkanSwapchain(
     const VulkanContext& context,
-    const gs3d::platform::Window& window
+    const gs3d::platform::Window& window,
+    SwapchainPresentModeHint present_mode_hint
 )
     : context_(context)
+    , present_mode_hint_(present_mode_hint)
 {
     create(window);
 }
@@ -60,6 +62,10 @@ const std::vector<VkImageView>& VulkanSwapchain::image_views() const noexcept {
 
 std::uint32_t VulkanSwapchain::image_count() const noexcept {
     return static_cast<std::uint32_t>(images_.size());
+}
+
+VkPresentModeKHR VulkanSwapchain::present_mode() const noexcept {
+    return present_mode_;
 }
 
 SwapchainSupportDetails VulkanSwapchain::query_support(
@@ -210,6 +216,7 @@ void VulkanSwapchain::create(
 
     image_format_ = surface_format.format;
     extent_ = swap_extent;
+    present_mode_ = present_mode;
 
     create_image_views();
 }
@@ -256,6 +263,31 @@ VkSurfaceFormatKHR VulkanSwapchain::choose_surface_format(
 VkPresentModeKHR VulkanSwapchain::choose_present_mode(
     const std::vector<VkPresentModeKHR>& present_modes
 ) const {
+    const auto supports = [&](VkPresentModeKHR mode) {
+        return std::find(
+                   present_modes.begin(),
+                   present_modes.end(),
+                   mode
+               ) != present_modes.end();
+    };
+
+    switch (present_mode_hint_) {
+    case SwapchainPresentModeHint::Immediate:
+        if (supports(VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+        break;
+    case SwapchainPresentModeHint::Mailbox:
+        if (supports(VK_PRESENT_MODE_MAILBOX_KHR)) {
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        }
+        break;
+    case SwapchainPresentModeHint::Fifo:
+        return VK_PRESENT_MODE_FIFO_KHR;
+    case SwapchainPresentModeHint::Auto:
+        break;
+    }
+
     for (const auto mode : present_modes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
             return mode;
