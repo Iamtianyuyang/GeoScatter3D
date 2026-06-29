@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 
@@ -108,6 +109,8 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/data/Gs3dLodReader.hpp
     include/data/Gs3dTileFormat.hpp
     include/data/Gs3dTileReader.hpp
+    include/data/PointDataAdapters.hpp
+    include/data/TileDataAdapters.hpp
 
     include/camera/BoxSelect.hpp
     include/camera/Camera.hpp
@@ -137,6 +140,10 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/render/ViewportManager.hpp
     include/render/NearestPointQuery.hpp
     include/render/AxisGrid.hpp
+
+    include/core/PointData.hpp
+    include/core/TileData.hpp
+    include/scene/SceneState.hpp
 
     include/util/ThreadPool.hpp
     include/util/Stopwatch.hpp
@@ -204,6 +211,12 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.RuntimePerformance
         COMMAND GeoScatter3DRuntimeTests
+    )
+
+    add_test(
+        NAME GeoScatter3D.IncludeDeps
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_include_deps.py
     )
 
     # Manual GPU performance harness — not registered with add_test()/ctest

@@ -1,7 +1,5 @@
 #include "render/PointPipeline.hpp"
 
-#include "data/Gs3dFormat.hpp"
-
 #include <cstddef>
 #include <fstream>
 #include <stdexcept>
@@ -160,7 +158,7 @@ void PointPipeline::create_graphics_pipeline(
 
     VkVertexInputBindingDescription binding_description{};
     binding_description.binding = 0;
-    binding_description.stride = sizeof(gs3d::data::Gs3dPoint);
+    binding_description.stride = sizeof(PointVertex);
     binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription attribute_descriptions[2]{};
@@ -170,7 +168,7 @@ void PointPipeline::create_graphics_pipeline(
     attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     attribute_descriptions[0].offset =
         static_cast<std::uint32_t>(
-            offsetof(gs3d::data::Gs3dPoint, x)
+            offsetof(PointVertex, x)
         );
 
     attribute_descriptions[1].binding = 0;
@@ -178,7 +176,7 @@ void PointPipeline::create_graphics_pipeline(
     attribute_descriptions[1].format = VK_FORMAT_R32_SFLOAT;
     attribute_descriptions[1].offset =
         static_cast<std::uint32_t>(
-            offsetof(gs3d::data::Gs3dPoint, value)
+            offsetof(PointVertex, value)
         );
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};

@@ -11,7 +11,7 @@ namespace {
 // keeping the hot loop simple (pre-computed VP matrix, float args).
 inline std::optional<gs3d::camera::ScreenPoint> project_to_screen(
     const gs3d::camera::Mat4& view_projection,
-    const gs3d::data::Gs3dPoint& point,
+    const gs3d::core::PointRecord& point,
     float width,
     float height
 ) noexcept {
@@ -25,8 +25,7 @@ inline std::optional<gs3d::camera::ScreenPoint> project_to_screen(
 } // namespace
 
 std::optional<NearestPointResult> find_nearest_point_on_screen(
-    const std::vector<const std::vector<gs3d::data::Gs3dPoint>*>&
-        candidate_point_sets,
+    const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
     float mouse_x,
     float mouse_y,
     const gs3d::camera::Viewport& viewport,
@@ -45,12 +44,13 @@ std::optional<NearestPointResult> find_nearest_point_on_screen(
     float best_distance_sq = std::numeric_limits<float>::max();
     std::optional<NearestPointResult> best;
 
-    for (const auto* points : candidate_point_sets) {
-        if (points == nullptr) {
+    for (const auto& points : candidate_point_sets) {
+        if (!points.valid() || points.empty()) {
             continue;
         }
 
-        for (const auto& point : *points) {
+        for (std::uint64_t i = 0; i < points.point_count; ++i) {
+            const auto point = points.point_at(i);
             const auto screen =
                 project_to_screen(view_projection, point, width, height);
             if (!screen) {

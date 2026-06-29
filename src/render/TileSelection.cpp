@@ -31,7 +31,7 @@ void TileSelection::reset() {
 
 TileSelectionResult TileSelection::update(
     const gs3d::camera::Camera& camera,
-    const gs3d::data::Gs3dTileReader& tile_reader
+    const gs3d::core::TileIndexView& tile_index
 ) {
     struct CandidateTile {
         std::uint64_t tile_id = 0;
@@ -47,8 +47,8 @@ TileSelectionResult TileSelection::update(
     TileSelectionResult result;
     result.camera_distance = camera.distance();
 
-    if (!tile_reader.valid() ||
-        !should_enable(camera, tile_reader.index_header())) {
+    if (tile_index.records.empty() ||
+        !should_enable(camera, tile_index.header)) {
         result.enabled = false;
         result.changed = active_ || !current_tile_ids_.empty();
 
@@ -72,12 +72,12 @@ TileSelectionResult TileSelection::update(
         camera.view_projection_matrix().m
     );
 
-    const auto& header = tile_reader.index_header();
+    const auto& header = tile_index.header;
 
     std::vector<CandidateTile> candidates;
-    candidates.reserve(tile_reader.records().size());
+    candidates.reserve(tile_index.records.size());
 
-    for (const auto& record : tile_reader.records()) {
+    for (const auto& record : tile_index.records) {
         // Grid cell bbox (conservative: full Z extent of dataset)
         const float cell_min_x =
             header.grid_origin_x + record.tile_x * header.tile_size_x;
@@ -158,12 +158,12 @@ TileSelectionResult TileSelection::update(
     }
 
     if (!result.tile_ids.empty()) {
-        result.query_box.min_x = sel_min_x;
-        result.query_box.min_y = sel_min_y;
-        result.query_box.min_z = sel_min_z;
-        result.query_box.max_x = sel_max_x;
-        result.query_box.max_y = sel_max_y;
-        result.query_box.max_z = sel_max_z;
+        result.query_bounds.min_x = sel_min_x;
+        result.query_bounds.min_y = sel_min_y;
+        result.query_bounds.min_z = sel_min_z;
+        result.query_bounds.max_x = sel_max_x;
+        result.query_bounds.max_y = sel_max_y;
+        result.query_bounds.max_z = sel_max_z;
     }
 
     std::sort(result.tile_ids.begin(), result.tile_ids.end());
@@ -192,7 +192,7 @@ bool TileSelection::active() const noexcept {
 
 bool TileSelection::should_enable(
     const gs3d::camera::Camera& camera,
-    const gs3d::data::Gs3dTileIndexFileHeader& header
+    const gs3d::core::TileHeaderView& header
 ) const noexcept {
     const float tile_size =
         std::min(header.tile_size_x, header.tile_size_y);
@@ -299,8 +299,8 @@ bool TileSelection::aabb_outside_frustum(
 
 float TileSelection::tile_projected_pixels(
     const gs3d::camera::Camera& camera,
-    const gs3d::data::Gs3dTileIndexFileHeader& header,
-    const gs3d::data::Gs3dTileRecord& record
+    const gs3d::core::TileHeaderView& header,
+    const gs3d::core::TileRecordView& record
 ) noexcept {
     // Grid cell center (matches how points were assigned)
     const float cx =

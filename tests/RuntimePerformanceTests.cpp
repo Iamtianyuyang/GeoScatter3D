@@ -4,6 +4,7 @@
 #include "camera/Camera.hpp"
 #include "camera/CameraController.hpp"
 #include "data/Gs3dFormat.hpp"
+#include "data/PointDataAdapters.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/FrameUploadBudget.hpp"
 #include "render/LodSelector.hpp"
@@ -680,8 +681,8 @@ void test_nearest_point_query_picks_screen_closest_candidate()
         {0.0f, 0.0f, 0.0f, 1.0f},
         {60.0f, 0.0f, 0.0f, 2.0f},
     };
-    const std::vector<const std::vector<gs3d::data::Gs3dPoint>*> sets = {
-        &points
+    const std::vector<gs3d::core::PointDataView> sets = {
+        gs3d::data::make_point_data_view(points)
     };
 
     const auto result = gs3d::render::find_nearest_point_on_screen(
@@ -706,8 +707,8 @@ void test_nearest_point_query_respects_max_screen_distance()
     const std::vector<gs3d::data::Gs3dPoint> points = {
         {60.0f, 0.0f, 0.0f, 2.0f},
     };
-    const std::vector<const std::vector<gs3d::data::Gs3dPoint>*> sets = {
-        &points
+    const std::vector<gs3d::core::PointDataView> sets = {
+        gs3d::data::make_point_data_view(points)
     };
 
     const auto result = gs3d::render::find_nearest_point_on_screen(
@@ -729,8 +730,8 @@ void test_nearest_point_query_skips_points_behind_camera()
     const std::vector<gs3d::data::Gs3dPoint> points = {
         {0.0f, 0.0f, 500.0f, 3.0f},
     };
-    const std::vector<const std::vector<gs3d::data::Gs3dPoint>*> sets = {
-        &points
+    const std::vector<gs3d::core::PointDataView> sets = {
+        gs3d::data::make_point_data_view(points)
     };
 
     const auto result = gs3d::render::find_nearest_point_on_screen(

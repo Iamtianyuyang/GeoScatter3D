@@ -20,13 +20,13 @@ PointCloudLodGpu::PointCloudLodGpu(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
-    const gs3d::data::Gs3dLodDataset& lod_dataset
+    const PointCloudLodSource& lod_source
 ) {
     upload(
         context,
         command_pool,
         transfer_queue,
-        lod_dataset
+        lod_source
     );
 }
 
@@ -34,9 +34,9 @@ void PointCloudLodGpu::upload(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
-    const gs3d::data::Gs3dLodDataset& lod_dataset
+    const PointCloudLodSource& lod_source
 ) {
-    if (lod_dataset.empty()) {
+    if (lod_source.levels.empty()) {
         throw std::runtime_error(
             "PointCloudLodGpu: source LOD dataset is empty"
         );
@@ -44,10 +44,10 @@ void PointCloudLodGpu::upload(
 
     destroy();
 
-    levels_.reserve(lod_dataset.level_count());
+    levels_.reserve(lod_source.levels.size());
 
-    for (const auto& source_level : lod_dataset.levels()) {
-        if (source_level.empty()) {
+    for (const auto& source_level : lod_source.levels) {
+        if (source_level.points.empty()) {
             continue;
         }
 
@@ -56,16 +56,15 @@ void PointCloudLodGpu::upload(
         gpu_level.level_index = source_level.level_index;
         gpu_level.source_point_count = source_level.source_point_count;
         gpu_level.target_point_count = source_level.target_point_count;
-        gpu_level.gpu_point_count = source_level.point_count();
+        gpu_level.gpu_point_count = source_level.points.point_count;
         gpu_level.voxel_size = source_level.voxel_size;
-        gpu_level.voxel_mode = source_level.voxel_mode;
+        gpu_level.voxel_mode_name = source_level.voxel_mode_name;
 
-        gpu_level.gpu_cloud.upload_points(
+        gpu_level.gpu_cloud.upload(
             context,
             command_pool,
             transfer_queue,
-            source_level.points.data(),
-            source_level.point_count()
+            source_level.points
         );
 
         levels_.push_back(std::move(gpu_level));
@@ -182,9 +181,7 @@ std::string PointCloudLodGpu::summary() const {
             << ", voxel_size="
             << level.voxel_size
             << ", mode="
-            << gs3d::data::Gs3dLodDataset::voxel_mode_name(
-                   level.voxel_mode
-               )
+            << level.voxel_mode_name
             << ", buffer_bytes="
             << level.gpu_cloud.vertex_buffer_size()
             << '\n';

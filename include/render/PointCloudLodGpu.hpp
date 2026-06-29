@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/Gs3dLodDataset.hpp"
+#include "core/PointData.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/VulkanContext.hpp"
 
@@ -13,8 +13,26 @@
 
 namespace gs3d::render {
 
+struct PointCloudLodSourceLevel {
+    std::string name;
+    std::string voxel_mode_name;
+
+    std::uint32_t level_index = 0;
+    std::uint64_t source_point_count = 0;
+    std::uint64_t target_point_count = 0;
+
+    float voxel_size = 0.0f;
+
+    gs3d::core::PointDataView points{};
+};
+
+struct PointCloudLodSource {
+    std::vector<PointCloudLodSourceLevel> levels{};
+};
+
 struct PointCloudLodGpuLevel {
     std::string name;
+    std::string voxel_mode_name;
 
     std::uint32_t level_index = 0;
     std::uint64_t source_point_count = 0;
@@ -22,9 +40,6 @@ struct PointCloudLodGpuLevel {
     std::uint64_t gpu_point_count = 0;
 
     float voxel_size = 0.0f;
-
-    gs3d::data::Gs3dLodVoxelMode voxel_mode =
-        gs3d::data::Gs3dLodVoxelMode::XY;
 
     PointCloudGpu gpu_cloud;
 
@@ -43,7 +58,7 @@ public:
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        const gs3d::data::Gs3dLodDataset& lod_dataset
+        const PointCloudLodSource& lod_source
     );
 
     ~PointCloudLodGpu() = default;
@@ -58,7 +73,7 @@ public:
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        const gs3d::data::Gs3dLodDataset& lod_dataset
+        const PointCloudLodSource& lod_source
     );
 
     void destroy() noexcept;

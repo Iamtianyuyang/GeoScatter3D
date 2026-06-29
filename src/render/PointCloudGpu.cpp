@@ -24,7 +24,7 @@ VkDeviceSize point_buffer_size_bytes(
     }
 
     constexpr std::uint64_t point_size =
-        static_cast<std::uint64_t>(sizeof(gs3d::data::Gs3dPoint));
+        static_cast<std::uint64_t>(sizeof(PointVertex));
 
     if (point_count >
         std::numeric_limits<std::uint64_t>::max() / point_size) {
@@ -36,25 +36,31 @@ VkDeviceSize point_buffer_size_bytes(
     return static_cast<VkDeviceSize>(point_count * point_size);
 }
 
+void copy_points_to_staging(
+    void* destination,
+    const gs3d::core::PointDataView& points
+) {
+    auto* output = static_cast<PointVertex*>(destination);
+    for (std::uint64_t i = 0; i < points.point_count; ++i) {
+        const auto point = points.point_at(i);
+        output[i] = {
+            point.x,
+            point.y,
+            point.z,
+            point.value
+        };
+    }
+}
+
 } // namespace
 
 PointCloudGpu::PointCloudGpu(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
-    const gs3d::data::Gs3dDataset& dataset
+    const gs3d::core::PointDataView& points
 ) {
-    upload(context, command_pool, transfer_queue, dataset);
-}
-
-PointCloudGpu::PointCloudGpu(
-    const VulkanContext& context,
-    VkCommandPool command_pool,
-    VkQueue transfer_queue,
-    const gs3d::data::Gs3dPoint* points,
-    std::uint64_t point_count
-) {
-    upload_points(context, command_pool, transfer_queue, points, point_count);
+    upload(context, command_pool, transfer_queue, points);
 }
 
 PointCloudGpu::~PointCloudGpu() {
@@ -103,43 +109,18 @@ void PointCloudGpu::upload(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
-    const gs3d::data::Gs3dDataset& dataset
+    const gs3d::core::PointDataView& points
 ) {
-    if (!dataset.is_consistent()) {
-        throw std::runtime_error(
-            "PointCloudGpu: dataset is inconsistent"
-        );
-    }
-
-    if (dataset.empty()) {
-        throw std::runtime_error(
-            "PointCloudGpu: dataset is empty"
-        );
-    }
-
-    if (!dataset.has_point_data()) {
-        throw std::runtime_error(
-            "PointCloudGpu: dataset has no loaded point data"
-        );
-    }
-
-    upload_points(
-        context,
-        command_pool,
-        transfer_queue,
-        dataset.point_data(),
-        dataset.point_count()
-    );
+    upload_points(context, command_pool, transfer_queue, points);
 }
 
 void PointCloudGpu::upload_points(
     const VulkanContext& context,
     VkCommandPool command_pool,
     VkQueue transfer_queue,
-    const gs3d::data::Gs3dPoint* points,
-    std::uint64_t point_count
+    const gs3d::core::PointDataView& points
 ) {
-    prepare_upload(context, points, point_count);
+    prepare_upload(context, points);
 
     const VkCommandBuffer command_buffer =
         VulkanBufferUtils::begin_single_time_commands(
@@ -157,18 +138,18 @@ void PointCloudGpu::upload_points(
 
 void PointCloudGpu::prepare_upload(
     const VulkanContext& context,
-    const gs3d::data::Gs3dPoint* points,
-    std::uint64_t point_count
+    const gs3d::core::PointDataView& points
 ) {
-    if (!points) {
-        throw std::runtime_error("PointCloudGpu: points pointer is null");
-    }
-
-    if (point_count == 0) {
+    if (points.empty()) {
         throw std::runtime_error("PointCloudGpu: point_count is zero");
     }
 
-    const VkDeviceSize point_bytes = point_buffer_size_bytes(point_count);
+    if (!points.valid()) {
+        throw std::runtime_error("PointCloudGpu: point view is invalid");
+    }
+
+    const VkDeviceSize point_bytes =
+        point_buffer_size_bytes(points.point_count);
 
     /*
      * 1. 持久化 staging buffer（Vulkan Tutorial 最佳实践）：
@@ -176,7 +157,7 @@ void PointCloudGpu::prepare_upload(
      *    消除每次上传的 vkAllocateMemory + vkMapMemory 开销。
      */
     ensure_staging(context, point_bytes);
-    std::memcpy(staging_mapped_, points, static_cast<std::size_t>(point_bytes));
+    copy_points_to_staging(staging_mapped_, points);
 
     /*
      * 2. 顶点 buffer 复用：
@@ -195,7 +176,7 @@ void PointCloudGpu::prepare_upload(
         vertex_buffer_capacity_ = point_bytes;
     }
 
-    point_count_         = point_count;
+    point_count_         = points.point_count;
     vertex_buffer_size_  = point_bytes;
 }
 

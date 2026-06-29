@@ -16,6 +16,8 @@
 #include "data/Gs3dLodDataset.hpp"
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dLodTargets.hpp"
+#include "data/PointDataAdapters.hpp"
+#include "data/TileDataAdapters.hpp"
 #include "data/Gs3dTileReader.hpp"
 
 #include "platform/Window.hpp"
@@ -34,6 +36,7 @@
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "util/PercentileStats.hpp"
 #include "util/Stopwatch.hpp"
+#include "scene/SceneState.hpp"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -230,6 +233,25 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
     }
 
     return lod_dataset;
+}
+
+gs3d::render::PointCloudLodSource build_lod_source(
+    const gs3d::data::Gs3dLodDataset& lod_dataset
+) {
+    gs3d::render::PointCloudLodSource source;
+    source.levels.reserve(lod_dataset.level_count());
+    for (const auto& level : lod_dataset.levels()) {
+        source.levels.push_back({
+            level.name,
+            gs3d::data::Gs3dLodDataset::voxel_mode_name(level.voxel_mode),
+            level.level_index,
+            level.source_point_count,
+            level.target_point_count,
+            level.voxel_size,
+            gs3d::data::make_point_data_view(level.points)
+        });
+    }
+    return source;
 }
 
 void initialize_camera_from_config(
@@ -707,6 +729,7 @@ int ViewerApp::run() {
         print_dataset_info(dataset);
 
         std::optional<gs3d::data::Gs3dTileReader> tile_reader;
+        gs3d::core::TileIndexView tile_index_view;
 
         if (config_.tile_enabled) {
             gs3d::util::Stopwatch tile_reader_timer;
@@ -738,6 +761,9 @@ int ViewerApp::run() {
             std::cout << "tile_total_point_bytes = "
                       << tile_stats.total_point_bytes
                       << '\n';
+
+            tile_index_view =
+                gs3d::data::make_tile_index_view(*tile_reader);
         }
 
         gs3d::data::Gs3dLodDataset lod_dataset;
@@ -824,12 +850,13 @@ int ViewerApp::run() {
         std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud;
 
         if (config_.lod_enabled) {
+            const auto lod_source = build_lod_source(lod_dataset);
             lod_gpu_cloud =
                 std::make_unique<gs3d::render::PointCloudLodGpu>(
                     context,
                     renderer.command_pool(),
                     context.graphics_queue(),
-                    lod_dataset
+                    lod_source
                 );
 
             std::cout << "[OK] PointCloudLodGpu uploaded.\n";
@@ -841,7 +868,7 @@ int ViewerApp::run() {
                     context,
                     renderer.command_pool(),
                     context.graphics_queue(),
-                    dataset
+                    gs3d::data::make_point_data_view(dataset)
                 );
 
             std::cout << "[OK] PointCloudGpu uploaded.\n";
@@ -1025,6 +1052,26 @@ int ViewerApp::run() {
         int tile_preload_stall_frames = 0;
         gs3d::util::Stopwatch tile_preload_timer;
 
+        const auto make_cached_tile_views =
+            [](const std::vector<std::pair<std::uint64_t, SharedTilePoints>>&
+                   tiles) {
+                std::vector<std::pair<
+                    std::uint64_t,
+                    gs3d::core::PointDataView
+                >> views;
+                views.reserve(tiles.size());
+                for (const auto& [tile_id, points] : tiles) {
+                    if (!points) {
+                        continue;
+                    }
+                    views.emplace_back(
+                        tile_id,
+                        gs3d::data::make_point_data_view(*points)
+                    );
+                }
+                return views;
+            };
+
         // 从瓦片 id 列表算并集包围盒(供 clip 用)。
         const auto compute_tiles_bbox =
             [&tile_reader](const std::vector<std::uint64_t>& ids)
@@ -1200,30 +1247,28 @@ int ViewerApp::run() {
                         config_.tile_enabled
                     );
 
-        gs3d::app::AppState app_state;
-        app_state.dataset.active_dataset = config_.gs3d_path.filename().string();
-        app_state.dataset.path = config_.gs3d_path.string();
-        app_state.dataset.format = "GS3D";
-        app_state.dataset.point_count = dataset.point_count();
-        app_state.dataset.loaded_points = dataset.point_count();
-        app_state.dataset.bounding_box =
+        gs3d::scene::SceneState scene_state;
+        scene_state.dataset.active_dataset =
+            config_.gs3d_path.filename().string();
+        scene_state.dataset.path = config_.gs3d_path.string();
+        scene_state.dataset.format = "GS3D";
+        scene_state.dataset.point_count = dataset.point_count();
+        scene_state.dataset.bounding_box =
             "[" + std::to_string(dataset.bbox_min_x()) + ", " +
             std::to_string(dataset.bbox_min_y()) + ", " +
             std::to_string(dataset.bbox_min_z()) + "] -> [" +
             std::to_string(dataset.bbox_max_x()) + ", " +
             std::to_string(dataset.bbox_max_y()) + ", " +
             std::to_string(dataset.bbox_max_z()) + "]";
-        app_state.dataset.dataset_tree = {
-            app_state.dataset.active_dataset,
+        scene_state.dataset.dataset_tree = {
+            scene_state.dataset.active_dataset,
             "瓦片",
             "细节层级",
             "属性"
         };
-        app_state.dataset.attributes.clear();
-        app_state.render_settings.color_by_options.clear();
+        scene_state.dataset.attributes.clear();
         for (const auto& attr : attr_table) {
-            app_state.dataset.attributes.emplace_back(attr.name);
-            app_state.render_settings.color_by_options.emplace_back(attr.name);
+            scene_state.dataset.attributes.emplace_back(attr.name);
         }
         {
             std::error_code ec;
@@ -1234,9 +1279,21 @@ int ViewerApp::run() {
                 oss.setf(std::ios::fixed);
                 oss.precision(2);
                 oss << mb << " MB";
-                app_state.dataset.file_size = oss.str();
+                scene_state.dataset.file_size = oss.str();
             }
         }
+        gs3d::app::AppState app_state;
+        app_state.dataset.active_dataset = scene_state.dataset.active_dataset;
+        app_state.dataset.path = scene_state.dataset.path;
+        app_state.dataset.format = scene_state.dataset.format;
+        app_state.dataset.point_count = scene_state.dataset.point_count;
+        app_state.dataset.loaded_points = scene_state.dataset.point_count;
+        app_state.dataset.file_size = scene_state.dataset.file_size;
+        app_state.dataset.bounding_box = scene_state.dataset.bounding_box;
+        app_state.dataset.dataset_tree = scene_state.dataset.dataset_tree;
+        app_state.dataset.attributes = scene_state.dataset.attributes;
+        app_state.render_settings.color_by_options =
+            scene_state.dataset.attributes;
         app_state.render_views.resize(
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
@@ -1499,6 +1556,7 @@ int ViewerApp::run() {
                     gui_cmds.color_by_index, 0,
                     static_cast<int>(attr_table.size()) - 1
                 );
+                scene_state.filters.active_attribute_index = new_idx;
                 push.attr_index  = static_cast<std::uint32_t>(new_idx);
                 const auto& a    = attr_table[push.attr_index];
                 push.value_min   = a.min_val;
@@ -1567,6 +1625,8 @@ int ViewerApp::run() {
                 push.attr_index =
                     (push.attr_index + 1u) %
                     static_cast<std::uint32_t>(attr_table.size());
+                scene_state.filters.active_attribute_index =
+                    static_cast<int>(push.attr_index);
 
                 const auto& a = attr_table[push.attr_index];
                 push.value_min   = a.min_val;
@@ -1613,15 +1673,19 @@ int ViewerApp::run() {
                     // target's Z can sit far from the local terrain height
                     // after panning, which previously made the zoomed-to
                     // location visibly disagree with the dragged rectangle.
-                    std::vector<const std::vector<gs3d::data::Gs3dPoint>*>
+                    std::vector<gs3d::core::PointDataView>
                         box_select_candidate_points;
                     if (config_.lod_enabled && lod_gpu_cloud &&
                         lod_level_for_frame < lod_dataset.level_count()) {
                         box_select_candidate_points.push_back(
-                            &lod_dataset.level(lod_level_for_frame).points
+                            gs3d::data::make_point_data_view(
+                                lod_dataset.level(lod_level_for_frame).points
+                            )
                         );
                     } else if (!config_.lod_enabled && dataset.has_point_data()) {
-                        box_select_candidate_points.push_back(&dataset.points());
+                        box_select_candidate_points.push_back(
+                            gs3d::data::make_point_data_view(dataset)
+                        );
                     }
 
                     const float rect_center_x =
@@ -1797,12 +1861,14 @@ int ViewerApp::run() {
 
                 if (!tile_preload_tiles.empty()) {
                     renderer.wait_for_in_flight_fences();
+                    const auto preload_views =
+                        make_cached_tile_views(tile_preload_tiles);
                     const auto sync =
                         tile_gpu_cloud->sync_from_cached_tiles(
                             context,
                             renderer.command_pool(),
                             context.graphics_queue(),
-                            tile_preload_tiles,
+                            preload_views,
                             config_.tile_preload_upload_budget_bytes
                         );
                     if (config_.tile_verbose && sync.uploaded_bytes > 0) {
@@ -1855,7 +1921,7 @@ int ViewerApp::run() {
                 if (camera_changed || tile_selection_dirty) {
                     tile_result = tile_selection.update(
                         viewport_manager.camera(streaming_viewport_index),
-                        *tile_reader
+                        tile_index_view
                     );
                     tile_selection_dirty = false;
                     const auto view_index =
@@ -1878,7 +1944,7 @@ int ViewerApp::run() {
                 if (!interacting && tile_selection_dirty) {
                     tile_result = tile_selection.update(
                         viewport_manager.camera(streaming_viewport_index),
-                        *tile_reader
+                        tile_index_view
                     );
                     tile_selection_dirty = false;
                     if (tile_result.changed) {
@@ -1935,12 +2001,14 @@ int ViewerApp::run() {
                             tile_result.tile_ids) {
                         gs3d::util::Stopwatch upload_timer;
                         renderer.wait_for_in_flight_fences();
+                        const auto upload_views =
+                            make_cached_tile_views(tile_upload_pending->tiles);
                         const auto sync =
                             tile_gpu_cloud->sync_from_cached_tiles(
                                 context,
                                 renderer.command_pool(),
                                 context.graphics_queue(),
-                                tile_upload_pending->tiles,
+                                upload_views,
                                 config_.tile_gpu_upload_budget_bytes
                             );
                         const double upload_seconds =
@@ -2270,16 +2338,19 @@ int ViewerApp::run() {
                     continue;
                 }
 
-                std::vector<const std::vector<gs3d::data::Gs3dPoint>*>
-                    candidate_point_sets;
+                std::vector<gs3d::core::PointDataView> candidate_point_sets;
 
                 if (config_.lod_enabled && lod_gpu_cloud &&
                     lod_level_for_frame < lod_dataset.level_count()) {
                     candidate_point_sets.push_back(
-                        &lod_dataset.level(lod_level_for_frame).points
+                        gs3d::data::make_point_data_view(
+                            lod_dataset.level(lod_level_for_frame).points
+                        )
                     );
                 } else if (!config_.lod_enabled && dataset.has_point_data()) {
-                    candidate_point_sets.push_back(&dataset.points());
+                    candidate_point_sets.push_back(
+                        gs3d::data::make_point_data_view(dataset)
+                    );
                 }
 
                 // 真实渲染的全分辨率 tile 点，仅当总点数在预算内才合并
@@ -2307,7 +2378,9 @@ int ViewerApp::run() {
                             }
                         }
                         for (const auto& pts : hover_tile_keepalive) {
-                            candidate_point_sets.push_back(pts.get());
+                            candidate_point_sets.push_back(
+                                gs3d::data::make_point_data_view(*pts)
+                            );
                         }
                     }
                 }

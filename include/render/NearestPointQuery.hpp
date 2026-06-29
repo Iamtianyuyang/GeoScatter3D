@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/PointData.hpp"
 #include "camera/Camera.hpp"
 #include "camera/MouseRay.hpp"
-#include "data/Gs3dFormat.hpp"
 
 #include <optional>
 #include <vector>
@@ -10,7 +10,7 @@
 namespace gs3d::render {
 
 struct NearestPointResult {
-    gs3d::data::Gs3dPoint point;
+    gs3d::core::PointRecord point;
     float screen_distance_px = 0.0f;
 };
 
@@ -25,8 +25,7 @@ struct NearestPointResult {
  */
 [[nodiscard]]
 std::optional<NearestPointResult> find_nearest_point_on_screen(
-    const std::vector<const std::vector<gs3d::data::Gs3dPoint>*>&
-        candidate_point_sets,
+    const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
     float mouse_x,
     float mouse_y,
     const gs3d::camera::Viewport& viewport,

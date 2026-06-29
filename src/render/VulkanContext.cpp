@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 #include <set>
 #include <stdexcept>
 
@@ -96,9 +97,10 @@ std::string VulkanContext::physical_device_name() const {
 
 void VulkanContext::create_instance() {
     if (config_.enable_validation_layers && !validation_layers_supported()) {
-        throw std::runtime_error(
-            "VulkanContext: validation layers requested but not available"
-        );
+        std::cerr
+            << "[WARN] VulkanContext: validation layers requested but not "
+               "available, disabling validation layers.\n";
+        config_.enable_validation_layers = false;
     }
 
     VkApplicationInfo app_info{};

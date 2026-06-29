@@ -1,7 +1,7 @@
 #pragma once
 
 #include "camera/Camera.hpp"
-#include "data/Gs3dTileReader.hpp"
+#include "core/TileData.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -35,7 +35,7 @@ struct TileSelectionResult {
 
     float camera_distance = 0.0f;
 
-    gs3d::data::Gs3dTileQueryBox query_box{};
+    gs3d::core::Bounds3f query_bounds{};
     std::uint32_t total_candidate_tiles = 0;
 
     std::vector<std::uint64_t> tile_ids;
@@ -54,7 +54,7 @@ public:
     [[nodiscard]]
     TileSelectionResult update(
         const gs3d::camera::Camera& camera,
-        const gs3d::data::Gs3dTileReader& tile_reader
+        const gs3d::core::TileIndexView& tile_index
     );
 
     [[nodiscard]]
@@ -73,7 +73,7 @@ private:
     [[nodiscard]]
     bool should_enable(
         const gs3d::camera::Camera& camera,
-        const gs3d::data::Gs3dTileIndexFileHeader& header
+        const gs3d::core::TileHeaderView& header
     ) const noexcept;
 
     [[nodiscard]]
@@ -112,8 +112,8 @@ private:
     [[nodiscard]]
     static float tile_projected_pixels(
         const gs3d::camera::Camera& camera,
-        const gs3d::data::Gs3dTileIndexFileHeader& header,
-        const gs3d::data::Gs3dTileRecord& record
+        const gs3d::core::TileHeaderView& header,
+        const gs3d::core::TileRecordView& record
     ) noexcept;
 };
 

@@ -1,7 +1,6 @@
 #pragma once
 
-#include "data/Gs3dDataset.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "core/PointData.hpp"
 #include "render/VulkanBuffer.hpp"
 #include "render/VulkanContext.hpp"
 
@@ -11,6 +10,13 @@
 
 namespace gs3d::render {
 
+struct PointVertex {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float value = 0.0f;
+};
+
 class PointCloudGpu {
 public:
     PointCloudGpu() = default;
@@ -19,15 +25,7 @@ public:
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        const gs3d::data::Gs3dDataset& dataset
-    );
-
-    PointCloudGpu(
-        const VulkanContext& context,
-        VkCommandPool command_pool,
-        VkQueue transfer_queue,
-        const gs3d::data::Gs3dPoint* points,
-        std::uint64_t point_count
+        const gs3d::core::PointDataView& points
     );
 
     ~PointCloudGpu();
@@ -42,21 +40,19 @@ public:
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        const gs3d::data::Gs3dDataset& dataset
+        const gs3d::core::PointDataView& points
     );
 
     void upload_points(
         const VulkanContext& context,
         VkCommandPool command_pool,
         VkQueue transfer_queue,
-        const gs3d::data::Gs3dPoint* points,
-        std::uint64_t point_count
+        const gs3d::core::PointDataView& points
     );
 
     void prepare_upload(
         const VulkanContext& context,
-        const gs3d::data::Gs3dPoint* points,
-        std::uint64_t point_count
+        const gs3d::core::PointDataView& points
     );
 
     void record_prepared_upload(
