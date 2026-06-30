@@ -624,6 +624,7 @@ void draw_viewport_window(
 
     draw_viewport_overlay(view, canvas_min, canvas_max, plot_min, plot_max);
 
+
     // ── 悬浮高亮标记 ──
     // Draws a crosshair+ring at the pick hit-point.  No cursor-movement
     // freshness gate — the pick result's has_hit is the single source of
@@ -674,9 +675,7 @@ void draw_viewport_window(
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     }
 
-    // Tooltip: shown whenever we have valid hover data and the cursor is
-    // on the image.  No cursor-movement freshness gate — the pick result
-    // (has_hit + successful lookup) is the single source of truth.
+    // Tooltip: shown whenever we have valid hover data and the cursor is on the image.
     if (frame.mouse_on_image && view.hover_tooltip_visible) {
         ImGui::SetTooltip(
             "x: %.2f\ny: %.2f\nfold: %.3f\nelevation: %.2f",

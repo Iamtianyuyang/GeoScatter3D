@@ -1148,12 +1148,11 @@ public:
             0,
             static_cast<int>(extent.width) - 1
         );
-        // UI / benchmark queries use top-left origin (y down), while the
-        // offscreen Vulkan framebuffer uses bottom-left framebuffer
-        // coordinates with the current positive-height viewport.
+        // mouse_y is already in Vulkan framebuffer coordinates (top-left
+        // origin, y down), matching both the viewport transform and
+        // vkCmdCopyImageToBuffer's image layout. No Y-flip needed.
         const int center_y = std::clamp(
-            static_cast<int>(extent.height) - 1 -
-                static_cast<int>(std::floor(request.mouse_y)),
+            static_cast<int>(std::floor(request.mouse_y)),
             0,
             static_cast<int>(extent.height) - 1
         );
@@ -3410,16 +3409,11 @@ int ViewerApp::run() {
                 const auto& hover_point =
                     latest_gpu_hover_points[static_cast<std::size_t>(i)];
 
-                // Timeout: stale hover data clears after ~0.5 s (30 frames).
+                // Timeout only increments when no pick request is issued
+                // (cursor outside image).  While the cursor is on the
+                // image and picks are in flight, existing data stays live.
                 constexpr int kHoverTimeoutFrames = 30;
                 auto& ht = hover_timeout[static_cast<std::size_t>(i)];
-                ++ht;
-                if (ht > kHoverTimeoutFrames) {
-                    // Don't touch latest_gpu_hover_points (it's owned
-                    // by the frame_ready callback) — just suppress the
-                    // tooltip from reading stale data.
-                }
-
                 view.hover_tooltip_visible =
                     hover_point.has_value() && ht <= kHoverTimeoutFrames;
                 view.hover_x = 0.0f;
@@ -3453,8 +3447,33 @@ int ViewerApp::run() {
                     if (screen_pt) {
                         view.hover_screen_x = screen_pt->x;
                         view.hover_screen_y = screen_pt->y;
+                        static int diag_count = 0;
+                        if (diag_count < 5) {
+                            ++diag_count;
+                            const auto idx = static_cast<std::size_t>(i);
+                            std::fprintf(stderr,
+                                "[PICK] mouse=(%.0f,%.0f) fb=%ux%u "
+                                "hit3d=(%.3f,%.3f,%.3f) "
+                                "proj_screen=(%.1f,%.1f)\n",
+                                static_cast<double>(idx < latest_gpu_capture_x.size() ? latest_gpu_capture_x[idx] : -1.0f),
+                                static_cast<double>(idx < latest_gpu_capture_y.size() ? latest_gpu_capture_y[idx] : -1.0f),
+                                camera.viewport_width(), camera.viewport_height(),
+                                static_cast<double>(hover_point->x),
+                                static_cast<double>(hover_point->y),
+                                static_cast<double>(hover_point->z),
+                                static_cast<double>(screen_pt->x),
+                                static_cast<double>(screen_pt->y));
+                        }
                     }
                 }
+            }
+
+            // Enforce configured viewport count — ghost viewport windows
+            // restored by ImGui layout persistence must not render or
+            // consume hover hit-tests (they steal the tooltip).
+            for (auto& view : app_state.render_views) {
+                view.visible =
+                    view.viewport_index < config_.viewport_count;
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
@@ -4363,6 +4382,20 @@ int ViewerApp::run() {
                 // consume the ImGui hit-test even though the cursor is
                 // visually over the rendered data; the pick result's
                 // has_hit is the ground truth for "cursor on data".
+                // Reset hover timeout when a pick can be issued (cursor
+                // on image, not dragging).  Increment when we skip.
+                {
+                    const auto idx =
+                        static_cast<std::size_t>(frame.index);
+                    if (idx < hover_timeout.size()) {
+                        if (frame.active || !frame.mouse_on_image) {
+                            ++hover_timeout[idx];
+                        } else {
+                            hover_timeout[idx] = 0;
+                        }
+                    }
+                }
+
                 if (frame.active || !frame.mouse_on_image) {
                     continue;
                 }

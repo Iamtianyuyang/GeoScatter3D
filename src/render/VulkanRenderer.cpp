@@ -273,6 +273,28 @@ std::uint32_t VulkanRenderer::frames_in_flight() const noexcept {
     return MAX_FRAMES_IN_FLIGHT;
 }
 
+bool VulkanRenderer::is_frame_slot_ready(std::uint32_t frame_slot) const {
+    if (frame_slot >= MAX_FRAMES_IN_FLIGHT ||
+        in_flight_fences_[frame_slot] == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    const VkResult result = vkGetFenceStatus(
+        context_.device(),
+        in_flight_fences_[frame_slot]
+    );
+    if (result == VK_SUCCESS) {
+        return true;
+    }
+    if (result == VK_NOT_READY) {
+        return false;
+    }
+
+    throw std::runtime_error(
+        "VulkanRenderer: failed to query frame fence status"
+    );
+}
+
 void VulkanRenderer::create_render_pass() {
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swapchain_.image_format();

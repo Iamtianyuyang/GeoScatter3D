@@ -86,4 +86,6 @@ preload_upload_budget_bytes = 67108864
 [debug]
 pick_debug_dump_enabled = true
 pick_debug_dump_dir = "bench/.pick_debug"
-pick_debug_dump_once_on_hover = true
+# Keep dumping while hovering so we can capture the exact miss frame instead of
+# only the first hover frame.
+pick_debug_dump_once_on_hover = false

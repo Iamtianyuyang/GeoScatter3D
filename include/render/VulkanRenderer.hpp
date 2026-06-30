@@ -107,6 +107,9 @@ public:
     [[nodiscard]]
     std::uint32_t frames_in_flight() const noexcept;
 
+    [[nodiscard]]
+    bool is_frame_slot_ready(std::uint32_t frame_slot) const;
+
 private:
     static constexpr std::uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 

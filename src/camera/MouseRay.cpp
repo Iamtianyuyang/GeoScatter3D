@@ -38,16 +38,16 @@ RaySegment MouseRay::near_far_points(
      *   x: [0, width]
      *   y: [0, height]，窗口顶部为 0
      *
-     * Vulkan NDC：
+     * Vulkan NDC (with Y-flipped projection):
      *   x: [-1, 1]
-     *   y: [-1, 1]
+     *   y: [-1, 1]  (−1 = top, +1 = bottom)
      *   z: [0, 1]
      */
     const float ndc_x =
         static_cast<float>((2.0 * mouse_x) / width - 1.0);
 
     const float ndc_y =
-        static_cast<float>(1.0 - (2.0 * mouse_y) / height);
+        static_cast<float>((2.0 * mouse_y) / height - 1.0);
 
     const Mat4 inv_vp =
         inverse(camera.view_projection_matrix());
@@ -97,7 +97,7 @@ std::optional<ScreenPoint> MouseRay::world_to_screen(
 
     return ScreenPoint{
         (ndc_x + 1.0f) * 0.5f * width,
-        (1.0f - ndc_y) * 0.5f * height
+        (ndc_y + 1.0f) * 0.5f * height
     };
 }
 
