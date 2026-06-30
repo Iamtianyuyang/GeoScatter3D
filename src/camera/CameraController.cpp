@@ -80,10 +80,17 @@ bool CameraController::update(
         (input.delta_x != 0.0f || input.delta_y != 0.0f)) {
 
         if (input.rotate_begin) {
+            // Pivot = screen-centre ray ∩ camera-facing plane.
+            // The user orbits around whatever is at the centre of the
+            // view, not under the cursor — turntable behaviour.
+            const double centre_x =
+                static_cast<double>(input.viewport_width) * 0.5;
+            const double centre_y =
+                static_cast<double>(input.viewport_height) * 0.5;
             const auto anchor =
                 MouseRay::intersect_camera_facing_plane(
-                    static_cast<double>(input.mouse_x),
-                    static_cast<double>(input.mouse_y),
+                    centre_x,
+                    centre_y,
                     Viewport{
                         input.viewport_width,
                         input.viewport_height

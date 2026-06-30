@@ -1537,9 +1537,9 @@ void test_rotation_center_only_changes_on_rotate_begin()
     }
 
     // --- Frame 4: new drag-start at off-centre cursor ---
-    // Computes a NEW pivot (cursor at 200,150 hits camera-facing plane
-    // away from origin).  The first rotation frame orbits to the new
-    // centre, so target shifts — this is a real orbit, not a jump.
+    // Pivot is always screen centre, not cursor.  Even when cursor is
+    // at (200,150), the pivot stays at the centre anchor (~origin).
+    // Target orbits around origin — no shift away from it.
     {
         const auto tgt_before = camera.target();
 
@@ -1549,22 +1549,19 @@ void test_rotation_center_only_changes_on_rotate_begin()
         input.rotate = true;
         input.rotate_begin = true;
         input.delta_x = 10.0f;
-        input.mouse_x = 200.0f;  // off-centre — new pivot
+        input.mouse_x = 200.0f;  // off-centre — ignored
         input.mouse_y = 150.0f;
         static_cast<void>(controller.update(camera, input));
 
         const auto tgt_after = camera.target();
 
-        // A fresh drag-start at a different cursor position orbits the
-        // camera to look at the new cursor pivot — target must shift.
-        const float tgt_delta =
-            std::abs(tgt_after.x - tgt_before.x) +
-            std::abs(tgt_after.y - tgt_before.y) +
-            std::abs(tgt_after.z - tgt_before.z);
+        // Pivot is screen centre (~origin).  Target stays near origin
+        // regardless of cursor position.
         expect(
-            tgt_delta > 1.0e-4f,
-            "rotate_begin at new cursor position orbits to new pivot "
-            "(target shifts because camera now looks at cursor point)"
+            std::abs(tgt_after.x) < 1.0e-3f &&
+            std::abs(tgt_after.y) < 1.0e-3f &&
+            std::abs(tgt_after.z) < 1.0e-3f,
+            "rotate_begin uses screen-centre pivot even with off-centre cursor"
         );
     }
 }
@@ -1716,6 +1713,80 @@ void test_rotate_release_does_not_move_camera()
         input.mouse_y = 150.0f;
         static_cast<void>(controller.update(camera, input));
         // Just verifying it doesn't crash / the state is clean.
+    }
+}
+
+void test_rotation_pivot_is_screen_center()
+{
+    // The rotation pivot must be the scene point under the screen CENTRE,
+    // not under the cursor.  Even when the cursor is off-centre, the
+    // pivot is computed from (viewport_width/2, viewport_height/2).
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},   // oblique view
+        {0.0f, 0.0f, 0.0f},      // target: origin
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    // Centre-ray pivot (cursor position is ignored).
+    const auto centre_pivot =
+        gs3d::camera::MouseRay::intersect_camera_facing_plane(
+            400.0, 300.0,   // screen centre
+            {800, 600},
+            camera,
+            camera.target()
+        );
+
+    // Off-centre cursor pivot — should differ from centre pivot.
+    const auto off_centre_pivot =
+        gs3d::camera::MouseRay::intersect_camera_facing_plane(
+            200.0, 150.0,   // off-centre cursor
+            {800, 600},
+            camera,
+            camera.target()
+        );
+
+    // Verify that centre and off-centre pivots are different (the
+    // off-centre ray hits the camera-facing plane at a different point).
+    if (centre_pivot && off_centre_pivot) {
+        const float dist =
+            std::abs(centre_pivot->x - off_centre_pivot->x) +
+            std::abs(centre_pivot->y - off_centre_pivot->y) +
+            std::abs(centre_pivot->z - off_centre_pivot->z);
+        expect(
+            dist > 1.0e-3f,
+            "centre and off-centre pivots differ (rays hit different points)"
+        );
+    }
+
+    // Now drive a rotate_begin with an off-centre cursor and verify the
+    // camera orbits around the CENTRE pivot, not the cursor pivot.
+    gs3d::camera::CameraController controller;
+
+    // Frame 1: rotate_begin with off-centre cursor at (200, 150).
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 10.0f;
+        input.mouse_x = 200.0f;   // off-centre — intentionally ignored
+        input.mouse_y = 150.0f;
+        static_cast<void>(controller.update(camera, input));
+
+        // The orbit centre should be near the screen-centre anchor
+        // (≈ origin), NOT the off-centre anchor.
+        const auto tgt = camera.target();
+        expect(
+            std::abs(tgt.x) < 1.0e-3f &&
+            std::abs(tgt.y) < 1.0e-3f &&
+            std::abs(tgt.z) < 1.0e-3f,
+            "rotate_begin uses screen-centre pivot (~origin), not cursor"
+        );
     }
 }
 
@@ -1930,6 +2001,7 @@ int main()
     test_rotation_center_only_changes_on_rotate_begin();
     test_click_without_drag_does_not_move_camera();
     test_rotate_release_does_not_move_camera();
+    test_rotation_pivot_is_screen_center();
     test_pitch_never_exceeds_pole();
 
     if (failures == 0) {
