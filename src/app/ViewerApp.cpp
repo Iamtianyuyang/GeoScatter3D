@@ -45,7 +45,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -147,7 +146,7 @@ struct BenchmarkPickIssuedMetadata {
 };
 
 constexpr std::uint32_t kMaxGpuPickRadiusPx = 5;
-constexpr std::uint32_t kDefaultGpuPickRadiusPx = 2;
+constexpr std::uint32_t kDefaultGpuPickRadiusPx = 3;
 
 [[nodiscard]]
 std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept {
@@ -2424,18 +2423,6 @@ int ViewerApp::run() {
             latest_gpu_hover_points(
                 static_cast<std::size_t>(viewport_manager.viewport_count())
             );
-        std::vector<bool> latest_gpu_hover_has_hit(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
-        );
-        std::vector<bool> latest_gpu_hover_lookup_ok(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
-        );
-        std::vector<std::uint32_t> latest_gpu_hover_point_id(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0u
-        );
         std::vector<float> latest_gpu_capture_x(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             0.0f
@@ -2444,9 +2431,11 @@ int ViewerApp::run() {
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             0.0f
         );
-        std::vector<float> latest_gpu_capture_radius(
+        // Frames since last successful pick hit — clears stale hover
+        // data after ~0.5 s of no hits.
+        std::vector<int> hover_timeout(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0.0f
+            0
         );
         std::vector<GpuPickRequest> gpu_pick_requests(
             static_cast<std::size_t>(viewport_manager.viewport_count())
@@ -3062,25 +3051,6 @@ int ViewerApp::run() {
                     gpu_pick_readback.collect_ready_frame(frame_slot);
                 const double collect_cpu_ms =
                     collect_timer.elapsed_milliseconds();
-                // #region diagnostic pick-miss
-                {
-                    static int miss_frame = 0;
-                    if (++miss_frame <= 120) {
-                        for (const auto& r : pick_results) {
-                            std::fprintf(stderr,
-                                "[PICK] f=%d vp=%d fb=(%.0f,%.0f)"
-                                " r=%u hit=%s id=%u depth=%.4f\n",
-                                miss_frame, r.request.viewport_index,
-                                static_cast<double>(r.request.mouse_x),
-                                static_cast<double>(r.request.mouse_y),
-                                r.request.pick_radius_px,
-                                r.has_hit ? "Y" : "N",
-                                r.point_id,
-                                static_cast<double>(r.depth));
-                        }
-                    }
-                }
-                // #endregion
                 for (const auto& result : pick_results) {
                     if (result.request.viewport_index < 0 ||
                         result.request.viewport_index >=
@@ -3127,82 +3097,20 @@ int ViewerApp::run() {
                     }
                     if (result.request.kind ==
                         GpuPickRequestKind::Hover) {
-                        latest_gpu_hover_points[view_index] = hit_point;
-                        latest_gpu_hover_has_hit[view_index] =
-                            result.has_hit;
-                        latest_gpu_hover_lookup_ok[view_index] =
-                            lookup_ok;
-                        latest_gpu_hover_point_id[view_index] =
-                            result.point_id;
+                        // Only overwrite when we actually resolved a
+                        // point.  A GPU hit whose runtime lookup failed
+                        // must NOT null out valid data from a previous
+                        // successful hit — otherwise the tooltip
+                        // flickers or disappears when hovering over
+                        // points whose IDs are not in the lookup table.
+                        if (hit_point.has_value()) {
+                            latest_gpu_hover_points[view_index] = hit_point;
+                            hover_timeout[view_index] = 0;
+                        }
                         latest_gpu_capture_x[view_index] =
                             result.request.mouse_x;
                         latest_gpu_capture_y[view_index] =
                             result.request.mouse_y;
-                        latest_gpu_capture_radius[view_index] =
-                            static_cast<float>(
-                                result.request.pick_radius_px
-                            );
-                        pending_hover_miss_dump[view_index] =
-                            !result.has_hit;
-                        // #region diagnostic hover-chain
-                        {
-                            static int hc_frame = 0;
-                            if (++hc_frame <= 160) {
-                                std::fprintf(stderr,
-                                    "[HOVER-CHAIN] f=%d vp=%zu"
-                                    " has_hit=%s id=%u lookup=%s"
-                                    " path=%s"
-                                    " cap=(%.1f,%.1f) r=%.1f",
-                                    hc_frame, view_index,
-                                    result.has_hit ? "Y" : "N",
-                                    result.point_id,
-                                    lookup_ok ? "Y" : "N",
-                                    hover_resolve_path,
-                                    static_cast<double>(
-                                        result.request.mouse_x
-                                    ),
-                                    static_cast<double>(
-                                        result.request.mouse_y
-                                    ),
-                                    static_cast<double>(
-                                        latest_gpu_capture_radius[view_index]
-                                    ));
-                                if (hit_point) {
-                                    std::fprintf(stderr,
-                                        " attr=(x=%.2f,y=%.2f,"
-                                        "fold=%.3f,z=%.2f)",
-                                        static_cast<double>(
-                                            static_cast<float>(
-                                                static_cast<double>(
-                                                    hit_point->x
-                                                ) +
-                                                dataset.origin_x()
-                                            )
-                                        ),
-                                        static_cast<double>(
-                                            static_cast<float>(
-                                                static_cast<double>(
-                                                    hit_point->y
-                                                ) +
-                                                dataset.origin_y()
-                                            )
-                                        ),
-                                        static_cast<double>(
-                                            hit_point->value
-                                        ),
-                                        static_cast<double>(
-                                            static_cast<float>(
-                                                static_cast<double>(
-                                                    hit_point->z
-                                                ) +
-                                                dataset.origin_z()
-                                            )
-                                        ));
-                                }
-                                std::fprintf(stderr, "\n");
-                            }
-                        }
-                        // #endregion
                         if (benchmark_pick_enabled &&
                             result.request.benchmark_query_index >= 0) {
                             const auto query_index =
@@ -3501,112 +3409,52 @@ int ViewerApp::run() {
 
                 const auto& hover_point =
                     latest_gpu_hover_points[static_cast<std::size_t>(i)];
-                view.hover_tooltip_visible = hover_point.has_value();
-                view.hover_debug_has_hit =
-                    latest_gpu_hover_has_hit[static_cast<std::size_t>(i)];
-                view.hover_debug_lookup_ok =
-                    latest_gpu_hover_lookup_ok[static_cast<std::size_t>(i)];
-                view.hover_debug_point_id =
-                    latest_gpu_hover_point_id[static_cast<std::size_t>(i)];
-                view.hover_debug_capture_x =
-                    latest_gpu_capture_x[static_cast<std::size_t>(i)];
-                view.hover_debug_capture_y =
-                    latest_gpu_capture_y[static_cast<std::size_t>(i)];
-                view.hover_debug_capture_radius =
-                    latest_gpu_capture_radius[static_cast<std::size_t>(i)];
+
+                // Timeout: stale hover data clears after ~0.5 s (30 frames).
+                constexpr int kHoverTimeoutFrames = 30;
+                auto& ht = hover_timeout[static_cast<std::size_t>(i)];
+                ++ht;
+                if (ht > kHoverTimeoutFrames) {
+                    // Don't touch latest_gpu_hover_points (it's owned
+                    // by the frame_ready callback) — just suppress the
+                    // tooltip from reading stale data.
+                }
+
+                view.hover_tooltip_visible =
+                    hover_point.has_value() && ht <= kHoverTimeoutFrames;
                 view.hover_x = 0.0f;
                 view.hover_y = 0.0f;
                 view.hover_fold = 0.0f;
                 view.hover_elevation = 0.0f;
-                view.hover_screen_x =
-                    view.hover_debug_has_hit
-                        ? view.hover_debug_capture_x
-                        : -1.0f;
-                view.hover_screen_y =
-                    view.hover_debug_has_hit
-                        ? view.hover_debug_capture_y
-                        : -1.0f;
+                view.hover_screen_x = -1.0f;
+                view.hover_screen_y = -1.0f;
                 if (hover_point) {
                     view.hover_x =
                         static_cast<float>(
                             static_cast<double>(hover_point->x) +
-                            dataset.origin_x()
-                        );
+                            dataset.origin_x());
                     view.hover_y =
                         static_cast<float>(
                             static_cast<double>(hover_point->y) +
-                            dataset.origin_y()
-                        );
+                            dataset.origin_y());
                     view.hover_fold = hover_point->value;
                     view.hover_elevation =
                         static_cast<float>(
                             static_cast<double>(hover_point->z) +
-                            dataset.origin_z()
-                        );
+                            dataset.origin_z());
 
-                    // Prefer the current-frame projection when we have the
-                    // resolved point, but fall back to the raw pick coords
-                    // above so the marker still appears on pure GPU-hit frames.
+                    // Marker screen position via to_screen projection.
                     const auto screen_pt =
                         gs3d::camera::MouseRay::to_screen(
-                            {hover_point->x,
-                             hover_point->y,
-                             hover_point->z},
+                            {hover_point->x, hover_point->y, hover_point->z},
                             {camera.viewport_width(),
                              camera.viewport_height()},
-                            camera
-                        );
+                            camera);
                     if (screen_pt) {
                         view.hover_screen_x = screen_pt->x;
                         view.hover_screen_y = screen_pt->y;
                     }
                 }
-                // #region diagnostic display-chain
-                {
-                    static int dc_frame = 0;
-                    if (++dc_frame <= 120) {
-                        std::fprintf(stderr,
-                            "[DISP] f=%d vp=%d has_hit=%s id=%u lookup=%s"
-                            " tt_vis=%s has_pt=%s cap=(%.1f,%.1f)",
-                            dc_frame, i,
-                            view.hover_debug_has_hit ? "Y" : "N",
-                            view.hover_debug_point_id,
-                            view.hover_debug_lookup_ok ? "Y" : "N",
-                            view.hover_tooltip_visible ? "Y" : "N",
-                            hover_point.has_value() ? "Y" : "N",
-                            static_cast<double>(view.hover_debug_capture_x),
-                            static_cast<double>(view.hover_debug_capture_y));
-                        if (hover_point) {
-                            std::fprintf(stderr,
-                                " attr=(x=%.2f,y=%.2f,fold=%.3f,z=%.2f)"
-                                " scr=(%.0f,%.0f) fb=%ux%u",
-                                static_cast<double>(
-                                    static_cast<float>(
-                                        static_cast<double>(hover_point->x) +
-                                        dataset.origin_x()
-                                    )
-                                ),
-                                static_cast<double>(
-                                    static_cast<float>(
-                                        static_cast<double>(hover_point->y) +
-                                        dataset.origin_y()
-                                    )
-                                ),
-                                static_cast<double>(hover_point->value),
-                                static_cast<double>(
-                                    static_cast<float>(
-                                        static_cast<double>(hover_point->z) +
-                                        dataset.origin_z()
-                                    )
-                                ),
-                                static_cast<double>(view.hover_screen_x),
-                                static_cast<double>(view.hover_screen_y),
-                                view.image_width, view.image_height);
-                        }
-                        std::fprintf(stderr, "\n");
-                    }
-                }
-                // #endregion
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
@@ -4479,11 +4327,6 @@ int ViewerApp::run() {
                          .render_requested) {
                     latest_gpu_hover_points[static_cast<std::size_t>(i)]
                         .reset();
-                    latest_gpu_hover_has_hit[static_cast<std::size_t>(i)] =
-                        false;
-                    latest_gpu_hover_lookup_ok[static_cast<std::size_t>(i)] =
-                        false;
-                    latest_gpu_hover_point_id[static_cast<std::size_t>(i)] = 0u;
                 }
             }
             for (const auto& frame : gui_cmds.viewport_frames) {

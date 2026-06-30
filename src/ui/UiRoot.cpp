@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -625,35 +624,18 @@ void draw_viewport_window(
 
     draw_viewport_overlay(view, canvas_min, canvas_max, plot_min, plot_max);
 
-    // ── 悬浮高亮标记（fb→screen 精确逆运算，与 pick 同源）──
-    // #region diagnostic marker-gate
-    {
-        static int mg_frame = 0;
-        if (++mg_frame <= 60) {
-            std::fprintf(stderr,
-                "[MARKER] f=%d vp=%d has_hit=%s tt_vis=%s scr=(%.0f,%.0f)"
-                " img=%ux%u\n",
-                mg_frame, view.viewport_index,
-                view.hover_debug_has_hit ? "Y" : "N",
-                view.hover_tooltip_visible ? "Y" : "N",
-                static_cast<double>(view.hover_screen_x),
-                static_cast<double>(view.hover_screen_y),
-                view.image_width, view.image_height);
-        }
-    }
-    // #endregion
-    if (view.hover_debug_has_hit &&
+    // ── 悬浮高亮标记 ──
+    // Draws a crosshair+ring at the pick hit-point.  No cursor-movement
+    // freshness gate — the pick result's has_hit is the single source of
+    // truth.  The marker naturally clears when the next pick has no hit.
+    if (view.hover_tooltip_visible &&
         view.hover_screen_x >= 0.0f &&
         view.hover_screen_y >= 0.0f &&
         view.image_width > 0 && view.image_height > 0) {
         const auto scr = framebuffer_to_plot_screen(
-            view.hover_screen_x,
-            view.hover_screen_y,
-            canvas_rect,
-            view.show_map_axis,
-            view.image_width,
-            view.image_height
-        );
+            view.hover_screen_x, view.hover_screen_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
         const float cx = plot_min.x + scr.x;
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -670,43 +652,12 @@ void draw_viewport_window(
     frame.index = view.viewport_index;
     frame.width = static_cast<std::uint32_t>(available.x);
     frame.height = static_cast<std::uint32_t>(available.y);
+    // Use camera viewport (= GPU framebuffer) dimensions, not ImGui
+    // content region, so the mouse→fb mapping stays pixel-accurate.
     const auto mouse_mapping = map_screen_mouse_to_framebuffer(
-        io.MousePos.x,
-        io.MousePos.y,
-        canvas_rect,
-        view.show_map_axis,
-        frame.width,
-        frame.height
-    );
-    // #region diagnostic mouse-fb
-    {
-        static int mf_frame = 0;
-        if (mouse_mapping.mouse_on_image && ++mf_frame <= 90) {
-            const auto& plot = mouse_mapping.plot_rect;
-            std::fprintf(stderr,
-                "[MOUSE-FB] f=%d vp=%d mouse(%.0f,%.0f)"
-                " canvas(%.0f,%.0f)-(%.0f,%.0f)"
-                " plot(%.0f,%.0f)-(%.0f,%.0f) %.0fx%.0f"
-                " fb=(%.1f,%.1f) fb_size=%ux%u\n",
-                mf_frame, view.viewport_index,
-                static_cast<double>(io.MousePos.x),
-                static_cast<double>(io.MousePos.y),
-                static_cast<double>(canvas_rect.min_x),
-                static_cast<double>(canvas_rect.min_y),
-                static_cast<double>(canvas_rect.max_x),
-                static_cast<double>(canvas_rect.max_y),
-                static_cast<double>(plot.min_x),
-                static_cast<double>(plot.min_y),
-                static_cast<double>(plot.max_x),
-                static_cast<double>(plot.max_y),
-                static_cast<double>(plot.width()),
-                static_cast<double>(plot.height()),
-                static_cast<double>(mouse_mapping.framebuffer_x),
-                static_cast<double>(mouse_mapping.framebuffer_y),
-                frame.width, frame.height);
-        }
-    }
-    // #endregion
+        io.MousePos.x, io.MousePos.y,
+        canvas_rect, view.show_map_axis,
+        view.image_width, view.image_height);
 
     frame.hovered = hovered && mouse_mapping.mouse_on_image;
     frame.active =
@@ -723,91 +674,10 @@ void draw_viewport_window(
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     }
 
-    const float capture_dx = frame.mouse_local_x - view.hover_debug_capture_x;
-    const float capture_dy = frame.mouse_local_y - view.hover_debug_capture_y;
-    const float capture_radius =
-        std::max(view.hover_debug_capture_radius + 0.5f, 0.5f);
-    const bool capture_fresh =
-        !view.hover_debug_has_hit ||
-        (capture_dx * capture_dx + capture_dy * capture_dy <=
-         capture_radius * capture_radius);
-    const bool marker_visible =
-        view.hover_debug_has_hit &&
-        capture_fresh &&
-        view.hover_screen_x >= 0.0f &&
-        view.hover_screen_y >= 0.0f &&
-        view.image_width > 0 &&
-        view.image_height > 0;
-    const bool tooltip_visible =
-        frame.mouse_on_image &&
-        view.hover_tooltip_visible &&
-        capture_fresh;
-    const char* tooltip_blocker = "none";
-    const char* marker_blocker = "none";
-    if (!view.hover_debug_has_hit) {
-        marker_blocker = "has_hit=N";
-    } else if (!capture_fresh) {
-        marker_blocker = "capture_stale";
-    } else if (view.hover_screen_x < 0.0f || view.hover_screen_y < 0.0f) {
-        marker_blocker = "hover_screen<0";
-    } else if (view.image_width == 0 || view.image_height == 0) {
-        marker_blocker = "fb_size=0";
-    }
-    if (!view.hover_tooltip_visible) {
-        tooltip_blocker = "hover_tooltip_visible=N";
-    } else if (!capture_fresh) {
-        tooltip_blocker = "capture_stale";
-    } else if (!frame.mouse_on_image) {
-        tooltip_blocker = "mouse_on_image=N";
-    }
-    // #region diagnostic tooltip-gate
-    {
-        static int tg_frame = 0;
-        if ((view.hover_debug_has_hit || view.hover_tooltip_visible) &&
-            ++tg_frame <= 180) {
-            std::fprintf(stderr,
-                "[TOOLTIP] f=%d vp=%d has_hit=%s id=%u lookup=%s"
-                " attr=(x=%.2f,y=%.2f,fold=%.3f,z=%.2f)"
-                " tt_vis=%s tooltip_visible=%s marker_visible=%s"
-                " tt_blocker=%s marker_blocker=%s"
-                " hovered=%s active=%s mouse_on_image=%s"
-                " mouse_fb=(%.1f,%.1f) pick_fb=(%.1f,%.1f) r=%.1f"
-                " delta=(%.1f,%.1f) capture_fresh=%s"
-                " hover_scr=(%.1f,%.1f)\n",
-                tg_frame, view.viewport_index,
-                view.hover_debug_has_hit ? "Y" : "N",
-                view.hover_debug_point_id,
-                view.hover_debug_lookup_ok ? "Y" : "N",
-                static_cast<double>(view.hover_x),
-                static_cast<double>(view.hover_y),
-                static_cast<double>(view.hover_fold),
-                static_cast<double>(view.hover_elevation),
-                view.hover_tooltip_visible ? "Y" : "N",
-                tooltip_visible ? "Y" : "N",
-                marker_visible ? "Y" : "N",
-                tooltip_blocker,
-                marker_blocker,
-                frame.hovered ? "Y" : "N",
-                frame.active ? "Y" : "N",
-                frame.mouse_on_image ? "Y" : "N",
-                static_cast<double>(frame.mouse_local_x),
-                static_cast<double>(frame.mouse_local_y),
-                static_cast<double>(view.hover_debug_capture_x),
-                static_cast<double>(view.hover_debug_capture_y),
-                static_cast<double>(view.hover_debug_capture_radius),
-                static_cast<double>(
-                    capture_dx
-                ),
-                static_cast<double>(
-                    capture_dy
-                ),
-                capture_fresh ? "Y" : "N",
-                static_cast<double>(view.hover_screen_x),
-                static_cast<double>(view.hover_screen_y));
-        }
-    }
-    // #endregion
-    if (tooltip_visible) {
+    // Tooltip: shown whenever we have valid hover data and the cursor is
+    // on the image.  No cursor-movement freshness gate — the pick result
+    // (has_hit + successful lookup) is the single source of truth.
+    if (frame.mouse_on_image && view.hover_tooltip_visible) {
         ImGui::SetTooltip(
             "x: %.2f\ny: %.2f\nfold: %.3f\nelevation: %.2f",
             static_cast<double>(view.hover_x),

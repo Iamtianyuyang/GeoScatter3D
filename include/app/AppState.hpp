@@ -131,15 +131,7 @@ struct RenderViewState {
     float hover_y = 0.0f;
     float hover_fold = 0.0f;
     float hover_elevation = 0.0f;
-    // Debug-only breadcrumbs for tracing the post-pick display chain.
-    bool hover_debug_has_hit = false;
-    bool hover_debug_lookup_ok = false;
-    std::uint32_t hover_debug_point_id = 0;
-    float hover_debug_capture_x = -1.0f;
-    float hover_debug_capture_y = -1.0f;
-    float hover_debug_capture_radius = 0.0f;
-    // Screen-space position of the hovered point or raw pick hit
-    // (viewport-local px, origin top-left).
+    // Screen-space position of the hovered point (viewport-local px, origin top-left).
     float hover_screen_x = -1.0f;
     float hover_screen_y = -1.0f;
 
