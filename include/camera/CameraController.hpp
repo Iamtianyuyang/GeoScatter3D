@@ -81,8 +81,6 @@ private:
     bool has_bounds_ = false;
 
     // --- Cumulative orbit state (per-viewport, per-drag) ---
-    // Locked at drag-start when cursor moves past activation threshold;
-    // all discarded on release.
     std::optional<Vec3> active_rotate_center_{};
     Vec3 position_at_lock_{};
     Vec3 target_at_lock_{};

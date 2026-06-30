@@ -269,15 +269,13 @@ void test_camera_uses_view_local_input()
 
 void test_zoom_converges_toward_centre_anchor_not_cursor()
 {
-    // Zoom always uses the screen-CENTRE anchor (camera-facing plane
-    // through target), never the cursor position.  Verify that cursor
-    // position is ignored: zooming with cursor off-centre still converges
-    // toward the centre anchor.
+    // Ortho zoom: scales ortho_height uniformly, does not move camera.
+    // Cursor position is ignored — zooming with cursor off-centre still
+    // changes the visible extent uniformly.
 
-    // Top-down camera looking at the origin from (0,0,100).
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
-    camera.set_perspective(60.0f, 1.0f, 1000.0f);
+    camera.set_orthographic(10.0f, 0.01f, 1000.0f);
     camera.look_at(
         {0.0f, 0.0f, 100.0f},
         {0.0f, 0.0f, 0.0f},
@@ -286,36 +284,39 @@ void test_zoom_converges_toward_centre_anchor_not_cursor()
 
     gs3d::camera::CameraController controller;
 
-    // Cursor parked off-centre (near the right edge).  Old behaviour
-    // used cursor for pivot; new behaviour ignores it and zooms toward
-    // screen centre.
+    const float initial_ortho = camera.ortho_height();
+    const auto pos_before = camera.position();
+    const auto tgt_before = camera.target();
+
+    // Cursor off-centre — zoom should still work uniformly.
     gs3d::camera::CameraInput input;
     input.viewport_width = 800;
     input.viewport_height = 600;
     input.scroll_y = 1.0f;
-    input.mouse_x = 700.0f;  // off-centre — intentionally ignored
+    input.mouse_x = 700.0f;  // off-centre — ignored
     input.mouse_y = 300.0f;
-
-    const auto target_before = camera.target();
-    const auto pos_before = camera.position();
     static_cast<void>(controller.update(camera, input));
-    const auto target_after = camera.target();
-    const auto pos_after = camera.position();
 
-    // Centre-ray anchor on camera-facing plane through origin IS origin.
-    // Target must stay at origin (not move toward cursor).
+    // Ortho zoom: position/target do not move.
+    const auto pos_after = camera.position();
+    const auto tgt_after = camera.target();
     expect(
-        std::abs(target_after.x - target_before.x) < 1.0e-3f &&
-        std::abs(target_after.y - target_before.y) < 1.0e-3f &&
-        std::abs(target_after.z - target_before.z) < 1.0e-3f,
-        "target stays at origin (zoom ignores cursor, uses centre anchor)"
+        std::abs(pos_after.x - pos_before.x) < 1.0e-6f &&
+        std::abs(pos_after.y - pos_before.y) < 1.0e-6f &&
+        std::abs(pos_after.z - pos_before.z) < 1.0e-6f,
+        "ortho zoom does not move camera position"
+    );
+    expect(
+        std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+        std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+        std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+        "ortho zoom does not move camera target"
     );
 
-    // Camera position must move toward origin along Z (pivot zoom toward
-    // the centre anchor at origin).
+    // Ortho_height must shrink (zoom in).
     expect(
-        pos_after.z < pos_before.z && pos_after.z > 0.0f,
-        "camera moves toward centre anchor (not cursor)"
+        camera.ortho_height() < initial_ortho,
+        "ortho zoom in shrinks ortho_height"
     );
 }
 
@@ -323,7 +324,7 @@ void test_zoom_respects_max_distance_from_bounds()
 {
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
-    camera.set_perspective(60.0f, 1.0f, 1.0e6f);
+    camera.set_orthographic(10.0f, 1.0f, 1.0e6f);
     camera.look_at(
         {0.0f, 0.0f, 10.0f},
         {0.0f, 0.0f, 0.0f},
@@ -342,18 +343,15 @@ void test_zoom_respects_max_distance_from_bounds()
     input.mouse_x = 400.0f;
     input.mouse_y = 300.0f;
 
-    // Scroll out aggressively many times — distance must not run away
-    // to an unbounded value once it's many multiples of the scene size.
+    // Scroll out aggressively — ortho_height must not exceed limit.
     input.scroll_y = -1.0f;
     for (int i = 0; i < 200; ++i) {
         static_cast<void>(controller.update(camera, input));
     }
 
-    const float scene_diagonal = std::sqrt(20.0f * 20.0f * 3.0f);
     expect(
-        camera.distance() <= scene_diagonal * 50.0f + 1.0f,
-        "zooming out repeatedly is clamped to a bounded multiple of the "
-        "scene diagonal, not left to grow without limit"
+        camera.ortho_height() <= 1.0e9f,
+        "zooming out repeatedly is clamped to ortho_height upper bound"
     );
 }
 
@@ -419,19 +417,21 @@ void test_fit_bounds_keeps_panorama_far_end_visible()
 
 void test_zoom_caps_depth_ratio_for_close_large_scene()
 {
+    // Ortho near/far are set by fit_bounds() and stay fixed — zoom does
+    // not move the camera so the ratio is invariant.
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
-    camera.set_perspective(60.0f, 1.0e-4f, 1.0e8f);
+    camera.set_orthographic(10.0f, 0.01f, 1000.0f);
     camera.look_at(
-        {0.0f, -0.02f, 0.01f},
+        {0.0f, -5.0f, 2.0f},
         {0.0f, 0.0f, 0.0f},
         {0.0f, 0.0f, 1.0f}
     );
 
     gs3d::camera::CameraController controller;
     controller.set_bounds({
-        {-20000.0f, -20000.0f, -500.0f},
-        {20000.0f, 20000.0f, 500.0f}
+        {-500.0f, -500.0f, -50.0f},
+        {500.0f, 500.0f, 50.0f}
     });
 
     gs3d::camera::CameraInput input;
@@ -442,11 +442,17 @@ void test_zoom_caps_depth_ratio_for_close_large_scene()
     input.mouse_y = 300.0f;
     static_cast<void>(controller.update(camera, input));
 
+    // Ortho zoom changes ortho_height, not near/far.
+    // Near/far ratio stays within bounds.
     expect(
         camera.far_plane() / camera.near_plane() <=
             gs3d::camera::kMaxDepthRatio * 1.001f,
-        "zoom updates cap the far/near ratio even for close views of a "
-        "large scene"
+        "ortho near/far ratio stays within kMaxDepthRatio"
+    );
+    // Ortho_height must have changed (zoom happened).
+    expect(
+        camera.ortho_height() < 9.9f,
+        "ortho zoom in reduced ortho_height"
     );
 }
 
@@ -1325,19 +1331,16 @@ void test_nearest_point_query_depth_tie_is_order_sensitive()
 
 void test_continuous_zoom_in_flies_forward_without_stalling()
 {
-    // Pivot zoom toward screen-centre anchor (camera-facing plane through
-    // target).  The centre ray hits the plane at the target itself, so
-    // both position and target contract toward target.  Distance decreases
-    // geometrically by factor 0.75 per step — must not collapse to
-    // min_distance prematurely and must never get stuck.
+    // Ortho zoom: ortho_height shrinks geometrically by factor 0.75 per
+    // step.  No distance involvement — uniform scale, no lock-dead.
 
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
-    camera.set_perspective(60.0f, 0.01f, 10000.0f);
+    camera.set_orthographic(100.0f, 0.01f, 10000.0f);
     camera.look_at(
-        {0.0f, -20.0f, 8.0f},   // position: oblique view
-        {0.0f, 0.0f, 0.0f},      // target: origin
-        {0.0f, 0.0f, 1.0f}       // Z-up
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
     );
 
     gs3d::camera::CameraController controller;
@@ -1346,53 +1349,55 @@ void test_continuous_zoom_in_flies_forward_without_stalling()
     bounds.max = {50.0f, 50.0f, 10.0f};
     controller.set_bounds(bounds);
 
-    const float initial_distance = camera.distance();
+    const float initial_ortho = camera.ortho_height();
 
     gs3d::camera::CameraInput input;
     input.viewport_width = 800;
     input.viewport_height = 600;
     input.scroll_y = 1.0f;        // zoom in
 
-    float prev_distance = initial_distance;
+    float prev_ortho = initial_ortho;
     for (int i = 0; i < 40; ++i) {
         static_cast<void>(controller.update(camera, input));
 
-        const float current_distance = camera.distance();
+        const float current_ortho = camera.ortho_height();
 
-        // Distance must decrease monotonically (pivot zoom shrinks offset).
+        // Ortho_height must decrease monotonically.
         expect(
-            current_distance < prev_distance + 1.0e-4f,
-            "pivot zoom must shrink camera–target distance monotonically"
+            current_ortho < prev_ortho + 1.0e-4f,
+            "ortho zoom must shrink ortho_height monotonically"
         );
-        prev_distance = current_distance;
+        prev_ortho = current_ortho;
 
-        // Must never be clamped to min_distance (1e-6).
-        // After 40 steps at factor 0.75: d ≈ 21.5 × 0.75^40 ≈ 2e-4,
-        // still well above 1e-6.
+        // Must not collapse below float precision.
         expect(
-            current_distance > 0.0001f,
-            "camera distance must not collapse to near-zero (pivot is "
-            "in front of camera, not at its feet — no lock-dead)"
+            current_ortho > 1.0e-7f,
+            "ortho_height must not collapse to near-zero (no lock-dead)"
         );
     }
 
-    // After 40 zooms, target must not have drifted far from origin.
-    // (Float error in inv-VP matrix means anchor ≈ target ± 1e-4;
-    // each step multiplies the gap by 0.25, so drift is bounded.)
-    const auto tgt = camera.target();
+    // After 40 consecutive zooms ortho_height must be substantially
+    // smaller (100 × 0.75^40 ≈ 0.001).
+    const float final_ortho = camera.ortho_height();
     expect(
-        std::abs(tgt.x) < 1.0e-2f &&
-        std::abs(tgt.y) < 1.0e-2f &&
-        std::abs(tgt.z) < 1.0e-2f,
-        "target stays near origin under centre-screen pivot zoom"
+        final_ortho < initial_ortho * 0.01f,
+        "after 40 ortho zooms height shrinks substantially (not stalled)"
     );
 
-    // After 40 consecutive zooms the camera must be substantially closer
-    // to the scene (distance ≈ 2e-4 vs initial ≈ 21.5).
-    const float final_distance = camera.distance();
+    // Position and target unchanged by ortho zoom.
+    const auto pos = camera.position();
+    const auto tgt = camera.target();
     expect(
-        final_distance < initial_distance * 0.01f,
-        "after 40 pivot zooms distance shrinks substantially (not stalled)"
+        std::abs(pos.x - 0.0f) < 1.0e-6f &&
+        std::abs(pos.y + 20.0f) < 1.0e-6f &&
+        std::abs(pos.z - 8.0f) < 1.0e-6f,
+        "ortho zoom does not move camera position"
+    );
+    expect(
+        std::abs(tgt.x) < 1.0e-6f &&
+        std::abs(tgt.y) < 1.0e-6f &&
+        std::abs(tgt.z) < 1.0e-6f,
+        "ortho zoom does not move camera target"
     );
 }
 
@@ -1950,6 +1955,102 @@ void test_pitch_never_exceeds_pole()
     }
 }
 
+void test_zoom_in_past_distance_floor_keeps_zooming_via_fov()
+{
+    // Ortho zoom: uniform scaling, no distance floor, no FOV.
+    // ortho_height shrinks geometrically without bound (only float
+    // precision limits).
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(100.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -5.0f, 2.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    gs3d::camera::CameraBounds bounds;
+    bounds.min = {-50.0f, -50.0f, -10.0f};
+    bounds.max = {50.0f, 50.0f, 10.0f};
+    controller.set_bounds(bounds);
+
+    const float initial_ortho = camera.ortho_height();
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.scroll_y = 1.0f;  // zoom in
+
+    float prev_ortho = initial_ortho;
+    for (int i = 0; i < 60; ++i) {
+        static_cast<void>(controller.update(camera, input));
+
+        const float current_ortho = camera.ortho_height();
+        expect(
+            current_ortho < prev_ortho + 1.0e-4f,
+            "ortho_height shrinks monotonically"
+        );
+        prev_ortho = current_ortho;
+    }
+
+    // After 60 consecutive zooms, ortho_height must be vastly smaller.
+    const float final_ortho = camera.ortho_height();
+    expect(
+        final_ortho < initial_ortho * 0.001f,
+        "ortho_height shrinks substantially (uniform, no floor)"
+    );
+    // No collapse — still well above float epsilon.
+    expect(
+        final_ortho > 1.0e-7f,
+        "ortho_height still above float precision floor"
+    );
+}
+
+void test_fov_clamped_at_min()
+{
+    // Ortho zoom: no FOV, just ortho_height.  Even after extreme
+    // zoom-in, ortho_height is well-behaved and camera is stable.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(10.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -5.0f, 2.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    gs3d::camera::CameraInput input;
+    input.viewport_width = 800;
+    input.viewport_height = 600;
+    input.scroll_y = 1.0f;  // zoom in
+
+    // Zoom far past any reasonable limit.
+    for (int i = 0; i < 200; ++i) {
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    // ortho_height is tiny but not zero (float precision limit).
+    const float final_ortho = camera.ortho_height();
+    expect(
+        final_ortho < 1.0e-5f,
+        "ortho_height becomes tiny after extreme zoom-in"
+    );
+    expect(
+        final_ortho > 1.0e-38f,
+        "ortho_height never hits zero (float precision floor)"
+    );
+    // Camera position/target unchanged.
+    expect(
+        std::abs(camera.position().x - 0.0f) < 1.0e-6f,
+        "camera position unchanged by ortho zoom"
+    );
+}
+
 } // namespace
 
 int main()
@@ -2003,6 +2104,8 @@ int main()
     test_rotate_release_does_not_move_camera();
     test_rotation_pivot_is_screen_center();
     test_pitch_never_exceeds_pole();
+    test_zoom_in_past_distance_floor_keeps_zooming_via_fov();
+    test_fov_clamped_at_min();
 
     if (failures == 0) {
         std::cout << "[PASS] runtime performance tests\n";

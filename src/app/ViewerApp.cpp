@@ -1565,22 +1565,27 @@ void initialize_camera_from_config(
     const ViewerAppConfig& config,
     const gs3d::camera::CameraBounds& bounds
 ) {
-    camera.set_perspective(
-        config.camera_fov_y,
-        config.camera_near,
-        config.camera_far
-    );
+    // Default: orthographic projection, fit to data bounds.
+    // fit_bounds() sets ortho_height, near/far, position, target, up.
+    camera.set_orthographic(10.0f, 0.01f, 10000.0f);
 
     if (config.camera_mode == "fit") {
         camera.fit_bounds(bounds);
         return;
     }
 
+    // Explicit camera overrides: still use ortho by default.
     camera.look_at(
         to_vec3(config.camera_position),
         to_vec3(config.camera_target),
         to_vec3(config.camera_up)
     );
+    // Derive ortho_height from distance and FOV for backwards compat.
+    const float fov_rad = config.camera_fov_y * 3.14159265f / 180.0f;
+    const float view_h =
+        2.0f * camera.distance() * std::tan(fov_rad * 0.5f);
+    // Ortho near/far: small near, huge far — covers any practical depth.
+    camera.set_orthographic(view_h, 0.01f, 1.0e7f);
 }
 
 void fill_push_constants(
@@ -1854,16 +1859,23 @@ void compute_map_axis_overlay(
     if (valid == 0) {
         /*
          * No ray hits Z=0 (e.g. camera is below the ground plane or
-         * looking upwards). Fall back to the perpendicular-plane estimate
+         * looking upwards). Fall back to the visible-world estimate
          * centred on the camera target.
          */
-        const float distance   = camera.distance();
-        const float fov_rad    = camera.fov_y_degrees() * (3.14159265f / 180.0f);
-        const float aspect     = camera.aspect_ratio();
-        const float world_h    = 2.0f * distance * std::tan(fov_rad * 0.5f);
-        const float world_w    = world_h * aspect;
-        const float cx         = camera.target().x;
-        const float cy         = camera.target().y;
+        float world_w, world_h;
+        if (camera.projection_mode() ==
+            gs3d::camera::ProjectionMode::Orthographic) {
+            world_h = camera.ortho_height();
+            world_w = world_h * camera.aspect_ratio();
+        } else {
+            const float distance = camera.distance();
+            const float fov_rad  =
+                camera.fov_y_degrees() * (3.14159265f / 180.0f);
+            world_h = 2.0f * distance * std::tan(fov_rad * 0.5f);
+            world_w = world_h * camera.aspect_ratio();
+        }
+        const float cx = camera.target().x;
+        const float cy = camera.target().y;
         view.map_axis_x_min = cx - world_w * 0.5f;
         view.map_axis_x_max = cx + world_w * 0.5f;
         view.map_axis_y_min = cy - world_h * 0.5f;
@@ -4188,6 +4200,7 @@ int ViewerApp::run() {
                                 vp_push,
                                 viewport_camera
                             );
+
                             const VkExtent2D viewport_extent =
                                 framebuffer.extent();
 
@@ -4232,12 +4245,14 @@ int ViewerApp::run() {
                             // covers the full data extent.  "Blurry beats
                             // black" — guarantees no clear-colour holes
                             // regardless of tile residency.
+                            // --- LOD safety net: coarsest level, always drawn ---
+                            // Uses same point_size as other passes for uniform
+                            // visual density.  clip_mode=0 so it is never
+                            // clipped — guarantees no clear-colour holes.
                             if (config_.lod_enabled) {
                                 gs3d::render::PointPushConstants safety_push =
                                     lod_push;
                                 safety_push.clip_mode = 0.0f;
-                                safety_push.point_size =
-                                    lod_push.point_size * 2.0f;
                                 point_pipeline.draw_per_tile(
                                     c,
                                     lod_gpu_cloud->lowest_detail().gpu_cloud,

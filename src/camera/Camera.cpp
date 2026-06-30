@@ -128,19 +128,34 @@ Mat4 perspective_vulkan(
     out.m[0] = 1.0f / (aspect * tan_half);
     out.m[5] = 1.0f / tan_half;
 
-    /*
-     * Vulkan NDC:
-     * x: [-1, 1]
-     * y: [-1, 1]
-     * z: [0, 1]
-     *
-     * 这里没有翻转 Y。
-     * 后面如果 shader / viewport 需要 Vulkan 风格屏幕坐标翻转，
-     * 可以在 projection 或 viewport 中统一处理。
-     */
     out.m[10] = far_plane / (near_plane - far_plane);
     out.m[11] = -1.0f;
     out.m[14] = -(far_plane * near_plane) / (far_plane - near_plane);
+
+    return out;
+}
+
+[[nodiscard]]
+Mat4 orthographic_vulkan(
+    float half_width,
+    float half_height,
+    float near_plane,
+    float far_plane
+) noexcept {
+    /*
+     * Vulkan NDC: x∈[-1,1], y∈[-1,1] (no Y flip), z∈[0,1].
+     * Map world [−half_w, +half_w] → NDC [−1, 1], etc.
+     */
+    Mat4 out{};
+
+    out.m[0]  = 1.0f / half_width;
+    out.m[5]  = 1.0f / half_height;
+    // Vulkan NDC z∈[0,1] mapping:
+    //   z_ndc = (z_view + near) / (near − far)
+    // where z_view is negative in front of the camera (Vulkan −Z axis).
+    out.m[10] = 1.0f / (near_plane - far_plane);
+    out.m[14] = near_plane / (near_plane - far_plane);
+    out.m[15] = 1.0f;
 
     return out;
 }
@@ -205,7 +220,19 @@ void Camera::set_perspective(
     float near_plane,
     float far_plane
 ) noexcept {
+    projection_mode_ = ProjectionMode::Perspective;
     fov_y_degrees_ = std::clamp(fov_y_degrees, 1.0f, 120.0f);
+    near_plane_ = std::max(near_plane, 1.0e-6f);
+    far_plane_ = std::max(far_plane, near_plane_ + 1.0f);
+}
+
+void Camera::set_orthographic(
+    float height,
+    float near_plane,
+    float far_plane
+) noexcept {
+    projection_mode_ = ProjectionMode::Orthographic;
+    ortho_height_ = std::max(height, 1.0e-6f);
     near_plane_ = std::max(near_plane, 1.0e-6f);
     far_plane_ = std::max(far_plane, near_plane_ + 1.0f);
 }
@@ -247,54 +274,56 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
         bounds.max.z - bounds.min.z
     };
 
-    const float fov   = to_radians(fov_y_degrees_);
-    const float aspect = aspect_ratio();
-    const float tan_half = std::tan(fov * 0.5f);
-
-    /*
-     * 包围球距离（Cesium Camera.flyToBoundingSphere 惯例），朝向无关：
-     * 旧实现用 extent.x/extent.y 分别当作屏幕水平/垂直可见范围，隐含假设
-     * 相机严格俯视（看向 -Z）——一旦轨道旋转到任何倾斜角度，世界 X/Y 范围
-     * 不再等于屏幕水平/垂直范围，extent.z 也完全没参与计算，导致框选放大
-     * 在斜视角下算出的距离明显偏离"刚好填满视口"。
-     *
-     * 包围球的视觉大小只取决于半径和到相机的距离，与相机朝向无关，所以
-     * 不管轨道转到哪个角度，这个距离都能让包围盒刚好填满视口（取水平/
-     * 垂直视场角中更窄的一个，保证两个方向都不溢出）。
-     */
+    const float scene_diag = length(extent);
     const float safe_radius = std::max(
-        bounding_sphere_radius(bounds),
-        1.0f
-    );
-
-    const float half_fov_v = tan_half;
-    const float half_fov_h = tan_half * aspect;
-    const float limiting_half_fov = std::min(half_fov_v, half_fov_h);
-    const float dist = safe_radius / limiting_half_fov;
+        bounding_sphere_radius(bounds), 1.0f);
 
     target_ = center;
-
-    /*
-     * Keep the current view direction (if it's non-degenerate) so that
-     * box-select zoom and re-fit don't reset the user's viewing angle.
-     * Falls back to the default -Y+Z direction for initial/reset views.
-     */
-    const Vec3 current_offset = sub(position_, target_);
-    const float current_dist = length(current_offset);
-    Vec3 dir;
-    if (current_dist > 1.0e-6f) {
-        dir = normalize(current_offset);
-    } else {
-        dir = normalize({0.0f, -1.0f, 0.6f});
-    }
-    position_ = add(target_, mul(dir, dist * 1.0f));
-
-    const ClipPlanes clip_planes =
-        compute_clip_planes(dist, safe_radius);
-    near_plane_ = clip_planes.near_plane;
-    far_plane_ = clip_planes.far_plane;
-
     up_ = {0.0f, 0.0f, 1.0f};
+
+    if (projection_mode_ == ProjectionMode::Orthographic) {
+        // Ortho: set height to fit the larger of the XY extents,
+        // plus 5 % padding so the data doesn't touch the viewport edge.
+        const float aspect = aspect_ratio();
+        const float fit_h = std::max(extent.x / aspect, extent.y);
+        ortho_height_ = fit_h * 1.05f;
+
+        // Ortho near/far: near small, far covers camera-to-data distance
+        // plus generous margin.  (Vulkan NDC z∈[0,1], depth is linear.)
+        near_plane_ = 0.01f;
+        far_plane_  = std::max(
+            length(sub(position_, target_)) + safe_radius * 3.0f,
+            near_plane_ + 1.0f);
+
+        // Position: top-down view above the dataset centre.
+        const Vec3 dir = normalize({0.0f, -1.0f, 0.6f});
+        position_ = add(target_, mul(dir, safe_radius * 2.0f));
+
+    } else {
+        const float fov   = to_radians(fov_y_degrees_);
+        const float aspect = aspect_ratio();
+        const float tan_half = std::tan(fov * 0.5f);
+
+        const float half_fov_v = tan_half;
+        const float half_fov_h = tan_half * aspect;
+        const float limiting_half_fov = std::min(half_fov_v, half_fov_h);
+        const float dist = safe_radius / limiting_half_fov;
+
+        const Vec3 current_offset = sub(position_, target_);
+        const float current_dist = length(current_offset);
+        Vec3 dir;
+        if (current_dist > 1.0e-6f) {
+            dir = normalize(current_offset);
+        } else {
+            dir = normalize({0.0f, -1.0f, 0.6f});
+        }
+        position_ = add(target_, mul(dir, dist * 1.0f));
+
+        const ClipPlanes clip_planes =
+            compute_clip_planes(dist, safe_radius);
+        near_plane_ = clip_planes.near_plane;
+        far_plane_ = clip_planes.far_plane;
+    }
 }
 
 void Camera::orbit(
@@ -355,6 +384,14 @@ Mat4 Camera::view_matrix() const noexcept {
 }
 
 Mat4 Camera::projection_matrix() const noexcept {
+    if (projection_mode_ == ProjectionMode::Orthographic) {
+        const float half_h = ortho_height_ * 0.5f;
+        const float half_w = half_h * aspect_ratio();
+        return orthographic_vulkan(
+            half_w, half_h,
+            near_plane_, far_plane_
+        );
+    }
     return perspective_vulkan(
         to_radians(fov_y_degrees_),
         aspect_ratio(),
@@ -406,6 +443,18 @@ float Camera::near_plane() const noexcept {
 
 float Camera::far_plane() const noexcept {
     return far_plane_;
+}
+
+ProjectionMode Camera::projection_mode() const noexcept {
+    return projection_mode_;
+}
+
+float Camera::ortho_height() const noexcept {
+    return ortho_height_;
+}
+
+void Camera::set_projection_mode(ProjectionMode mode) noexcept {
+    projection_mode_ = mode;
 }
 
 void Camera::normalize_up() noexcept {

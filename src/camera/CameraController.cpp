@@ -293,15 +293,19 @@ void CameraController::pan_view(
         normalize(cross(right, forward));
 
     /*
-     * 常见 pan 手感：
-     * 视图高度对应 2 * distance * tan(fov/2) 的世界长度。
-     * 鼠标移动多少像素，就移动对应比例的世界距离。
+     * Pan: mouse pixels → world distance.
+     * Ortho: view_height_world = ortho_height (exact).
+     * Perspective: 2 × distance × tan(fov/2).
      */
-    const float fov_y_rad =
-        camera.fov_y_degrees() * PI / 180.0f;
-
-    const float view_height_world =
-        2.0f * camera.distance() * std::tan(0.5f * fov_y_rad);
+    float view_height_world;
+    if (camera.projection_mode() == ProjectionMode::Orthographic) {
+        view_height_world = camera.ortho_height();
+    } else {
+        const float fov_y_rad =
+            camera.fov_y_degrees() * PI / 180.0f;
+        view_height_world =
+            2.0f * camera.distance() * std::tan(0.5f * fov_y_rad);
+    }
 
     const float world_per_pixel =
         view_height_world / viewport_height * config_.pan_speed;
@@ -321,66 +325,47 @@ void CameraController::pan_view(
 void CameraController::zoom_view(
     Camera& camera,
     float scroll_y,
-    float viewport_width,
-    float viewport_height
+    float /*viewport_width*/,
+    float /*viewport_height*/
 ) const noexcept {
     /*
-     * Zoom toward screen-centre anchor.
-     *
-     * Every scroll event computes the intersection of the screen-centre ray
-     * with the camera-facing plane through the current target.  Both
-     * position and target contract toward that anchor — this is the
-     * non-singular pivot zoom the user spec asks for.
-     *
-     * Camera-facing plane: normal = forward, passes through target.
-     * Ray–plane angle is always ≈90°, denom ≈ 1, no horizon singularity.
+     * Orthographic zoom: scale the visible world height.
+     * Uniform, no distance/FOV floor, no singularity — can zoom to
+     * float precision limits.
      */
-    const Vec3 position = camera.position();
-    const Vec3 target   = camera.target();
-
-    // --- Screen-centre anchor (camera-facing plane through target) ---
-    const Viewport viewport{
-        static_cast<std::uint32_t>(viewport_width),
-        static_cast<std::uint32_t>(viewport_height)
-    };
-    const double centre_x =
-        static_cast<double>(viewport_width) * 0.5;
-    const double centre_y =
-        static_cast<double>(viewport_height) * 0.5;
-
-    const auto anchor_opt =
-        MouseRay::intersect_camera_facing_plane(
-            centre_x, centre_y, viewport, camera, target);
-
-    // Fallback to current target if intersection fails (should not happen;
-    // camera-facing plane is always non-singular).
-    const Vec3 pivot = anchor_opt.has_value() ? *anchor_opt : target;
-
-    // --- Zoom factor ---
     const float zoom_factor =
         std::pow(0.75f, scroll_y * config_.zoom_speed);
 
-    // --- Pivot zoom: both position and target contract toward anchor ---
-    Vec3 new_position = add(pivot, mul(sub(position, pivot), zoom_factor));
-    Vec3 new_target   = add(pivot, mul(sub(target,   pivot), zoom_factor));
-
-    // --- Clamp distance ---
-    const Vec3 new_offset = sub(new_position, new_target);
-    const float new_dist = length(new_offset);
-    const float clamped_dist =
-        std::clamp(new_dist, min_distance(), max_distance());
-
-    if (new_dist > 1.0e-6f && clamped_dist != new_dist) {
-        const Vec3 dir = normalize(new_offset);
-        new_position = add(new_target, mul(dir, clamped_dist));
+    if (camera.projection_mode() == ProjectionMode::Orthographic) {
+        float ortho_h = camera.ortho_height();
+        ortho_h = std::clamp(
+            ortho_h * zoom_factor, 1.0e-6f, 1.0e9f);
+        camera.set_orthographic(
+            ortho_h,
+            camera.near_plane(),
+            camera.far_plane()
+        );
+    } else {
+        // Perspective path: FOV-based continuation (kept for future
+        // re-enable but not currently wired).
+        float new_fov = camera.fov_y_degrees() * zoom_factor;
+        new_fov = std::clamp(new_fov, 1.0f, 120.0f);
+        camera.set_perspective(
+            new_fov,
+            camera.near_plane(),
+            camera.far_plane()
+        );
     }
-
-    camera.look_at(new_position, new_target, camera.up());
-
-    adjust_near_far(camera);
 }
 
 void CameraController::adjust_near_far(Camera& camera) const noexcept {
+    // Orthographic near/far are set once in fit_bounds() and left alone.
+    // Perspective path (below) only runs when projection mode is
+    // explicitly perspective.
+    if (camera.projection_mode() == ProjectionMode::Orthographic) {
+        return;
+    }
+
     float scene_radius = 1.0f;
     if (has_bounds_) {
         scene_radius = std::max(
@@ -389,13 +374,6 @@ void CameraController::adjust_near_far(Camera& camera) const noexcept {
         );
     }
 
-    /*
-     * 统一与 Camera::fit_bounds() 相同的深度范围公式：
-     *   - far 主要跟随当前 camera distance 收紧，避免被全场景尺度长期主导；
-     *   - far 仍保留与包围球半径相关的 padding，保证全景视角不会把远端裁掉；
-     *   - near 在基础距离缩放之外，再受 kMaxDepthRatio 硬上限约束，避免
-     *     极端缩放时 far/near 比值失控到 1e8 量级。
-     */
     const ClipPlanes clip_planes =
         compute_clip_planes(camera.distance(), scene_radius);
 

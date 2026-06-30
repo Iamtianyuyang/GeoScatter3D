@@ -33,6 +33,11 @@ struct CameraBounds {
     Vec3 max;
 };
 
+enum class ProjectionMode {
+    Perspective,
+    Orthographic
+};
+
 inline constexpr float kMinNearPlane = 1.0e-4f;
 inline constexpr float kMaxDepthRatio = 1.0e5f;
 inline constexpr float kNearDistanceFactor = 1.0e-3f;
@@ -61,6 +66,12 @@ public:
 
     void set_perspective(
         float fov_y_degrees,
+        float near_plane,
+        float far_plane
+    ) noexcept;
+
+    void set_orthographic(
+        float height,
         float near_plane,
         float far_plane
     ) noexcept;
@@ -120,6 +131,14 @@ public:
     [[nodiscard]]
     float far_plane() const noexcept;
 
+    [[nodiscard]]
+    ProjectionMode projection_mode() const noexcept;
+
+    [[nodiscard]]
+    float ortho_height() const noexcept;
+
+    void set_projection_mode(ProjectionMode mode) noexcept;
+
 private:
     Vec3 position_{0.0f, -5.0f, 2.0f};
     Vec3 target_{0.0f, 0.0f, 0.0f};
@@ -128,7 +147,10 @@ private:
     std::uint32_t viewport_width_ = 1280;
     std::uint32_t viewport_height_ = 720;
 
+    ProjectionMode projection_mode_ = ProjectionMode::Orthographic;
+
     float fov_y_degrees_ = 45.0f;
+    float ortho_height_ = 10.0f;
     float near_plane_ = 0.01f;
     float far_plane_ = 10000.0f;
 
