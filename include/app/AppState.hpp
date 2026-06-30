@@ -125,13 +125,23 @@ struct RenderViewState {
     float box_select_start_x = 0.0f;
     float box_select_start_y = 0.0f;
 
-    // 悬浮 tooltip：由 ViewerApp 在上一帧算好写入，这一帧 UiRoot 直接读取
-    // 渲染（避免 UI 层自己做最近点查询）。
+    // 悬浮 tooltip：由 ViewerApp 在上一帧算好写入，这一帧 UiRoot 直接读取渲染。
     bool hover_tooltip_visible = false;
     float hover_x = 0.0f;
     float hover_y = 0.0f;
     float hover_fold = 0.0f;
     float hover_elevation = 0.0f;
+    // Debug-only breadcrumbs for tracing the post-pick display chain.
+    bool hover_debug_has_hit = false;
+    bool hover_debug_lookup_ok = false;
+    std::uint32_t hover_debug_point_id = 0;
+    float hover_debug_capture_x = -1.0f;
+    float hover_debug_capture_y = -1.0f;
+    float hover_debug_capture_radius = 0.0f;
+    // Screen-space position of the hovered point or raw pick hit
+    // (viewport-local px, origin top-left).
+    float hover_screen_x = -1.0f;
+    float hover_screen_y = -1.0f;
 
     /*
      * 三维世界坐标轴（QGIS 包围盒 + 角柱），由 compute_axis_overlay() 填充

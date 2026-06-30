@@ -24,7 +24,6 @@
 #include "platform/Window.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/LodSelector.hpp"
-#include "render/NearestPointQuery.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
 #include "render/PointPipeline.hpp"
@@ -146,6 +145,24 @@ struct BenchmarkPickIssuedMetadata {
     bool all_tiles_resident = false;
     std::vector<std::uint64_t> resident_tile_ids{};
 };
+
+constexpr std::uint32_t kMaxGpuPickRadiusPx = 5;
+constexpr std::uint32_t kDefaultGpuPickRadiusPx = 2;
+
+[[nodiscard]]
+std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept {
+    const float clamped_point_size =
+        std::clamp(point_size, 1.0f, 10.0f);
+    const int sprite_half_extent =
+        static_cast<int>(std::ceil(clamped_point_size * 0.5f));
+    return static_cast<std::uint32_t>(
+        std::clamp(
+            sprite_half_extent + 1,
+            static_cast<int>(kDefaultGpuPickRadiusPx),
+            static_cast<int>(kMaxGpuPickRadiusPx)
+        )
+    );
+}
 
 std::vector<BenchmarkPickScriptQuery> load_benchmark_pick_script(
     const std::filesystem::path& script_path
@@ -586,6 +603,7 @@ struct PickDebugDumpMetadata {
     bool tile_overlay_rendered = false;
     bool all_tiles_resident = false;
     std::string render_source{};
+    std::string trigger_reason{};
     std::vector<std::uint64_t> selected_tile_ids{};
     std::vector<std::uint64_t> resident_tile_ids{};
 };
@@ -976,6 +994,7 @@ void write_pick_debug_dump(
     meta << "all_tiles_resident="
          << (dump.metadata.all_tiles_resident ? "true" : "false") << '\n';
     meta << "render_source=" << dump.metadata.render_source << '\n';
+    meta << "trigger_reason=" << dump.metadata.trigger_reason << '\n';
     meta << "selected_tile_ids="
          << join_uint64_list(dump.metadata.selected_tile_ids) << '\n';
     meta << "resident_tile_ids="
@@ -995,6 +1014,7 @@ struct GpuPickRequest {
     int benchmark_query_index = -1;
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
+    std::uint32_t pick_radius_px = kDefaultGpuPickRadiusPx;
     std::uint32_t viewport_width = 0;
     std::uint32_t viewport_height = 0;
     float box_select_min_x = 0.0f;
@@ -1139,22 +1159,27 @@ public:
             static_cast<int>(extent.height) - 1
         );
 
+        const int pick_radius_px = std::clamp(
+            static_cast<int>(request.pick_radius_px),
+            0,
+            kPickRadiusPx
+        );
         const std::uint32_t left =
-            static_cast<std::uint32_t>(std::max(0, center_x - kPickRadiusPx));
+            static_cast<std::uint32_t>(std::max(0, center_x - pick_radius_px));
         const std::uint32_t top =
-            static_cast<std::uint32_t>(std::max(0, center_y - kPickRadiusPx));
+            static_cast<std::uint32_t>(std::max(0, center_y - pick_radius_px));
         const std::uint32_t right =
             static_cast<std::uint32_t>(
                 std::min(
                     static_cast<int>(extent.width) - 1,
-                    center_x + kPickRadiusPx
+                    center_x + pick_radius_px
                 )
             );
         const std::uint32_t bottom =
             static_cast<std::uint32_t>(
                 std::min(
                     static_cast<int>(extent.height) - 1,
-                    center_y + kPickRadiusPx
+                    center_y + pick_radius_px
                 )
             );
 
@@ -1163,6 +1188,10 @@ public:
         slot.pending.y = top;
         slot.pending.width = right - left + 1;
         slot.pending.height = bottom - top + 1;
+        slot.pending.center_local_x =
+            static_cast<std::uint32_t>(center_x) - left;
+        slot.pending.center_local_y =
+            static_cast<std::uint32_t>(center_y) - top;
         slot.pending.pending = true;
 
         VkBufferImageCopy copy_region{};
@@ -1246,16 +1275,36 @@ public:
             GpuPickResult result;
             result.request = slot.pending.request;
             result.depth = 1.0f;
-            for (std::uint32_t i = 0; i < pixel_count; ++i) {
-                const auto point_id = point_ids[i];
-                if (point_id == 0) {
-                    continue;
-                }
-                const float depth = depths[i];
-                if (!result.has_hit || depth < result.depth) {
-                    result.has_hit = true;
-                    result.point_id = point_id;
-                    result.depth = depth;
+            std::uint32_t best_distance_sq =
+                std::numeric_limits<std::uint32_t>::max();
+            for (std::uint32_t y = 0; y < slot.pending.height; ++y) {
+                for (std::uint32_t x = 0; x < slot.pending.width; ++x) {
+                    const std::uint32_t i =
+                        y * slot.pending.width + x;
+                    const auto point_id = point_ids[i];
+                    if (point_id == 0) {
+                        continue;
+                    }
+
+                    const float depth = depths[i];
+                    const int dx =
+                        static_cast<int>(x) -
+                        static_cast<int>(slot.pending.center_local_x);
+                    const int dy =
+                        static_cast<int>(y) -
+                        static_cast<int>(slot.pending.center_local_y);
+                    const auto distance_sq =
+                        static_cast<std::uint32_t>(dx * dx + dy * dy);
+
+                    if (!result.has_hit ||
+                        distance_sq < best_distance_sq ||
+                        (distance_sq == best_distance_sq &&
+                         depth < result.depth)) {
+                        result.has_hit = true;
+                        result.point_id = point_id;
+                        result.depth = depth;
+                        best_distance_sq = distance_sq;
+                    }
                 }
             }
 
@@ -1269,11 +1318,10 @@ public:
     }
 
 private:
-    // Effective pick radius of 5 px around the cursor → 11x11
-    // neighborhood (was 5x5 / 2 px). Required so sparse / 1-pixel
-    // isolated points on screen stay reachable without enlarging the
-    // rendered point sprite (visual size stays unchanged).
-    static constexpr int kPickRadiusPx = 5;
+    // Buffers are sized for the largest hover aperture we allow.
+    // Each request can choose a smaller point-size-aware radius.
+    static constexpr int kPickRadiusPx =
+        static_cast<int>(kMaxGpuPickRadiusPx);
     // Must hold (2 * kPickRadiusPx + 1)^2 = 121 pixels; 144 leaves
     // headroom for any future 12x12 bump without re-touching this.
     static constexpr std::uint32_t kMaxPickPixels = 144;
@@ -1284,6 +1332,8 @@ private:
         std::uint32_t y = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
+        std::uint32_t center_local_x = 0;
+        std::uint32_t center_local_y = 0;
         bool pending = false;
     };
 
@@ -1558,6 +1608,43 @@ gs3d::render::PointCloudLodSource build_lod_source(
         });
     }
     return source;
+}
+
+[[nodiscard]]
+gs3d::data::Gs3dPoint to_gs3d_point(
+    const gs3d::core::PointRecord& point
+) noexcept {
+    return {
+        point.x,
+        point.y,
+        point.z,
+        point.value
+    };
+}
+
+[[nodiscard]]
+std::optional<gs3d::data::Gs3dPoint> find_point_by_id_in_views(
+    const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
+    std::uint32_t point_id
+) noexcept {
+    if (point_id == 0) {
+        return std::nullopt;
+    }
+
+    for (const auto& points : candidate_point_sets) {
+        if (!points.valid() || points.empty() || !points.has_point_ids()) {
+            continue;
+        }
+
+        for (std::uint64_t i = 0; i < points.point_count; ++i) {
+            if (points.point_id_at(i) != point_id) {
+                continue;
+            }
+            return to_gs3d_point(points.point_at(i));
+        }
+    }
+
+    return std::nullopt;
 }
 
 void initialize_camera_from_config(
@@ -2329,15 +2416,35 @@ int ViewerApp::run() {
         );
         std::uint64_t pick_debug_dump_count = 0;
         bool pick_debug_dump_completed = false;
+        std::vector<bool> pending_hover_miss_dump(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
         std::vector<std::optional<gs3d::data::Gs3dPoint>>
             latest_gpu_hover_points(
                 static_cast<std::size_t>(viewport_manager.viewport_count())
             );
+        std::vector<bool> latest_gpu_hover_has_hit(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
+        std::vector<bool> latest_gpu_hover_lookup_ok(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
+        std::vector<std::uint32_t> latest_gpu_hover_point_id(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0u
+        );
         std::vector<float> latest_gpu_capture_x(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             0.0f
         );
         std::vector<float> latest_gpu_capture_y(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0.0f
+        );
+        std::vector<float> latest_gpu_capture_radius(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             0.0f
         );
@@ -2552,6 +2659,79 @@ int ViewerApp::run() {
                     );
                 }
                 return views;
+            };
+
+        const auto collect_visible_hover_tile_views =
+            [&viewport_tile_ids,
+             &tile_point_cache,
+             &tile_preload_tiles,
+             &tiles_fully_resident](std::size_t view_index) {
+                std::vector<gs3d::core::PointDataView> views;
+                if (view_index >= viewport_tile_ids.size()) {
+                    return views;
+                }
+
+                const auto& tile_ids = viewport_tile_ids[view_index];
+                views.reserve(tile_ids.size());
+                for (const auto tile_id : tile_ids) {
+                    SharedTilePoints points = tile_point_cache.find(tile_id);
+                    if (!points && tiles_fully_resident) {
+                        const auto found = std::find_if(
+                            tile_preload_tiles.begin(),
+                            tile_preload_tiles.end(),
+                            [tile_id](
+                                const std::pair<
+                                    std::uint64_t,
+                                    SharedTilePoints
+                                >& entry
+                            ) {
+                                return entry.first == tile_id;
+                            }
+                        );
+                        if (found != tile_preload_tiles.end()) {
+                            points = found->second;
+                        }
+                    }
+
+                    if (!points || points->points.empty() ||
+                        points->point_ids.empty()) {
+                        continue;
+                    }
+
+                    views.push_back(
+                        gs3d::data::make_point_data_view(
+                            points->points,
+                            points->point_ids.data()
+                        )
+                    );
+                }
+
+                return views;
+            };
+
+        const auto resolve_hover_point_from_visible_tiles =
+            [&collect_visible_hover_tile_views](
+                std::size_t view_index,
+                std::uint32_t point_id,
+                float mouse_x,
+                float mouse_y
+            ) {
+                static_cast<void>(mouse_x);
+                static_cast<void>(mouse_y);
+                const auto candidate_point_sets =
+                    collect_visible_hover_tile_views(view_index);
+                if (candidate_point_sets.empty()) {
+                    return std::optional<gs3d::data::Gs3dPoint>{};
+                }
+
+                if (const auto exact =
+                        find_point_by_id_in_views(
+                            candidate_point_sets,
+                            point_id
+                        )) {
+                    return exact;
+                }
+                return std::optional<gs3d::data::Gs3dPoint>{};
             };
 
         const auto load_tile_points_with_ids =
@@ -2863,6 +3043,250 @@ int ViewerApp::run() {
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
 
+        const auto consume_ready_pick_frame_slot =
+            [&](std::uint32_t frame_slot) {
+                gpu_pick_frame_slot = frame_slot;
+                if (config_.pick_debug_dump_enabled) {
+                    const auto debug_dump =
+                        pick_debug_frame_dumper.collect_ready_frame(frame_slot);
+                    if (debug_dump) {
+                        write_pick_debug_dump(
+                            config_.pick_debug_dump_dir,
+                            *debug_dump
+                        );
+                    }
+                }
+
+                gs3d::util::Stopwatch collect_timer;
+                const auto pick_results =
+                    gpu_pick_readback.collect_ready_frame(frame_slot);
+                const double collect_cpu_ms =
+                    collect_timer.elapsed_milliseconds();
+                // #region diagnostic pick-miss
+                {
+                    static int miss_frame = 0;
+                    if (++miss_frame <= 120) {
+                        for (const auto& r : pick_results) {
+                            std::fprintf(stderr,
+                                "[PICK] f=%d vp=%d fb=(%.0f,%.0f)"
+                                " r=%u hit=%s id=%u depth=%.4f\n",
+                                miss_frame, r.request.viewport_index,
+                                static_cast<double>(r.request.mouse_x),
+                                static_cast<double>(r.request.mouse_y),
+                                r.request.pick_radius_px,
+                                r.has_hit ? "Y" : "N",
+                                r.point_id,
+                                static_cast<double>(r.depth));
+                        }
+                    }
+                }
+                // #endregion
+                for (const auto& result : pick_results) {
+                    if (result.request.viewport_index < 0 ||
+                        result.request.viewport_index >=
+                            static_cast<int>(
+                                latest_gpu_hover_points.size()
+                            )) {
+                        continue;
+                    }
+
+                    std::optional<gs3d::data::Gs3dPoint> hit_point;
+                    bool lookup_ok = false;
+                    if (result.has_hit &&
+                        result.point_id < runtime_points_by_id.size() &&
+                        runtime_points_valid_by_id[result.point_id] != 0) {
+                        hit_point =
+                            runtime_points_by_id[result.point_id];
+                        lookup_ok = true;
+                    }
+
+                    const auto view_index =
+                        static_cast<std::size_t>(
+                            result.request.viewport_index
+                        );
+                    const char* hover_resolve_path =
+                        lookup_ok ? "runtime_lookup" : "miss";
+                    if (result.request.kind ==
+                            GpuPickRequestKind::Hover &&
+                        result.has_hit &&
+                        !lookup_ok) {
+                        if (const auto resolved =
+                                resolve_hover_point_from_visible_tiles(
+                                    view_index,
+                                    result.point_id,
+                                    result.request.mouse_x,
+                                    result.request.mouse_y
+                                )) {
+                            hit_point = *resolved;
+                            lookup_ok = true;
+                            hover_resolve_path = "resident_tile_fallback";
+                        } else {
+                            hover_resolve_path =
+                                "resident_tile_fallback_miss";
+                        }
+                    }
+                    if (result.request.kind ==
+                        GpuPickRequestKind::Hover) {
+                        latest_gpu_hover_points[view_index] = hit_point;
+                        latest_gpu_hover_has_hit[view_index] =
+                            result.has_hit;
+                        latest_gpu_hover_lookup_ok[view_index] =
+                            lookup_ok;
+                        latest_gpu_hover_point_id[view_index] =
+                            result.point_id;
+                        latest_gpu_capture_x[view_index] =
+                            result.request.mouse_x;
+                        latest_gpu_capture_y[view_index] =
+                            result.request.mouse_y;
+                        latest_gpu_capture_radius[view_index] =
+                            static_cast<float>(
+                                result.request.pick_radius_px
+                            );
+                        pending_hover_miss_dump[view_index] =
+                            !result.has_hit;
+                        // #region diagnostic hover-chain
+                        {
+                            static int hc_frame = 0;
+                            if (++hc_frame <= 160) {
+                                std::fprintf(stderr,
+                                    "[HOVER-CHAIN] f=%d vp=%zu"
+                                    " has_hit=%s id=%u lookup=%s"
+                                    " path=%s"
+                                    " cap=(%.1f,%.1f) r=%.1f",
+                                    hc_frame, view_index,
+                                    result.has_hit ? "Y" : "N",
+                                    result.point_id,
+                                    lookup_ok ? "Y" : "N",
+                                    hover_resolve_path,
+                                    static_cast<double>(
+                                        result.request.mouse_x
+                                    ),
+                                    static_cast<double>(
+                                        result.request.mouse_y
+                                    ),
+                                    static_cast<double>(
+                                        latest_gpu_capture_radius[view_index]
+                                    ));
+                                if (hit_point) {
+                                    std::fprintf(stderr,
+                                        " attr=(x=%.2f,y=%.2f,"
+                                        "fold=%.3f,z=%.2f)",
+                                        static_cast<double>(
+                                            static_cast<float>(
+                                                static_cast<double>(
+                                                    hit_point->x
+                                                ) +
+                                                dataset.origin_x()
+                                            )
+                                        ),
+                                        static_cast<double>(
+                                            static_cast<float>(
+                                                static_cast<double>(
+                                                    hit_point->y
+                                                ) +
+                                                dataset.origin_y()
+                                            )
+                                        ),
+                                        static_cast<double>(
+                                            hit_point->value
+                                        ),
+                                        static_cast<double>(
+                                            static_cast<float>(
+                                                static_cast<double>(
+                                                    hit_point->z
+                                                ) +
+                                                dataset.origin_z()
+                                            )
+                                        ));
+                                }
+                                std::fprintf(stderr, "\n");
+                            }
+                        }
+                        // #endregion
+                        if (benchmark_pick_enabled &&
+                            result.request.benchmark_query_index >= 0) {
+                            const auto query_index =
+                                static_cast<std::size_t>(
+                                    result.request.benchmark_query_index
+                                );
+                            BenchmarkPickObservedResult observed;
+                            observed.query_index = query_index;
+                            observed.has_hit = hit_point.has_value();
+                            observed.gpu_has_hit = result.has_hit;
+                            observed.point_id = result.point_id;
+                            observed.depth = result.depth;
+                            observed.issue_cpu_ms =
+                                query_index <
+                                        benchmark_pick_issue_cpu_ms.size()
+                                    ? benchmark_pick_issue_cpu_ms[
+                                          query_index
+                                      ]
+                                    : 0.0;
+                            observed.collect_cpu_ms = collect_cpu_ms;
+                            if (query_index <
+                                benchmark_pick_issue_metadata.size()) {
+                                observed.all_tiles_resident =
+                                    benchmark_pick_issue_metadata[
+                                        query_index
+                                    ].all_tiles_resident;
+                                observed.resident_tile_ids =
+                                    benchmark_pick_issue_metadata[
+                                        query_index
+                                    ].resident_tile_ids;
+                            }
+                            if (hit_point) {
+                                observed.x = hit_point->x;
+                                observed.y = hit_point->y;
+                                observed.z = hit_point->z;
+                                observed.value = hit_point->value;
+                            }
+                            benchmark_pick_results.push_back(observed);
+                        }
+                        continue;
+                    }
+
+                    if (result.request.kind !=
+                        GpuPickRequestKind::BoxSelectAnchor) {
+                        continue;
+                    }
+
+                    const gs3d::camera::Viewport mouse_viewport{
+                        result.request.viewport_width,
+                        result.request.viewport_height
+                    };
+                    const float plane_z =
+                        hit_point
+                            ? hit_point->z
+                            : result.request.anchor_camera.target().z;
+                    const auto selection_bounds =
+                        gs3d::camera::box_select_world_bounds(
+                            result.request.box_select_min_x,
+                            result.request.box_select_min_y,
+                            result.request.box_select_max_x,
+                            result.request.box_select_max_y,
+                            mouse_viewport,
+                            result.request.anchor_camera,
+                            bounds,
+                            plane_z
+                        );
+                    if (!selection_bounds) {
+                        continue;
+                    }
+
+                    auto& box_camera =
+                        viewport_manager.camera(
+                            result.request.viewport_index
+                        );
+                    box_camera.fit_bounds(*selection_bounds);
+                    camera_hub.propagate(
+                        result.request.viewport_index
+                    );
+                    streaming_viewport_index =
+                        result.request.viewport_index;
+                    tile_selection_dirty = true;
+                }
+            };
+
         while (!window.should_close() &&
                (!config_.benchmark_mode ||
                 benchmark_frame_index < benchmark_target_frame_count)) {
@@ -2881,6 +3305,15 @@ int ViewerApp::run() {
                 ).count();
 
             previous_time = current_time;
+
+            for (std::uint32_t frame_slot = 0;
+                 frame_slot < renderer.frames_in_flight();
+                 ++frame_slot) {
+                if (!renderer.is_frame_slot_ready(frame_slot)) {
+                    continue;
+                }
+                consume_ready_pick_frame_slot(frame_slot);
+            }
 
             // Pairs the level rendered last frame with its measured
             // duration, driving LodSelectorConfig::adaptive_interacting_level
@@ -3069,6 +3502,30 @@ int ViewerApp::run() {
                 const auto& hover_point =
                     latest_gpu_hover_points[static_cast<std::size_t>(i)];
                 view.hover_tooltip_visible = hover_point.has_value();
+                view.hover_debug_has_hit =
+                    latest_gpu_hover_has_hit[static_cast<std::size_t>(i)];
+                view.hover_debug_lookup_ok =
+                    latest_gpu_hover_lookup_ok[static_cast<std::size_t>(i)];
+                view.hover_debug_point_id =
+                    latest_gpu_hover_point_id[static_cast<std::size_t>(i)];
+                view.hover_debug_capture_x =
+                    latest_gpu_capture_x[static_cast<std::size_t>(i)];
+                view.hover_debug_capture_y =
+                    latest_gpu_capture_y[static_cast<std::size_t>(i)];
+                view.hover_debug_capture_radius =
+                    latest_gpu_capture_radius[static_cast<std::size_t>(i)];
+                view.hover_x = 0.0f;
+                view.hover_y = 0.0f;
+                view.hover_fold = 0.0f;
+                view.hover_elevation = 0.0f;
+                view.hover_screen_x =
+                    view.hover_debug_has_hit
+                        ? view.hover_debug_capture_x
+                        : -1.0f;
+                view.hover_screen_y =
+                    view.hover_debug_has_hit
+                        ? view.hover_debug_capture_y
+                        : -1.0f;
                 if (hover_point) {
                     view.hover_x =
                         static_cast<float>(
@@ -3086,7 +3543,70 @@ int ViewerApp::run() {
                             static_cast<double>(hover_point->z) +
                             dataset.origin_z()
                         );
+
+                    // Prefer the current-frame projection when we have the
+                    // resolved point, but fall back to the raw pick coords
+                    // above so the marker still appears on pure GPU-hit frames.
+                    const auto screen_pt =
+                        gs3d::camera::MouseRay::to_screen(
+                            {hover_point->x,
+                             hover_point->y,
+                             hover_point->z},
+                            {camera.viewport_width(),
+                             camera.viewport_height()},
+                            camera
+                        );
+                    if (screen_pt) {
+                        view.hover_screen_x = screen_pt->x;
+                        view.hover_screen_y = screen_pt->y;
+                    }
                 }
+                // #region diagnostic display-chain
+                {
+                    static int dc_frame = 0;
+                    if (++dc_frame <= 120) {
+                        std::fprintf(stderr,
+                            "[DISP] f=%d vp=%d has_hit=%s id=%u lookup=%s"
+                            " tt_vis=%s has_pt=%s cap=(%.1f,%.1f)",
+                            dc_frame, i,
+                            view.hover_debug_has_hit ? "Y" : "N",
+                            view.hover_debug_point_id,
+                            view.hover_debug_lookup_ok ? "Y" : "N",
+                            view.hover_tooltip_visible ? "Y" : "N",
+                            hover_point.has_value() ? "Y" : "N",
+                            static_cast<double>(view.hover_debug_capture_x),
+                            static_cast<double>(view.hover_debug_capture_y));
+                        if (hover_point) {
+                            std::fprintf(stderr,
+                                " attr=(x=%.2f,y=%.2f,fold=%.3f,z=%.2f)"
+                                " scr=(%.0f,%.0f) fb=%ux%u",
+                                static_cast<double>(
+                                    static_cast<float>(
+                                        static_cast<double>(hover_point->x) +
+                                        dataset.origin_x()
+                                    )
+                                ),
+                                static_cast<double>(
+                                    static_cast<float>(
+                                        static_cast<double>(hover_point->y) +
+                                        dataset.origin_y()
+                                    )
+                                ),
+                                static_cast<double>(hover_point->value),
+                                static_cast<double>(
+                                    static_cast<float>(
+                                        static_cast<double>(hover_point->z) +
+                                        dataset.origin_z()
+                                    )
+                                ),
+                                static_cast<double>(view.hover_screen_x),
+                                static_cast<double>(view.hover_screen_y),
+                                view.image_width, view.image_height);
+                        }
+                        std::fprintf(stderr, "\n");
+                    }
+                }
+                // #endregion
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
@@ -3951,9 +4471,19 @@ int ViewerApp::run() {
             for (auto& request : gpu_pick_requests) {
                 request = {};
             }
-            for (std::size_t i = 0; i < app_state.render_views.size(); ++i) {
-                if (!app_state.render_views[i].render_requested) {
-                    latest_gpu_hover_points[i].reset();
+            // Clear hover data only for views that did not render this
+            // frame — not based on ImGui hover state (which can be wrong
+            // when ghost viewports consume the hover hit-test).
+            for (int i = 0; i < viewport_manager.active_count(); ++i) {
+                if (!app_state.render_views[static_cast<std::size_t>(i)]
+                         .render_requested) {
+                    latest_gpu_hover_points[static_cast<std::size_t>(i)]
+                        .reset();
+                    latest_gpu_hover_has_hit[static_cast<std::size_t>(i)] =
+                        false;
+                    latest_gpu_hover_lookup_ok[static_cast<std::size_t>(i)] =
+                        false;
+                    latest_gpu_hover_point_id[static_cast<std::size_t>(i)] = 0u;
                 }
             }
             for (const auto& frame : gui_cmds.viewport_frames) {
@@ -3974,28 +4504,29 @@ int ViewerApp::run() {
                         0.5f * (frame.box_select_min_x + frame.box_select_max_x);
                     request.mouse_y =
                         0.5f * (frame.box_select_min_y + frame.box_select_max_y);
+                    request.pick_radius_px =
+                        compute_hover_pick_radius_px(push.point_size);
                     request.box_select_min_x = frame.box_select_min_x;
                     request.box_select_min_y = frame.box_select_min_y;
                     request.box_select_max_x = frame.box_select_max_x;
                     request.box_select_max_y = frame.box_select_max_y;
                     request.anchor_camera =
                         viewport_manager.camera(frame.index);
-                    latest_gpu_hover_points[
-                        static_cast<std::size_t>(frame.index)
-                    ].reset();
                     continue;
                 }
 
-                if (!frame.hovered ||
-                    frame.active ||
-                    !frame.mouse_on_image) {
-                    latest_gpu_hover_points[
-                        static_cast<std::size_t>(frame.index)
-                    ].reset();
+                // Issue hover pick whenever the cursor is on the image,
+                // regardless of ImGui hover state.  Ghost viewports can
+                // consume the ImGui hit-test even though the cursor is
+                // visually over the rendered data; the pick result's
+                // has_hit is the ground truth for "cursor on data".
+                if (frame.active || !frame.mouse_on_image) {
                     continue;
                 }
 
                 request.kind = GpuPickRequestKind::Hover;
+                request.pick_radius_px =
+                    compute_hover_pick_radius_px(push.point_size);
                 if (benchmark_pick_enabled &&
                     frame.index == 0 &&
                     benchmark_pick_issue_index < benchmark_pick_queries.size()) {
@@ -4013,134 +4544,7 @@ int ViewerApp::run() {
                 window,
                 gs3d::render::VulkanRenderer::FrameDrawCallbacks{
                     .frame_ready = [&](std::uint32_t frame_slot) {
-                        gpu_pick_frame_slot = frame_slot;
-                        if (config_.pick_debug_dump_enabled) {
-                            const auto debug_dump =
-                                pick_debug_frame_dumper.collect_ready_frame(
-                                    frame_slot
-                                );
-                            if (debug_dump) {
-                                write_pick_debug_dump(
-                                    config_.pick_debug_dump_dir,
-                                    *debug_dump
-                                );
-                            }
-                        }
-                        gs3d::util::Stopwatch collect_timer;
-                        const auto pick_results =
-                            gpu_pick_readback.collect_ready_frame(frame_slot);
-                        const double collect_cpu_ms =
-                            collect_timer.elapsed_milliseconds();
-                        for (const auto& result : pick_results) {
-                            if (result.request.viewport_index < 0 ||
-                                result.request.viewport_index >=
-                                    static_cast<int>(
-                                        latest_gpu_hover_points.size()
-                                    )) {
-                                continue;
-                            }
-
-                            std::optional<gs3d::data::Gs3dPoint> hit_point;
-                            if (result.has_hit &&
-                                result.point_id < runtime_points_by_id.size() &&
-                                runtime_points_valid_by_id[result.point_id] != 0) {
-                                hit_point =
-                                    runtime_points_by_id[result.point_id];
-                            }
-
-                            const auto view_index =
-                                static_cast<std::size_t>(
-                                    result.request.viewport_index
-                                );
-                            if (result.request.kind ==
-                                GpuPickRequestKind::Hover) {
-                                latest_gpu_hover_points[view_index] = hit_point;
-                                latest_gpu_capture_x[view_index] =
-                                    result.request.mouse_x;
-                                latest_gpu_capture_y[view_index] =
-                                    result.request.mouse_y;
-                                if (benchmark_pick_enabled &&
-                                    result.request.benchmark_query_index >= 0) {
-                                    const auto query_index =
-                                        static_cast<std::size_t>(
-                                            result.request.benchmark_query_index
-                                        );
-                                    BenchmarkPickObservedResult observed;
-                                    observed.query_index = query_index;
-                                    observed.has_hit = hit_point.has_value();
-                                    observed.gpu_has_hit = result.has_hit;
-                                    observed.point_id = result.point_id;
-                                    observed.depth = result.depth;
-                                    observed.issue_cpu_ms =
-                                        query_index <
-                                                benchmark_pick_issue_cpu_ms.size()
-                                            ? benchmark_pick_issue_cpu_ms[
-                                                  query_index
-                                              ]
-                                            : 0.0;
-                                    observed.collect_cpu_ms = collect_cpu_ms;
-                                    if (query_index <
-                                        benchmark_pick_issue_metadata.size()) {
-                                        observed.all_tiles_resident =
-                                            benchmark_pick_issue_metadata[
-                                                query_index
-                                            ].all_tiles_resident;
-                                        observed.resident_tile_ids =
-                                            benchmark_pick_issue_metadata[
-                                                query_index
-                                            ].resident_tile_ids;
-                                    }
-                                    if (hit_point) {
-                                        observed.x = hit_point->x;
-                                        observed.y = hit_point->y;
-                                        observed.z = hit_point->z;
-                                        observed.value = hit_point->value;
-                                    }
-                                    benchmark_pick_results.push_back(observed);
-                                }
-                                continue;
-                            }
-
-                            if (result.request.kind !=
-                                GpuPickRequestKind::BoxSelectAnchor) {
-                                continue;
-                            }
-
-                            const gs3d::camera::Viewport mouse_viewport{
-                                result.request.viewport_width,
-                                result.request.viewport_height
-                            };
-                            const float plane_z =
-                                hit_point
-                                    ? hit_point->z
-                                    : result.request.anchor_camera.target().z;
-                            const auto selection_bounds =
-                                gs3d::camera::box_select_world_bounds(
-                                    result.request.box_select_min_x,
-                                    result.request.box_select_min_y,
-                                    result.request.box_select_max_x,
-                                    result.request.box_select_max_y,
-                                    mouse_viewport,
-                                    result.request.anchor_camera,
-                                    bounds,
-                                    plane_z
-                                );
-                            if (!selection_bounds) {
-                                continue;
-                            }
-
-                            auto& box_camera =
-                                viewport_manager.camera(
-                                    result.request.viewport_index
-                                );
-                            box_camera.fit_bounds(*selection_bounds);
-                            camera_hub.propagate(
-                                result.request.viewport_index
-                            );
-                            streaming_viewport_index =
-                                result.request.viewport_index;
-                            tile_selection_dirty = true;
-                        }
+                        consume_ready_pick_frame_slot(frame_slot);
                     },
                     // pre_pass: all offscreen render passes execute here, before the
                     // swapchain render pass starts. Each viewport records its own
@@ -4329,7 +4733,8 @@ int ViewerApp::run() {
                                         GpuPickRequestKind::Hover &&
                                     !pick_debug_dump_recorded_this_frame &&
                                     (!config_.pick_debug_dump_once_on_hover ||
-                                     !pick_debug_dump_completed);
+                                     !pick_debug_dump_completed ||
+                                     pending_hover_miss_dump[viewport_index]);
                                 if (should_dump_pick_debug) {
                                     const int cursor_x = std::clamp(
                                         static_cast<int>(
@@ -4421,6 +4826,10 @@ int ViewerApp::run() {
                                                   std::to_string(
                                                       lod_level_for_frame
                                                   );
+                                    debug_metadata.trigger_reason =
+                                        pending_hover_miss_dump[viewport_index]
+                                            ? "followup_after_hover_miss"
+                                            : "hover_frame";
                                     debug_metadata.selected_tile_ids =
                                         selected_tile_ids;
                                     debug_metadata.resident_tile_ids =
@@ -4433,6 +4842,8 @@ int ViewerApp::run() {
                                         )) {
                                         pick_debug_dump_recorded_this_frame =
                                             true;
+                                        pending_hover_miss_dump[viewport_index] =
+                                            false;
                                         if (config_
                                                 .pick_debug_dump_once_on_hover) {
                                             pick_debug_dump_completed = true;

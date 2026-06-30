@@ -90,6 +90,34 @@ inline ViewportMouseMapping map_screen_mouse_to_framebuffer(
     return mapping;
 }
 
+// Inverse of map_screen_mouse_to_framebuffer: framebuffer pixel coords →
+// screen position within the plot_rect.  The caller adds plot_rect.min
+// to get absolute ImGui screen coordinates.
+struct ScreenPoint { float x, y; };
+
+[[nodiscard]]
+inline ScreenPoint framebuffer_to_plot_screen(
+    float fb_x,
+    float fb_y,
+    const ViewportScreenRect& canvas_rect,
+    bool show_map_axis,
+    std::uint32_t framebuffer_width,
+    std::uint32_t framebuffer_height
+) noexcept
+{
+    const auto plot_rect = compute_plot_rect(show_map_axis, canvas_rect);
+    const float plot_w = plot_rect.width();
+    const float plot_h = plot_rect.height();
+    if (plot_w <= 0.0f || plot_h <= 0.0f ||
+        framebuffer_width == 0 || framebuffer_height == 0) {
+        return {plot_rect.min_x, plot_rect.min_y};
+    }
+    return {
+        fb_x * plot_w / static_cast<float>(framebuffer_width),
+        fb_y * plot_h / static_cast<float>(framebuffer_height)
+    };
+}
+
 class UiRoot {
 public:
     UiRoot() = default;
