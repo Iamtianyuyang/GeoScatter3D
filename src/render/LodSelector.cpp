@@ -202,4 +202,45 @@ double LodSelector::idle_seconds() const noexcept {
     return idle_seconds_;
 }
 
+std::size_t LodSelector::select_level_by_spacing(
+    float world_per_pixel,
+    const std::vector<float>& voxel_sizes,
+    std::size_t previous_level,
+    float hysteresis
+) noexcept {
+    if (voxel_sizes.empty()) {
+        return 0;
+    }
+
+    if (hysteresis < 1.0f) {
+        hysteresis = 1.0f;
+    }
+
+    /*
+     * 从最粗层向最精层扫描，返回 voxel_size ≤ world_per_pixel 的最粗层。
+     *
+     * 滞回规则：考虑比 previous_level 更粗的层（索引更大）时，将阈值
+     * 放大 hysteresis 倍，使"变粗"比"变精"更保守——防止边界抖动。
+     * previous_level >= voxel_sizes.size() 表示无前值，不使用滞回。
+     */
+    const bool use_hysteresis =
+        previous_level < voxel_sizes.size();
+
+    for (std::size_t i = voxel_sizes.size(); i > 0; --i) {
+        const std::size_t idx = i - 1;
+        float threshold = voxel_sizes[idx];
+
+        if (use_hysteresis && idx > previous_level) {
+            // 正在考虑一个比之前更粗的层 → 放宽阈值
+            threshold *= hysteresis;
+        }
+
+        if (threshold <= world_per_pixel) {
+            return idx;
+        }
+    }
+
+    return 0;  // 极近兜底：连最精细层都不满足
+}
+
 } // namespace gs3d::render

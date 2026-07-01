@@ -106,19 +106,19 @@ struct ViewerAppConfig {
 
     bool lod_auto_load_sidecar = true;
     bool lod_auto_save_sidecar = true;
-    
-    std::vector<std::uint64_t> lod_target_point_counts{
-        3'000'000ull,
-        1'000'000ull,
-        300'000ull
-    };
 
     /*
-     * 按源点数比例算 target_point_counts，不用每次数据规模变了就手调绝对值
-     * （见 include/data/Gs3dLodTargets.hpp）。非空时优先于上面的
-     * lod_target_point_counts。默认空——不设置就完全是旧行为。
+     * Potree 式自动分层参数（替代旧的 target_point_counts / target_point_ratios）。
+     *
+     *   finest_target_points: 最精细层目标点数，反推锚定 voxel_size_0。
+     *   growth_factor: voxel_size 倍增系数。XY 数据默认 √2 (1.414)。
+     *   min_points_per_level: 最粗层点数下限，低于此值停止分层。
+     *
+     * 对 33M XY 数据，默认值预期自动分 ~5 层，最精 ~2M，最粗 ~125K。
      */
-    std::vector<double> lod_target_point_ratios{};
+    std::uint64_t lod_finest_target_points = 2'000'000ull;
+    float lod_growth_factor = 1.414f;
+    std::uint64_t lod_min_points_per_level = 100'000ull;
 
     std::string lod_voxel_mode = "XY";
     float lod_voxel_scale = 1.0f;

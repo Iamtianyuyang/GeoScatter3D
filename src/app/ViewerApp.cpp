@@ -45,6 +45,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -300,12 +302,12 @@ gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
 ) {
     gs3d::data::Gs3dLodBuildConfig lod_config;
     lod_config.include_full_resolution_level = false;
-    lod_config.target_point_counts =
-        gs3d::data::resolve_lod_target_point_counts(
-            dataset.point_count(),
-            config.lod_target_point_ratios,
-            config.lod_target_point_counts
-        );
+    lod_config.finest_target_points =
+        config.lod_finest_target_points;
+    lod_config.growth_factor =
+        config.lod_growth_factor;
+    lod_config.min_points_per_level =
+        config.lod_min_points_per_level;
     lod_config.voxel_mode =
         parse_lod_voxel_mode(config.lod_voxel_mode);
     lod_config.voxel_scale =
@@ -2891,6 +2893,21 @@ int ViewerApp::run() {
          */
         std::size_t frozen_display_lod = 0;
 
+        /*
+         * 空间选层的上一帧结果（用于滞回）。初始化为 level_count
+         * 表示"无前值"，首帧不出滞回。
+         */
+        std::size_t last_spatial_level =
+            static_cast<std::size_t>(-1);
+
+        /*
+         * 交互期间冻结的空间目标层。交互中不跟踪 ortho_height 变化，
+         * 停手后才更新——与 tile 选择的 !interacting 门控语义一致，
+         * 避免缩放中 LOD 硬切导致抽稀跳变。
+         */
+        std::size_t frozen_spatial_level =
+            static_cast<std::size_t>(-1);
+
         const auto log_tile_upload =
             [this](
                 const gs3d::render::PointCloudTileGpuStats& stats,
@@ -4303,8 +4320,57 @@ int ViewerApp::run() {
             // use the same level and the verbose log fires at most once.
             if (config_.lod_enabled && lod_gpu_cloud) {
                 const auto level_count = lod_gpu_cloud->level_count();
-                const auto requested =
+
+                // --- Spatial: what level does the current zoom need? ---
+                // 交互中冻结，停手后更新——与 tile 选择的 !interacting
+                // 门控语义一致，避免缩放中 LOD 硬切导致抽稀跳变。
+                const auto voxel_sizes = lod_gpu_cloud->voxel_sizes();
+                float world_per_pixel = 0.0f;
+                float spatial_ortho_h = 0.0f;
+                {
+                    const auto& cam =
+                        viewport_manager.camera(streaming_viewport_index);
+                    spatial_ortho_h = cam.ortho_height();
+                    const float vp_h =
+                        static_cast<float>(cam.viewport_height());
+                    if (vp_h > 0.0f) {
+                        world_per_pixel = spatial_ortho_h / vp_h;
+                    }
+                }
+
+                std::size_t spatial_level;
+                if (interacting) {
+                    // 交互中冻结：首帧正常计算，后续用冻结值
+                    if (frozen_spatial_level >= level_count) {
+                        frozen_spatial_level =
+                            gs3d::render::LodSelector::select_level_by_spacing(
+                                world_per_pixel,
+                                voxel_sizes,
+                                last_spatial_level
+                            );
+                    }
+                    spatial_level = frozen_spatial_level;
+                } else {
+                    // 停手后更新到当前 zoom 对应的目标层
+                    spatial_level =
+                        gs3d::render::LodSelector::select_level_by_spacing(
+                            world_per_pixel,
+                            voxel_sizes,
+                            last_spatial_level
+                        );
+                    frozen_spatial_level = spatial_level;
+                }
+                last_spatial_level = spatial_level;
+
+                // --- Temporal: existing time / frame-rate logic ---
+                const auto temporal_level =
                     lod_selector.select_level(level_count);
+
+                // --- Combine: coarser of the two constraints ---
+                // spatial 定"当前缩放需要多精"，temporal 定"当前性能允许多精"
+                // 取 max = 更粗的那个，既是空间底线也是性能保护
+                const auto requested =
+                    std::max(spatial_level, temporal_level);
 
                 // 安全网：select_level 理论上永远返回有效值（所有 LOD
                 // 级别都在启动时一次性上传到 GPU），但万一索引越界退回到
@@ -4321,24 +4387,26 @@ int ViewerApp::run() {
                 }
 
                 /*
-                 * KeepStableHighQuality:显示档位的"质量地板"是已经稳定收敛
-                 * 到的最精细档位(idle 会收敛到 level 0 = 最高细节)。无论
-                 * 交互中还是刚松手的过渡期,都绝不显示比这更粗的档位 ——
-                 * 取 select_level() 返回值与 frozen_display_lod 中更精细的
-                 * 一个(索引更小=更精细)。这样:
-                 *   - 交互途中点云不会变稀疏(不降档);
-                 *   - 松手后的 ~0.2s 过渡期也不会闪一下粗 LOD
-                 *     (select_level 此时仍会短暂返回粗档,被地板挡住)。
-                 * frozen 只在 idle 且 select_level 给出更精细档位时下移,
-                 * 即只向"更高质量"更新,不会反向变粗。
-                 * select_level() 仍照常在后台运行,供其他模式与状态延续。
+                 * KeepStableHighQuality: frozen 是显示质量地板，交互中锁定，
+                 * 空闲时向更精细方向更新。新增：空间缩放允许 coarsening
+                 * —— 缩小后经 high_delay 延迟才降质，防止缩放刚停就闪跳。
                  */
                 if (config_.interactive_display_mode ==
                         gs3d::app::InteractiveDisplayMode::AllowCoarseLOD) {
                     lod_level_for_frame = resolved_lod;
                 } else {
-                    if (!interacting && resolved_lod < frozen_display_lod) {
-                        frozen_display_lod = resolved_lod;
+                    if (!interacting) {
+                        // 传统：temporal 改善时 frozen 跟踪到更精细
+                        if (resolved_lod < frozen_display_lod) {
+                            frozen_display_lod = resolved_lod;
+                        }
+                        // 新增：缩小后空间缩放允许 coarsening
+                        // （仅在 idle ≥ high_delay 后，防松手瞬间跳粗）
+                        if (lod_selector.idle_seconds() >=
+                            config_.lod_high_delay_seconds) {
+                            frozen_display_lod =
+                                std::max(frozen_display_lod, spatial_level);
+                        }
                     }
                     lod_level_for_frame =
                         std::min(resolved_lod, frozen_display_lod);
@@ -4355,8 +4423,32 @@ int ViewerApp::run() {
                                   << level.gpu_point_count
                                   << ", idle_seconds = "
                                   << lod_selector.idle_seconds()
+                                  << ", ortho_h = "
+                                  << world_per_pixel
+                                  << " m/px"
                                   << '\n';
                     }
+
+                    // 空间选层调试（GS3D_LOD_DEBUG=1）
+                    if (const char* env =
+                            std::getenv("GS3D_LOD_DEBUG")) {
+                        if (env[0] == '1') {
+                            std::fprintf(
+                                stderr,
+                                "[LODDBG] ortho_h=%.1f wpix=%.3f "
+                                "spatial=%zu%s temporal=%zu → level=%zu "
+                                "frozen=%zu %s\n",
+                                static_cast<double>(spatial_ortho_h),
+                                static_cast<double>(world_per_pixel),
+                                spatial_level,
+                                interacting ? "(frozen)" : "",
+                                temporal_level,
+                                lod_level_for_frame,
+                                frozen_display_lod,
+                                interacting ? "(interacting)" : "(idle)");
+                        }
+                    }
+
                     last_lod_level = lod_level_for_frame;
                 }
             }

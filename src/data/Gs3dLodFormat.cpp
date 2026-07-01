@@ -304,6 +304,18 @@ std::string Gs3dLodFormat::file_header_summary(
         << header.value_min << ", "
         << header.value_max << "]\n";
 
+    if (header.version >= 2) {
+        oss << "  build_finest_target_points: "
+            << header.build_finest_target_points
+            << '\n';
+        oss << "  build_growth_factor_x1000: "
+            << header.build_growth_factor_x1000
+            << '\n';
+        oss << "  build_min_points_per_level: "
+            << header.build_min_points_per_level
+            << '\n';
+    }
+
     return oss.str();
 }
 

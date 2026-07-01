@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 namespace gs3d::render {
 
@@ -71,6 +72,26 @@ public:
 
     [[nodiscard]]
     double idle_seconds() const noexcept;
+
+    /*
+     * Potree 式空间选层：选出 voxel_size ≤ world_per_pixel 的最粗层。
+     *
+     *   world_per_pixel = ortho_height / viewport_height (正交投影)
+     *   voxel_sizes[i]  = 第 i 层的 voxel_size (i=0 最精细)
+     *
+     * 滞回 (hysteresis)：切到更粗层时阈值放宽为 voxel_size × hysteresis，
+     * 防止 world_per_pixel 在边界附近微抖导致两层间反复横跳。
+     * hysteresis 默认 1.2（20% 余量）。传 1.0 则无滞回。
+     *
+     * previous_level = level_count 表示"无前值"（首帧或刚重置不出滞回）。
+     */
+    [[nodiscard]]
+    static std::size_t select_level_by_spacing(
+        float world_per_pixel,
+        const std::vector<float>& voxel_sizes,
+        std::size_t previous_level,
+        float hysteresis = 1.2f
+    ) noexcept;
 
 private:
     LodSelectorConfig config_{};

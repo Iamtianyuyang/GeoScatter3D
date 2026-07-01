@@ -657,21 +657,27 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.lod_auto_save_sidecar
         );
         
-        config.viewer.lod_target_point_counts = uint64_array_or_default(
+        /*
+         * Potree 式自动分层参数（替代旧的 target_point_counts / target_point_ratios）。
+         * 最精细层由 finest_target_points 锚定，然后每层 voxel_size ×= growth_factor，
+         * 层数由数据自然决定。
+         */
+        config.viewer.lod_finest_target_points = uint64_or_default(
             *lod,
-            "target_point_counts",
-            config.viewer.lod_target_point_counts
+            "finest_target_points",
+            config.viewer.lod_finest_target_points
         );
 
-        /*
-         * 按源点数比例自动算 target_point_counts，不用每次数据规模变化都手调
-         * 绝对值。非空时优先于上面的 target_point_counts（解析顺序无关，
-         * 实际取哪个由 Gs3dLodTargets::resolve 决定）。
-         */
-        config.viewer.lod_target_point_ratios = double_array_or_default(
+        config.viewer.lod_growth_factor = float_or_default(
             *lod,
-            "target_point_ratios",
-            config.viewer.lod_target_point_ratios
+            "growth_factor",
+            config.viewer.lod_growth_factor
+        );
+
+        config.viewer.lod_min_points_per_level = uint64_or_default(
+            *lod,
+            "min_points_per_level",
+            config.viewer.lod_min_points_per_level
         );
 
         config.viewer.lod_voxel_mode = string_or_default(
@@ -1115,29 +1121,15 @@ void AppConfigPrinter::print(const AppConfig& config) {
     std::cout << "[CONFIG] lod.auto_save_sidecar = "
             << (config.viewer.lod_auto_save_sidecar ? "true" : "false")
             << '\n';
-    std::cout << "[CONFIG] lod.target_point_counts = [";
-
-    for (std::size_t i = 0; i < config.viewer.lod_target_point_counts.size(); ++i) {
-        if (i > 0) {
-            std::cout << ", ";
-        }
-
-        std::cout << config.viewer.lod_target_point_counts[i];
-    }
-
-    std::cout << "]\n";
-
-    std::cout << "[CONFIG] lod.target_point_ratios = [";
-
-    for (std::size_t i = 0; i < config.viewer.lod_target_point_ratios.size(); ++i) {
-        if (i > 0) {
-            std::cout << ", ";
-        }
-
-        std::cout << config.viewer.lod_target_point_ratios[i];
-    }
-
-    std::cout << "]\n";
+    std::cout << "[CONFIG] lod.finest_target_points = "
+              << config.viewer.lod_finest_target_points
+              << '\n';
+    std::cout << "[CONFIG] lod.growth_factor = "
+              << config.viewer.lod_growth_factor
+              << '\n';
+    std::cout << "[CONFIG] lod.min_points_per_level = "
+              << config.viewer.lod_min_points_per_level
+              << '\n';
 
     std::cout << "[CONFIG] lod.voxel_mode = "
               << config.viewer.lod_voxel_mode << '\n';

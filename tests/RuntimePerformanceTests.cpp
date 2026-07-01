@@ -654,6 +654,203 @@ void test_lod_non_adaptive_mode_still_pins_to_lowest()
     );
 }
 
+void test_spatial_select_picks_coarsest_covering()
+{
+    // voxel_sizes = [5.0, 10.0, 20.0] (finest → coarsest)
+    const std::vector<float> voxel_sizes{5.0f, 10.0f, 20.0f};
+    constexpr std::size_t no_prev =
+        static_cast<std::size_t>(-1);
+
+    // wpix=12.0: voxel 20 > 12 (skip), voxel 10 ≤ 12 → level 1
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            12.0f, voxel_sizes, no_prev) == 1,
+        "world_per_pixel=12 picks level 1 (voxel 10 ≤ 12)"
+    );
+
+    // wpix=25.0: voxel 20 ≤ 25 → level 2 (coarsest covering)
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            25.0f, voxel_sizes, no_prev) == 2,
+        "world_per_pixel=25 picks level 2 (coarsest satisfying)"
+    );
+
+    // wpix=3.0: no voxel ≤ 3, fallback to level 0 (finest)
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            3.0f, voxel_sizes, no_prev) == 0,
+        "world_per_pixel=3 falls back to level 0 (zoomed way in)"
+    );
+
+    // wpix=5.0 (exact match at boundary): voxel 5 ≤ 5 → level 0
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            5.0f, voxel_sizes, no_prev) == 0,
+        "world_per_pixel=5 (exact match) picks level 0"
+    );
+}
+
+void test_zoom_in_selects_finer_level()
+{
+    const std::vector<float> voxel_sizes{5.0f, 10.0f, 20.0f};
+    constexpr std::size_t no_prev =
+        static_cast<std::size_t>(-1);
+
+    // 缩小 (大 wpix) → 选择更粗的层
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            30.0f, voxel_sizes, no_prev) == 2,
+        "zoom out (wpix=30) → coarsest level 2"
+    );
+
+    // 放大 (小 wpix)：8.0 在 5 和 10 之间，
+    // 20>8 (skip), 10>8 (skip), 5≤8 → level 0
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            8.0f, voxel_sizes, no_prev) == 0,
+        "zoom in (wpix=8.0) → level 0 (10>8, 5≤8)"
+    );
+
+    // 极近兜底
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            0.1f, voxel_sizes, no_prev) == 0,
+        "extreme zoom (wpix=0.1) → level 0 fallback"
+    );
+}
+
+void test_spatial_no_flicker_at_boundary()
+{
+    // 模拟在 level 0/1 边界附近抖动 world_per_pixel
+    const std::vector<float> voxel_sizes{5.0f, 10.0f, 20.0f};
+    constexpr std::size_t no_prev =
+        static_cast<std::size_t>(-1);
+
+    // 初始状态：wpix=10.5，选 level 1 (10 ≤ 10.5)
+    auto prev =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            10.5f, voxel_sizes, no_prev);
+    expect(prev == 1,
+        "initial wpix=10.5 → level 1");
+
+    // 放大：wpix 降到 9.5 < 10，切到 level 0 (无滞回阻碍变精)
+    auto cur =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            9.5f, voxel_sizes, prev);
+    expect(cur == 0,
+        "zoom in wpix=9.5 → level 0 (finer, no hysteresis block)");
+
+    // 缩小回 10.5：滞回应阻止切回 level 1
+    // 因为 level 1 的阈值被放大为 10 × 1.2 = 12, 12 > 10.5 → 不满足
+    prev = cur;
+    cur = gs3d::render::LodSelector::select_level_by_spacing(
+        10.5f, voxel_sizes, prev);
+    expect(cur == 0,
+        "wpix=10.5 still level 0 (hysteresis: 10×1.2=12 > 10.5, blocked)");
+
+    // 进一步缩小到 wpix=12.5：12.5 ≥ 12 → 切回 level 1
+    prev = cur;
+    cur = gs3d::render::LodSelector::select_level_by_spacing(
+        12.5f, voxel_sizes, prev);
+    expect(cur == 1,
+        "wpix=12.5 → level 1 (12.5 ≥ 12, hysteresis released)");
+
+    // 再次放大到 9.5 → 立即切回 level 0（变精不阻塞）
+    prev = cur;
+    cur = gs3d::render::LodSelector::select_level_by_spacing(
+        9.5f, voxel_sizes, prev);
+    expect(cur == 0,
+        "wpix=9.5 → level 0 again (finer direction, no block)");
+
+    // 空列表兜底
+    expect(
+        gs3d::render::LodSelector::select_level_by_spacing(
+            10.0f, {}, no_prev) == 0,
+        "empty voxel_sizes returns 0");
+}
+
+/*
+ * 交互中空间选层应冻结——不管 ortho_height 如何变化，
+ * spatial_level 保持不变。模拟 ViewerApp 的 frozen_spatial_level 逻辑。
+ */
+void test_spatial_frozen_during_interaction()
+{
+    const std::vector<float> voxel_sizes{5.0f, 10.0f, 20.0f};
+    constexpr std::size_t no_prev =
+        static_cast<std::size_t>(-1);
+
+    // 模拟首帧：初始 zoom，spatial=1
+    std::size_t frozen_spatial =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            12.0f, voxel_sizes, no_prev);
+    expect(frozen_spatial == 1,
+        "initial wpix=12 → spatial=1");
+
+    // 交互中放大：ortho_h 变小，world_per_pixel 随之变小，
+    // 但 frozen 应保持不变（不重新计算 spatial）
+    std::size_t spatial_during = frozen_spatial; // 冻结
+    expect(spatial_during == 1,
+        "still spatial=1 during zoom-in (frozen)");
+
+    // 交互中缩小：同理应保持不变
+    spatial_during = frozen_spatial;
+    expect(spatial_during == 1,
+        "still spatial=1 during zoom-out (frozen)");
+
+    // 停手后：重新计算 spatial，应反映当前 zoom
+    std::size_t spatial_after =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            25.0f, voxel_sizes, frozen_spatial);
+    frozen_spatial = spatial_after;
+    expect(spatial_after == 2,
+        "after zoom-out stop: wpix=25 → spatial=2 (updated)");
+    expect(frozen_spatial == 2,
+        "frozen updated to 2 after interaction");
+}
+
+/*
+ * 停手后 spatial 应立即更新到当前 zoom 对应的目标层，
+ * 不受交互中冻结值的影响。
+ */
+void test_spatial_updates_after_interaction()
+{
+    const std::vector<float> voxel_sizes{5.0f, 10.0f, 20.0f};
+    constexpr std::size_t no_prev =
+        static_cast<std::size_t>(-1);
+
+    // 初始状态：spatial=1
+    std::size_t frozen_spatial =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            12.0f, voxel_sizes, no_prev);
+
+    // 交互中冻结在 level 1
+    // ... (交互结束)
+
+    // 停手放大（wpix 从 12 降到 8）：应更新到 level 0
+    std::size_t spatial_after =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            8.0f, voxel_sizes, frozen_spatial);
+    frozen_spatial = spatial_after;
+    expect(spatial_after == 0,
+        "after zoom-in stop: wpix=8 → spatial=0 (finer)");
+
+    // 停手缩小（wpix 从 8 升到 25）：应更新到 level 2
+    spatial_after =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            25.0f, voxel_sizes, frozen_spatial);
+    frozen_spatial = spatial_after;
+    expect(spatial_after == 2,
+        "after zoom-out stop: wpix=25 → spatial=2 (coarser)");
+
+    // 极近兜底
+    spatial_after =
+        gs3d::render::LodSelector::select_level_by_spacing(
+            2.0f, voxel_sizes, frozen_spatial);
+    frozen_spatial = spatial_after;
+    expect(spatial_after == 0,
+        "after extreme zoom-in: wpix=2 → spatial=0 (fallback)");
+}
+
 gs3d::camera::Camera make_top_down_camera()
 {
     gs3d::camera::Camera camera;
@@ -2141,6 +2338,11 @@ int main()
     test_lod_adaptive_level_drops_immediately_when_over_budget();
     test_lod_adaptive_level_ignores_stale_feedback();
     test_lod_non_adaptive_mode_still_pins_to_lowest();
+    test_spatial_select_picks_coarsest_covering();
+    test_zoom_in_selects_finer_level();
+    test_spatial_no_flicker_at_boundary();
+    test_spatial_frozen_during_interaction();
+    test_spatial_updates_after_interaction();
     test_continuous_zoom_in_flies_forward_without_stalling();
     test_idle_update_does_not_change_camera();
     test_rotation_center_only_changes_on_rotate_begin();

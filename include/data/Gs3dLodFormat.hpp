@@ -13,7 +13,7 @@ inline constexpr std::array<char, 8> GS3D_LOD_MAGIC{
     'G', 'S', '3', 'D', 'L', 'O', 'D', '\0'
 };
 
-inline constexpr std::uint32_t GS3D_LOD_VERSION = 1;
+inline constexpr std::uint32_t GS3D_LOD_VERSION = 2;
 
 enum class Gs3dLodFormatVoxelMode : std::uint32_t {
     XY = 1,
@@ -40,10 +40,15 @@ struct Gs3dLodFileHeader {
     float value_min = 0.0f;
     float value_max = 0.0f;
 
-    std::uint64_t reserved0 = 0;
-    std::uint64_t reserved1 = 0;
-    std::uint64_t reserved2 = 0;
-    std::uint64_t reserved3 = 0;
+    /*
+     * v2 新增：构建时锚参数，用于检测配置变更（growth_factor 存 ×1000
+     * 的整数值，如 1414 表示 1.414）。v1 文件这些字段为 0。
+     */
+    std::uint64_t build_finest_target_points = 0;
+    std::uint64_t build_growth_factor_x1000 = 0;
+    std::uint64_t build_min_points_per_level = 0;
+
+    std::uint64_t reserved = 0;
 };
 
 struct Gs3dLodLevelHeader {

@@ -105,6 +105,13 @@ public:
     [[nodiscard]]
     std::string summary() const;
 
+    /*
+     * 各层 voxel_size 列表，level 0 = 最精细（最小），
+     * level N-1 = 最粗（最大）。供空间选层使用。
+     */
+    [[nodiscard]]
+    std::vector<float> voxel_sizes() const;
+
 private:
     std::vector<PointCloudLodGpuLevel> levels_;
 };

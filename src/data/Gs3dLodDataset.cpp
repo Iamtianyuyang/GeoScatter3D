@@ -236,18 +236,21 @@ Gs3dLodLevel build_voxel_level(
     std::uint32_t level_index,
     std::uint64_t target_point_count,
     float voxel_scale,
-    Gs3dLodVoxelMode voxel_mode
+    Gs3dLodVoxelMode voxel_mode,
+    float explicit_voxel_size = 0.0f
 ) {
     const auto start_time =
         std::chrono::steady_clock::now();
 
     const float voxel_size =
-        estimate_voxel_size(
-            dataset,
-            target_point_count,
-            voxel_scale,
-            voxel_mode
-        );
+        explicit_voxel_size > 0.0f
+            ? explicit_voxel_size
+            : estimate_voxel_size(
+                dataset,
+                target_point_count,
+                voxel_scale,
+                voxel_mode
+            );
 
     Gs3dLodLevel level;
     level.level_index = level_index;
@@ -371,7 +374,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
         );
     }
 
-    if (config.target_point_counts.empty() &&
+    if (config.finest_target_points == 0 &&
         !config.include_full_resolution_level) {
         throw std::runtime_error(
             "Gs3dLodDataset: no LOD levels requested"
@@ -401,107 +404,94 @@ Gs3dLodDataset Gs3dLodDataset::build(
         lod_dataset.add_level(std::move(level));
     }
 
-    std::uint32_t next_level_index =
-        config.include_full_resolution_level ? 1u : 0u;
-
-    struct LevelTask {
-        std::uint32_t level_index = 0;
-        std::uint64_t target_point_count = 0;
-    };
-
-    std::vector<LevelTask> level_tasks;
-    level_tasks.reserve(config.target_point_counts.size());
-
-    for (const auto target_count : config.target_point_counts) {
-        if (target_count == 0) {
-            continue;
-        }
-
-        level_tasks.push_back(LevelTask{
-            .level_index = next_level_index,
-            .target_point_count = target_count,
-        });
-        ++next_level_index;
-    }
-
-    const auto worker_count =
-        resolve_lod_build_threads(level_tasks.size());
-
-    if (config.verbose && worker_count > 1) {
-        std::cout << "[LOD] parallel build: levels="
-                  << level_tasks.size()
-                  << ", threads="
-                  << worker_count
-                  << '\n';
-    }
-
-    if (worker_count <= 1) {
-        for (const auto& task : level_tasks) {
-            auto level =
-                build_voxel_level(
-                    dataset,
-                    task.level_index,
-                    task.target_point_count,
-                    config.voxel_scale,
-                    config.voxel_mode
-                );
-
-            if (config.verbose) {
-                std::cout << "[LOD] level "
-                          << level.level_index
-                          << ": mode="
-                          << voxel_mode_name(level.voxel_mode)
-                          << ", target="
-                          << level.target_point_count
-                          << ", actual="
-                          << level.point_count()
-                          << ", voxel_size="
-                          << level.voxel_size
-                          << ", bytes="
-                          << level.point_bytes()
-                          << ", build_seconds="
-                          << level.build_seconds
-                          << '\n';
-            }
-
-            lod_dataset.add_level(std::move(level));
-        }
-
+    if (config.finest_target_points == 0) {
         return lod_dataset;
     }
 
-    gs3d::util::ThreadPool pool(worker_count);
-    std::vector<std::future<Gs3dLodLevel>> futures;
-    futures.reserve(level_tasks.size());
+    /*
+     * Potree 式自动分层：
+     *   voxel_size_0 = sqrt(extent_x * extent_y / finest_target_points)
+     *                  * voxel_scale
+     *   每层 voxel_size ×= growth_factor
+     *   停止条件：点数 < min_points_per_level
+     */
+    const float extent_x =
+        safe_extent(dataset.bbox_min_x(), dataset.bbox_max_x());
+    const float extent_y =
+        safe_extent(dataset.bbox_min_y(), dataset.bbox_max_y());
+    const float max_extent = std::max(extent_x, extent_y);
 
-    for (const auto& task : level_tasks) {
-        futures.push_back(pool.submit([&, task] {
-            return build_voxel_level(
-                dataset,
-                task.level_index,
-                task.target_point_count,
-                config.voxel_scale,
-                config.voxel_mode
-            );
-        }));
+    const float base_voxel_size =
+        estimate_voxel_size(
+            dataset,
+            config.finest_target_points,
+            config.voxel_scale,
+            config.voxel_mode
+        );
+
+    if (config.verbose) {
+        std::cout << "[LOD] auto-layer: finest_target="
+                  << config.finest_target_points
+                  << ", growth=" << config.growth_factor
+                  << ", min_points=" << config.min_points_per_level
+                  << ", base_voxel_size=" << base_voxel_size
+                  << ", max_extent=" << max_extent
+                  << '\n';
     }
 
     std::vector<Gs3dLodLevel> built_levels;
-    built_levels.reserve(level_tasks.size());
+    std::uint32_t level_index =
+        config.include_full_resolution_level ? 1u : 0u;
+    float voxel_size = base_voxel_size;
 
-    for (auto& future : futures) {
-        built_levels.push_back(future.get());
-    }
+    // 估算面积（用于每层 target 的计算，仅 XY 模式有意义）
+    const double area =
+        static_cast<double>(extent_x) *
+        static_cast<double>(extent_y);
+    // XYZ 模式用体积
+    const float extent_z =
+        safe_extent(dataset.bbox_min_z(), dataset.bbox_max_z());
+    const double volume =
+        static_cast<double>(extent_x) *
+        static_cast<double>(extent_y) *
+        static_cast<double>(extent_z);
 
-    std::sort(
-        built_levels.begin(),
-        built_levels.end(),
-        [](const Gs3dLodLevel& a, const Gs3dLodLevel& b) {
-            return a.level_index < b.level_index;
+    while (true) {
+        // 估算当前 voxel_size 下的期望点数（用于 reserve + metadata）
+        std::uint64_t expected_points;
+        if (config.voxel_mode == Gs3dLodVoxelMode::XYZ) {
+            const double vs3 =
+                static_cast<double>(voxel_size) *
+                static_cast<double>(voxel_size) *
+                static_cast<double>(voxel_size);
+            expected_points = static_cast<std::uint64_t>(
+                std::min(volume / std::max(vs3, 1.0e-12),
+                         static_cast<double>(dataset.point_count()))
+            );
+        } else {
+            const double vs2 =
+                static_cast<double>(voxel_size) *
+                static_cast<double>(voxel_size);
+            expected_points = static_cast<std::uint64_t>(
+                std::min(area / std::max(vs2, 1.0e-12),
+                         static_cast<double>(dataset.point_count()))
+            );
         }
-    );
+        if (expected_points == 0) expected_points = 1;
 
-    for (auto& level : built_levels) {
+        // Build one level at the current voxel_size.
+        auto level =
+            build_voxel_level(
+                dataset,
+                level_index,
+                expected_points,
+                config.voxel_scale,
+                config.voxel_mode,
+                voxel_size
+            );
+
+        const auto actual_points = level.point_count();
+
         if (config.verbose) {
             std::cout << "[LOD] level "
                       << level.level_index
@@ -510,7 +500,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
                       << ", target="
                       << level.target_point_count
                       << ", actual="
-                      << level.point_count()
+                      << actual_points
                       << ", voxel_size="
                       << level.voxel_size
                       << ", bytes="
@@ -520,6 +510,40 @@ Gs3dLodDataset Gs3dLodDataset::build(
                       << '\n';
         }
 
+        if (actual_points < config.min_points_per_level) {
+            if (config.verbose) {
+                std::cout << "[LOD] auto-layer: stopping at level "
+                          << level_index
+                          << " (points=" << actual_points
+                          << " < min=" << config.min_points_per_level
+                          << ")\n";
+            }
+            break;
+        }
+
+        built_levels.push_back(std::move(level));
+
+        voxel_size *= config.growth_factor;
+        if (voxel_size > max_extent * 2.0f) {
+            if (config.verbose) {
+                std::cout << "[LOD] auto-layer: stopping — "
+                          << "voxel_size=" << voxel_size
+                          << " exceeds 2× max_extent=" << max_extent
+                          << '\n';
+            }
+            break;
+        }
+
+        ++level_index;
+    }
+
+    if (config.verbose) {
+        std::cout << "[LOD] auto-layer: built "
+                  << built_levels.size()
+                  << " levels\n";
+    }
+
+    for (auto& level : built_levels) {
         lod_dataset.add_level(std::move(level));
     }
 

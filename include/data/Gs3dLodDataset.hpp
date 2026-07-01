@@ -51,16 +51,33 @@ struct Gs3dLodLevel {
 
 struct Gs3dLodBuildConfig {
     /*
-     * 目标点数。
+     * Potree 式自动分层：从最精细层目标点数反推 voxel_size_0，然后每层
+     * voxel_size ×= growth_factor，直到点数低于 min_points_per_level 为止。
+     * 层数由数据空间分布自然决定，不写死。
      *
-     * 这里不强制精确等于目标点数。
-     * 实际点数由 voxel_size 和数据空间分布决定。
+     * 默认值针对 ~33M 点 XY 地震工区数据调优：
+     *   finest_target_points = 2M → voxel_size_0 ≈ 5.7m
+     *   growth_factor = √2 ≈ 1.414 → XY 面积约翻倍，点数约减半
+     *   min_points   = 100K → 预期分 ~5 层，最粗 ~125K 点
      */
-    std::vector<std::uint64_t> target_point_counts{
-        3'000'000ull,
-        1'000'000ull,
-        300'000ull
-    };
+
+    /*
+     * 最精细层目标点数。
+     * 用于反推锚定 voxel_size_0，不要求精确等于。
+     */
+    std::uint64_t finest_target_points = 2'000'000ull;
+
+    /*
+     * voxel_size 倍增系数。
+     * XY 数据推荐 1.414 (√2)，每层点数约减半。
+     * XYZ 体积数据推荐 2.0。
+     */
+    float growth_factor = 1.414f;
+
+    /*
+     * 最粗层点数下限。低于此值停止分层。
+     */
+    std::uint64_t min_points_per_level = 100'000ull;
 
     /*
      * 默认使用 XY。

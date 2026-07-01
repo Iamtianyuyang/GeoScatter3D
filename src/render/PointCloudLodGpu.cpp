@@ -190,4 +190,13 @@ std::string PointCloudLodGpu::summary() const {
     return oss.str();
 }
 
+std::vector<float> PointCloudLodGpu::voxel_sizes() const {
+    std::vector<float> sizes;
+    sizes.reserve(levels_.size());
+    for (const auto& level : levels_) {
+        sizes.push_back(level.voxel_size);
+    }
+    return sizes;
+}
+
 } // namespace gs3d::render

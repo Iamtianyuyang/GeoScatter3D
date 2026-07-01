@@ -56,15 +56,14 @@ keep_full_buffer = false
 sidecar_path = "data/test.gs3dlod"
 auto_load_sidecar = true
 auto_save_sidecar = true
-# Fallback absolute targets, only used when target_point_ratios is empty.
-target_point_counts = [3000000, 2000000, 1500000, 1000000]
-# Ratios of the source point count — takes priority over target_point_counts
-# above. Scales the LOD ladder automatically with dataset size (1e8 points
-# instead of today's 33M) instead of needing a manual re-tune every time.
-# 4 levels (was 3): smoother adaptive-climb steps during interaction, at the
-# cost of ~33% longer LOD sidecar build time (each level takes ~4-4.5s to
-# build on the 33M-point dataset).
-target_point_ratios = [0.09, 0.06, 0.045, 0.03]
+# Potree 式自动分层（替代旧的 target_point_counts / target_point_ratios）。
+#   finest_target_points: 最精细层目标点数，反推锚定 voxel_size_0。
+#   growth_factor: voxel_size 倍增系数。XY 数据 √2≈1.414 每层点数约减半。
+#   min_points_per_level: 最粗层点数下限，低于此值停止分层。
+# 对 33M XY 数据默认分 ~5 层（~2M → ~125K 点）。
+finest_target_points = 2000000
+growth_factor = 1.414
+min_points_per_level = 100000
 voxel_mode = "XY"
 voxel_scale = 1.0
 
@@ -108,7 +107,10 @@ verbose = true
 # Raised from 128 -> 512 (docs/benchmark/memory-budget.md Task 3/4): memory
 # is not the bottleneck at 1e8 points (16 bytes/point), so cap is sized to
 # cover the full tile set rather than rationing GPU-resident tiles.
-gpu_cache_max_tiles = 512
+# LRU 淘汰上限。设为可见 tile 数的 2-3× 让淘汰真正生效，
+# 避免长时间浏览后所有 tile 全量驻留 GPU（159 个=660MB）。
+# 72 ≈ 单帧可见 30-60 的 ~2×，留有相邻视野缓冲。
+gpu_cache_max_tiles = 72
 # Upload at most 8 MiB of newly visible tile data per frame.
 gpu_upload_budget_bytes = 8388608
 # CPU tile cache memory budget. Cached tiles are evicted by LRU.

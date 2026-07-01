@@ -314,12 +314,9 @@ gs3d::data::Gs3dLodDataset ensure_lod_dataset(
 
     gs3d::data::Gs3dLodBuildConfig lod_config;
     lod_config.include_full_resolution_level = false;
-    lod_config.target_point_counts =
-        gs3d::data::resolve_lod_target_point_counts(
-            dataset.point_count(),
-            viewer.lod_target_point_ratios,
-            viewer.lod_target_point_counts
-        );
+    lod_config.finest_target_points = viewer.lod_finest_target_points;
+    lod_config.growth_factor = viewer.lod_growth_factor;
+    lod_config.min_points_per_level = viewer.lod_min_points_per_level;
     lod_config.voxel_mode = parse_lod_voxel_mode(viewer.lod_voxel_mode);
     lod_config.voxel_scale = viewer.lod_voxel_scale;
     lod_config.verbose = viewer.lod_verbose;
