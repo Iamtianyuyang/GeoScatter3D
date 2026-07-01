@@ -3512,10 +3512,22 @@ int ViewerApp::run() {
                             static_cast<double>(hover_point->z) +
                             dataset.origin_z());
 
+                    // Z 映射：与 vertex shader 的 height_source / height_offset
+                    // / height_mult 逐字段一致。原始数据 z 是 elevation，value 是
+                    // fold；当高度来源为 value 时，必须用 shader 相同的线性映射算
+                    // 出实际几何 Z，否则准星投影会错位。
+                    float mapped_z = hover_point->z;  // source=Z → 恒等
+                    if (push.height_source ==
+                        static_cast<std::uint32_t>(
+                            gs3d::app::AttrPhysicalSource::Value)) {
+                        mapped_z = push.height_offset +
+                                   hover_point->value * push.height_mult;
+                    }
+
                     // Marker screen position via to_screen projection.
                     const auto screen_pt =
                         gs3d::camera::MouseRay::to_screen(
-                            {hover_point->x, hover_point->y, hover_point->z},
+                            {hover_point->x, hover_point->y, mapped_z},
                             {camera.viewport_width(),
                              camera.viewport_height()},
                             camera);
@@ -3535,7 +3547,7 @@ int ViewerApp::run() {
                                 camera.viewport_width(), camera.viewport_height(),
                                 static_cast<double>(hover_point->x),
                                 static_cast<double>(hover_point->y),
-                                static_cast<double>(hover_point->z),
+                                static_cast<double>(mapped_z),
                                 static_cast<double>(screen_pt->x),
                                 static_cast<double>(screen_pt->y));
                         }
