@@ -32,7 +32,8 @@ struct ViewportMouseMapping {
 [[nodiscard]]
 inline ViewportScreenRect compute_plot_rect(
     bool show_map_axis,
-    const ViewportScreenRect& canvas_rect
+    const ViewportScreenRect& canvas_rect,
+    float ui_scale = 1.0f
 ) noexcept
 {
     ViewportScreenRect plot_rect = canvas_rect;
@@ -40,14 +41,14 @@ inline ViewportScreenRect compute_plot_rect(
         return plot_rect;
     }
 
-    constexpr float kLeftAxis = 62.0f;
-    constexpr float kBottomAxis = 40.0f;
-    constexpr float kTopPad = 12.0f;
-    constexpr float kRightPad = 12.0f;
-    plot_rect.min_x += kLeftAxis;
-    plot_rect.min_y += kTopPad;
-    plot_rect.max_x -= kRightPad;
-    plot_rect.max_y -= kBottomAxis;
+    // Outside scientific-style axes: X on top, Y on left.
+    // Keep just enough band for outer ticks/labels without growing
+    // the bottom/right gutters.
+    // Values must match LayoutMetrics::kAxisTopH / kAxisLeftW in UiRoot.cpp.
+    const float axis_top_h  = 26.0f * ui_scale;
+    const float axis_left_w = 46.0f * ui_scale;
+    plot_rect.min_x += axis_left_w;
+    plot_rect.min_y += axis_top_h;
     return plot_rect;
 }
 
@@ -58,11 +59,12 @@ inline ViewportMouseMapping map_screen_mouse_to_framebuffer(
     const ViewportScreenRect& canvas_rect,
     bool show_map_axis,
     std::uint32_t framebuffer_width,
-    std::uint32_t framebuffer_height
+    std::uint32_t framebuffer_height,
+    float ui_scale = 1.0f
 ) noexcept
 {
     ViewportMouseMapping mapping;
-    mapping.plot_rect = compute_plot_rect(show_map_axis, canvas_rect);
+    mapping.plot_rect = compute_plot_rect(show_map_axis, canvas_rect, ui_scale);
 
     const float plot_width = mapping.plot_rect.width();
     const float plot_height = mapping.plot_rect.height();
@@ -102,10 +104,11 @@ inline ScreenPoint framebuffer_to_plot_screen(
     const ViewportScreenRect& canvas_rect,
     bool show_map_axis,
     std::uint32_t framebuffer_width,
-    std::uint32_t framebuffer_height
+    std::uint32_t framebuffer_height,
+    float ui_scale = 1.0f
 ) noexcept
 {
-    const auto plot_rect = compute_plot_rect(show_map_axis, canvas_rect);
+    const auto plot_rect = compute_plot_rect(show_map_axis, canvas_rect, ui_scale);
     const float plot_w = plot_rect.width();
     const float plot_h = plot_rect.height();
     if (plot_w <= 0.0f || plot_h <= 0.0f ||
