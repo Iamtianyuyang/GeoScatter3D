@@ -158,6 +158,14 @@ add_executable(GeoScatter3D
     ${GEOSCATTER3D_CORE_SOURCES}
 )
 
+function(copy_runtime_assets target_name)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/assets
+                $<TARGET_FILE_DIR:${target_name}>/assets
+    )
+endfunction()
+
 target_include_directories(GeoScatter3D PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
@@ -170,6 +178,8 @@ target_link_libraries(GeoScatter3D PRIVATE
     glfw
     Threads::Threads
 )
+
+copy_runtime_assets(GeoScatter3D)
 
 include(CTest)
 
@@ -243,4 +253,6 @@ if(BUILD_TESTING)
         glfw
         Threads::Threads
     )
+
+    copy_runtime_assets(GeoScatter3DBenchmark)
 endif()

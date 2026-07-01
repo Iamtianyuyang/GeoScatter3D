@@ -1,5 +1,6 @@
 #include "ui/UiRoot.hpp"
 
+#include "gui/UiFonts.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -75,6 +76,18 @@ bool show_first_hidden_view(gs3d::app::AppState& state)
 
 // ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
 namespace LayoutMetrics {
+    constexpr float kDockLeftWidth = 220.0f;
+    constexpr float kDockRightWidth = 240.0f;
+    constexpr float kTopToolbarHeight = 28.0f;
+    constexpr float kStatusBarHeight = 22.0f;
+    constexpr float kViewportToolbarGap = 6.0f;
+    constexpr float kViewportToolbarFramePadX = 5.0f;
+    constexpr float kViewportToolbarFramePadY = 2.0f;
+    constexpr float kPanelHeaderGap = 8.0f;
+    constexpr float kPanelSectionGap = 8.0f;
+    constexpr float kPanelLabelWidth = 82.0f;
+    constexpr float kPanelInsetX = 10.0f;
+    constexpr float kStatusInsetX = 9.0f;
     // 地图轴边距（必须与 UiRoot.hpp compute_plot_rect 一致）
     constexpr float kAxisTopH  = 26.0f;
     constexpr float kAxisLeftW = 46.0f;
@@ -169,6 +182,80 @@ BadgeOverlay make_badge_overlay(
     return badge;
 }
 
+ImFont* regular_font()
+{
+    return gs3d::gui::ui_fonts().regular;
+}
+
+ImFont* small_font()
+{
+    return gs3d::gui::ui_fonts().small;
+}
+
+ImFont* panel_title_font()
+{
+    return gs3d::gui::ui_fonts().panel_title;
+}
+
+ImFont* axis_font()
+{
+    return gs3d::gui::ui_fonts().axis;
+}
+
+ImFont* status_font()
+{
+    return gs3d::gui::ui_fonts().status;
+}
+
+void draw_panel_section_label(const char* label)
+{
+    if (panel_title_font() != nullptr) {
+        ImGui::PushFont(panel_title_font());
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 4.0f));
+    ImGui::TextDisabled("%s", label);
+    ImGui::Separator();
+    ImGui::PopStyleVar();
+    if (panel_title_font() != nullptr) {
+        ImGui::PopFont();
+    }
+}
+
+bool begin_labeled_property_table(const char* id)
+{
+    return ImGui::BeginTable(
+        id,
+        2,
+        ImGuiTableFlags_SizingStretchProp |
+            ImGuiTableFlags_NoPadOuterX |
+            ImGuiTableFlags_NoPadInnerX
+    );
+}
+
+void setup_labeled_property_table()
+{
+    ImGui::TableSetupColumn(
+        "label",
+        ImGuiTableColumnFlags_WidthFixed,
+        LayoutMetrics::kPanelLabelWidth
+    );
+    ImGui::TableSetupColumn(
+        "value",
+        ImGuiTableColumnFlags_WidthStretch,
+        1.0f
+    );
+}
+
+void property_table_label(const char* label)
+{
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", label);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-1.0f);
+}
+
 void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
 {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -259,7 +346,13 @@ void draw_scale_bar(const ImVec2& plot_min,
     dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine, 1.5f);
     dl->AddLine({x0, y - 4.0f}, {x0, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
     dl->AddLine({x1, y - 4.0f}, {x1, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
+    if (axis_font() != nullptr) {
+        ImGui::PushFont(axis_font());
+    }
     dl->AddText({x0, y - 18.0f}, AxisStyle::kScaleLabel, label);
+    if (axis_font() != nullptr) {
+        ImGui::PopFont();
+    }
 }
 
 /*
@@ -276,10 +369,16 @@ void draw_viewport_overlay(
     dl->AddRectFilled(
         badge.box_min, badge.box_max,
         AxisStyle::kBadgeBg, LayoutMetrics::kBadgeRound);
+    if (small_font() != nullptr) {
+        ImGui::PushFont(small_font());
+    }
     dl->AddText(
         {badge.box_min.x + 8.0f, badge.box_min.y + 5.0f},
         AxisStyle::kBadgeText,
         badge.text);
+    if (small_font() != nullptr) {
+        ImGui::PopFont();
+    }
 
     // ── 比例尺和方向指示器 ──
     draw_scale_bar(plot_min, plot_max, view.scale.c_str());
@@ -314,7 +413,15 @@ void draw_viewport_window(
         (window_viewport != nullptr &&
          window_viewport->ID != ImGui::GetMainViewport()->ID);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(LayoutMetrics::kViewportToolbarFramePadX,
+               LayoutMetrics::kViewportToolbarFramePadY)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(LayoutMetrics::kViewportToolbarGap, 4.0f)
+    );
     ImGui::TextDisabled(
         view.detached ? "独立窗口" : "工作区"
     );
@@ -336,11 +443,22 @@ void draw_viewport_window(
             view.show_map_axis = false;
         }
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled(
-        "左键旋转  右键/中键平移  滚轮缩放  Ctrl+左键拖框放大"
-    );
-    ImGui::PopStyleVar();
+    const float hint_threshold = 380.0f;
+    const float short_hint_threshold = 250.0f;
+    const float hint_space = ImGui::GetContentRegionAvail().x;
+    const char* hint = nullptr;
+    if (hint_space > hint_threshold) {
+        hint = "左键旋转  右/中键平移  滚轮缩放  Ctrl+左键框选";
+    } else if (hint_space > short_hint_threshold) {
+        hint = "左键旋转  平移  缩放  Ctrl+框选";
+    }
+    if (hint != nullptr) {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 176, 188, 125));
+        ImGui::TextUnformatted(hint);
+        ImGui::PopStyleColor();
+    }
+    ImGui::PopStyleVar(2);
     ImGui::Separator();
 
     ImVec2 available = ImGui::GetContentRegionAvail();
@@ -540,6 +658,9 @@ void draw_viewport_window(
                 char label[32];
                 fmt_label(label, sizeof(label), tick,
                     view.map_axis_origin_x, x_major_step);
+                if (axis_font() != nullptr) {
+                    ImGui::PushFont(axis_font());
+                }
                 const ImVec2 ts = ImGui::CalcTextSize(label);
                 const ImVec2 label_min{
                     px - ts.x * 0.5f,
@@ -553,6 +674,9 @@ void draw_viewport_window(
                 if (!rects_overlap(label_min, label_max,
                                    badge.box_min, badge.box_max)) {
                     dl->AddText(label_min, AxisStyle::kLabel, label);
+                }
+                if (axis_font() != nullptr) {
+                    ImGui::PopFont();
                 }
             }
 
@@ -652,6 +776,9 @@ void draw_viewport_window(
                 char label[32];
                 fmt_label(label, sizeof(label), tick,
                     view.map_axis_origin_y, y_major_step);
+                if (axis_font() != nullptr) {
+                    ImGui::PushFont(axis_font());
+                }
                 const ImVec2 ts = ImGui::CalcTextSize(label);
                 dl->AddText(
                     ImVec2(std::max(canvas_min.x + axis_outer_pad,
@@ -659,6 +786,9 @@ void draw_viewport_window(
                                     label_gap - ts.x),
                            py - ts.y * 0.5f),
                     AxisStyle::kLabel, label);
+                if (axis_font() != nullptr) {
+                    ImGui::PopFont();
+                }
             }
 
             // Minor ticks 向左
@@ -856,48 +986,65 @@ void draw_dataset_panel(gs3d::app::AppState& state)
         return;
     }
 
+    ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(kDatasetWindowName, &state.panels.dataset)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 5.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(LayoutMetrics::kPanelInsetX, 8.0f));
+        if (panel_title_font() != nullptr) {
+            ImGui::PushFont(panel_title_font());
+        }
         ImGui::TextUnformatted(state.dataset.active_dataset.c_str());
-        ImGui::TextDisabled(
-            "%llu 点  |  %s",
-            static_cast<unsigned long long>(state.dataset.point_count),
-            state.dataset.file_size.c_str()
-        );
-        ImGui::Separator();
+        if (panel_title_font() != nullptr) {
+            ImGui::PopFont();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(178, 184, 194, 150));
+        ImGui::Text("%llu 点", static_cast<unsigned long long>(state.dataset.point_count));
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        ImGui::TextUnformatted(state.dataset.file_size.c_str());
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
 
+        ImGui::SetNextItemWidth(-1.0f);
         ImGui::InputTextWithHint(
             "##DatasetSearch",
             "筛选项目",
             state.dataset.search_text.data(),
             state.dataset.search_text.size()
         );
+        ImGui::Spacing();
 
-        if (ImGui::CollapsingHeader(
-                "场景",
-                ImGuiTreeNodeFlags_DefaultOpen
-            )) {
-            for (const auto& item : state.dataset.dataset_tree) {
-                ImGui::Selectable(item.c_str(), false);
+        draw_panel_section_label("场景");
+        if (ImGui::BeginChild("##DatasetSceneList", ImVec2(0.0f, 0.0f), false)) {
+            if (ImGui::TreeNodeEx("当前数据集",
+                                  ImGuiTreeNodeFlags_DefaultOpen |
+                                      ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                for (const auto& item : state.dataset.dataset_tree) {
+                    ImGui::Selectable(item.c_str(), false);
+                }
+                ImGui::TreePop();
             }
-        }
-
-        if (ImGui::CollapsingHeader(
-                "属性",
-                ImGuiTreeNodeFlags_DefaultOpen
-            )) {
+            ImGui::Spacing();
+            draw_panel_section_label("属性");
             for (const auto& attribute : state.dataset.attributes) {
-                ImGui::BulletText("%s", attribute.c_str());
+                ImGui::Bullet();
+                ImGui::SameLine(0.0f, 6.0f);
+                ImGui::TextUnformatted(attribute.c_str());
             }
-        }
-
-        if (ImGui::CollapsingHeader("文件信息")) {
+            ImGui::Spacing();
+            draw_panel_section_label("文件信息");
             ImGui::TextWrapped("路径：%s", state.dataset.path.c_str());
             ImGui::Text("格式：%s", state.dataset.format.c_str());
             ImGui::TextWrapped(
                 "包围盒：%s",
                 state.dataset.bounding_box.c_str()
             );
+            ImGui::EndChild();
         }
+        ImGui::PopStyleVar(3);
     }
     ImGui::End();
 }
@@ -910,30 +1057,29 @@ void draw_render_settings(
         return;
     }
 
+    ImGui::SetNextWindowSize(ImVec2(240.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(
             kRenderSettingsWindowName,
             &state.panels.render_settings
         )) {
-        ImGui::TextDisabled("点云外观");
-        ImGui::Separator();
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 6.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 4.0f));
+
+        draw_panel_section_label("点云外观");
 
         float point_size = state.render_settings.point_size;
-        if (ImGui::SliderFloat(
-                "点大小",
-                &point_size,
-                1.0f,
-                10.0f,
-                "%.1f"
-            )) {
-            state.render_settings.point_size = point_size;
-            actions.point_size_changed = true;
-            actions.point_size = point_size;
-        }
+        if (begin_labeled_property_table("##RenderAppearanceTable")) {
+            setup_labeled_property_table();
 
-        // ---- 高度来源 ----
-        {
-            const auto& height_options =
-                state.render_settings.height_by_options;
+            property_table_label("点大小");
+            if (ImGui::SliderFloat("##PointSize", &point_size, 1.0f, 10.0f, "%.1f")) {
+                state.render_settings.point_size = point_size;
+                actions.point_size_changed = true;
+                actions.point_size = point_size;
+            }
+
+            const auto& height_options = state.render_settings.height_by_options;
             const char* h_preview = "无";
             if (!height_options.empty()) {
                 const int h_idx = std::clamp(
@@ -941,82 +1087,68 @@ void draw_render_settings(
                     0,
                     static_cast<int>(height_options.size()) - 1
                 );
-                h_preview = height_options[
-                    static_cast<std::size_t>(h_idx)
-                ].c_str();
+                h_preview = height_options[static_cast<std::size_t>(h_idx)].c_str();
             }
-            if (ImGui::BeginCombo("高度来源", h_preview)) {
+            property_table_label("高度来源");
+            if (ImGui::BeginCombo("##HeightSource", h_preview)) {
                 for (std::size_t i = 0; i < height_options.size(); ++i) {
                     const bool selected =
-                        static_cast<int>(i) ==
-                        state.render_settings.height_attr_index;
-                    if (ImGui::Selectable(
-                            height_options[i].c_str(),
-                            selected
-                        )) {
-                        state.render_settings.height_attr_index =
-                            static_cast<int>(i);
+                        static_cast<int>(i) == state.render_settings.height_attr_index;
+                    if (ImGui::Selectable(height_options[i].c_str(), selected)) {
+                        state.render_settings.height_attr_index = static_cast<int>(i);
                         actions.height_by_changed = true;
                         actions.height_by_index = static_cast<int>(i);
                     }
                 }
                 ImGui::EndCombo();
             }
-        }
 
-        // ---- 高度夸张 ----
-        {
             float exag = state.render_settings.height_exaggeration;
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.65f);
-            if (ImGui::SliderFloat("高度夸张", &exag, 0.1f, 5.0f, "%.2fx")) {
+            property_table_label("高度夸张");
+            if (ImGui::SliderFloat("##HeightExaggeration", &exag, 0.1f, 5.0f, "%.2fx")) {
                 state.render_settings.height_exaggeration = exag;
                 actions.height_exag_changed = true;
                 actions.height_exag = exag;
             }
-        }
 
-        const auto& color_options =
-            state.render_settings.color_by_options;
-        const char* preview = "无";
-        if (!color_options.empty()) {
-            const int preview_index = std::clamp(
-                state.render_settings.color_attr_index,
-                0,
-                static_cast<int>(color_options.size()) - 1
-            );
-            preview =
-                color_options[
-                    static_cast<std::size_t>(preview_index)
-                ].c_str();
-        }
-        if (ImGui::BeginCombo("着色", preview)) {
-            for (std::size_t i = 0; i < color_options.size(); ++i) {
-                const bool selected =
-                    static_cast<int>(i) ==
-                    state.render_settings.color_attr_index;
-                if (ImGui::Selectable(
-                        color_options[i].c_str(),
-                        selected
-                    )) {
-                    state.render_settings.color_attr_index =
-                        static_cast<int>(i);
-                    actions.color_by_changed = true;
-                    actions.color_by_index = static_cast<int>(i);
-                }
+            const auto& color_options = state.render_settings.color_by_options;
+            const char* preview = "无";
+            if (!color_options.empty()) {
+                const int preview_index = std::clamp(
+                    state.render_settings.color_attr_index,
+                    0,
+                    static_cast<int>(color_options.size()) - 1
+                );
+                preview = color_options[static_cast<std::size_t>(preview_index)].c_str();
             }
-            ImGui::EndCombo();
+            property_table_label("着色");
+            if (ImGui::BeginCombo("##ColorBy", preview)) {
+                for (std::size_t i = 0; i < color_options.size(); ++i) {
+                    const bool selected =
+                        static_cast<int>(i) == state.render_settings.color_attr_index;
+                    if (ImGui::Selectable(color_options[i].c_str(), selected)) {
+                        state.render_settings.color_attr_index = static_cast<int>(i);
+                        actions.color_by_changed = true;
+                        actions.color_by_index = static_cast<int>(i);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::EndTable();
         }
 
-        ImGui::TextDisabled("颜色映射");
+        ImGui::Spacing();
+        draw_panel_section_label("颜色映射");
         const ImVec2 start = ImGui::GetCursorScreenPos();
         const float width = ImGui::GetContentRegionAvail().x;
         ImGui::InvisibleButton(
             "##ColorMapPreview",
-            ImVec2(width, 18.0f)
+            ImVec2(width, 14.0f)
         );
         ImGui::GetWindowDrawList()->AddRectFilledMultiColor(
             start,
-            {start.x + width, start.y + 18.0f},
+            {start.x + width, start.y + 14.0f},
             IM_COL32(60, 105, 215, 255),
             IM_COL32(55, 190, 175, 255),
             IM_COL32(235, 190, 75, 255),
@@ -1024,23 +1156,25 @@ void draw_render_settings(
         );
 
         ImGui::Spacing();
-        ImGui::TextDisabled("流式加载");
-        ImGui::Separator();
-        ImGui::Text(
-            "GPU 瓦片  %s",
-            state.render_settings.cache_usage.c_str()
-        );
-        ImGui::Text(
-            "CPU 缓存  %s",
-            state.render_settings.cpu_cache_usage.c_str()
-        );
-        ImGui::Text(
-            "缓存命中  %.1f%%",
-            state.render_settings.cache_hit_rate
-        );
+        draw_panel_section_label("流式加载");
+        if (begin_labeled_property_table("##StreamingInfoTable")) {
+            setup_labeled_property_table();
+
+            property_table_label("GPU 瓦片");
+            ImGui::TextUnformatted(state.render_settings.cache_usage.c_str());
+
+            property_table_label("CPU 缓存");
+            ImGui::TextUnformatted(state.render_settings.cpu_cache_usage.c_str());
+
+            property_table_label("缓存命中");
+            ImGui::Text("%.1f%%", state.render_settings.cache_hit_rate);
+
+            ImGui::EndTable();
+        }
         if (ImGui::Button("清空缓存")) {
             actions.clear_cache_requested = true;
         }
+        ImGui::PopStyleVar(3);
     }
     ImGui::End();
 }
@@ -1146,6 +1280,17 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         dockspace_id,
         ImGui::GetMainViewport()->WorkSize
     );
+    const float work_width = std::max(1.0f, ImGui::GetMainViewport()->WorkSize.x);
+    const float left_ratio = std::clamp(
+        LayoutMetrics::kDockLeftWidth / work_width,
+        0.12f,
+        0.24f
+    );
+    const float right_ratio = std::clamp(
+        LayoutMetrics::kDockRightWidth / work_width,
+        0.14f,
+        0.27f
+    );
 
     const bool has_left_panels =
         state.panels.dataset ||
@@ -1163,7 +1308,7 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         left_id = ImGui::DockBuilderSplitNode(
             center_id,
             ImGuiDir_Left,
-            0.19f,
+            left_ratio,
             nullptr,
             &center_id
         );
@@ -1172,7 +1317,7 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         right_id = ImGui::DockBuilderSplitNode(
             center_id,
             ImGuiDir_Right,
-            0.24f,
+            right_ratio,
             nullptr,
             &center_id
         );
@@ -1226,6 +1371,8 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     const ImGuiWindowFlags host_flags =
         ImGuiWindowFlags_NoDocking |
         ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse |
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove |
@@ -1334,12 +1481,16 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 
         ImGui::PushStyleVar(
             ImGuiStyleVar_FramePadding,
-            ImVec2(7.0f, 4.0f)
+            ImVec2(5.0f, 3.0f)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_ItemSpacing,
+            ImVec2(6.0f, 4.0f)
         );
         ImGui::BeginChild(
             "##TopToolbar",
-            ImVec2(0.0f, 34.0f),
-            true,
+            ImVec2(0.0f, LayoutMetrics::kTopToolbarHeight),
+            false,
             ImGuiWindowFlags_NoScrollbar
         );
         if (ImGui::SmallButton("打开")) {
@@ -1354,36 +1505,64 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             actions.screenshot_requested = true;
         }
         ImGui::SameLine();
-        ImGui::TextDisabled(
-            "  %s",
-            state.dataset.active_dataset.c_str()
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 150));
+        ImGui::TextUnformatted(
+            state.dataset.active_dataset.empty()
+                ? "未加载数据"
+                : state.dataset.active_dataset.c_str()
         );
+        ImGui::PopStyleColor();
         ImGui::EndChild();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
+
+        ImDrawList* host_dl = ImGui::GetWindowDrawList();
+        const ImVec2 toolbar_min = ImGui::GetItemRectMin();
+        const ImVec2 toolbar_max = ImGui::GetItemRectMax();
+        host_dl->AddLine(
+            ImVec2(toolbar_min.x, toolbar_max.y),
+            ImVec2(toolbar_max.x, toolbar_max.y),
+            IM_COL32(92, 98, 108, 64),
+            1.0f
+        );
 
         build_default_layout(state);
-        constexpr float status_bar_height = 23.0f;
+        const float content_avail_y = ImGui::GetContentRegionAvail().y;
+        const float status_h = std::min(
+            LayoutMetrics::kStatusBarHeight,
+            std::max(0.0f, content_avail_y)
+        );
+        const float dock_h = std::max(0.0f, content_avail_y - status_h);
         ImGui::DockSpace(
             ImGui::GetID("GeoScatter3D.DockSpace"),
-            ImVec2(
-                0.0f,
-                std::max(
-                    0.0f,
-                    ImGui::GetContentRegionAvail().y -
-                        status_bar_height
-                )
-            ),
+            ImVec2(0.0f, dock_h),
             ImGuiDockNodeFlags_None
         );
 
         ImGui::BeginChild(
             "##StatusBar",
-            ImVec2(0.0f, status_bar_height),
+            ImVec2(0.0f, status_h),
             false,
-            ImGuiWindowFlags_NoScrollbar
+            ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoScrollWithMouse
         );
-        ImGui::TextDisabled(
-            "%.1f FPS   %.2f ms   %llu 点   GPU %.1f MB   %s",
+        const ImVec2 status_min = ImGui::GetWindowPos();
+        const ImVec2 status_max{
+            status_min.x + ImGui::GetWindowSize().x,
+            status_min.y + ImGui::GetWindowSize().y
+        };
+        host_dl->AddLine(
+            ImVec2(status_min.x, status_min.y),
+            ImVec2(status_max.x, status_min.y),
+            IM_COL32(92, 98, 108, 56),
+            1.0f
+        );
+        ImGui::SetCursorPosX(LayoutMetrics::kStatusInsetX);
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(178, 184, 194, 158));
+        if (status_font() != nullptr) {
+            ImGui::PushFont(status_font());
+        }
+        ImGui::Text(
+            "%.1f FPS    %.2f ms    %llu 点    GPU %.1f MB    %s",
             state.status_bar.fps,
             state.performance.frame_time_ms,
             static_cast<unsigned long long>(
@@ -1392,6 +1571,10 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             bytes_to_mb(state.status_bar.gpu_memory_bytes),
             state.status_bar.ready_state.c_str()
         );
+        if (status_font() != nullptr) {
+            ImGui::PopFont();
+        }
+        ImGui::PopStyleColor();
         ImGui::EndChild();
     }
     ImGui::End();
