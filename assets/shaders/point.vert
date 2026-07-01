@@ -10,32 +10,49 @@ layout(location = 2) flat out uint out_point_id;
 
 layout(push_constant) uniform PointPushConstants {
     mat4  mvp;
-    float value_min;
-    float value_range;
+    vec4  clip_min;        // xyz = clip bounds, w = unused
+    vec4  clip_max;        // xyz = clip bounds, w = unused
+    float color_min;       // min of the selected color attribute
+    float color_range;     // range of the selected color attribute
+    float height_offset;   // height = offset + raw * mult (pre-computed on CPU)
+    float height_mult;
     float point_size;
-    float clip_mode;
-    vec4  clip_min;       // xyz = clip bounds, w = unused
-    vec4  clip_max;       // xyz = clip bounds, w = unused
-    uint  attr_index;     // 0 = value, 1 = z (elevation)
+    uint  height_source;   // AttrPhysicalSource: 0=z, 1=value, ...
+    uint  color_source;    // AttrPhysicalSource: 0=z, 1=value, ...
+    uint  clip_mode;
 } pc;
 
 void main() {
-    gl_Position  = pc.mvp * vec4(in_position, 1.0);
+    // ===== 高度通道：从选中的物理来源读取原始值，做 CPU 预计算的线性映射 =====
+    float raw_height;
+    if (pc.height_source == 0u) {
+        raw_height = in_position.z;          // Gs3dPoint::z
+    } else if (pc.height_source == 1u) {
+        raw_height = in_value;               // Gs3dPoint::value
+    } else {
+        raw_height = in_position.z;          // fallback
+    }
+    // else if (pc.height_source == 2u) { raw_height = in_attr2; }  // 扩展预留
+
+    float height = pc.height_offset + raw_height * pc.height_mult;
+    gl_Position = pc.mvp * vec4(in_position.xy, height, 1.0);
     gl_PointSize = pc.point_size;
-    out_world_pos = in_position;
+    out_world_pos = vec3(in_position.xy, height);
     out_point_id = in_point_id;
 
-    // Select attribute for color mapping (Potree / CloudCompare pattern:
-    // switch active attribute via uniform, no GPU data re-upload needed).
-    float raw_attr;
-    if (pc.attr_index == 1u) {
-        raw_attr = in_position.z;   // elevation / depth
+    // ===== 颜色通道：从选中的物理来源读取原始值，归一化到 [0,1] =====
+    float raw_color;
+    if (pc.color_source == 0u) {
+        raw_color = in_position.z;           // Gs3dPoint::z
+    } else if (pc.color_source == 1u) {
+        raw_color = in_value;                // Gs3dPoint::value
     } else {
-        raw_attr = in_value;        // stored attribute (amplitude, etc.)
+        raw_color = in_value;                // fallback
     }
+    // else if (pc.color_source == 2u) { raw_color = in_attr2; }  // 扩展预留
 
-    if (pc.value_range > 0.0) {
-        out_value = clamp((raw_attr - pc.value_min) / pc.value_range, 0.0, 1.0);
+    if (pc.color_range > 0.0) {
+        out_value = clamp((raw_color - pc.color_min) / pc.color_range, 0.0, 1.0);
     } else {
         out_value = 0.0;
     }

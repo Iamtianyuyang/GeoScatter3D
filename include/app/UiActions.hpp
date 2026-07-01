@@ -62,6 +62,11 @@ struct UiActions {
     bool  point_size_changed = false;
     float point_size = 1.0f;
 
+    bool height_by_changed = false;
+    int  height_by_index = 0;
+    bool height_exag_changed = false;
+    float height_exag = 1.0f;
+
     bool color_by_changed = false;
     int  color_by_index = 0;
 

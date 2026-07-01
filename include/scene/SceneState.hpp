@@ -17,7 +17,8 @@ struct FilterState {
 
 struct SceneState {
     const core::DatasetDescriptor* active_dataset = nullptr;
-    int active_attribute_index = 0;
+    int active_attribute_index = 0;   // color channel attr_list index
+    int active_height_index    = 1;   // height channel attr_list index
     FilterState filters{};
     SelectionSet selection{};
     core::PointBuffer active_points{};

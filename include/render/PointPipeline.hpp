@@ -17,35 +17,40 @@ struct PointPushConstants {
         0.0f, 0.0f, 0.0f, 1.0f
     };                          // offset   0, size 64
 
-    float value_min   = 0.0f;  // offset  64  min of currently active attribute
-    float value_range = 1.0f;  // offset  68  range of currently active attribute
-    float point_size  = 1.0f;  // offset  72
+    /*
+     * clip_min[4] / clip_max[4]: vec3 + 1 float padding.
+     * Moved before channel params to keep 16-byte alignment.
+     */
+    float clip_min[4] = {};     // offset  64, size 16
+    float clip_max[4] = {};     // offset  80, size 16
+
+    // ---- 颜色通道 (offset 96) ----
+    float color_min   = 0.0f;   // min of the selected color attribute
+    float color_range = 1.0f;   // range of the selected color attribute
+
+    // ---- 高度通道 (offset 104) ----
+    // height = height_offset + raw_value * height_mult
+    // CPU 端预计算：Z 属性 → offset=0, mult=1；非空间属性 → 线性映射到高程范围
+    float height_offset = 0.0f;
+    float height_mult   = 1.0f;
+
+    float point_size = 1.0f;   // offset 112
+
+    /*
+     * height_source / color_source: AttrPhysicalSource 枚举值。
+     * shader 不关心是 "fold" 还是 "elevation"，
+     * 只根据 source 值决定从 in_position.z 还是 in_value 读取。
+     * 将来加 Attr2=2 时 shader 加一个 else-if 分支即可。
+     */
+    std::uint32_t height_source = 0;  // offset 116, 默认 Z (高程)
+    std::uint32_t color_source  = 1;  // offset 120, 默认 Value (fold)
 
     /*
      * clip_mode:
      *   0 = no clipping
      *   1 = discard points whose world-space XYZ is INSIDE [clip_min, clip_max]
      */
-    float clip_mode = 0.0f;    // offset  76
-
-    /*
-     * clip_min[4] / clip_max[4]: vec3 + 1 float padding.
-     * Using vec4 (not vec3) in GLSL to guarantee 16-byte alignment and
-     * eliminate std430 ambiguity between C++ and GLSL layouts.
-     * [0]=x  [1]=y  [2]=z  [3]=padding
-     */
-    float clip_min[4] = {};    // offset  80, size 16
-    float clip_max[4] = {};    // offset  96, size 16
-
-    /*
-     * attr_index: which point attribute to use for color mapping.
-     *   0 = value field  (amplitude / imported attribute)
-     *   1 = z coordinate (elevation / depth)
-     * Switching is zero-cost: only this push constant changes, no GPU re-upload.
-     * Mirrors Potree's activeAttributeName + CloudCompare scalar field selection.
-     */
-    std::uint32_t attr_index = 0; // offset 112
-    float _pad[3] = {};           // offset 116, pad to 128 bytes
+    std::uint32_t clip_mode = 0;  // offset 124
 };                                // total: 128 bytes
 
 static_assert(

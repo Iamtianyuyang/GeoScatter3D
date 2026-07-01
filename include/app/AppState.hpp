@@ -9,6 +9,31 @@
 
 namespace gs3d::app {
 
+/*
+ * 物理来源：Gs3dPoint 中哪个 float 字段存储属性的原始值。
+ * 当前 2 个槽位 (Z / Value)；Gs3dPoint 扩展后追加枚举值。
+ */
+enum class AttrPhysicalSource : uint32_t {
+    Z     = 0,   // Gs3dPoint::z
+    Value = 1,   // Gs3dPoint::value
+    // --- 扩展预留 ---
+    // Attr2 = 2,
+    // Attr3 = 3,
+};
+
+/*
+ * 属性描述：一个命名的数据通道，绑定到 Gs3dPoint 的某个物理字段。
+ * 当前 2 项 (fold→Value, elevation→Z)；将来 N 个属性时只加列表条目。
+ */
+struct AttrDescriptor {
+    std::string        name;
+    AttrPhysicalSource source;
+    float              min_val = 0.0f;
+    float              max_val = 0.0f;
+
+    float range() const noexcept { return max_val - min_val; }
+};
+
 struct PanelVisibilityState {
     bool dataset = true;
     bool render_settings = true;
@@ -43,7 +68,20 @@ struct RenderSettingsState {
     float point_size = 1.0f;
     float opacity = 1.0f;
     int blend_mode = 0;
-    int color_by_index = 0;
+
+    /*
+     * 双通道属性选择：高度通道和颜色通道各自独立选择 attr_list 中的属性。
+     * 当前 attr_list 有 2 项 (Fold, Elevation)；将来扩展后自动多出选项。
+     */
+    int height_attr_index = 1;   // 默认：高程 (attr_list[1])
+    int color_attr_index  = 0;   // 默认：褶皱 (attr_list[0])
+    float height_exaggeration = 1.0f;  // 高度夸张系数 (0.1 ~ 5.0)
+
+    // 从 attr_list 动态填充，UI 下拉直接遍历
+    std::vector<std::string> height_by_options{
+        "Fold（褶皱）",
+        "Elevation（高程）"
+    };
     std::vector<std::string> color_by_options{
         "Fold（褶皱）",
         "Elevation（高程）"

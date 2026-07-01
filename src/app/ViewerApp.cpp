@@ -2556,10 +2556,7 @@ int ViewerApp::run() {
 
         gs3d::render::PointPushConstants push{};
         push.point_size  = config_.initial_point_size;
-        push.attr_index  = 0;   // default: value attribute (amplitude)
-        push.value_min   = dataset.value_min();
-        push.value_range = dataset.value_max() - dataset.value_min();
-        if (push.value_range <= 0.0f) push.value_range = 1.0f;
+        // Channel attributes set below after attr_list is built.
         // MVP is set per-viewport inside render_all; clip_mode is zero-initialized.
 
         /*
@@ -2848,28 +2845,56 @@ int ViewerApp::run() {
 
         bool r_was_pressed = false;
         bool tab_was_pressed = false;
+        bool shift_tab_was_pressed = false;
 
         /*
-         * 多属性可视化（Potree activeAttributeName / CloudCompare scalar field）。
-         * 所有属性数据已在 VBO 中，切换只改 push constant，零 GPU 重传。
-         *
-         * 当前支持的属性（对应比赛数据集的 fold/elevation 两个字段）：
-         *   0 = value   (导入时存储的属性，本数据集是 fold)
-         *   1 = z       (导入时的几何高度，本数据集是 elevation)
+         * 属性列表：从数据集元数据构建，每项绑定到 Gs3dPoint 的一个物理槽。
+         * 当前 2 项 (fold→Value, elevation→Z)；将来扩展只加条目。
+         * 通道选择用索引引用，不硬编码 0=value/1=z。
          */
-        struct AttrDesc {
-            const char* name;
-            float min_val;
-            float range;
-        };
-        const std::array<AttrDesc, 2> attr_table = {{
+        const std::vector<gs3d::app::AttrDescriptor> attr_list = {
             { "Fold（褶皱）",
+              gs3d::app::AttrPhysicalSource::Value,
               dataset.value_min(),
-              dataset.value_max() - dataset.value_min() },
+              dataset.value_max() },
             { "Elevation（高程）",
+              gs3d::app::AttrPhysicalSource::Z,
               dataset.bbox_min_z(),
-              dataset.bbox_max_z() - dataset.bbox_min_z() }
-        }};
+              dataset.bbox_max_z() }
+        };
+
+        // 高程范围 — 用于非空间属性映射到物理 Z 坐标时的基准。
+        const float elev_min   = dataset.bbox_min_z();
+        const float elev_range = dataset.bbox_max_z() - dataset.bbox_min_z();
+
+        // 当前高度夸张系数（跨源持久）。
+        float height_exag = 1.0f;
+
+        // 根据属性描述 + 夸张系数计算 height_offset / height_mult。
+        auto apply_height_attr = [&](const gs3d::app::AttrDescriptor& a, float exag) {
+            push.height_source = static_cast<std::uint32_t>(a.source);
+            if (a.source == gs3d::app::AttrPhysicalSource::Z) {
+                // 高程值已在空间尺度，stretch around origin
+                push.height_mult   = exag;
+                push.height_offset = 0.0f;
+            } else {
+                // 非空间属性 → 线性映射到 [elev_min, elev_min + elev_range * exag]
+                const float r = a.range();
+                const float m = (r > 0.0f) ? (elev_range / r * exag) : exag;
+                push.height_mult   = m;
+                push.height_offset = elev_min - a.min_val * m;
+            }
+        };
+
+        // 初始化默认通道：颜色=fold (attr_list[0]), 高度=高程 (attr_list[1])
+        {
+            const auto& c = attr_list[0];
+            push.color_source = static_cast<std::uint32_t>(c.source);
+            push.color_min    = c.min_val;
+            push.color_range  = c.range();
+            if (push.color_range <= 0.0f) push.color_range = 1.0f;
+        }
+        apply_height_attr(attr_list[1], height_exag);
 
         std::size_t last_lod_level =
              static_cast<std::size_t>(-1);
@@ -2996,8 +3021,9 @@ int ViewerApp::run() {
             "属性"
         };
         dataset_descriptor.attributes.clear();
-        for (const auto& attr : attr_table) {
-            dataset_descriptor.attributes.push_back({attr.name});
+        for (const auto& attr : attr_list) {
+            dataset_descriptor.attributes.push_back(
+                gs3d::core::AttributeDescriptor{attr.name});
         }
         {
             std::error_code ec;
@@ -3013,7 +3039,8 @@ int ViewerApp::run() {
         }
         gs3d::scene::SceneState scene_state;
         scene_state.active_dataset = &dataset_descriptor;
-        scene_state.active_attribute_index = 0;
+        scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])
+        scene_state.active_height_index    = 1;  // 高度=高程 (attr_list[1])
         gs3d::app::AppState app_state;
         app_state.dataset.active_dataset = dataset_descriptor.display_name;
         app_state.dataset.path = dataset_descriptor.path;
@@ -3025,9 +3052,11 @@ int ViewerApp::run() {
             format_bounds_label(dataset_descriptor.bounds);
         app_state.dataset.dataset_tree = dataset_descriptor.dataset_tree;
         app_state.dataset.attributes.clear();
+        app_state.render_settings.height_by_options.clear();
         app_state.render_settings.color_by_options.clear();
-        for (const auto& attr : dataset_descriptor.attributes) {
+        for (const auto& attr : attr_list) {
             app_state.dataset.attributes.push_back(attr.name);
+            app_state.render_settings.height_by_options.push_back(attr.name);
             app_state.render_settings.color_by_options.push_back(attr.name);
         }
         app_state.render_views.resize(
@@ -3353,7 +3382,9 @@ int ViewerApp::run() {
             app_state.dataset.point_count = dataset.point_count();
             app_state.dataset.loaded_points = visible_points;
             app_state.render_settings.point_size = push.point_size;
-            app_state.render_settings.color_by_index = static_cast<int>(push.attr_index);
+            app_state.render_settings.color_attr_index = scene_state.active_attribute_index;
+            app_state.render_settings.height_attr_index = scene_state.active_height_index;
+            app_state.render_settings.height_exaggeration = height_exag;
             app_state.render_settings.loaded_tiles = loaded_tiles;
             app_state.render_settings.pending_tiles = pending_tiles;
             app_state.render_settings.cache_usage =
@@ -3624,15 +3655,32 @@ int ViewerApp::run() {
             if (gui_cmds.color_by_changed) {
                 const int new_idx = std::clamp(
                     gui_cmds.color_by_index, 0,
-                    static_cast<int>(attr_table.size()) - 1
+                    static_cast<int>(attr_list.size()) - 1
                 );
                 scene_state.active_attribute_index = new_idx;
-                push.attr_index  = static_cast<std::uint32_t>(new_idx);
-                const auto& a    = attr_table[push.attr_index];
-                push.value_min   = a.min_val;
-                push.value_range = a.range;
-                if (push.value_range <= 0.0f) push.value_range = 1.0f;
-                std::cout << "[ATTR] switched to: " << a.name << '\n';
+                const auto& a = attr_list[static_cast<std::size_t>(new_idx)];
+                push.color_source = static_cast<std::uint32_t>(a.source);
+                push.color_min    = a.min_val;
+                push.color_range  = a.range();
+                if (push.color_range <= 0.0f) push.color_range = 1.0f;
+                std::cout << "[COLOR] switched to: " << a.name << '\n';
+            }
+            if (gui_cmds.height_by_changed) {
+                const int new_idx = std::clamp(
+                    gui_cmds.height_by_index, 0,
+                    static_cast<int>(attr_list.size()) - 1
+                );
+                scene_state.active_height_index = new_idx;
+                apply_height_attr(attr_list[static_cast<std::size_t>(new_idx)], height_exag);
+                std::cout << "[HEIGHT] switched to: "
+                          << attr_list[static_cast<std::size_t>(new_idx)].name << '\n';
+            }
+            if (gui_cmds.height_exag_changed) {
+                height_exag = gui_cmds.height_exag;
+                apply_height_attr(
+                    attr_list[static_cast<std::size_t>(scene_state.active_height_index)],
+                    height_exag
+                );
             }
             if (gui_cmds.clear_cache_requested) {
                 if (tile_preload_enabled && !tiles_fully_resident &&
@@ -3688,24 +3736,39 @@ int ViewerApp::run() {
 
             r_was_pressed = r_pressed;
 
-            // Tab: cycle through color attributes (zero GPU cost — push constant only)
-            const bool tab_pressed =
+            // Tab: cycle color attribute; Shift+Tab: cycle height attribute
+            // (zero GPU cost — push constant only)
+            const bool tab_held =
                 !imgui_wants_keyboard && window.key_pressed(GLFW_KEY_TAB);
-            if (tab_pressed && !tab_was_pressed) {
-                push.attr_index =
-                    (push.attr_index + 1u) %
-                    static_cast<std::uint32_t>(attr_table.size());
-                scene_state.active_attribute_index =
-                    static_cast<int>(push.attr_index);
+            const bool shift_mod =
+                window.key_pressed(GLFW_KEY_LEFT_SHIFT) ||
+                window.key_pressed(GLFW_KEY_RIGHT_SHIFT);
 
-                const auto& a = attr_table[push.attr_index];
-                push.value_min   = a.min_val;
-                push.value_range = a.range;
-                if (push.value_range <= 0.0f) push.value_range = 1.0f;
-
-                std::cout << "[ATTR] switched to: " << a.name << '\n';
+            if (!tab_held) {
+                tab_was_pressed = false;
+                shift_tab_was_pressed = false;
+            } else if (shift_mod && !shift_tab_was_pressed) {
+                shift_tab_was_pressed = true;
+                tab_was_pressed = true;
+                const auto n = static_cast<std::uint32_t>(attr_list.size());
+                const std::uint32_t new_idx =
+                    (static_cast<std::uint32_t>(scene_state.active_height_index) + 1u) % n;
+                scene_state.active_height_index = static_cast<int>(new_idx);
+                apply_height_attr(attr_list[new_idx], height_exag);
+                std::cout << "[HEIGHT] switched to: " << attr_list[new_idx].name << '\n';
+            } else if (!tab_was_pressed) {
+                tab_was_pressed = true;
+                const auto n = static_cast<std::uint32_t>(attr_list.size());
+                const std::uint32_t new_idx =
+                    (static_cast<std::uint32_t>(scene_state.active_attribute_index) + 1u) % n;
+                scene_state.active_attribute_index = static_cast<int>(new_idx);
+                const auto& a = attr_list[new_idx];
+                push.color_source = static_cast<std::uint32_t>(a.source);
+                push.color_min    = a.min_val;
+                push.color_range  = a.range();
+                if (push.color_range <= 0.0f) push.color_range = 1.0f;
+                std::cout << "[COLOR] switched to: " << a.name << '\n';
             }
-            tab_was_pressed = tab_pressed;
 
             for (const auto& view : app_state.render_views) {
                 camera_hub.set_group(

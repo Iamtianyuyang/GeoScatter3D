@@ -830,12 +830,57 @@ void draw_render_settings(
             actions.point_size = point_size;
         }
 
+        // ---- 高度来源 ----
+        {
+            const auto& height_options =
+                state.render_settings.height_by_options;
+            const char* h_preview = "无";
+            if (!height_options.empty()) {
+                const int h_idx = std::clamp(
+                    state.render_settings.height_attr_index,
+                    0,
+                    static_cast<int>(height_options.size()) - 1
+                );
+                h_preview = height_options[
+                    static_cast<std::size_t>(h_idx)
+                ].c_str();
+            }
+            if (ImGui::BeginCombo("高度来源", h_preview)) {
+                for (std::size_t i = 0; i < height_options.size(); ++i) {
+                    const bool selected =
+                        static_cast<int>(i) ==
+                        state.render_settings.height_attr_index;
+                    if (ImGui::Selectable(
+                            height_options[i].c_str(),
+                            selected
+                        )) {
+                        state.render_settings.height_attr_index =
+                            static_cast<int>(i);
+                        actions.height_by_changed = true;
+                        actions.height_by_index = static_cast<int>(i);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        // ---- 高度夸张 ----
+        {
+            float exag = state.render_settings.height_exaggeration;
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.65f);
+            if (ImGui::SliderFloat("高度夸张", &exag, 0.1f, 5.0f, "%.2fx")) {
+                state.render_settings.height_exaggeration = exag;
+                actions.height_exag_changed = true;
+                actions.height_exag = exag;
+            }
+        }
+
         const auto& color_options =
             state.render_settings.color_by_options;
         const char* preview = "无";
         if (!color_options.empty()) {
             const int preview_index = std::clamp(
-                state.render_settings.color_by_index,
+                state.render_settings.color_attr_index,
                 0,
                 static_cast<int>(color_options.size()) - 1
             );
@@ -848,12 +893,12 @@ void draw_render_settings(
             for (std::size_t i = 0; i < color_options.size(); ++i) {
                 const bool selected =
                     static_cast<int>(i) ==
-                    state.render_settings.color_by_index;
+                    state.render_settings.color_attr_index;
                 if (ImGui::Selectable(
                         color_options[i].c_str(),
                         selected
                     )) {
-                    state.render_settings.color_by_index =
+                    state.render_settings.color_attr_index =
                         static_cast<int>(i);
                     actions.color_by_changed = true;
                     actions.color_by_index = static_cast<int>(i);
