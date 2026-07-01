@@ -299,7 +299,7 @@ void draw_viewport_window(
         view.detached ? "独立窗口" : "工作区"
     );
     ImGui::SameLine();
-    if (ImGui::SmallButton("适配")) {
+    if (ImGui::SmallButton("复位视角")) {
         actions.reset_camera_index = view.viewport_index;
     }
     ImGui::SameLine();
