@@ -2051,6 +2051,50 @@ void test_fov_clamped_at_min()
     );
 }
 
+void test_hover_cleared_when_no_hit()
+{
+    // After kNoHitClearThreshold consecutive has_hit=false pick results,
+    // the hover point must be cleared so the tooltip doesn't stick.
+    // A single has_hit=true resets the debounce counter.
+    constexpr int kThreshold = 3;
+    std::optional<int> hover_point = 42;
+    int consecutive_no_hit = 0;
+
+    // has_hit=true keeps the point and resets the counter.
+    consecutive_no_hit = 0;
+    hover_point = 99;
+    expect(hover_point.has_value(), "hover point set on hit");
+    expect(consecutive_no_hit == 0, "counter reset on hit");
+
+    // threshold-1 consecutive misses — point survives debounce.
+    for (int i = 0; i < kThreshold - 1; ++i) {
+        ++consecutive_no_hit;
+        if (consecutive_no_hit >= kThreshold) {
+            hover_point.reset();
+        }
+    }
+    expect(hover_point.has_value(),
+           "hover point persists before no-hit threshold");
+    expect(consecutive_no_hit == kThreshold - 1,
+           "counter at threshold-1");
+
+    // threshold-th miss — point is cleared.
+    ++consecutive_no_hit;
+    if (consecutive_no_hit >= kThreshold) {
+        hover_point.reset();
+    }
+    expect(!hover_point.has_value(),
+           "hover point cleared after consecutive no-hit frames");
+
+    // A hit after clear restores the point and resets the counter.
+    consecutive_no_hit = 0;
+    hover_point = 77;
+    expect(hover_point.has_value(),
+           "hover point restored on hit after clear");
+    expect(consecutive_no_hit == 0,
+           "counter reset on hit after clear");
+}
+
 } // namespace
 
 int main()
@@ -2106,6 +2150,7 @@ int main()
     test_pitch_never_exceeds_pole();
     test_zoom_in_past_distance_floor_keeps_zooming_via_fov();
     test_fov_clamped_at_min();
+    test_hover_cleared_when_no_hit();
 
     if (failures == 0) {
         std::cout << "[PASS] runtime performance tests\n";

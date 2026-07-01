@@ -2436,6 +2436,13 @@ int ViewerApp::run() {
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             0
         );
+        // Consecutive GPU pick misses (has_hit=false) — clears hover
+        // after a short debounce so moving between points doesn't flicker.
+        std::vector<int> consecutive_no_hit(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            0
+        );
+        constexpr int kNoHitClearThreshold = 3;
         std::vector<GpuPickRequest> gpu_pick_requests(
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
@@ -3105,6 +3112,26 @@ int ViewerApp::run() {
                         if (hit_point.has_value()) {
                             latest_gpu_hover_points[view_index] = hit_point;
                             hover_timeout[view_index] = 0;
+                            consecutive_no_hit[view_index] = 0;
+                        }
+                        // has_hit=false means GPU found no point at the
+                        // cursor — the mouse is over empty space.
+                        // Debounce across a few frames so that moving
+                        // between nearby points (where the GPU pick lags
+                        // behind the cursor) doesn't flicker the tooltip.
+                        if (!result.has_hit &&
+                            view_index < consecutive_no_hit.size()) {
+                            ++consecutive_no_hit[view_index];
+                            if (consecutive_no_hit[view_index] >=
+                                    kNoHitClearThreshold &&
+                                view_index <
+                                    latest_gpu_hover_points.size()) {
+                                latest_gpu_hover_points[view_index].reset();
+                            }
+                        }
+                        if (result.has_hit &&
+                            view_index < consecutive_no_hit.size()) {
+                            consecutive_no_hit[view_index] = 0;
                         }
                         latest_gpu_capture_x[view_index] =
                             result.request.mouse_x;
