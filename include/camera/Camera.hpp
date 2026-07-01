@@ -88,6 +88,39 @@ public:
 
     void fit_bounds(const CameraBounds& bounds) noexcept;
 
+    /*
+     * XY-only fit for map-style box-select zoom.
+     * Preserves target.z, view direction, and camera.up().
+     * Only target.x, target.y, and ortho_height are recomputed
+     * from the given XY rectangle.  near/far are derived from
+     * scene_bounds (not the selection) so the whole dataset
+     * stays inside the clip volume.
+     */
+    void fit_xy_bounds(
+        float x_min, float x_max,
+        float y_min, float y_max,
+        float padding,
+        const CameraBounds& scene_bounds) noexcept;
+
+    /*
+     * Screen-space box zoom for orthographic cameras.
+     * Computes new ortho_height and target directly from the
+     * screen rectangle fraction — avoids the world-AABB inflation
+     * that happens when unprojecting tilted-camera corners.
+     *
+     *   scale = max(rect_w/vp_w, rect_h/vp_h)
+     *   ortho_height_ *= scale * padding
+     *   target_.xy = from_screen(rect_center) ∩ z=target_.z
+     *
+     * Preserves target.z, view direction, camera.up(),
+     * near_plane, and far_plane.
+     */
+    void fit_screen_rect(
+        float rect_min_x, float rect_min_y,
+        float rect_max_x, float rect_max_y,
+        std::uint32_t viewport_w, std::uint32_t viewport_h,
+        float padding) noexcept;
+
     void orbit(float delta_yaw_radians, float delta_pitch_radians) noexcept;
     void zoom(float scale) noexcept;
     void pan(float delta_x, float delta_y) noexcept;

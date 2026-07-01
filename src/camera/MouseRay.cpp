@@ -145,153 +145,131 @@ std::optional<Vec3> MouseRay::intersect_camera_facing_plane(
 }
 
 Mat4 MouseRay::inverse(const Mat4& matrix) noexcept {
-    const float* m = matrix.m.data();
+    // Compute cofactors and determinant in double precision.
+    // Large orthographic projections produce very small matrix
+    // elements (~1e-4) and determinants (~1e-13).  The matrix is
+    // still well-conditioned — double-precision cofactor
+    // accumulation preserves enough bits for a usable inverse.
+    // A float-only path loses precision, and the determinant
+    // magnitude is indistinguishable from zero against an
+    // absolute threshold like 1e-12.
+    const float* fm = matrix.m.data();
+    const auto m = [fm](int i) -> double {
+        return static_cast<double>(fm[i]);
+    };
 
-    Mat4 inv{};
+    // --- 16 cofactors (adjugate transposed) in double ----------
+    const double c0 =
+        m(5)*m(10)*m(15) - m(5)*m(11)*m(14) -
+        m(9)*m(6)*m(15)  + m(9)*m(7)*m(14) +
+        m(13)*m(6)*m(11) - m(13)*m(7)*m(10);
 
-    inv.m[0] =
-        m[5]  * m[10] * m[15] -
-        m[5]  * m[11] * m[14] -
-        m[9]  * m[6]  * m[15] +
-        m[9]  * m[7]  * m[14] +
-        m[13] * m[6]  * m[11] -
-        m[13] * m[7]  * m[10];
+    const double c4 =
+       -m(4)*m(10)*m(15) + m(4)*m(11)*m(14) +
+        m(8)*m(6)*m(15)  - m(8)*m(7)*m(14) -
+        m(12)*m(6)*m(11) + m(12)*m(7)*m(10);
 
-    inv.m[4] =
-       -m[4]  * m[10] * m[15] +
-        m[4]  * m[11] * m[14] +
-        m[8]  * m[6]  * m[15] -
-        m[8]  * m[7]  * m[14] -
-        m[12] * m[6]  * m[11] +
-        m[12] * m[7]  * m[10];
+    const double c8 =
+        m(4)*m(9)*m(15)  - m(4)*m(11)*m(13) -
+        m(8)*m(5)*m(15)  + m(8)*m(7)*m(13) +
+        m(12)*m(5)*m(11) - m(12)*m(7)*m(9);
 
-    inv.m[8] =
-        m[4]  * m[9] * m[15] -
-        m[4]  * m[11] * m[13] -
-        m[8]  * m[5] * m[15] +
-        m[8]  * m[7] * m[13] +
-        m[12] * m[5] * m[11] -
-        m[12] * m[7] * m[9];
+    const double c12 =
+       -m(4)*m(9)*m(14)  + m(4)*m(10)*m(13) +
+        m(8)*m(5)*m(14)  - m(8)*m(6)*m(13) -
+        m(12)*m(5)*m(10) + m(12)*m(6)*m(9);
 
-    inv.m[12] =
-       -m[4]  * m[9] * m[14] +
-        m[4]  * m[10] * m[13] +
-        m[8]  * m[5] * m[14] -
-        m[8]  * m[6] * m[13] -
-        m[12] * m[5] * m[10] +
-        m[12] * m[6] * m[9];
+    const double c1 =
+       -m(1)*m(10)*m(15) + m(1)*m(11)*m(14) +
+        m(9)*m(2)*m(15)  - m(9)*m(3)*m(14) -
+        m(13)*m(2)*m(11) + m(13)*m(3)*m(10);
 
-    inv.m[1] =
-       -m[1]  * m[10] * m[15] +
-        m[1]  * m[11] * m[14] +
-        m[9]  * m[2] * m[15] -
-        m[9]  * m[3] * m[14] -
-        m[13] * m[2] * m[11] +
-        m[13] * m[3] * m[10];
+    const double c5 =
+        m(0)*m(10)*m(15) - m(0)*m(11)*m(14) -
+        m(8)*m(2)*m(15)  + m(8)*m(3)*m(14) +
+        m(12)*m(2)*m(11) - m(12)*m(3)*m(10);
 
-    inv.m[5] =
-        m[0]  * m[10] * m[15] -
-        m[0]  * m[11] * m[14] -
-        m[8]  * m[2] * m[15] +
-        m[8]  * m[3] * m[14] +
-        m[12] * m[2] * m[11] -
-        m[12] * m[3] * m[10];
+    const double c9 =
+       -m(0)*m(9)*m(15)  + m(0)*m(11)*m(13) +
+        m(8)*m(1)*m(15)  - m(8)*m(3)*m(13) -
+        m(12)*m(1)*m(11) + m(12)*m(3)*m(9);
 
-    inv.m[9] =
-       -m[0]  * m[9] * m[15] +
-        m[0]  * m[11] * m[13] +
-        m[8]  * m[1] * m[15] -
-        m[8]  * m[3] * m[13] -
-        m[12] * m[1] * m[11] +
-        m[12] * m[3] * m[9];
+    const double c13 =
+        m(0)*m(9)*m(14)  - m(0)*m(10)*m(13) -
+        m(8)*m(1)*m(14)  + m(8)*m(2)*m(13) +
+        m(12)*m(1)*m(10) - m(12)*m(2)*m(9);
 
-    inv.m[13] =
-        m[0]  * m[9] * m[14] -
-        m[0]  * m[10] * m[13] -
-        m[8]  * m[1] * m[14] +
-        m[8]  * m[2] * m[13] +
-        m[12] * m[1] * m[10] -
-        m[12] * m[2] * m[9];
+    const double c2 =
+        m(1)*m(6)*m(15)  - m(1)*m(7)*m(14) -
+        m(5)*m(2)*m(15)  + m(5)*m(3)*m(14) +
+        m(13)*m(2)*m(7)  - m(13)*m(3)*m(6);
 
-    inv.m[2] =
-        m[1]  * m[6] * m[15] -
-        m[1]  * m[7] * m[14] -
-        m[5]  * m[2] * m[15] +
-        m[5]  * m[3] * m[14] +
-        m[13] * m[2] * m[7] -
-        m[13] * m[3] * m[6];
+    const double c6 =
+       -m(0)*m(6)*m(15)  + m(0)*m(7)*m(14) +
+        m(4)*m(2)*m(15)  - m(4)*m(3)*m(14) -
+        m(12)*m(2)*m(7)  + m(12)*m(3)*m(6);
 
-    inv.m[6] =
-       -m[0]  * m[6] * m[15] +
-        m[0]  * m[7] * m[14] +
-        m[4]  * m[2] * m[15] -
-        m[4]  * m[3] * m[14] -
-        m[12] * m[2] * m[7] +
-        m[12] * m[3] * m[6];
+    const double c10 =
+        m(0)*m(5)*m(15)  - m(0)*m(7)*m(13) -
+        m(4)*m(1)*m(15)  + m(4)*m(3)*m(13) +
+        m(12)*m(1)*m(7)  - m(12)*m(3)*m(5);
 
-    inv.m[10] =
-        m[0]  * m[5] * m[15] -
-        m[0]  * m[7] * m[13] -
-        m[4]  * m[1] * m[15] +
-        m[4]  * m[3] * m[13] +
-        m[12] * m[1] * m[7] -
-        m[12] * m[3] * m[5];
+    const double c14 =
+       -m(0)*m(5)*m(14)  + m(0)*m(6)*m(13) +
+        m(4)*m(1)*m(14)  - m(4)*m(2)*m(13) -
+        m(12)*m(1)*m(6)  + m(12)*m(2)*m(5);
 
-    inv.m[14] =
-       -m[0]  * m[5] * m[14] +
-        m[0]  * m[6] * m[13] +
-        m[4]  * m[1] * m[14] -
-        m[4]  * m[2] * m[13] -
-        m[12] * m[1] * m[6] +
-        m[12] * m[2] * m[5];
+    const double c3 =
+       -m(1)*m(6)*m(11)  + m(1)*m(7)*m(10) +
+        m(5)*m(2)*m(11)  - m(5)*m(3)*m(10) -
+        m(9)*m(2)*m(7)   + m(9)*m(3)*m(6);
 
-    inv.m[3] =
-       -m[1] * m[6] * m[11] +
-        m[1] * m[7] * m[10] +
-        m[5] * m[2] * m[11] -
-        m[5] * m[3] * m[10] -
-        m[9] * m[2] * m[7] +
-        m[9] * m[3] * m[6];
+    const double c7 =
+        m(0)*m(6)*m(11)  - m(0)*m(7)*m(10) -
+        m(4)*m(2)*m(11)  + m(4)*m(3)*m(10) +
+        m(8)*m(2)*m(7)   - m(8)*m(3)*m(6);
 
-    inv.m[7] =
-        m[0] * m[6] * m[11] -
-        m[0] * m[7] * m[10] -
-        m[4] * m[2] * m[11] +
-        m[4] * m[3] * m[10] +
-        m[8] * m[2] * m[7] -
-        m[8] * m[3] * m[6];
+    const double c11 =
+       -m(0)*m(5)*m(11)  + m(0)*m(7)*m(9) +
+        m(4)*m(1)*m(11)  - m(4)*m(3)*m(9) -
+        m(8)*m(1)*m(7)   + m(8)*m(3)*m(5);
 
-    inv.m[11] =
-       -m[0] * m[5] * m[11] +
-        m[0] * m[7] * m[9] +
-        m[4] * m[1] * m[11] -
-        m[4] * m[3] * m[9] -
-        m[8] * m[1] * m[7] +
-        m[8] * m[3] * m[5];
+    const double c15 =
+        m(0)*m(5)*m(10)  - m(0)*m(6)*m(9) -
+        m(4)*m(1)*m(10)  + m(4)*m(2)*m(9) +
+        m(8)*m(1)*m(6)   - m(8)*m(2)*m(5);
 
-    inv.m[15] =
-        m[0] * m[5] * m[10] -
-        m[0] * m[6] * m[9] -
-        m[4] * m[1] * m[10] +
-        m[4] * m[2] * m[9] +
-        m[8] * m[1] * m[6] -
-        m[8] * m[2] * m[5];
+    // Determinant = first row · first column of cofactor matrix
+    const double det =
+        m(0) * c0 + m(1) * c4 + m(2) * c8 + m(3) * c12;
 
-    const float det =
-        m[0] * inv.m[0] +
-        m[1] * inv.m[4] +
-        m[2] * inv.m[8] +
-        m[3] * inv.m[12];
-
-    if (std::abs(det) < 1.0e-12f) {
+    // Only bail on a truly singular matrix (zero / NaN / Inf).
+    // Small-but-nonzero determinants are normal for large
+    // orthographic views and the double-precision cofactors
+    // above keep the inverse accurate.
+    if (det == 0.0 || !std::isfinite(det)) {
         return Mat4::identity();
     }
 
-    const float inv_det = 1.0f / det;
+    const double inv_det = 1.0 / det;
 
-    for (float& value : inv.m) {
-        value *= inv_det;
-    }
+    Mat4 inv{};
+    inv.m[0]  = static_cast<float>(c0  * inv_det);
+    inv.m[1]  = static_cast<float>(c1  * inv_det);
+    inv.m[2]  = static_cast<float>(c2  * inv_det);
+    inv.m[3]  = static_cast<float>(c3  * inv_det);
+    inv.m[4]  = static_cast<float>(c4  * inv_det);
+    inv.m[5]  = static_cast<float>(c5  * inv_det);
+    inv.m[6]  = static_cast<float>(c6  * inv_det);
+    inv.m[7]  = static_cast<float>(c7  * inv_det);
+    inv.m[8]  = static_cast<float>(c8  * inv_det);
+    inv.m[9]  = static_cast<float>(c9  * inv_det);
+    inv.m[10] = static_cast<float>(c10 * inv_det);
+    inv.m[11] = static_cast<float>(c11 * inv_det);
+    inv.m[12] = static_cast<float>(c12 * inv_det);
+    inv.m[13] = static_cast<float>(c13 * inv_det);
+    inv.m[14] = static_cast<float>(c14 * inv_det);
+    inv.m[15] = static_cast<float>(c15 * inv_det);
 
     return inv;
 }

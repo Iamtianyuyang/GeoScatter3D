@@ -1,4 +1,5 @@
 #include "camera/Camera.hpp"
+#include "camera/MouseRay.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -329,6 +330,92 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
         near_plane_ = clip_planes.near_plane;
         far_plane_ = clip_planes.far_plane;
     }
+}
+
+void Camera::fit_xy_bounds(
+    float x_min, float x_max,
+    float y_min, float y_max,
+    float padding,
+    const CameraBounds& scene_bounds) noexcept
+{
+    const float extent_x = std::max(x_max - x_min, 0.0f);
+    const float extent_y = std::max(y_max - y_min, 0.0f);
+    if (extent_x <= 0.0f && extent_y <= 0.0f) {
+        return;  // degenerate selection — no-op
+    }
+
+    // Save viewing direction and Z before changing anything.
+    const Vec3 old_target = target_;
+    const Vec3 offset = sub(position_, target_);
+    const float dist = std::max(length(offset), 1.0f);
+    const Vec3 view_dir = normalize(offset);
+
+    // New camera target: XY centre of the selection, preserve Z.
+    target_.x = 0.5f * (x_min + x_max);
+    target_.y = 0.5f * (y_min + y_max);
+    // target_.z unchanged
+
+    // Ortho height to fit the XY rectangle.
+    const float aspect = aspect_ratio();
+    const float fit_h = std::max(
+        extent_y,
+        extent_x / std::max(aspect, 1.0e-6f));
+    ortho_height_ = std::max(fit_h * padding, 0.01f);
+
+    // Position: same distance and direction from the new target.
+    position_ = add(target_, mul(view_dir, dist));
+
+    // near/far from the full scene bounds so the whole dataset
+    // remains inside the clip volume.
+    const float scene_radius = std::max(
+        bounding_sphere_radius(scene_bounds), 1.0f);
+    const ClipPlanes clip =
+        compute_clip_planes(dist, scene_radius);
+    near_plane_ = clip.near_plane;
+    far_plane_  = clip.far_plane;
+}
+
+void Camera::fit_screen_rect(
+    float rect_min_x, float rect_min_y,
+    float rect_max_x, float rect_max_y,
+    std::uint32_t viewport_w, std::uint32_t viewport_h,
+    float padding) noexcept
+{
+    const float rect_w = std::max(rect_max_x - rect_min_x, 1.0f);
+    const float rect_h = std::max(rect_max_y - rect_min_y, 1.0f);
+    const float vp_w = static_cast<float>(std::max(viewport_w, 1u));
+    const float vp_h = static_cast<float>(std::max(viewport_h, 1u));
+
+    // Screen-space scale: fraction of viewport the rect covers.
+    const float scale_x = rect_w / vp_w;
+    const float scale_y = rect_h / vp_h;
+    const float max_scale = std::max(scale_x, scale_y);
+
+    ortho_height_ = std::max(ortho_height_ * max_scale * padding, 0.01f);
+
+    // Preserve view direction and distance.
+    const Vec3 offset = sub(position_, target_);
+    const float dist = std::max(length(offset), 1.0f);
+    const Vec3 view_dir = normalize(offset);
+
+    // Project rect centre to world at current target.z.
+    const float cx = 0.5f * (rect_min_x + rect_max_x);
+    const float cy = 0.5f * (rect_min_y + rect_max_y);
+    const Viewport vp{viewport_w, viewport_h};
+    const Ray ray = MouseRay::from_screen(
+        static_cast<double>(cx), static_cast<double>(cy), vp, *this);
+    const auto hit = MouseRay::intersect_plane(
+        ray, {0.0f, 0.0f, target_.z}, {0.0f, 0.0f, 1.0f});
+    if (hit) {
+        target_.x = hit->x;
+        target_.y = hit->y;
+    }
+    // target_.z unchanged
+
+    // Position: same direction and distance from new target.
+    position_ = add(target_, mul(view_dir, dist));
+
+    // near/far unchanged — preserves existing clip volume.
 }
 
 void Camera::orbit(

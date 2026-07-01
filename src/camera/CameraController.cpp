@@ -289,7 +289,7 @@ void CameraController::pan_view(
         right = {1.0f, 0.0f, 0.0f};
     }
 
-    const Vec3 up =
+    const Vec3 screen_up =
         normalize(cross(right, forward));
 
     /*
@@ -298,7 +298,9 @@ void CameraController::pan_view(
      * Perspective: 2 × distance × tan(fov/2).
      */
     float view_height_world;
-    if (camera.projection_mode() == ProjectionMode::Orthographic) {
+    const bool is_ortho =
+        camera.projection_mode() == ProjectionMode::Orthographic;
+    if (is_ortho) {
         view_height_world = camera.ortho_height();
     } else {
         const float fov_y_rad =
@@ -307,13 +309,39 @@ void CameraController::pan_view(
             2.0f * camera.distance() * std::tan(0.5f * fov_y_rad);
     }
 
-    const float world_per_pixel =
+    float world_per_pixel =
         view_height_world / viewport_height * config_.pan_speed;
 
-    const Vec3 move = add(
-        mul(right, -delta_x * world_per_pixel),
-        mul(up, delta_y * world_per_pixel)
-    );
+    Vec3 move;
+    if (is_ortho) {
+        // Ortho map-navigation: pan strictly in the XY plane.
+        // Project the screen-aligned right/up vectors to XY so
+        // tilted-camera panning never drifts target.z.
+        Vec3 right_xy{right.x, right.y, 0.0f};
+        Vec3 up_xy{screen_up.x, screen_up.y, 0.0f};
+
+        constexpr float kEps = 1.0e-6f;
+        if (length(right_xy) > kEps) {
+            right_xy = normalize(right_xy);
+        } else {
+            right_xy = {1.0f, 0.0f, 0.0f};
+        }
+        if (length(up_xy) > kEps) {
+            up_xy = normalize(up_xy);
+        } else {
+            up_xy = {0.0f, 1.0f, 0.0f};
+        }
+
+        move = add(
+            mul(right_xy, -delta_x * world_per_pixel),
+            mul(up_xy,    delta_y * world_per_pixel));
+        move.z = 0.0f;
+    } else {
+        // Perspective: pan along the screen plane (existing behaviour).
+        move = add(
+            mul(right, -delta_x * world_per_pixel),
+            mul(screen_up, delta_y * world_per_pixel));
+    }
 
     camera.look_at(
         add(camera.position(), move),

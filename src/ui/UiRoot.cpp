@@ -536,9 +536,57 @@ void draw_viewport_window(
         }
 
         // ---- Y 轴（左侧）----
+        // --- diagnostic: Y-axis visibility trace (off by default) ---
+        constexpr bool kYAxisDiag = false;  // set true to enable
+        if (kYAxisDiag) {
+            static int ydiag_count = 0;
+            if (++ydiag_count % 30 == 0) {
+                std::fprintf(stderr,
+                    "[YAXIS] frame=%d y_range=%.6f "
+                    "y_min=%.2f y_max=%.2f "
+                    "plot_y=[%.1f,%.1f] major_cnt=%d\n",
+                    ydiag_count,
+                    static_cast<double>(y_range),
+                    static_cast<double>(view.map_axis_y_min),
+                    static_cast<double>(view.map_axis_y_max),
+                    static_cast<double>(plot_min.y),
+                    static_cast<double>(plot_max.y),
+                    major_cnt);
+            }
+        }
         if (y_range > 0.0f) {
             const auto y_major = gs3d::render::compute_axis_ticks(
                 view.map_axis_y_min, view.map_axis_y_max, major_cnt);
+            if (kYAxisDiag) {
+                static int ydiag_count2 = 0;
+                if (++ydiag_count2 % 30 == 0) {
+                    std::fprintf(stderr,
+                        "[YAXIS] y_major cnt=%zu step=%.2f "
+                        "first=%.2f last=%.2f\n",
+                        y_major.size(),
+                        y_major.size() >= 2
+                            ? static_cast<double>(y_major[1] - y_major[0])
+                            : -1.0,
+                        y_major.empty()
+                            ? 0.0
+                            : static_cast<double>(y_major.front()),
+                        y_major.empty()
+                            ? 0.0
+                            : static_cast<double>(y_major.back()));
+                    for (size_t ti = 0; ti < std::min(y_major.size(), size_t{4}); ++ti) {
+                        const float t = (y_major[ti] - view.map_axis_y_min) / y_range;
+                        const float py = plot_max.y - t * (plot_max.y - plot_min.y);
+                        std::fprintf(stderr,
+                            "[YAXIS]   tick[%zu]=%.2f t=%.4f py=%.1f "
+                            "in_plot=%s\n",
+                            ti,
+                            static_cast<double>(y_major[ti]),
+                            static_cast<double>(t),
+                            static_cast<double>(py),
+                            (py >= plot_min.y && py <= plot_max.y) ? "YES" : "NO");
+                    }
+                }
+            }
             const float y_major_step = (y_major.size() >= 2)
                 ? (y_major[1] - y_major[0]) : 1.0f;
 
@@ -711,11 +759,21 @@ void draw_viewport_window(
     }
 
     if (view.box_select_dragging) {
-        const ImVec2 rect_a(
-            canvas_min.x + view.box_select_start_x,
-            canvas_min.y + view.box_select_start_y
-        );
-        const ImVec2 rect_b(io.MousePos.x, io.MousePos.y);
+        // Both corners through framebuffer_to_plot_screen — the same
+        // inverse transform the crosshair uses.  Keeps the drawn rect
+        // and the box→world unprojection in the same coordinate space.
+        const auto scr_start = framebuffer_to_plot_screen(
+            view.box_select_start_x, view.box_select_start_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const auto scr_curr = framebuffer_to_plot_screen(
+            frame.mouse_local_x, frame.mouse_local_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const ImVec2 rect_a(plot_min.x + scr_start.x,
+                            plot_min.y + scr_start.y);
+        const ImVec2 rect_b(plot_min.x + scr_curr.x,
+                            plot_min.y + scr_curr.y);
         ImGui::GetWindowDrawList()->AddRect(
             rect_a, rect_b, IM_COL32(255, 220, 0, 255)
         );
