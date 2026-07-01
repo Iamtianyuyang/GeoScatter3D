@@ -47,7 +47,7 @@ zoom_speed = 1.0
 invert_rotate_x = false
 invert_rotate_y = false
 invert_pan_x = false
-invert_pan_y = true
+invert_pan_y = false
 
 [lod]
 enabled = true
