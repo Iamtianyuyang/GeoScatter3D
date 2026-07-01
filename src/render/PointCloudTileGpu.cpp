@@ -259,6 +259,13 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     return result;
 }
 
+void PointCloudTileGpu::touch_tile(std::uint64_t tile_id) noexcept {
+    auto it = resident_tiles_.find(tile_id);
+    if (it != resident_tiles_.end()) {
+        it->second.last_used_tick = ++usage_tick_;
+    }
+}
+
 void PointCloudTileGpu::evict_to_budget(
     const std::unordered_set<std::uint64_t>& pinned_tile_ids
 ) {

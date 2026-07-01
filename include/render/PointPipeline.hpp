@@ -57,6 +57,12 @@ static_assert(
     sizeof(PointPushConstants) == 128,
     "PointPushConstants must be 128 bytes"
 );
+static_assert(offsetof(PointPushConstants, clip_min)  == 64,
+    "PointPushConstants: clip_min must be at offset 64");
+static_assert(offsetof(PointPushConstants, clip_max)  == 80,
+    "PointPushConstants: clip_max must be at offset 80");
+static_assert(offsetof(PointPushConstants, clip_mode) == 124,
+    "PointPushConstants: clip_mode must be at offset 124");
 
 struct PointPipelineConfig {
     std::filesystem::path vertex_shader_path =

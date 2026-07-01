@@ -91,6 +91,14 @@ public:
     [[nodiscard]]
     bool has_resident_tile(std::uint64_t tile_id) const noexcept;
 
+    /*
+     * Bump the LRU tick for a resident tile so evict_to_budget won't
+     * target it.  No-op if the tile is not currently resident.
+     * Call after sync_from_cached_tiles for every desired tile whose
+     * PointDataView wasn't passed to sync (e.g. not in CPU cache yet).
+     */
+    void touch_tile(std::uint64_t tile_id) noexcept;
+
     [[nodiscard]]
     std::uint64_t tile_count() const noexcept;
 

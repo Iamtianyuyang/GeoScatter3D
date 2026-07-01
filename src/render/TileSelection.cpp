@@ -199,9 +199,25 @@ bool TileSelection::should_enable(
     const float tile_size =
         std::min(header.tile_size_x, header.tile_size_y);
 
-    const float dist = camera.distance();
+    if (tile_size <= 0.0f) {
+        return false;
+    }
 
-    if (tile_size <= 0.0f || dist <= 0.0f) {
+    // Orthographic: uniform pixel scale across the viewport
+    if (camera.projection_mode() == gs3d::camera::ProjectionMode::Orthographic) {
+        const float ortho_h = camera.ortho_height();
+        if (ortho_h <= 0.0f) {
+            return false;
+        }
+        const float pixel_size =
+            tile_size / ortho_h *
+            static_cast<float>(camera.viewport_height());
+        return pixel_size >= config_.min_tile_pixel_size;
+    }
+
+    // Perspective: Potree-equivalent screen-space criterion
+    const float dist = camera.distance();
+    if (dist <= 0.0f) {
         return false;
     }
 
@@ -212,7 +228,6 @@ bool TileSelection::should_enable(
         return false;
     }
 
-    // Potree-equivalent screen-space criterion:
     // pixel_size = tile_size / (distance × tan(fov/2)) × viewport_height
     const float pixel_size =
         tile_size / (dist * tan_half) *
@@ -331,6 +346,17 @@ float TileSelection::tile_projected_pixels(
     // Conservative tile size: larger of the two grid dimensions
     const float tile_size = std::max(header.tile_size_x, header.tile_size_y);
 
+    // Orthographic: uniform pixel scale across the viewport
+    if (camera.projection_mode() == gs3d::camera::ProjectionMode::Orthographic) {
+        const float ortho_h = camera.ortho_height();
+        if (ortho_h <= 0.0f) {
+            return 0.0f;
+        }
+        return tile_size / ortho_h *
+               static_cast<float>(camera.viewport_height());
+    }
+
+    // Perspective: Potree SSE formula
     const float fov_y_rad = camera.fov_y_degrees() * kPi / 180.0f;
     const float tan_half  = std::tan(fov_y_rad * 0.5f);
 
