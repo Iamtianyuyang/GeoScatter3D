@@ -391,14 +391,19 @@ void Camera::fit_screen_rect(
     const float scale_y = rect_h / vp_h;
     const float max_scale = std::max(scale_x, scale_y);
 
-    ortho_height_ = std::max(ortho_height_ * max_scale * padding, 0.01f);
+    const float new_ortho_h =
+        std::max(ortho_height_ * max_scale * padding, 0.01f);
 
     // Preserve view direction and distance.
     const Vec3 offset = sub(position_, target_);
     const float dist = std::max(length(offset), 1.0f);
     const Vec3 view_dir = normalize(offset);
 
-    // Project rect centre to world at current target.z.
+    // Project rect centre to world BEFORE changing ortho_height,
+    // so the ray uses the projection the user actually saw when
+    // drawing the box.  Otherwise the target drifts further off
+    // the larger the zoom ratio and the further the rect is from
+    // the viewport centre.
     const float cx = 0.5f * (rect_min_x + rect_max_x);
     const float cy = 0.5f * (rect_min_y + rect_max_y);
     const Viewport vp{viewport_w, viewport_h};
@@ -406,6 +411,9 @@ void Camera::fit_screen_rect(
         static_cast<double>(cx), static_cast<double>(cy), vp, *this);
     const auto hit = MouseRay::intersect_plane(
         ray, {0.0f, 0.0f, target_.z}, {0.0f, 0.0f, 1.0f});
+
+    // Apply new ortho_height and target.
+    ortho_height_ = new_ortho_h;
     if (hit) {
         target_.x = hit->x;
         target_.y = hit->y;

@@ -1945,6 +1945,7 @@ void test_custom_orbit_pivot_and_focus()
     );
 
     const float distance_before_focus = camera.distance();
+    controller.set_focus_anim_duration(0.0f);  // instant jump for test
     controller.focus_on(camera, selected_point);
     expect(
         std::abs(camera.target().x - selected_point.x) < 1.0e-5f &&

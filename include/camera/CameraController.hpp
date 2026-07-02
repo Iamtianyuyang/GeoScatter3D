@@ -3,6 +3,7 @@
 #include "camera/Camera.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -76,6 +77,16 @@ public:
 
     void focus_on(Camera& camera, const Vec3& point) noexcept;
 
+    // Animate camera to a new target and ortho_height.  Used by both
+    // focus_on (ortho_height unchanged) and box-select zoom.
+    void animate_to(
+        Camera& camera,
+        const Vec3& target,
+        float ortho_height
+    ) noexcept;
+
+    void set_focus_anim_duration(float seconds) noexcept;
+
     void reset_view(Camera& camera) const noexcept;
 
     [[nodiscard]]
@@ -89,6 +100,18 @@ private:
     CameraBounds bounds_{};
     bool has_bounds_ = false;
     std::optional<Vec3> orbit_pivot_{};
+
+    // Focus animation: smooth camera transition so tile changes spread
+    // across frames instead of all at once (ponytail: avoids multi-frame
+    // stutter from massive tile reloads after instant camera jumps).
+    std::optional<Vec3> anim_start_pos_{};
+    std::optional<Vec3> anim_end_pos_{};
+    std::optional<Vec3> anim_start_target_{};
+    std::optional<Vec3> anim_end_target_{};
+    std::optional<float> anim_start_ortho_h_{};
+    std::optional<float> anim_end_ortho_h_{};
+    std::chrono::steady_clock::time_point anim_start_time_{};
+    float focus_anim_duration_s_ = 0.3f;
 
     void pan_view(
         Camera& camera,

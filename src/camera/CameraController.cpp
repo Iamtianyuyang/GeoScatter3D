@@ -46,14 +46,49 @@ void CameraController::focus_on(
     Camera& camera,
     const Vec3& point
 ) noexcept {
-    const Vec3 move = sub(point, camera.target());
-    camera.look_at(
-        add(camera.position(), move),
-        point,
-        camera.up()
-    );
-    adjust_near_far(camera);
     orbit_pivot_ = point;
+    animate_to(camera, point, camera.ortho_height());
+}
+
+void CameraController::animate_to(
+    Camera& camera,
+    const Vec3& target,
+    float ortho_height
+) noexcept {
+    if (focus_anim_duration_s_ <= 0.0f) {
+        // Instant jump (test path or explicitly disabled).
+        const Vec3 move = sub(target, camera.target());
+        camera.look_at(
+            add(camera.position(), move),
+            target,
+            camera.up()
+        );
+        camera.set_orthographic(
+            ortho_height,
+            camera.near_plane(),
+            camera.far_plane()
+        );
+        adjust_near_far(camera);
+        return;
+    }
+
+    // ponytail: animate the transition instead of jumping instantly.
+    // An instant camera jump changes all visible tiles at once, causing
+    // multi-frame stutter while the streaming system catches up.
+    // Spreading the move across ~0.3s makes tile changes incremental,
+    // same as a fast pan or zoom.
+    anim_start_pos_ = camera.position();
+    anim_start_target_ = camera.target();
+    const Vec3 move = sub(target, camera.target());
+    anim_end_pos_ = add(camera.position(), move);
+    anim_end_target_ = target;
+    anim_start_ortho_h_ = camera.ortho_height();
+    anim_end_ortho_h_ = ortho_height;
+    anim_start_time_ = std::chrono::steady_clock::now();
+}
+
+void CameraController::set_focus_anim_duration(float seconds) noexcept {
+    focus_anim_duration_s_ = std::max(0.0f, seconds);
 }
 
 void CameraController::reset_view(Camera& camera) const noexcept {
@@ -86,6 +121,66 @@ bool CameraController::update(
         input.viewport_width,
         input.viewport_height
     );
+
+    bool changed = false;
+
+    // --- Focus animation: smooth camera transition ---
+    // Spreads camera jumps (from focus_on) across frames so tile changes
+    // are incremental, avoiding the multi-frame stutter caused by massive
+    // tile reloads after an instant jump.
+    if (anim_start_pos_.has_value()) {
+        if (input.interacting()) {
+            // User took control — cancel the animation.
+            anim_start_pos_.reset();
+            anim_end_pos_.reset();
+            anim_start_target_.reset();
+            anim_end_target_.reset();
+            anim_start_ortho_h_.reset();
+            anim_end_ortho_h_.reset();
+        } else {
+            const auto now = std::chrono::steady_clock::now();
+            const float elapsed = std::chrono::duration<float>(
+                now - anim_start_time_).count();
+            float t = std::clamp(
+                elapsed / focus_anim_duration_s_, 0.0f, 1.0f);
+            // Ease-out cubic: fast initial move, smooth landing.
+            const float ease = 1.0f - std::pow(1.0f - t, 3.0f);
+
+            const auto lerp =
+                [](const Vec3& a, const Vec3& b, float w) -> Vec3 {
+                    return {a.x + (b.x - a.x) * w,
+                            a.y + (b.y - a.y) * w,
+                            a.z + (b.z - a.z) * w};
+                };
+
+            camera.look_at(
+                lerp(*anim_start_pos_, *anim_end_pos_, ease),
+                lerp(*anim_start_target_, *anim_end_target_, ease),
+                camera.up()
+            );
+            if (anim_start_ortho_h_.has_value()) {
+                const float ortho_h =
+                    *anim_start_ortho_h_ +
+                    (*anim_end_ortho_h_ - *anim_start_ortho_h_) * ease;
+                camera.set_orthographic(
+                    ortho_h,
+                    camera.near_plane(),
+                    camera.far_plane()
+                );
+            }
+            adjust_near_far(camera);
+            changed = true;
+
+            if (t >= 1.0f) {
+                anim_start_pos_.reset();
+                anim_end_pos_.reset();
+                anim_start_target_.reset();
+                anim_end_target_.reset();
+                anim_start_ortho_h_.reset();
+                anim_end_ortho_h_.reset();
+            }
+        }
+    }
 
     const float viewport_width =
         static_cast<float>(input.viewport_width);
@@ -196,7 +291,6 @@ bool CameraController::update(
         }
     }
 
-    bool changed = false;
     if (rotated_this_frame) {
         changed = true;
     }

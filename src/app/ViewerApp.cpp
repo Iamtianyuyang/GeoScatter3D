@@ -3426,6 +3426,45 @@ int ViewerApp::run() {
                             result.request.viewport_index
                         );
 
+                    // Save current state, run fit_screen_rect on the
+                    // real camera (so the ray uses the correct viewport
+                    // and old projection — see fit_screen_rect fix),
+                    // then restore and animate toward the desired state.
+                    const auto saved_pos = box_camera.position();
+                    const auto saved_target = box_camera.target();
+                    const float saved_ortho_h = box_camera.ortho_height();
+
+                    box_camera.fit_screen_rect(
+                        fb_min_x, fb_min_y,
+                        fb_max_x, fb_max_y,
+                        mouse_viewport.width, mouse_viewport.height,
+                        1.05f);
+
+                    const auto desired_target = box_camera.target();
+                    const float desired_ortho_h = box_camera.ortho_height();
+                    const auto desired_pos = box_camera.position();
+                    const float desired_near = box_camera.near_plane();
+                    const float desired_far = box_camera.far_plane();
+                    const auto desired_up = box_camera.up();
+
+                    // Restore and animate.
+                    box_camera.look_at(
+                        saved_pos, saved_target, box_camera.up());
+                    box_camera.set_orthographic(
+                        saved_ortho_h,
+                        box_camera.near_plane(),
+                        box_camera.far_plane());
+
+                    controllers[
+                        static_cast<std::size_t>(
+                            result.request.viewport_index
+                        )
+                    ].animate_to(
+                        box_camera,
+                        desired_target,
+                        desired_ortho_h
+                    );
+
                     // --- expected box-zoom (screen-space formula) ---
                     if (kBoxFitDiag) {
                         const float old_ortho_h = ac.ortho_height();
@@ -3464,40 +3503,25 @@ int ViewerApp::run() {
                             static_cast<double>(ac.target().z));
                     }
 
-                    // Screen-space box zoom: computes ortho_height and
-                    // target directly from the screen rectangle fraction.
-                    // Preserves target.z, view direction, camera.up(),
-                    // and near/far.  Avoids the world-AABB inflation
-                    // that happens when the tilted camera maps the screen
-                    // rect to a rotated world parallelogram.
-                    box_camera.fit_screen_rect(
-                        fb_min_x, fb_min_y,
-                        fb_max_x, fb_max_y,
-                        mouse_viewport.width, mouse_viewport.height,
-                        1.05f);
-
                     if (kBoxFitDiag) {
                         std::fprintf(stderr,
                             "[BOXFIT] ACTUAL:   ortho_h=%.2f "
                             "target=(%.2f,%.2f,%.2f) "
                             "pos=(%.2f,%.2f,%.2f) "
                             "near=%.4f far=%.2f up=(%.2f,%.2f,%.2f)\n",
-                            static_cast<double>(box_camera.ortho_height()),
-                            static_cast<double>(box_camera.target().x),
-                            static_cast<double>(box_camera.target().y),
-                            static_cast<double>(box_camera.target().z),
-                            static_cast<double>(box_camera.position().x),
-                            static_cast<double>(box_camera.position().y),
-                            static_cast<double>(box_camera.position().z),
-                            static_cast<double>(box_camera.near_plane()),
-                            static_cast<double>(box_camera.far_plane()),
-                            static_cast<double>(box_camera.up().x),
-                            static_cast<double>(box_camera.up().y),
-                            static_cast<double>(box_camera.up().z));
+                            static_cast<double>(desired_ortho_h),
+                            static_cast<double>(desired_target.x),
+                            static_cast<double>(desired_target.y),
+                            static_cast<double>(desired_target.z),
+                            static_cast<double>(desired_pos.x),
+                            static_cast<double>(desired_pos.y),
+                            static_cast<double>(desired_pos.z),
+                            static_cast<double>(desired_near),
+                            static_cast<double>(desired_far),
+                            static_cast<double>(desired_up.x),
+                            static_cast<double>(desired_up.y),
+                            static_cast<double>(desired_up.z));
                     }
-                    camera_hub.propagate(
-                        result.request.viewport_index
-                    );
                     streaming_viewport_index =
                         result.request.viewport_index;
                     tile_selection_dirty = true;
