@@ -52,6 +52,7 @@ void CameraController::focus_on(
         point,
         camera.up()
     );
+    adjust_near_far(camera);
     orbit_pivot_ = point;
 }
 

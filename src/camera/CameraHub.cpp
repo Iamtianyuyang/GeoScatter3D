@@ -99,7 +99,19 @@ void CameraHub::copy_view(const Camera& src, Camera& dst) noexcept
     const std::uint32_t w = dst.viewport_width();
     const std::uint32_t h = dst.viewport_height();
     dst.look_at(src.position(), src.target(), src.up());
-    dst.set_perspective(src.fov_y_degrees(), src.near_plane(), src.far_plane());
+    if (src.projection_mode() == ProjectionMode::Orthographic) {
+        dst.set_orthographic(
+            src.ortho_height(),
+            src.near_plane(),
+            src.far_plane()
+        );
+    } else {
+        dst.set_perspective(
+            src.fov_y_degrees(),
+            src.near_plane(),
+            src.far_plane()
+        );
+    }
     dst.set_viewport(w, h);
 }
 

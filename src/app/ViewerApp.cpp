@@ -3273,6 +3273,11 @@ int ViewerApp::run() {
                     if (result.request.kind ==
                         GpuPickRequestKind::SetOrbitPivot) {
                         if (!hit_point.has_value()) {
+                            controllers[view_index].clear_orbit_pivot();
+                            selected_focus_points[view_index].reset();
+                            std::cout
+                                << "[CAMERA] orbit pivot cleared"
+                                << " (double-clicked empty space)\n";
                             continue;
                         }
 
