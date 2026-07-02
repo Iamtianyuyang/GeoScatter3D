@@ -173,6 +173,12 @@ struct RenderViewState {
     float hover_screen_x = -1.0f;
     float hover_screen_y = -1.0f;
 
+    // Persistent selected/focus point marker. A double-click updates it and
+    // also makes the point the orbit pivot for this viewport.
+    bool selected_point_visible = false;
+    float selected_screen_x = -1.0f;
+    float selected_screen_y = -1.0f;
+
     /*
      * 三维世界坐标轴（QGIS 包围盒 + 角柱），由 compute_axis_overlay() 填充
      * 几何数据，UiRoot 用 ImGui DrawList 绘制。

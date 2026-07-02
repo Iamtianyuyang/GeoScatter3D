@@ -267,12 +267,8 @@ void test_camera_uses_view_local_input()
     );
 }
 
-void test_zoom_converges_toward_centre_anchor_not_cursor()
+void test_zoom_keeps_cursor_anchor_fixed()
 {
-    // Ortho zoom: scales ortho_height uniformly, does not move camera.
-    // Cursor position is ignored — zooming with cursor off-centre still
-    // changes the visible extent uniformly.
-
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
     camera.set_orthographic(10.0f, 0.01f, 1000.0f);
@@ -285,39 +281,47 @@ void test_zoom_converges_toward_centre_anchor_not_cursor()
     gs3d::camera::CameraController controller;
 
     const float initial_ortho = camera.ortho_height();
-    const auto pos_before = camera.position();
-    const auto tgt_before = camera.target();
+    const gs3d::camera::Viewport viewport{800, 600};
+    const auto anchor =
+        gs3d::camera::MouseRay::intersect_camera_facing_plane(
+            700.0,
+            300.0,
+            viewport,
+            camera,
+            camera.target()
+        );
+    expect(
+        anchor.has_value(),
+        "off-centre cursor resolves a zoom anchor"
+    );
 
-    // Cursor off-centre — zoom should still work uniformly.
     gs3d::camera::CameraInput input;
     input.viewport_width = 800;
     input.viewport_height = 600;
     input.scroll_y = 1.0f;
-    input.mouse_x = 700.0f;  // off-centre — ignored
+    input.mouse_x = 700.0f;
     input.mouse_y = 300.0f;
+    input.mouse_position_valid = true;
     static_cast<void>(controller.update(camera, input));
 
-    // Ortho zoom: position/target do not move.
-    const auto pos_after = camera.position();
-    const auto tgt_after = camera.target();
-    expect(
-        std::abs(pos_after.x - pos_before.x) < 1.0e-6f &&
-        std::abs(pos_after.y - pos_before.y) < 1.0e-6f &&
-        std::abs(pos_after.z - pos_before.z) < 1.0e-6f,
-        "ortho zoom does not move camera position"
-    );
-    expect(
-        std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
-        std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
-        std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
-        "ortho zoom does not move camera target"
-    );
-
-    // Ortho_height must shrink (zoom in).
     expect(
         camera.ortho_height() < initial_ortho,
         "ortho zoom in shrinks ortho_height"
     );
+    if (anchor.has_value()) {
+        const auto anchor_screen =
+            gs3d::camera::MouseRay::to_screen(
+                *anchor,
+                viewport,
+                camera
+            );
+        expect(
+            anchor_screen.has_value() &&
+            std::abs(anchor_screen->x - 700.0f) < 0.1f &&
+            std::abs(anchor_screen->y - 300.0f) < 0.1f,
+            "zoom keeps the world point under the cursor fixed"
+        );
+    }
 }
 
 void test_zoom_respects_max_distance_from_bounds()
@@ -1903,6 +1907,72 @@ void test_rotation_after_pan_keeps_scene_pivot_on_screen()
     );
 }
 
+void test_custom_orbit_pivot_and_focus()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(120.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    const gs3d::camera::Vec3 selected_point{5.0f, 3.0f, 2.0f};
+    controller.set_orbit_pivot(selected_point);
+
+    const gs3d::camera::Viewport viewport{800, 600};
+    const auto pivot_before = gs3d::camera::MouseRay::to_screen(
+        selected_point, viewport, camera);
+
+    gs3d::camera::CameraInput rotate;
+    rotate.viewport_width = 800;
+    rotate.viewport_height = 600;
+    rotate.rotate = true;
+    rotate.rotate_begin = true;
+    rotate.delta_x = 40.0f;
+    rotate.delta_y = 20.0f;
+    static_cast<void>(controller.update(camera, rotate));
+
+    const auto pivot_after = gs3d::camera::MouseRay::to_screen(
+        selected_point, viewport, camera);
+    expect(
+        pivot_before.has_value() && pivot_after.has_value() &&
+        std::abs(pivot_after->x - pivot_before->x) < 0.1f &&
+        std::abs(pivot_after->y - pivot_before->y) < 0.1f,
+        "custom selected pivot stays fixed on screen while rotating"
+    );
+
+    const float distance_before_focus = camera.distance();
+    controller.focus_on(camera, selected_point);
+    expect(
+        std::abs(camera.target().x - selected_point.x) < 1.0e-5f &&
+        std::abs(camera.target().y - selected_point.y) < 1.0e-5f &&
+        std::abs(camera.target().z - selected_point.z) < 1.0e-5f,
+        "focus moves the selected point to camera target"
+    );
+    expect(
+        std::abs(camera.distance() - distance_before_focus) < 1.0e-4f,
+        "focus preserves camera distance and zoom"
+    );
+
+    const auto focused_screen = gs3d::camera::MouseRay::to_screen(
+        selected_point, viewport, camera);
+    expect(
+        focused_screen.has_value() &&
+        std::abs(focused_screen->x - 400.0f) < 0.1f &&
+        std::abs(focused_screen->y - 300.0f) < 0.1f,
+        "focused point projects to viewport centre"
+    );
+
+    controller.clear_orbit_pivot();
+    expect(
+        !controller.orbit_pivot().has_value(),
+        "reset clears the custom orbit pivot"
+    );
+}
+
 void test_rotation_orbits_current_target()
 {
     // Incremental orbit always uses the current camera.target() and changes
@@ -2540,7 +2610,7 @@ int main()
     test_scene_state_is_constructible_without_dataset_io();
     test_frame_upload_budget();
     test_camera_uses_view_local_input();
-    test_zoom_converges_toward_centre_anchor_not_cursor();
+    test_zoom_keeps_cursor_anchor_fixed();
     test_zoom_respects_max_distance_from_bounds();
     test_fit_bounds_distance_is_orientation_independent();
     test_fit_bounds_keeps_panorama_far_end_visible();
@@ -2587,6 +2657,7 @@ int main()
     test_screen_space_pan_tracks_mouse_pixels();
     test_rotation_supports_nearly_full_pitch_range();
     test_rotation_after_pan_keeps_scene_pivot_on_screen();
+    test_custom_orbit_pivot_and_focus();
     test_rotation_orbits_current_target();
     test_click_without_drag_does_not_move_camera();
     test_rotate_release_does_not_move_camera();

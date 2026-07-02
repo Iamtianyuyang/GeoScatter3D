@@ -585,6 +585,7 @@ build_runtime_tile_point_ids(
 enum class GpuPickRequestKind {
     None,
     Hover,
+    SetOrbitPivot,
     BoxSelectAnchor
 };
 
@@ -2069,10 +2070,13 @@ void print_controls(
     std::cout << "[OK] Entering render loop.\n";
     std::cout << "操作说明：\n";
     std::cout << "  左键拖动：轨道旋转\n";
-    std::cout << "  右键/中键拖动：平移\n";
-    std::cout << "  滚轮：缩放\n";
+    std::cout << "  右键拖动：视角平移\n";
+    std::cout << "  滚轮：缩放到光标位置\n";
+    std::cout << "  Ctrl+左键拖动：框选\n";
+    std::cout << "  双击点：选择并设置旋转中心\n";
+    std::cout << "  F：聚焦选中点\n";
     std::cout << "  + / -：调整点大小\n";
-    std::cout << "  R：重置视图\n";
+    std::cout << "  R：恢复全局视图\n";
     std::cout << "  Tab：切换着色属性\n";
     std::cout << "  Esc：退出\n";
     std::cout << "渲染模式：\n";
@@ -2554,6 +2558,10 @@ int ViewerApp::run() {
             controllers.emplace_back(controller_config);
             controllers.back().set_bounds(bounds);
         }
+        std::vector<std::optional<gs3d::camera::Vec3>>
+            selected_focus_points(
+                static_cast<std::size_t>(viewport_manager.viewport_count())
+            );
 
         // Per-viewport previous-frame rotate state for rotate_begin detection.
         std::vector<bool> prev_rotate(
@@ -2893,6 +2901,7 @@ int ViewerApp::run() {
         }
 
         bool r_was_pressed = false;
+        bool f_was_pressed = false;
         bool tab_was_pressed = false;
         bool shift_tab_was_pressed = false;
 
@@ -3162,8 +3171,10 @@ int ViewerApp::run() {
                         );
                     const char* hover_resolve_path =
                         lookup_ok ? "runtime_lookup" : "miss";
-                    if (result.request.kind ==
-                            GpuPickRequestKind::Hover &&
+                    if ((result.request.kind ==
+                             GpuPickRequestKind::Hover ||
+                         result.request.kind ==
+                             GpuPickRequestKind::SetOrbitPivot) &&
                         result.has_hit &&
                         !lookup_ok) {
                         if (const auto resolved =
@@ -3256,6 +3267,40 @@ int ViewerApp::run() {
                             }
                             benchmark_pick_results.push_back(observed);
                         }
+                        continue;
+                    }
+
+                    if (result.request.kind ==
+                        GpuPickRequestKind::SetOrbitPivot) {
+                        if (!hit_point.has_value()) {
+                            continue;
+                        }
+
+                        float mapped_z = hit_point->z;
+                        if (push.height_source ==
+                            static_cast<std::uint32_t>(
+                                gs3d::app::AttrPhysicalSource::Value)) {
+                            mapped_z =
+                                push.height_offset +
+                                hit_point->value * push.height_mult;
+                        }
+
+                        const gs3d::camera::Vec3 selected_point{
+                            hit_point->x,
+                            hit_point->y,
+                            mapped_z
+                        };
+                        controllers[view_index].set_orbit_pivot(
+                            selected_point
+                        );
+                        selected_focus_points[view_index] = selected_point;
+                        streaming_viewport_index =
+                            result.request.viewport_index;
+                        std::cout
+                            << "[CAMERA] orbit pivot selected at ["
+                            << selected_point.x << ", "
+                            << selected_point.y << ", "
+                            << selected_point.z << "]\n";
                         continue;
                     }
 
@@ -3745,6 +3790,26 @@ int ViewerApp::run() {
                         }
                     }
                 }
+
+                const auto view_index = static_cast<std::size_t>(i);
+                view.selected_point_visible = false;
+                view.selected_screen_x = -1.0f;
+                view.selected_screen_y = -1.0f;
+                if (view_index < selected_focus_points.size() &&
+                    selected_focus_points[view_index].has_value()) {
+                    const auto selected_screen =
+                        gs3d::camera::MouseRay::to_screen(
+                            *selected_focus_points[view_index],
+                            {camera.viewport_width(),
+                             camera.viewport_height()},
+                            camera
+                        );
+                    if (selected_screen.has_value()) {
+                        view.selected_point_visible = true;
+                        view.selected_screen_x = selected_screen->x;
+                        view.selected_screen_y = selected_screen->y;
+                    }
+                }
             }
 
             // Enforce configured viewport count — ghost viewport windows
@@ -3837,12 +3902,19 @@ int ViewerApp::run() {
 
             const bool imgui_wants_keyboard =
                 ImGui::GetIO().WantCaptureKeyboard;
+            const bool keyboard_shortcuts_allowed =
+                !ImGui::GetIO().WantTextInput;
             gs3d::util::Stopwatch benchmark_camera_timer;
 
             // Apply GUI panel commands (Polyscope pattern: UI produces commands,
             // main loop applies them — keeps UI and app logic decoupled).
             if (gui_cmds.reset_camera_index >= 0 &&
                 gui_cmds.reset_camera_index < n_viewports) {
+                controllers[
+                    static_cast<std::size_t>(
+                        gui_cmds.reset_camera_index
+                    )
+                ].clear_orbit_pivot();
                 initialize_camera_from_config(
                     viewport_manager.camera(gui_cmds.reset_camera_index),
                     config_,
@@ -3924,11 +3996,14 @@ int ViewerApp::run() {
             }
 
             const bool r_pressed =
-                !imgui_wants_keyboard &&
+                keyboard_shortcuts_allowed &&
                 (window.key_pressed(GLFW_KEY_R) ||
                  ImGui::IsKeyPressed(ImGuiKey_R, false));
 
             if (r_pressed && !r_was_pressed) {
+                controllers[
+                    static_cast<std::size_t>(streaming_viewport_index)
+                ].clear_orbit_pivot();
                 initialize_camera_from_config(
                     viewport_manager.camera(streaming_viewport_index),
                     config_,
@@ -3939,6 +4014,32 @@ int ViewerApp::run() {
             }
 
             r_was_pressed = r_pressed;
+
+            const bool f_pressed =
+                keyboard_shortcuts_allowed &&
+                (window.key_pressed(GLFW_KEY_F) ||
+                 ImGui::IsKeyPressed(ImGuiKey_F, false));
+
+            if (f_pressed && !f_was_pressed) {
+                const auto focus_index =
+                    static_cast<std::size_t>(streaming_viewport_index);
+                if (focus_index < selected_focus_points.size() &&
+                    selected_focus_points[focus_index].has_value()) {
+                    controllers[focus_index].focus_on(
+                        viewport_manager.camera(
+                            streaming_viewport_index
+                        ),
+                        *selected_focus_points[focus_index]
+                    );
+                    camera_hub.propagate(streaming_viewport_index);
+                    tile_selection_dirty = true;
+                    std::cout
+                        << "[CAMERA] focused selected point in viewport "
+                        << streaming_viewport_index << '\n';
+                }
+            }
+
+            f_was_pressed = f_pressed;
 
             // Tab: cycle color attribute; Shift+Tab: cycle height attribute
             // (zero GPU cost — push constant only)
@@ -4005,6 +4106,7 @@ int ViewerApp::run() {
                 input.scroll_y = frame.mouse_wheel;
                 input.mouse_x = frame.mouse_local_x;
                 input.mouse_y = frame.mouse_local_y;
+                input.mouse_position_valid = frame.mouse_on_image;
                 input.rotate = frame.rotate;
                 input.pan = frame.pan;
 
@@ -4720,6 +4822,16 @@ int ViewerApp::run() {
                     request.box_select_max_y = frame.box_select_max_y;
                     request.anchor_camera =
                         viewport_manager.camera(frame.index);
+                    continue;
+                }
+
+                if (frame.point_double_clicked &&
+                    frame.mouse_on_image) {
+                    request.kind = GpuPickRequestKind::SetOrbitPivot;
+                    request.mouse_x = frame.mouse_local_x;
+                    request.mouse_y = frame.mouse_local_y;
+                    request.pick_radius_px =
+                        compute_hover_pick_radius_px(push.point_size);
                     continue;
                 }
 

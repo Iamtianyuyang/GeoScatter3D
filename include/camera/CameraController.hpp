@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 
 namespace gs3d::camera {
 
@@ -19,6 +20,7 @@ struct CameraInput {
     // 与 MouseRay::from_screen 的 mouse_x/mouse_y 约定一致。
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
+    bool mouse_position_valid = false;
 
     bool rotate = false;
     bool pan = false;
@@ -65,6 +67,15 @@ public:
 
     void set_bounds(const CameraBounds& bounds) noexcept;
 
+    void set_orbit_pivot(const Vec3& pivot) noexcept;
+
+    void clear_orbit_pivot() noexcept;
+
+    [[nodiscard]]
+    std::optional<Vec3> orbit_pivot() const noexcept;
+
+    void focus_on(Camera& camera, const Vec3& point) noexcept;
+
     void reset_view(Camera& camera) const noexcept;
 
     [[nodiscard]]
@@ -77,6 +88,7 @@ private:
     CameraControllerConfig config_{};
     CameraBounds bounds_{};
     bool has_bounds_ = false;
+    std::optional<Vec3> orbit_pivot_{};
 
     void pan_view(
         Camera& camera,
@@ -88,8 +100,11 @@ private:
     void zoom_view(
         Camera& camera,
         float scroll_y,
+        float mouse_x,
+        float mouse_y,
         float viewport_width,
-        float viewport_height
+        float viewport_height,
+        bool mouse_position_valid
     ) const noexcept;
 
     void adjust_near_far(Camera& camera) const noexcept;

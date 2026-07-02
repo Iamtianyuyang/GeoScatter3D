@@ -1,4 +1,5 @@
 #include "camera/CameraController.hpp"
+#include "camera/MouseRay.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,31 @@ void CameraController::set_bounds(
 ) noexcept {
     bounds_ = bounds;
     has_bounds_ = true;
+}
+
+void CameraController::set_orbit_pivot(const Vec3& pivot) noexcept {
+    orbit_pivot_ = pivot;
+}
+
+void CameraController::clear_orbit_pivot() noexcept {
+    orbit_pivot_.reset();
+}
+
+std::optional<Vec3> CameraController::orbit_pivot() const noexcept {
+    return orbit_pivot_;
+}
+
+void CameraController::focus_on(
+    Camera& camera,
+    const Vec3& point
+) noexcept {
+    const Vec3 move = sub(point, camera.target());
+    camera.look_at(
+        add(camera.position(), move),
+        point,
+        camera.up()
+    );
+    orbit_pivot_ = point;
 }
 
 void CameraController::reset_view(Camera& camera) const noexcept {
@@ -90,13 +116,15 @@ bool CameraController::update(
         if (config_.invert_rotate_x) angle_h = -angle_h;
         if (config_.invert_rotate_y) angle_v = -angle_v;
 
-        const Vec3 pivot = has_bounds_
-            ? Vec3{
-                  0.5f * (bounds_.min.x + bounds_.max.x),
-                  0.5f * (bounds_.min.y + bounds_.max.y),
-                  0.5f * (bounds_.min.z + bounds_.max.z)
-              }
-            : camera.target();
+        const Vec3 pivot = orbit_pivot_.has_value()
+            ? *orbit_pivot_
+            : has_bounds_
+                ? Vec3{
+                      0.5f * (bounds_.min.x + bounds_.max.x),
+                      0.5f * (bounds_.min.y + bounds_.max.y),
+                      0.5f * (bounds_.min.z + bounds_.max.z)
+                  }
+                : camera.target();
 
         Vec3 position_offset = sub(camera.position(), pivot);
         Vec3 target_offset = sub(camera.target(), pivot);
@@ -188,8 +216,11 @@ bool CameraController::update(
         zoom_view(
             camera,
             input.scroll_y,
+            input.mouse_x,
+            input.mouse_y,
             viewport_width,
-            viewport_height
+            viewport_height,
+            input.mouse_position_valid
         );
         changed = true;
     }
@@ -266,8 +297,11 @@ void CameraController::pan_view(
 void CameraController::zoom_view(
     Camera& camera,
     float scroll_y,
-    float /*viewport_width*/,
-    float /*viewport_height*/
+    float mouse_x,
+    float mouse_y,
+    float viewport_width,
+    float viewport_height,
+    bool mouse_position_valid
 ) const noexcept {
     /*
      * Orthographic zoom: scale the visible world height.
@@ -277,10 +311,30 @@ void CameraController::zoom_view(
     const float zoom_factor =
         std::pow(0.75f, scroll_y * config_.zoom_speed);
 
+    std::optional<Vec3> anchor;
+    if (mouse_position_valid &&
+        viewport_width > 0.0f &&
+        viewport_height > 0.0f) {
+        anchor = MouseRay::intersect_camera_facing_plane(
+            static_cast<double>(mouse_x),
+            static_cast<double>(mouse_y),
+            Viewport{
+                static_cast<std::uint32_t>(viewport_width),
+                static_cast<std::uint32_t>(viewport_height)
+            },
+            camera,
+            camera.target()
+        );
+    }
+
+    float applied_scale = 1.0f;
     if (camera.projection_mode() == ProjectionMode::Orthographic) {
-        float ortho_h = camera.ortho_height();
-        ortho_h = std::clamp(
-            ortho_h * zoom_factor, 1.0e-6f, 1.0e9f);
+        const float old_ortho_h = camera.ortho_height();
+        const float ortho_h = std::clamp(
+            old_ortho_h * zoom_factor, 1.0e-6f, 1.0e9f);
+        applied_scale = old_ortho_h > 0.0f
+            ? ortho_h / old_ortho_h
+            : 1.0f;
         camera.set_orthographic(
             ortho_h,
             camera.near_plane(),
@@ -289,12 +343,32 @@ void CameraController::zoom_view(
     } else {
         // Perspective path: FOV-based continuation (kept for future
         // re-enable but not currently wired).
-        float new_fov = camera.fov_y_degrees() * zoom_factor;
+        const float old_fov = camera.fov_y_degrees();
+        float new_fov = old_fov * zoom_factor;
         new_fov = std::clamp(new_fov, 1.0f, 120.0f);
+        const float old_half_tan =
+            std::tan(0.5f * old_fov * PI / 180.0f);
+        const float new_half_tan =
+            std::tan(0.5f * new_fov * PI / 180.0f);
+        applied_scale = old_half_tan > 0.0f
+            ? new_half_tan / old_half_tan
+            : 1.0f;
         camera.set_perspective(
             new_fov,
             camera.near_plane(),
             camera.far_plane()
+        );
+    }
+
+    if (anchor.has_value()) {
+        const Vec3 move = mul(
+            sub(*anchor, camera.target()),
+            1.0f - applied_scale
+        );
+        camera.look_at(
+            add(camera.position(), move),
+            add(camera.target(), move),
+            camera.up()
         );
     }
 }

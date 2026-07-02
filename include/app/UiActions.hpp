@@ -25,6 +25,7 @@ struct ViewportFrameCmd {
 
     bool rotate = false;
     bool pan = false;
+    bool point_double_clicked = false;
 
     /*
      * Ctrl+左键拖框完成时为 true，框选矩形以视口本地像素坐标给出

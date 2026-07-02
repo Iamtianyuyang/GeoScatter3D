@@ -443,14 +443,16 @@ void draw_viewport_window(
             view.show_map_axis = false;
         }
     }
-    const float hint_threshold = 380.0f;
+    const float hint_threshold = 520.0f;
     const float short_hint_threshold = 250.0f;
     const float hint_space = ImGui::GetContentRegionAvail().x;
     const char* hint = nullptr;
     if (hint_space > hint_threshold) {
-        hint = "左键旋转  右/中键平移  滚轮缩放  Ctrl+左键框选";
+        hint =
+            "左键旋转  右键平移  滚轮光标缩放  "
+            "双击定轴  F聚焦  Ctrl+左键框选";
     } else if (hint_space > short_hint_threshold) {
-        hint = "左键旋转  平移  缩放  Ctrl+框选";
+        hint = "左键旋转  右键平移  双击定轴  F聚焦";
     }
     if (hint != nullptr) {
         ImGui::SameLine();
@@ -469,8 +471,7 @@ void draw_viewport_window(
         "##ViewportCanvas",
         available,
         ImGuiButtonFlags_MouseButtonLeft |
-        ImGuiButtonFlags_MouseButtonRight |
-        ImGuiButtonFlags_MouseButtonMiddle
+        ImGuiButtonFlags_MouseButtonRight
     );
     const ImVec2 canvas_min = ImGui::GetItemRectMin();
     const ImVec2 canvas_max = ImGui::GetItemRectMax();
@@ -868,6 +869,22 @@ void draw_viewport_window(
         dl->AddCircle({cx, cy}, kR + 2.0f, kColor, 0, kThick * 0.7f);
     }
 
+    if (view.selected_point_visible &&
+        view.selected_screen_x >= 0.0f &&
+        view.selected_screen_y >= 0.0f &&
+        view.image_width > 0 && view.image_height > 0) {
+        const auto scr = framebuffer_to_plot_screen(
+            view.selected_screen_x, view.selected_screen_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const float cx = plot_min.x + scr.x;
+        const float cy = plot_min.y + scr.y;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        constexpr ImU32 kSelectedColor = IM_COL32(70, 220, 255, 240);
+        dl->AddCircle({cx, cy}, 12.0f, kSelectedColor, 0, 2.5f);
+        dl->AddCircleFilled({cx, cy}, 3.0f, kSelectedColor);
+    }
+
     const ImGuiIO& io = ImGui::GetIO();
     gs3d::app::ViewportFrameCmd frame;
     frame.index = view.viewport_index;
@@ -921,8 +938,12 @@ void draw_viewport_window(
     frame.pan =
         active &&
         frame.mouse_on_image &&
-        (ImGui::IsMouseDown(ImGuiMouseButton_Right) ||
-         ImGui::IsMouseDown(ImGuiMouseButton_Middle));
+        ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    frame.point_double_clicked =
+        active &&
+        frame.mouse_on_image &&
+        !io.KeyCtrl &&
+        ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
     if (box_select_button_down && !view.box_select_dragging) {
         view.box_select_dragging = true;
