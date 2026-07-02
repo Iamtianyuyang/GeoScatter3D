@@ -1,5 +1,4 @@
 #include "camera/CameraController.hpp"
-#include "camera/MouseRay.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -67,116 +66,105 @@ bool CameraController::update(
     const float viewport_height =
         static_cast<float>(input.viewport_height);
 
-    // --- Rotation: cumulative orbit around a pivot locked at drag-start ---
-    // At rotate_begin the current (position, target) is snapshotted as a
-    // reference.  Each frame accumulates delta angles and applies the
-    // *total* rotation to the reference vectors around the pivot.
-    // Frame 1 (cumulative = 0): new_pos = position_ref, new_tgt = target_ref
-    // — zero jump.  Pivot and target participate in the same rotation.
+    // --- Rotation: incremental rigid orbit around a stable scene pivot ---
+    // Pan moves position + target for composition, but must not move the
+    // object's rotation centre. When scene bounds are known, rotate both
+    // position and target by the same rigid transform around bounds centre.
+    // This keeps the panned object at the same screen location while it
+    // rotates. Without bounds, camera.target() remains the fallback pivot.
 
     bool rotated_this_frame = false;
 
     if (input.rotate &&
         (input.delta_x != 0.0f || input.delta_y != 0.0f)) {
 
-        if (input.rotate_begin) {
-            // Pivot = screen-centre ray ∩ camera-facing plane.
-            // The user orbits around whatever is at the centre of the
-            // view, not under the cursor — turntable behaviour.
-            const double centre_x =
-                static_cast<double>(input.viewport_width) * 0.5;
-            const double centre_y =
-                static_cast<double>(input.viewport_height) * 0.5;
-            const auto anchor =
-                MouseRay::intersect_camera_facing_plane(
-                    centre_x,
-                    centre_y,
-                    Viewport{
-                        input.viewport_width,
-                        input.viewport_height
-                    },
-                    camera,
-                    camera.target()
-                );
-            if (anchor.has_value()) {
-                // Snap pivot to target when nearly coincident — avoids
-                // float-noise rotation of target around a pivot that
-                // differs from target by ~1e-4 (inv-VP matrix error).
-                Vec3 pivot_candidate = *anchor;
-                if (length(sub(pivot_candidate, camera.target()))
-                    < 1.0e-3f) {
-                    pivot_candidate = camera.target();
-                }
-                active_rotate_center_ = pivot_candidate;
-            } else {
-                active_rotate_center_.reset();
-            }
-
-            // Snapshot reference vectors at lock time.
-            position_at_lock_ = camera.position();
-            target_at_lock_   = camera.target();
-            cumulative_theta_ = 0.0f;
-            cumulative_phi_   = 0.0f;
-        }
-
-        // Per-frame delta → cumulative angles (Three.js convention).
+        // Per-frame mouse delta → spherical angle delta.
         constexpr float kTwoPi = 2.0f * PI;
         float angle_h = -kTwoPi * input.delta_x / viewport_height
                       * config_.rotate_speed;
-        float angle_v = -kTwoPi * input.delta_y / viewport_height
+        // Mouse Y grows downward. Three.js stores polar angle (down from the
+        // up axis), while this controller stores elevation above the XY
+        // plane, so the equivalent elevation delta has the opposite sign.
+        float angle_v = kTwoPi * input.delta_y / viewport_height
                       * config_.rotate_speed;
         if (config_.invert_rotate_x) angle_h = -angle_h;
         if (config_.invert_rotate_y) angle_v = -angle_v;
 
-        cumulative_theta_ += angle_h;
-        cumulative_phi_   += angle_v;
+        const Vec3 pivot = has_bounds_
+            ? Vec3{
+                  0.5f * (bounds_.min.x + bounds_.max.x),
+                  0.5f * (bounds_.min.y + bounds_.max.y),
+                  0.5f * (bounds_.min.z + bounds_.max.z)
+              }
+            : camera.target();
 
-        const Vec3 pivot =
-            active_rotate_center_.has_value()
-                ? *active_rotate_center_
-                : camera.target();
+        Vec3 position_offset = sub(camera.position(), pivot);
+        Vec3 target_offset = sub(camera.target(), pivot);
+        const float orbit_radius = length(position_offset);
+        if (orbit_radius > 1.0e-8f) {
+            const Vec3 world_up{0.0f, 0.0f, 1.0f};
 
-        // --- Clamp total pitch (phi0 + cumulative) to config limits ---
-        // Clamping cumulative_phi_ alone is wrong: phi0 may be 20°–40°,
-        // so cumulative ∈ [-85°,+89°] lets total φ exceed 90° → cos(φ)
-        // flips sign → azimuth reverses.
-        //
-        // We clamp total φ = phi0 + cumulative to the configured pitch
-        // range (default −85° … +89°).  This keeps cos(φ) ≥ 0.017 even
-        // at the limit — enough for θ to have visible effect (no gimbal
-        // lock).  Feedback writes cumulative_phi_ back so reverse drag
-        // responds immediately (no dead zone).
-        {
-            const Vec3 offset_pos =
-                sub(position_at_lock_, pivot);
-            const float r_pos = length(offset_pos);
-            if (r_pos > 1.0e-8f) {
-                const float phi0 =
-                    std::asin(std::clamp(
-                        offset_pos.z / r_pos, -1.0f, 1.0f));
-                const float phi_raw = phi0 + cumulative_phi_;
-                const float phi_clamped = std::clamp(
-                    phi_raw,
-                    config_.min_pitch,
-                    config_.max_pitch);
-                cumulative_phi_ = phi_clamped - phi0;
+            const auto rotate_axis =
+                [&](const Vec3& value, const Vec3& axis, float angle) {
+                    const float c = std::cos(angle);
+                    const float s = std::sin(angle);
+                    return add(
+                        add(
+                            mul(value, c),
+                            mul(cross(axis, value), s)
+                        ),
+                        mul(axis, dot(axis, value) * (1.0f - c))
+                    );
+                };
+
+            const Vec3 forward = normalize(
+                sub(camera.target(), camera.position()));
+            Vec3 right = normalize(cross(forward, camera.up()));
+            if (length(right) < 1.0e-6f) {
+                right = {1.0f, 0.0f, 0.0f};
             }
+            Vec3 screen_up = normalize(cross(right, forward));
+
+            // Turntable yaw around the fixed world-up axis.
+            position_offset =
+                rotate_axis(position_offset, world_up, angle_h);
+            target_offset =
+                rotate_axis(target_offset, world_up, angle_h);
+            right = rotate_axis(right, world_up, angle_h);
+            screen_up = rotate_axis(screen_up, world_up, angle_h);
+
+            // Clamp elevation of the camera around the scene pivot, then use
+            // the effective delta as a rigid pitch for position and target.
+            const float current_pitch = std::asin(std::clamp(
+                position_offset.z / orbit_radius, -1.0f, 1.0f));
+            const float clamped_pitch = std::clamp(
+                current_pitch + angle_v,
+                config_.min_pitch,
+                config_.max_pitch
+            );
+            const float pitch_delta = clamped_pitch - current_pitch;
+
+            Vec3 pitch_axis =
+                normalize(cross(position_offset, world_up));
+            if (length(pitch_axis) < 1.0e-6f) {
+                pitch_axis = right;
+            }
+
+            position_offset =
+                rotate_axis(position_offset, pitch_axis, pitch_delta);
+            target_offset =
+                rotate_axis(target_offset, pitch_axis, pitch_delta);
+            screen_up =
+                rotate_axis(screen_up, pitch_axis, pitch_delta);
+
+            camera.look_at(
+                add(pivot, position_offset),
+                add(pivot, target_offset),
+                screen_up
+            );
+            adjust_near_far(camera);
+            rotated_this_frame = true;
         }
-
-        orbit_around_pivot(
-            camera,
-            cumulative_theta_,
-            cumulative_phi_,
-            pivot,
-            position_at_lock_,
-            target_at_lock_
-        );
-        adjust_near_far(camera);
-        rotated_this_frame = true;
-    }
-
-    if (!input.rotate) {
-        active_rotate_center_.reset();
     }
 
     bool changed = false;
@@ -207,58 +195,6 @@ bool CameraController::update(
     }
 
     return changed;
-}
-
-void CameraController::orbit_around_pivot(
-    Camera& camera,
-    float cumulative_theta,
-    float cumulative_phi,
-    const Vec3& pivot,
-    const Vec3& position_ref,
-    const Vec3& target_ref
-) const noexcept {
-    /*
-     * Apply a cumulative spherical rotation to the reference vectors
-     * around |pivot|.  Both position and target participate in the same
-     * rotation so the view stays coherent.
-     *
-     * At cumulative = 0 the output strictly equals (position_ref, target_ref)
-     * — no jump.  As the user drags, cumulative grows and the camera orbits
-     * smoothly around the locked pivot.
-     *
-     * Spherical frame: Z-up world.
-     *   theta: azimuth in XY plane (from +X toward +Y)
-     *   phi:   polar angle from XY plane (0 = horizon, +π/2 = straight up)
-     */
-
-    auto rotated = [&](const Vec3& ref) -> Vec3 {
-        const Vec3 offset = sub(ref, pivot);
-        const float r = length(offset);
-        if (r < 1.0e-8f) {
-            return ref;  // coincident with pivot — rotation is a no-op
-        }
-
-        const float theta0 = std::atan2(offset.y, offset.x);
-        const float phi0 =
-            std::asin(std::clamp(offset.z / r, -1.0f, 1.0f));
-
-        const float theta = theta0 + cumulative_theta;
-        const float phi   = phi0   + cumulative_phi;
-
-        const float cos_phi = std::cos(phi);
-        return add(pivot, Vec3{
-            r * cos_phi * std::cos(theta),
-            r * cos_phi * std::sin(theta),
-            r * std::sin(phi)
-        });
-    };
-
-    const Vec3 new_position = rotated(position_ref);
-    const Vec3 new_target   = rotated(target_ref);
-
-    // lookAt recomputes the camera's up from the world-up reference
-    // (0,0,1), guaranteeing no roll accumulation (Three.js convention).
-    camera.look_at(new_position, new_target, {0.0f, 0.0f, 1.0f});
 }
 
 void CameraController::pan_view(
@@ -312,36 +248,13 @@ void CameraController::pan_view(
     float world_per_pixel =
         view_height_world / viewport_height * config_.pan_speed;
 
-    Vec3 move;
-    if (is_ortho) {
-        // Ortho map-navigation: pan strictly in the XY plane.
-        // Project the screen-aligned right/up vectors to XY so
-        // tilted-camera panning never drifts target.z.
-        Vec3 right_xy{right.x, right.y, 0.0f};
-        Vec3 up_xy{screen_up.x, screen_up.y, 0.0f};
-
-        constexpr float kEps = 1.0e-6f;
-        if (length(right_xy) > kEps) {
-            right_xy = normalize(right_xy);
-        } else {
-            right_xy = {1.0f, 0.0f, 0.0f};
-        }
-        if (length(up_xy) > kEps) {
-            up_xy = normalize(up_xy);
-        } else {
-            up_xy = {0.0f, 1.0f, 0.0f};
-        }
-
-        move = add(
-            mul(right_xy, -delta_x * world_per_pixel),
-            mul(up_xy,    delta_y * world_per_pixel));
-        move.z = 0.0f;
-    } else {
-        // Perspective: pan along the screen plane (existing behaviour).
-        move = add(
-            mul(right, -delta_x * world_per_pixel),
-            mul(screen_up, delta_y * world_per_pixel));
-    }
+    // Screen-space pan for both projection modes. Moving the camera opposite
+    // horizontal mouse motion and with vertical mouse motion makes scene
+    // points follow the cursor pixel-for-pixel, independent of world axes.
+    const Vec3 move = add(
+        mul(right, -delta_x * world_per_pixel),
+        mul(screen_up, delta_y * world_per_pixel)
+    );
 
     camera.look_at(
         add(camera.position(), move),

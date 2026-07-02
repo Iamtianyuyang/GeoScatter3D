@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <optional>
 
 namespace gs3d::camera {
 
@@ -24,8 +23,8 @@ struct CameraInput {
     bool rotate = false;
     bool pan = false;
 
-    // True only on the first frame of a left-drag (mouse just pressed).
-    // Used by CameraController to compute and lock a rotation anchor.
+    // True only on the first frame after a left-drag crosses its activation
+    // threshold. Rotation itself is incremental and does not depend on it.
     bool rotate_begin = false;
 
     [[nodiscard]]
@@ -49,11 +48,10 @@ struct CameraControllerConfig {
 
     /*
      * 球坐标 orbit 的俯仰角约束（弧度）。
-     * min_pitch > 0 可防止相机翻入数据平面以下；
-     * max_pitch < π/2 可防止极点翻转。
-     * 默认允许从 −85° 仰视到 +89° 俯视。
+     * 仅在上下极点前保留 1° 安全余量，防止方位角翻转。
+     * 相机可以越过 XY 数据平面，从下方向上观察点云。
      */
-    float min_pitch = -1.483f;  // ≈ −85°
+    float min_pitch = -1.553f;  // ≈ −89°
     float max_pitch =  1.553f;  // ≈ +89°
 };
 
@@ -79,26 +77,6 @@ private:
     CameraControllerConfig config_{};
     CameraBounds bounds_{};
     bool has_bounds_ = false;
-
-    // --- Cumulative orbit state (per-viewport, per-drag) ---
-    std::optional<Vec3> active_rotate_center_{};
-    Vec3 position_at_lock_{};
-    Vec3 target_at_lock_{};
-    float cumulative_theta_ = 0.0f;
-    float cumulative_phi_   = 0.0f;
-
-private:
-    // Apply a cumulative spherical rotation of (position_ref, target_ref)
-    // around |pivot| and commit via look_at.  When cumulative angles are
-    // zero this is a no-op — the view does not jump.
-    void orbit_around_pivot(
-        Camera& camera,
-        float cumulative_theta,
-        float cumulative_phi,
-        const Vec3& pivot,
-        const Vec3& position_ref,
-        const Vec3& target_ref
-    ) const noexcept;
 
     void pan_view(
         Camera& camera,

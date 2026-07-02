@@ -1645,14 +1645,269 @@ void test_idle_update_does_not_change_camera()
     );
 }
 
-void test_rotation_center_only_changes_on_rotate_begin()
+void test_rotation_after_pan_keeps_panned_target()
 {
-    // The rotation pivot is computed ONCE at drag-start (after cursor moves
-    // past the activation threshold) and locked for the entire drag.
-    // Crucially, computing the pivot does NOT change camera.target —
-    // the pivot is decoupled from target so the view does not jump on press.
-    // Target is synced to the pivot only on release (set_target is a pure
-    // store, no view-matrix recompute).
+    // The point at the screen centre is camera.target(). Reconstructing it
+    // through an inverse view-projection matrix loses precision after a pan,
+    // especially for geospatial coordinates far from the world origin.
+    // Rotation must orbit around the panned target without moving it.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(200.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {1000000.0f, 1999800.0f, 80.0f},
+        {1000000.0f, 2000000.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.pan = true;
+        input.delta_x = 120.0f;
+        input.delta_y = -60.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto target_after_pan = camera.target();
+    const float distance_after_pan = camera.distance();
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 20.0f;
+        input.delta_y = 10.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto target_after_rotate = camera.target();
+    expect(
+        std::abs(target_after_rotate.x - target_after_pan.x) < 1.0e-6f &&
+        std::abs(target_after_rotate.y - target_after_pan.y) < 1.0e-6f &&
+        std::abs(target_after_rotate.z - target_after_pan.z) < 1.0e-6f,
+        "rotation after pan must keep the panned target fixed"
+    );
+    expect(
+        std::abs(camera.distance() - distance_after_pan) < 0.01f,
+        "rotation after pan must preserve camera distance"
+    );
+}
+
+void test_rotation_does_not_undo_overlapping_pan()
+{
+    // Mouse-button transitions can produce one frame where rotate and pan
+    // are both active. The following rotation frame must continue from the
+    // already-panned target instead of rebuilding from a drag-start snapshot.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(200.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -200.0f, 80.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.pan = true;
+        input.delta_x = 20.0f;
+        input.delta_y = 10.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto target_after_pan = camera.target();
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.delta_x = 20.0f;
+        input.delta_y = 10.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto target_after_rotate = camera.target();
+    expect(
+        std::abs(target_after_rotate.x - target_after_pan.x) < 1.0e-5f &&
+        std::abs(target_after_rotate.y - target_after_pan.y) < 1.0e-5f &&
+        std::abs(target_after_rotate.z - target_after_pan.z) < 1.0e-5f,
+        "continued rotation must not undo an overlapping pan"
+    );
+}
+
+void test_screen_space_pan_tracks_mouse_pixels()
+{
+    // A fixed scene point must follow the mouse in screen space regardless
+    // of camera tilt or world axes.
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(120.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    const gs3d::camera::Viewport viewport{800, 600};
+    const gs3d::camera::Vec3 fixed_world_point = camera.target();
+    const auto screen_before = gs3d::camera::MouseRay::to_screen(
+        fixed_world_point, viewport, camera);
+    const float target_z_before = camera.target().z;
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.pan = true;
+        input.delta_x = 80.0f;
+        input.delta_y = 40.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto screen_after = gs3d::camera::MouseRay::to_screen(
+        fixed_world_point, viewport, camera);
+    expect(
+        screen_before.has_value() && screen_after.has_value(),
+        "screen-space pan keeps the reference point projectable"
+    );
+    if (screen_before && screen_after) {
+        expect(
+            std::abs(
+                (screen_after->x - screen_before->x) - 80.0f
+            ) < 0.2f &&
+            std::abs(
+                (screen_after->y - screen_before->y) - 40.0f
+            ) < 0.2f,
+            "scene point must follow mouse pan pixel-for-pixel"
+        );
+    }
+    expect(
+        std::abs(camera.target().z - target_z_before) > 1.0e-4f,
+        "tilted screen-space vertical pan must include a world-Z component"
+    );
+}
+
+void test_rotation_supports_nearly_full_pitch_range()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(120.0f, 0.01f, 10000.0f);
+    camera.look_at(
+        {0.0f, -20.0f, 8.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_y = -200.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto offset_after = sub(camera.position(), camera.target());
+    const float radius_after = std::sqrt(dot(offset_after, offset_after));
+    const float pitch_after = std::asin(std::clamp(
+        offset_after.z / radius_after, -1.0f, 1.0f));
+
+    expect(
+        pitch_after < -1.50f && pitch_after >= -1.553f - 1.0e-4f,
+        "default orbit must allow viewing from almost directly below"
+    );
+}
+
+void test_rotation_after_pan_keeps_scene_pivot_on_screen()
+{
+    // With a known scene bounds centre, pan changes composition but rotation
+    // must keep that scene pivot at the same screen pixel. This is the
+    // visible invariant users expect when tumbling a panned point cloud.
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(13000.0f, 0.01f, 100000.0f);
+    camera.look_at(
+        {0.0f, -14000.0f, 6000.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::camera::CameraController controller;
+    gs3d::camera::CameraBounds bounds;
+    bounds.min = {-4000.0f, -5000.0f, -2000.0f};
+    bounds.max = { 4000.0f,  5000.0f,  2000.0f};
+    controller.set_bounds(bounds);
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.pan = true;
+        input.delta_x = 120.0f;
+        input.delta_y = -60.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const gs3d::camera::Viewport viewport{800, 600};
+    const gs3d::camera::Vec3 scene_pivot{0.0f, 0.0f, 0.0f};
+    const auto screen_before = gs3d::camera::MouseRay::to_screen(
+        scene_pivot, viewport, camera);
+    const float distance_before = camera.distance();
+
+    {
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.rotate_begin = true;
+        input.delta_x = 120.0f;
+        input.delta_y = 40.0f;
+        static_cast<void>(controller.update(camera, input));
+    }
+
+    const auto screen_after = gs3d::camera::MouseRay::to_screen(
+        scene_pivot, viewport, camera);
+    expect(
+        screen_before.has_value() && screen_after.has_value(),
+        "scene pivot remains projectable across panned rotation"
+    );
+    if (screen_before && screen_after) {
+        expect(
+            std::abs(screen_after->x - screen_before->x) < 0.1f &&
+            std::abs(screen_after->y - screen_before->y) < 0.1f,
+            "panned scene pivot must stay at the same screen pixel"
+        );
+    }
+    expect(
+        std::abs(camera.distance() - distance_before) < 0.01f,
+        "rigid scene-pivot rotation preserves camera look distance"
+    );
+}
+
+void test_rotation_orbits_current_target()
+{
+    // Incremental orbit always uses the current camera.target() and changes
+    // only camera.position(). Cursor position and drag boundaries must not
+    // move the target.
 
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -1666,7 +1921,6 @@ void test_rotation_center_only_changes_on_rotate_begin()
     gs3d::camera::CameraController controller;
 
     // --- Frame 1: drag-start at screen centre ---
-    // Pivot is computed but target is NOT changed (decoupled).
     {
         gs3d::camera::CameraInput input;
         input.viewport_width = 800;
@@ -1680,10 +1934,6 @@ void test_rotation_center_only_changes_on_rotate_begin()
         static_cast<void>(controller.update(camera, input));
         const auto tgt_after = camera.target();
 
-        // Target must NOT change on rotate_begin (pivot is decoupled).
-        // Float error in inv-VP matrix means look_at(target=pivot) sets
-        // target ≈ origin ± 1e-4; a 1e-3 threshold guards against real
-        // jumps while tolerating numerical noise.
         expect(
             std::abs(tgt_after.x - tgt_before.x) < 1.0e-3f &&
             std::abs(tgt_after.y - tgt_before.y) < 1.0e-3f &&
@@ -1693,7 +1943,6 @@ void test_rotation_center_only_changes_on_rotate_begin()
     }
 
     // --- Frame 2: continuing drag, cursor moved off-centre ---
-    // Still orbits around the locked pivot; target unchanged.
     {
         gs3d::camera::CameraInput input;
         input.viewport_width = 800;
@@ -1717,7 +1966,6 @@ void test_rotation_center_only_changes_on_rotate_begin()
     }
 
     // --- Frame 3: release ---
-    // Target syncs to the last orbit centre (pure store, no view change).
     {
         const auto tgt_before = camera.target();
         gs3d::camera::CameraInput input;
@@ -1728,20 +1976,16 @@ void test_rotation_center_only_changes_on_rotate_begin()
         static_cast<void>(controller.update(camera, input));
         const auto tgt_after = camera.target();
 
-        // After orbiting around centre≈origin, target syncs to ≈origin.
-        // Both before and after should be near origin.
         expect(
-            std::abs(tgt_after.x) < 1.0e-3f &&
-            std::abs(tgt_after.y) < 1.0e-3f &&
-            std::abs(tgt_after.z) < 1.0e-3f,
-            "on release target syncs to orbit centre (near origin)"
+            std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+            std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+            std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+            "release must not change the orbit target"
         );
     }
 
     // --- Frame 4: new drag-start at off-centre cursor ---
-    // Pivot is always screen centre, not cursor.  Even when cursor is
-    // at (200,150), the pivot stays at the centre anchor (~origin).
-    // Target orbits around origin — no shift away from it.
+    // Cursor position does not replace the current orbit target.
     {
         const auto tgt_before = camera.target();
 
@@ -1757,13 +2001,11 @@ void test_rotation_center_only_changes_on_rotate_begin()
 
         const auto tgt_after = camera.target();
 
-        // Pivot is screen centre (~origin).  Target stays near origin
-        // regardless of cursor position.
         expect(
-            std::abs(tgt_after.x) < 1.0e-3f &&
-            std::abs(tgt_after.y) < 1.0e-3f &&
-            std::abs(tgt_after.z) < 1.0e-3f,
-            "rotate_begin uses screen-centre pivot even with off-centre cursor"
+            std::abs(tgt_after.x - tgt_before.x) < 1.0e-6f &&
+            std::abs(tgt_after.y - tgt_before.y) < 1.0e-6f &&
+            std::abs(tgt_after.z - tgt_before.z) < 1.0e-6f,
+            "off-centre drag must keep the current orbit target"
         );
     }
 }
@@ -2021,22 +2263,21 @@ void test_pitch_never_exceeds_pole()
             static_cast<double>(offset.z) / r, -1.0, 1.0));
     };
 
-    // Default config pitch limits: −85° … +89° (radians).
-    const double kPi = 3.14159265358979323846;
-    const double kMinPitch = -1.483;  // ≈ −85°
+    // Default orbit pitch limits: −89° … +89° (radians).
+    const double kMinPitch = -1.553;  // ≈ −89°
     const double kMaxPitch =  1.553;  // ≈ +89°
 
     // Float round-trip sin→asin near the pole adds ~1e-3 error.
     constexpr double kPhiSlop = 0.015;
 
-    // --- Drag up repeatedly far beyond 90° total ---
+    // --- Drag down repeatedly far beyond 90° total ---
     {
         gs3d::camera::CameraInput input;
         input.viewport_width = 800;
         input.viewport_height = 600;
         input.rotate = true;
         input.rotate_begin = true;
-        input.delta_y = 50.0f;  // large upward drag
+        input.delta_y = 50.0f;  // large downward drag
         input.mouse_x = 400.0f;
         input.mouse_y = 300.0f;
         static_cast<void>(controller.update(camera, input));
@@ -2044,24 +2285,24 @@ void test_pitch_never_exceeds_pole()
         const double phi = total_phi();
         expect(
             phi >= kMinPitch - kPhiSlop && phi <= kMaxPitch + kPhiSlop,
-            "after first drag-up phi stays inside config pitch limits"
+            "after first drag-down phi stays inside config pitch limits"
         );
         // cos(φ) near π/2 needs double precision; float32 cos may
         // underflow to zero even when φ is 1 µrad inside the pole.
         expect(
             std::cos(phi) > 0.0,
-            "cos(phi) > 0 after drag-up (no azimuth flip)"
+            "cos(phi) > 0 after drag-down (no azimuth flip)"
         );
     }
 
-    // Continue dragging up (cumulative far beyond 90°).
+    // Continue dragging down (cumulative far beyond 90°).
     for (int i = 0; i < 20; ++i) {
         gs3d::camera::CameraInput input;
         input.viewport_width = 800;
         input.viewport_height = 600;
         input.rotate = true;
         input.rotate_begin = false;  // continuing
-        input.delta_y = 50.0f;       // keep pushing up
+        input.delta_y = 50.0f;       // keep pushing down
         input.mouse_x = 400.0f;
         input.mouse_y = 300.0f;
         static_cast<void>(controller.update(camera, input));
@@ -2126,7 +2367,7 @@ void test_pitch_never_exceeds_pole()
         );
     }
 
-    // --- Drag down from pole: must respond immediately (no lag) ---
+    // --- Drag up from pole: must respond immediately (no lag) ---
     {
         const double phi_before = total_phi();
 
@@ -2135,19 +2376,15 @@ void test_pitch_never_exceeds_pole()
         input.viewport_height = 600;
         input.rotate = true;
         input.rotate_begin = false;  // continuing drag
-        input.delta_y = -20.0f;       // drag down
+        input.delta_y = -20.0f;       // drag up
         input.mouse_x = 400.0f;
         input.mouse_y = 300.0f;
         static_cast<void>(controller.update(camera, input));
 
         const double phi_after = total_phi();
-        // Feedback: cumulative_phi_ was written back to the clamped
-        // value, so reverse drag immediately moves away from the limit.
-        // Dragging down from the lower pole (-85°) increases phi.
         expect(
-            phi_after > phi_before - 1.0e-4,
-            "drag down from pole limit moves phi immediately "
-            "(no dead-zone lag from over-accumulated cumulative)"
+            phi_after < phi_before - 1.0e-4,
+            "drag up from pole limit lowers phi immediately"
         );
     }
 }
@@ -2345,7 +2582,12 @@ int main()
     test_spatial_updates_after_interaction();
     test_continuous_zoom_in_flies_forward_without_stalling();
     test_idle_update_does_not_change_camera();
-    test_rotation_center_only_changes_on_rotate_begin();
+    test_rotation_after_pan_keeps_panned_target();
+    test_rotation_does_not_undo_overlapping_pan();
+    test_screen_space_pan_tracks_mouse_pixels();
+    test_rotation_supports_nearly_full_pitch_range();
+    test_rotation_after_pan_keeps_scene_pivot_on_screen();
+    test_rotation_orbits_current_target();
     test_click_without_drag_does_not_move_camera();
     test_rotate_release_does_not_move_camera();
     test_rotation_pivot_is_screen_center();
