@@ -2107,7 +2107,10 @@ float nice_scale_distance(float raw)
     return 10.0f * mag;
 }
 
-// Assumes the dataset coordinate unit is metres.
+// 假设数据集坐标单位为米（UTM / 本地网格）。若源数据使用其他单位
+// （如英尺、度），需要按数据集配置比例尺单位标签。
+
+// ponytail: 硬编码公制单位，若支持多数据源需改为可配置。
 std::string format_scale_distance(float d)
 {
     char buf[48];

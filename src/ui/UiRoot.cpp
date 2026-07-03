@@ -1127,8 +1127,10 @@ void draw_render_settings(
             }
 
             float exag = state.render_settings.height_exaggeration;
-            property_table_label("高度夸张");
-            if (ImGui::SliderFloat("##HeightExaggeration", &exag, 0.1f, 5.0f, "%.2fx")) {
+            property_table_label("高度缩放");
+            ImGui::SetNextItemWidth(ImGui::CalcTextSize("000.00x").x + 24.0f);
+            if (ImGui::DragFloat("##HeightExaggeration", &exag, 0.1f,
+                    0.01f, 100.0f, "%.2fx")) {
                 state.render_settings.height_exaggeration = exag;
                 actions.height_exag_changed = true;
                 actions.height_exag = exag;
