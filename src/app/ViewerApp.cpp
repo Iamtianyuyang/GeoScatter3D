@@ -3288,14 +3288,14 @@ int ViewerApp::run() {
                             continue;
                         }
 
-                        float mapped_z = hit_point->z;
+                        float raw = hit_point->z;
                         if (push.height_source ==
                             static_cast<std::uint32_t>(
                                 gs3d::app::AttrPhysicalSource::Value)) {
-                            mapped_z =
-                                push.height_offset +
-                                hit_point->value * push.height_mult;
+                            raw = hit_point->value;
                         }
+                        float mapped_z =
+                            push.height_offset + raw * push.height_mult;
 
                         const gs3d::camera::Vec3 selected_point{
                             hit_point->x,
@@ -3806,17 +3806,17 @@ int ViewerApp::run() {
                             static_cast<double>(hover_point->z) +
                             dataset.origin_z());
 
-                    // Z 映射：与 vertex shader 的 height_source / height_offset
-                    // / height_mult 逐字段一致。原始数据 z 是 elevation，value 是
-                    // fold；当高度来源为 value 时，必须用 shader 相同的线性映射算
-                    // 出实际几何 Z，否则准星投影会错位。
-                    float mapped_z = hover_point->z;  // source=Z → 恒等
+                    // Z 映射：与 vertex shader 的 height = offset + raw * mult
+                    // 完全一致，对所有 height_source 统一应用，否则高度缩放后
+                    // 准星投影会与渲染点错位。
+                    float raw_height = hover_point->z;
                     if (push.height_source ==
                         static_cast<std::uint32_t>(
                             gs3d::app::AttrPhysicalSource::Value)) {
-                        mapped_z = push.height_offset +
-                                   hover_point->value * push.height_mult;
+                        raw_height = hover_point->value;
                     }
+                    float mapped_z = push.height_offset +
+                                     raw_height * push.height_mult;
 
                     // Marker screen position via to_screen projection.
                     const auto screen_pt =
