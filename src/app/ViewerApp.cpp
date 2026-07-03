@@ -1916,10 +1916,6 @@ void compute_map_axis_overlay(
     double origin_x,
     double origin_y
 ) {
-    if (!view.show_map_axis) {
-        return;
-    }
-
     const gs3d::camera::Viewport vp{
         camera.viewport_width(),
         camera.viewport_height()
