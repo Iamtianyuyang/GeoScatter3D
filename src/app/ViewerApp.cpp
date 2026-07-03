@@ -3624,9 +3624,6 @@ int ViewerApp::run() {
                 );
             std::uint64_t gpu_buffer_bytes = 0;
             std::uint64_t gpu_resident_points = 0;
-            // LOD/tile streaming only changes the GPU representation.  With
-            // no filtering, the logical point count remains the source count.
-            const std::uint64_t visible_points = dataset.point_count();
 
             if (config_.tile_enabled && tile_gpu_cloud) {
                 const auto& ts = tile_gpu_cloud->stats();
@@ -3649,6 +3646,17 @@ int ViewerApp::run() {
                     );
                     gpu_resident_points +=
                         lod_gpu_cloud->level(i).gpu_point_count;
+                }
+            }
+
+            // 视窗中实际可见的点数：瓦片模式下统计视锥体筛选后
+            // 的瓦片点数和，非瓦片模式下使用 GPU 驻留点数。
+            std::uint64_t visible_points = gpu_resident_points;
+            if (tile_result.enabled && tile_reader.has_value()) {
+                visible_points = 0;
+                for (const auto tile_id : tile_result.tile_ids) {
+                    visible_points +=
+                        tile_reader->record(tile_id).point_count;
                 }
             }
 
