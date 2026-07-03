@@ -161,7 +161,9 @@ void VulkanSwapchain::create(
     create_info.imageColorSpace = surface_format.colorSpace;
     create_info.imageExtent = swap_extent;
     create_info.imageArrayLayers = 1;
-    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    create_info.imageUsage =
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT;   // ponytail: screenshots read back swapchain pixels
 
     const auto& indices = context_.queue_family_indices();
 

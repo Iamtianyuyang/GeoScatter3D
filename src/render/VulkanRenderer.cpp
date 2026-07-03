@@ -582,6 +582,13 @@ void VulkanRenderer::record_command_buffer(
     }
 
     vkCmdEndRenderPass(command_buffer);
+
+    // post_pass: swapchain image is in the layout specified by the render pass
+    // finalLayout (PRESENT_SRC_KHR). Callbacks may transition from/to this layout.
+    if (callbacks.post_pass) {
+        callbacks.post_pass(command_buffer, image_index);
+    }
+
     gpu_frame_timer_.end_frame(current_frame_, command_buffer);
 
     check_vk(

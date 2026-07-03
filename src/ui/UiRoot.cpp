@@ -1107,6 +1107,13 @@ void draw_viewport_window(
     actions.viewport_frames.push_back(frame);
     view.render_requested = view.visible;
 
+    // ponytail: store canvas rect for screenshot coordinate mapping.
+    // GetItemRectMin/Max are in ImGui screen-space (absolute) coordinates.
+    view.canvas_rect_min_x = canvas_rect.min_x;
+    view.canvas_rect_min_y = canvas_rect.min_y;
+    view.canvas_rect_max_x = canvas_rect.max_x;
+    view.canvas_rect_max_y = canvas_rect.max_y;
+
     ImGui::End();
 }
 

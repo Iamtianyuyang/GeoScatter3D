@@ -42,12 +42,16 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -3595,6 +3599,14 @@ int ViewerApp::run() {
                 }
             };
 
+        // ponytail: screenshot staging — allocated on demand in post_pass, read
+        // back after draw_frame. Only one screenshot at a time.
+        VkBuffer screenshot_staging_buf = VK_NULL_HANDLE;
+        VkDeviceMemory screenshot_staging_mem = VK_NULL_HANDLE;
+        VkExtent2D screenshot_offset{};
+        VkExtent2D screenshot_extent{};
+        bool screenshot_pending = false;
+
         while (!window.should_close() &&
                (!config_.benchmark_mode ||
                 benchmark_frame_index < benchmark_target_frame_count)) {
@@ -4166,6 +4178,37 @@ int ViewerApp::run() {
                 }
                 tile_point_cache.clear();
                 std::cout << "[TILE] CPU cache cleared.\n";
+            }
+            if (gui_cmds.screenshot_requested) {
+                // Map viewport 0's canvas_rect (ImGui screen coords) →
+                // swapchain physical pixels.
+                for (const auto& view : app_state.render_views) {
+                    if (view.viewport_index != 0) continue;
+                    if (view.canvas_rect_max_x <= view.canvas_rect_min_x ||
+                        view.canvas_rect_max_y <= view.canvas_rect_min_y) break;
+                    const auto& io = ImGui::GetIO();
+                    const ImVec2 vp_pos = ImGui::GetMainViewport()->Pos;
+                    const float sx = io.DisplayFramebufferScale.x;
+                    const float sy = io.DisplayFramebufferScale.y;
+                    int x = static_cast<int>((view.canvas_rect_min_x - vp_pos.x) * sx);
+                    int y = static_cast<int>((view.canvas_rect_min_y - vp_pos.y) * sy);
+                    int w = static_cast<int>((view.canvas_rect_max_x - view.canvas_rect_min_x) * sx);
+                    int h = static_cast<int>((view.canvas_rect_max_y - view.canvas_rect_min_y) * sy);
+                    // Clamp to swapchain extent
+                    const auto& sc_ext = swapchain.extent();
+                    if (x < 0) { w += x; x = 0; }
+                    if (y < 0) { h += y; y = 0; }
+                    if (x + w > static_cast<int>(sc_ext.width))  w = static_cast<int>(sc_ext.width)  - x;
+                    if (y + h > static_cast<int>(sc_ext.height)) h = static_cast<int>(sc_ext.height) - y;
+                    if (w > 0 && h > 0) {
+                        screenshot_offset = {static_cast<std::uint32_t>(x),
+                                             static_cast<std::uint32_t>(y)};
+                        screenshot_extent = {static_cast<std::uint32_t>(w),
+                                             static_cast<std::uint32_t>(h)};
+                        screenshot_pending = true;
+                    }
+                    break;
+                }
             }
 
             if (!imgui_wants_keyboard && window.key_pressed(GLFW_KEY_ESCAPE)) {
@@ -5471,6 +5514,136 @@ int ViewerApp::run() {
                     // Each ImGui::Image() samples its viewport's offscreen texture.
                     .in_pass = [&](VkCommandBuffer cmd) {
                         imgui_layer.render(cmd);
+                    },
+                    // post_pass: after the swapchain render pass ends, copy
+                    // the viewport region to a staging buffer for screenshots.
+                    .post_pass = [&](VkCommandBuffer cmd, std::uint32_t image_index) {
+                        if (!screenshot_pending) return;
+
+                        const VkDeviceSize buf_size =
+                            static_cast<VkDeviceSize>(
+                                screenshot_extent.width) *
+                            static_cast<VkDeviceSize>(
+                                screenshot_extent.height) * 4;
+
+                        // Create staging buffer on first use (or re-create if
+                        // extent changed since last screenshot).
+                        if (screenshot_staging_buf == VK_NULL_HANDLE) {
+                            VkBufferCreateInfo buf_info{};
+                            buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                            buf_info.size = buf_size;
+                            buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                            buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                            if (vkCreateBuffer(context.device(), &buf_info,
+                                               nullptr, &screenshot_staging_buf) != VK_SUCCESS) {
+                                std::cerr << "[SCREENSHOT] buffer create failed\n";
+                                screenshot_pending = false;
+                                return;
+                            }
+
+                            VkMemoryRequirements mem_req{};
+                            vkGetBufferMemoryRequirements(context.device(),
+                                                          screenshot_staging_buf,
+                                                          &mem_req);
+                            VkMemoryAllocateInfo alloc_info{};
+                            alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+                            alloc_info.allocationSize = mem_req.size;
+
+                            VkPhysicalDeviceMemoryProperties mem_props{};
+                            vkGetPhysicalDeviceMemoryProperties(
+                                context.physical_device(), &mem_props);
+                            std::uint32_t mem_type_idx = 0;
+                            for (; mem_type_idx < mem_props.memoryTypeCount; ++mem_type_idx) {
+                                if ((mem_req.memoryTypeBits & (1u << mem_type_idx)) &&
+                                    (mem_props.memoryTypes[mem_type_idx].propertyFlags &
+                                     (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                                        (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                                    break;
+                                }
+                            }
+                            alloc_info.memoryTypeIndex = mem_type_idx;
+                            if (vkAllocateMemory(context.device(), &alloc_info,
+                                                 nullptr, &screenshot_staging_mem) != VK_SUCCESS) {
+                                std::cerr << "[SCREENSHOT] memory alloc failed\n";
+                                vkDestroyBuffer(context.device(), screenshot_staging_buf, nullptr);
+                                screenshot_staging_buf = VK_NULL_HANDLE;
+                                screenshot_pending = false;
+                                return;
+                            }
+                            if (vkBindBufferMemory(context.device(),
+                                                   screenshot_staging_buf,
+                                                   screenshot_staging_mem, 0) != VK_SUCCESS) {
+                                std::cerr << "[SCREENSHOT] bind memory failed\n";
+                                vkFreeMemory(context.device(), screenshot_staging_mem, nullptr);
+                                vkDestroyBuffer(context.device(), screenshot_staging_buf, nullptr);
+                                screenshot_staging_buf = VK_NULL_HANDLE;
+                                screenshot_staging_mem = VK_NULL_HANDLE;
+                                screenshot_pending = false;
+                                return;
+                            }
+                        }
+
+                        const VkImage src_img = swapchain.images()[image_index];
+
+                        // PRESENT_SRC_KHR → TRANSFER_SRC_OPTIMAL
+                        {
+                            VkImageMemoryBarrier barrier{};
+                            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                            barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+                            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                            barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                            barrier.image = src_img;
+                            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                            vkCmdPipelineBarrier(cmd,
+                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                0, 0, nullptr, 0, nullptr, 1, &barrier);
+                        }
+
+                        // Copy viewport region
+                        {
+                            VkBufferImageCopy region{};
+                            region.bufferOffset = 0;
+                            region.bufferRowLength = 0;
+                            region.bufferImageHeight = 0;
+                            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                            region.imageOffset = {
+                                static_cast<std::int32_t>(screenshot_offset.width),
+                                static_cast<std::int32_t>(screenshot_offset.height),
+                                0
+                            };
+                            region.imageExtent = {
+                                screenshot_extent.width,
+                                screenshot_extent.height,
+                                1
+                            };
+                            vkCmdCopyImageToBuffer(cmd, src_img,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                screenshot_staging_buf, 1, &region);
+                        }
+
+                        // TRANSFER_SRC_OPTIMAL → PRESENT_SRC_KHR
+                        {
+                            VkImageMemoryBarrier barrier{};
+                            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                            barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+                            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                            barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                            barrier.image = src_img;
+                            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                            vkCmdPipelineBarrier(cmd,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                0, 0, nullptr, 0, nullptr, 1, &barrier);
+                        }
                     }
                 }
             );
@@ -5494,6 +5667,85 @@ int ViewerApp::run() {
             // If draw_frame() returned early (minimized / swapchain out-of-date)
             // the draw callback was never invoked, so close the dangling ImGui frame.
             imgui_layer.discard_frame();
+
+            // ── Screenshot PNG write ──────────────────────────────────
+            if (screenshot_pending &&
+                screenshot_staging_buf != VK_NULL_HANDLE) {
+                vkDeviceWaitIdle(context.device());
+
+                const auto w = static_cast<int>(screenshot_extent.width);
+                const auto h = static_cast<int>(screenshot_extent.height);
+                const VkDeviceSize buf_size =
+                    static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h) * 4;
+
+                void* mapped = nullptr;
+                vkMapMemory(context.device(), screenshot_staging_mem,
+                            0, buf_size, 0, &mapped);
+                auto* pixels = static_cast<std::uint8_t*>(mapped);
+
+                // BGR→RGB swizzle if swapchain uses B8G8R8A8 format
+                const VkFormat fmt = swapchain.image_format();
+                if (fmt == VK_FORMAT_B8G8R8A8_UNORM ||
+                    fmt == VK_FORMAT_B8G8R8A8_SRGB) {
+                    for (int i = 0; i < w * h; ++i) {
+                        std::swap(pixels[i * 4], pixels[i * 4 + 2]);
+                    }
+                }
+
+                // Resolve output path: zenity dialog → fallback.
+                // If zenity is available and the user confirms, use that
+                // path. If the user cancels (zenity exit ≠ 0), skip save.
+                // If zenity is not available, fall back to timestamped file.
+                std::string out_path;
+                bool user_cancelled = false;
+                FILE* zf = popen(
+                    "zenity --file-selection --save "
+                    "--confirm-overwrite "
+                    "--filename=screenshot.png "
+                    "--file-filter='PNG Images | *.png' "
+                    "2>/dev/null", "r");
+                if (zf) {
+                    char buf[4096];
+                    if (fgets(buf, sizeof(buf), zf)) {
+                        out_path.assign(buf);
+                        while (!out_path.empty() &&
+                               (out_path.back() == '\n' ||
+                                out_path.back() == '\r')) {
+                            out_path.pop_back();
+                        }
+                    }
+                    int zr = pclose(zf);
+                    user_cancelled = (out_path.empty() && zr != 0);
+                }
+                if (!user_cancelled && out_path.empty()) {
+                    std::filesystem::create_directories("screenshots");
+                    const auto now = std::chrono::system_clock::now();
+                    const auto tt = std::chrono::system_clock::to_time_t(now);
+                    char ts[64];
+                    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S",
+                                  std::localtime(&tt));
+                    out_path = std::string("screenshots/screenshot_") +
+                               ts + ".png";
+                }
+                if (user_cancelled || out_path.empty()) {
+                    std::cout << "[SCREENSHOT] cancelled.\n";
+                } else if (!stbi_write_png(out_path.c_str(), w, h, 4,
+                                           pixels, w * 4)) {
+                    std::cerr << "[SCREENSHOT] stbi_write_png failed: "
+                              << out_path << '\n';
+                } else {
+                    std::cout << "[SCREENSHOT] saved: " << out_path << '\n';
+                }
+
+                vkUnmapMemory(context.device(), screenshot_staging_mem);
+                vkDestroyBuffer(context.device(),
+                                screenshot_staging_buf, nullptr);
+                vkFreeMemory(context.device(),
+                             screenshot_staging_mem, nullptr);
+                screenshot_staging_buf = VK_NULL_HANDLE;
+                screenshot_staging_mem = VK_NULL_HANDLE;
+                screenshot_pending = false;
+            }
 
             // Rebuild framebuffer resources only after the user stops resizing.
             // All ready viewports share one device-idle synchronization point.

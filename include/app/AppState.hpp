@@ -249,6 +249,13 @@ struct RenderViewState {
     GizmoAxisEnd gizmo_y_axis{};
     GizmoAxisEnd gizmo_z_axis{};
     bool gizmo_axes_valid = false;
+
+    // Screenshot: canvas rect in ImGui screen coordinates (absolute, not window-relative).
+    // Populated by UiRoot::draw_viewport_window each frame.
+    float canvas_rect_min_x = 0.0f;
+    float canvas_rect_min_y = 0.0f;
+    float canvas_rect_max_x = 0.0f;
+    float canvas_rect_max_y = 0.0f;
 };
 
 /*

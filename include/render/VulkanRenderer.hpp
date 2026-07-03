@@ -27,12 +27,16 @@ public:
     using DrawCallback = std::function<void(VkCommandBuffer command_buffer)>;
     using FrameReadyCallback = std::function<void(std::uint32_t frame_slot)>;
 
-    // pre_pass: recorded before vkCmdBeginRenderPass (use for offscreen render passes)
-    // in_pass:  recorded inside the main swapchain render pass (ImGui, overlays)
+    // pre_pass:  recorded before vkCmdBeginRenderPass (use for offscreen render passes)
+    // in_pass:   recorded inside the main swapchain render pass (ImGui, overlays)
+    // post_pass: recorded after vkCmdEndRenderPass, still inside the command buffer
+    //            (use for swapchain readback, layout transitions to PRESENT_SRC, etc.)
+    //            Receives (VkCommandBuffer, swapchain_image_index).
     struct FrameDrawCallbacks {
         FrameReadyCallback frame_ready{};
         DrawCallback pre_pass{};
         DrawCallback in_pass{};
+        std::function<void(VkCommandBuffer, std::uint32_t)> post_pass{};
     };
 
 public:

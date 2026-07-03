@@ -171,6 +171,7 @@ endfunction()
 target_include_directories(GeoScatter3D PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
 )
@@ -304,6 +305,7 @@ if(BUILD_TESTING)
     target_include_directories(GeoScatter3DBenchmark PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
     )
