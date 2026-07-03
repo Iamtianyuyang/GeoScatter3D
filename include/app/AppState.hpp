@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "app/MeasurementManager.hpp"
+
 namespace gs3d::app {
 
 /*
@@ -42,6 +44,7 @@ struct PanelVisibilityState {
     bool lod_view = false;
     bool performance = false;
     bool navigation_map = true;
+    bool measurement = true;
 };
 
 struct DatasetSummaryState {
@@ -256,6 +259,30 @@ struct RenderViewState {
     float canvas_rect_min_y = 0.0f;
     float canvas_rect_max_x = 0.0f;
     float canvas_rect_max_y = 0.0f;
+
+    // Measurement line overlays: pre-projected by ViewerApp each frame,
+    // drawn by UiRoot as ImGui overlay lines on the viewport canvas.
+    struct MeasurementLineOverlay {
+        float a_screen_x = 0.0f;
+        float a_screen_y = 0.0f;
+        float b_screen_x = 0.0f;
+        float b_screen_y = 0.0f;
+        bool visible = false;
+        std::uint32_t color = 0;
+        std::string label;
+    };
+    std::vector<MeasurementLineOverlay> measurement_overlays;
+
+    // Whether the global measurement mode is active — set by ViewerApp
+    // so UiRoot can draw the mode indicator without accessing AppState.
+    bool measure_mode_active = false;
+
+    // Pending measurement point (waiting for second point).
+    // Projected by ViewerApp each frame; drawn by UiRoot as a
+    // highlight marker + preview line to cursor.
+    bool pending_point_visible = false;
+    float pending_point_screen_x = -1.0f;
+    float pending_point_screen_y = -1.0f;
 };
 
 /*
@@ -298,6 +325,7 @@ struct AppState {
     PerformanceState performance;
     StatusBarState status_bar;
     NavigationMapState navigation_map;
+    MeasurementManager measurement;
     std::vector<RenderViewState> render_views;
 };
 

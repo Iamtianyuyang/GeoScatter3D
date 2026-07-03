@@ -3806,6 +3806,8 @@ int ViewerApp::run() {
                 view.camera_mode = "轨道";
                 view.position = format_vec3_text(camera.position());
                 view.fov = camera.fov_y_degrees();
+                view.measure_mode_active =
+                    app_state.measurement.measure_mode_active();
 
                 const float vp_h =
                     static_cast<float>(camera.viewport_height());
@@ -3955,6 +3957,57 @@ int ViewerApp::run() {
                         view.selected_point_visible = true;
                         view.selected_screen_x = selected_screen->x;
                         view.selected_screen_y = selected_screen->y;
+                    }
+                }
+
+                // ── 测量线投影：每条全局测量线的两端点 → 本视口屏幕坐标 ──
+                {
+                    const auto& lines = app_state.measurement.lines();
+                    view.measurement_overlays.clear();
+                    view.measurement_overlays.reserve(lines.size());
+                    for (const auto& line : lines) {
+                        RenderViewState::MeasurementLineOverlay overlay;
+                        overlay.color = line.color;
+                        overlay.label = line.distance_label(
+                            app_state.measurement.display_mode());
+
+                        const auto sa = gs3d::camera::MouseRay::to_screen(
+                            {line.point_a.x, line.point_a.y, line.point_a.z},
+                            {camera.viewport_width(),
+                             camera.viewport_height()},
+                            camera);
+                        const auto sb = gs3d::camera::MouseRay::to_screen(
+                            {line.point_b.x, line.point_b.y, line.point_b.z},
+                            {camera.viewport_width(),
+                             camera.viewport_height()},
+                            camera);
+
+                        if (sa && sb) {
+                            overlay.a_screen_x = sa->x;
+                            overlay.a_screen_y = sa->y;
+                            overlay.b_screen_x = sb->x;
+                            overlay.b_screen_y = sb->y;
+                            overlay.visible = true;
+                        }
+                        view.measurement_overlays.push_back(overlay);
+                    }
+                }
+
+                // ── 待定测量点投影（选了第一个点，等第二个点）──
+                view.pending_point_visible = false;
+                view.pending_point_screen_x = -1.0f;
+                view.pending_point_screen_y = -1.0f;
+                if (app_state.measurement.has_pending()) {
+                    const auto& pending = *app_state.measurement.pending_point();
+                    const auto sp = gs3d::camera::MouseRay::to_screen(
+                        {pending.x, pending.y, pending.z},
+                        {camera.viewport_width(),
+                         camera.viewport_height()},
+                        camera);
+                    if (sp) {
+                        view.pending_point_visible = true;
+                        view.pending_point_screen_x = sp->x;
+                        view.pending_point_screen_y = sp->y;
                     }
                 }
             }
@@ -5084,6 +5137,19 @@ int ViewerApp::run() {
                     request.pick_radius_px =
                         compute_hover_pick_radius_px(push.point_size);
                     continue;
+                }
+
+                // Measurement pick: middle-click uses the latest hover
+                // pick result (zero-latency, same strategy as orbit pivot).
+                if (frame.measure_pick_requested &&
+                    app_state.measurement.measure_mode_active()) {
+                    const auto idx =
+                        static_cast<std::size_t>(frame.index);
+                    if (idx < latest_gpu_hover_points.size() &&
+                        latest_gpu_hover_points[idx].has_value()) {
+                        app_state.measurement.add_point(
+                            *latest_gpu_hover_points[idx]);
+                    }
                 }
 
                 // Issue hover pick whenever the cursor is on the image,

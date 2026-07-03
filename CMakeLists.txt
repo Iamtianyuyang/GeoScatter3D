@@ -33,6 +33,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/ResourcePath.cpp
     src/app/TilePointCache.cpp
     src/app/ViewportResizeScheduler.cpp
+    src/app/MeasurementManager.cpp
 
     src/platform/Window.cpp
 
@@ -93,6 +94,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/app/UiActions.hpp
     include/app/TilePointCache.hpp
     include/app/ViewportResizeScheduler.hpp
+    include/app/MeasurementManager.hpp
 
     include/platform/Window.hpp
 

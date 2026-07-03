@@ -31,6 +31,8 @@ constexpr const char* kPerformanceWindowName =
     "性能###Performance";
 constexpr const char* kNavigationMapWindowName =
     "导航图###NavigationMap";
+constexpr const char* kMeasurementWindowName =
+    "测量###Measurement";
 
 std::string render_view_window_name(int index)
 {
@@ -480,7 +482,8 @@ void draw_viewport_window(
         "##ViewportCanvas",
         available,
         ImGuiButtonFlags_MouseButtonLeft |
-        ImGuiButtonFlags_MouseButtonRight
+        ImGuiButtonFlags_MouseButtonRight |
+        ImGuiButtonFlags_MouseButtonMiddle
     );
     const ImVec2 canvas_min = ImGui::GetItemRectMin();
     const ImVec2 canvas_max = ImGui::GetItemRectMax();
@@ -504,6 +507,32 @@ void draw_viewport_window(
     );
     ImVec2 plot_min{plot_rect.min_x, plot_rect.min_y};
     ImVec2 plot_max{plot_rect.max_x, plot_rect.max_y};
+
+    // ── 测量模式视口边框提示 ──
+    if (view.measure_mode_active) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        constexpr ImU32 kMeasureBorder = IM_COL32(255, 200, 40, 180);
+        constexpr float kBorderWidth = 3.5f;
+        dl->AddRect(plot_min, plot_max, kMeasureBorder, 0.0f, 0, kBorderWidth);
+
+        // Corner badge
+        constexpr float kBadgePadX = 8.0f;
+        constexpr float kBadgePadY = 5.0f;
+        constexpr ImU32 kBadgeBg = IM_COL32(255, 180, 30, 220);
+        constexpr ImU32 kBadgeText = IM_COL32(20, 20, 20, 255);
+        const char* badge_label = "测量模式";
+        const ImVec2 ts = ImGui::CalcTextSize(badge_label);
+        const ImVec2 badge_min{
+            plot_min.x + kBadgePadX,
+            plot_min.y + kBadgePadY};
+        const ImVec2 badge_max{
+            badge_min.x + ts.x + kBadgePadX * 2.0f,
+            badge_min.y + ts.y + kBadgePadY * 2.0f};
+        dl->AddRectFilled(badge_min, badge_max, kBadgeBg, 4.0f);
+        dl->AddText(
+            ImVec2(badge_min.x + kBadgePadX, badge_min.y + kBadgePadY),
+            kBadgeText, badge_label);
+    }
 
     if (view.show_live_image &&
         view.descriptor != VK_NULL_HANDLE) {
@@ -992,6 +1021,91 @@ void draw_viewport_window(
         dl->AddCircleFilled({cx, cy}, 3.0f, kSelectedColor);
     }
 
+    // ── 测量线绘制 ──
+    // Pre-projected by ViewerApp each frame from world coords via the
+    // same MouseRay::world_to_screen pipeline the crosshair uses.
+    if (!view.measurement_overlays.empty() &&
+        view.image_width > 0 && view.image_height > 0) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->PushClipRect(canvas_min, canvas_max, true);
+        constexpr float kMeasureLineWidth = 2.0f;
+        constexpr float kMeasureLabelPad = 3.0f;
+        constexpr ImU32 kMeasureLabelBg = IM_COL32(14, 15, 18, 200);
+
+        for (const auto& overlay : view.measurement_overlays) {
+            if (!overlay.visible) continue;
+
+            const auto sa = framebuffer_to_plot_screen(
+                overlay.a_screen_x, overlay.a_screen_y,
+                canvas_rect, view.show_map_axis,
+                view.image_width, view.image_height);
+            const auto sb = framebuffer_to_plot_screen(
+                overlay.b_screen_x, overlay.b_screen_y,
+                canvas_rect, view.show_map_axis,
+                view.image_width, view.image_height);
+
+            const ImVec2 pa{plot_min.x + sa.x, plot_min.y + sa.y};
+            const ImVec2 pb{plot_min.x + sb.x, plot_min.y + sb.y};
+
+            dl->AddLine(pa, pb, overlay.color, kMeasureLineWidth);
+
+            // Distance label at midpoint.
+            if (!overlay.label.empty()) {
+                const ImVec2 pmid{
+                    (pa.x + pb.x) * 0.5f,
+                    (pa.y + pb.y) * 0.5f};
+                const ImVec2 ts = ImGui::CalcTextSize(
+                    overlay.label.c_str());
+                dl->AddRectFilled(
+                    ImVec2(pmid.x - ts.x * 0.5f - kMeasureLabelPad,
+                           pmid.y - ts.y * 0.5f - kMeasureLabelPad),
+                    ImVec2(pmid.x + ts.x * 0.5f + kMeasureLabelPad,
+                           pmid.y + ts.y * 0.5f + kMeasureLabelPad),
+                    kMeasureLabelBg, 3.0f);
+                dl->AddText(
+                    ImVec2(pmid.x - ts.x * 0.5f,
+                           pmid.y - ts.y * 0.5f),
+                    IM_COL32(255, 255, 255, 240),
+                    overlay.label.c_str());
+            }
+        }
+        dl->PopClipRect();
+    }
+
+    // ── 待定测量点标记 + 预览线 ──
+    if (view.pending_point_visible &&
+        view.pending_point_screen_x >= 0.0f &&
+        view.pending_point_screen_y >= 0.0f &&
+        view.image_width > 0 && view.image_height > 0) {
+        const auto scr = framebuffer_to_plot_screen(
+            view.pending_point_screen_x, view.pending_point_screen_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const float px = plot_min.x + scr.x;
+        const float py = plot_min.y + scr.y;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->PushClipRect(canvas_min, canvas_max, true);
+
+        // Filled circle + outer ring in bright measurement-amber.
+        constexpr float kMarkerR = 7.0f;
+        constexpr ImU32 kMarkerFill = IM_COL32(255, 200, 40, 200);
+        constexpr ImU32 kMarkerRing = IM_COL32(255, 220, 60, 255);
+        dl->AddCircleFilled({px, py}, kMarkerR, kMarkerFill);
+        dl->AddCircle({px, py}, kMarkerR + 2.0f, kMarkerRing, 0, 2.5f);
+
+        // Preview line to mouse cursor while the cursor is on the plot area.
+        const ImGuiIO& io = ImGui::GetIO();
+        const float mx = io.MousePos.x;
+        const float my = io.MousePos.y;
+        if (mx >= plot_min.x && mx < plot_max.x &&
+            my >= plot_min.y && my < plot_max.y) {
+            constexpr ImU32 kPreviewLine = IM_COL32(255, 220, 60, 100);
+            dl->AddLine({px, py}, {mx, my}, kPreviewLine, 1.5f);
+        }
+
+        dl->PopClipRect();
+    }
+
     const ImGuiIO& io = ImGui::GetIO();
     gs3d::app::ViewportFrameCmd frame;
     frame.index = view.viewport_index;
@@ -1053,6 +1167,10 @@ void draw_viewport_window(
         frame.mouse_on_image &&
         !io.KeyCtrl &&
         ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+    frame.measure_pick_requested =
+        active &&
+        frame.mouse_on_image &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Middle);
 
     if (box_select_button_down && !view.box_select_dragging) {
         view.box_select_dragging = true;
@@ -1537,6 +1655,110 @@ void draw_navigation_map(gs3d::app::AppState& state)
     ImGui::End();
 }
 
+void draw_measurement_panel(gs3d::app::AppState& state)
+{
+    if (!ImGui::Begin(kMeasurementWindowName, &state.panels.measurement)) {
+        ImGui::End();
+        return;
+    }
+
+    auto& mgr = state.measurement;
+
+    // ── 测量模式开关 ──
+    bool measure_active = mgr.measure_mode_active();
+    if (ImGui::Checkbox("测量模式", &measure_active)) {
+        mgr.set_measure_mode(measure_active);
+        if (!measure_active) {
+            mgr.clear_pending();
+        }
+    }
+    if (mgr.has_pending()) {
+        ImGui::SameLine();
+        ImGui::TextColored(
+            ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
+            "等待第二个点..."
+        );
+    }
+
+    // ── 距离显示模式 ──
+    int display_mode = static_cast<int>(mgr.display_mode());
+    ImGui::TextUnformatted("距离显示:");
+    ImGui::SameLine();
+    ImGui::RadioButton("三维", &display_mode,
+        static_cast<int>(gs3d::app::DistanceDisplayMode::ThreeD));
+    ImGui::SameLine();
+    ImGui::RadioButton("平面", &display_mode,
+        static_cast<int>(gs3d::app::DistanceDisplayMode::Planar));
+    ImGui::SameLine();
+    ImGui::RadioButton("都显示", &display_mode,
+        static_cast<int>(gs3d::app::DistanceDisplayMode::Both));
+    mgr.set_display_mode(
+        static_cast<gs3d::app::DistanceDisplayMode>(display_mode));
+
+    ImGui::Separator();
+
+    // ── 全部删除（不删固定的）──
+    if (ImGui::Button("全部删除（保留固定）")) {
+        mgr.remove_all_unfixed();
+    }
+
+    ImGui::Separator();
+
+    // ── 线段列表 ──
+    if (mgr.line_count() == 0) {
+        ImGui::TextDisabled("暂无测量线");
+    } else {
+        // Use a child region for scrolling when there are many lines.
+        ImGui::BeginChild("##MeasureLines",
+            ImVec2(0.0f, ImGui::GetContentRegionAvail().y),
+            false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+        for (std::size_t i = 0; i < mgr.line_count(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            auto& line = mgr.lines()[i];
+
+            // Color swatch
+            ImVec4 col = ImGui::ColorConvertU32ToFloat4(line.color);
+            float col_arr[4] = {col.x, col.y, col.z, col.w};
+            if (ImGui::ColorEdit4("##Color", col_arr,
+                    ImGuiColorEditFlags_NoInputs |
+                    ImGuiColorEditFlags_NoLabel |
+                    ImGuiColorEditFlags_AlphaBar)) {
+                mgr.set_line_color(i,
+                    ImGui::ColorConvertFloat4ToU32(
+                        ImVec4(col_arr[0], col_arr[1],
+                               col_arr[2], col_arr[3])));
+            }
+            ImGui::SameLine();
+
+            // Distance label
+            ImGui::TextUnformatted(
+                line.distance_label(mgr.display_mode()).c_str());
+            ImGui::SameLine();
+
+            // Fixed toggle
+            bool fixed = line.fixed;
+            if (ImGui::Checkbox("固定", &fixed)) {
+                mgr.toggle_fixed(i);
+            }
+            ImGui::SameLine();
+
+            // Delete button
+            if (ImGui::SmallButton("删除")) {
+                mgr.remove_line(i);
+                ImGui::PopID();
+                // Don't access `line` after removal.
+                continue;
+            }
+
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::End();
+}
+
 void draw_auxiliary_panels(gs3d::app::AppState& state)
 {
     if (state.panels.performance) {
@@ -1615,6 +1837,10 @@ void draw_auxiliary_panels(gs3d::app::AppState& state)
         }
         ImGui::End();
     }
+
+    if (state.panels.measurement) {
+        draw_measurement_panel(state);
+    }
 }
 
 } // namespace
@@ -1654,7 +1880,8 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         state.panels.dataset ||
         state.panels.tile_inspector ||
         state.panels.lod_view ||
-        state.panels.navigation_map;
+        state.panels.navigation_map ||
+        state.panels.measurement;
     const bool has_right_panels =
         state.panels.render_settings ||
         state.panels.performance ||
@@ -1704,6 +1931,9 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         if (state.panels.lod_view) {
             ImGui::DockBuilderDockWindow(kLodViewWindowName, left_top_id);
         }
+        if (state.panels.measurement) {
+            ImGui::DockBuilderDockWindow(kMeasurementWindowName, left_top_id);
+        }
     }
     if (left_bottom_id != 0) {
         ImGui::DockBuilderDockWindow(kNavigationMapWindowName, left_bottom_id);
@@ -1740,6 +1970,14 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     if (ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
+    }
+    if (!ImGui::GetIO().WantTextInput &&
+        !ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_M, false)) {
+        state.measurement.toggle_measure_mode();
+        if (!state.measurement.measure_mode_active()) {
+            state.measurement.clear_pending();
+        }
     }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiWindowFlags host_flags =
@@ -1844,6 +2082,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     nullptr,
                     &state.panels.navigation_map
                 );
+                ImGui::MenuItem(
+                    "测量",
+                    nullptr,
+                    &state.panels.measurement
+                );
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("帮助")) {
@@ -1882,6 +2125,29 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImGui::SameLine();
         if (ImGui::SmallButton("截图")) {
             actions.screenshot_requested = true;
+        }
+        ImGui::SameLine();
+        {
+            bool measure_active = state.measurement.measure_mode_active();
+            if (measure_active) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                    IM_COL32(220, 150, 30, 230));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    IM_COL32(240, 170, 40, 240));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                    IM_COL32(200, 130, 20, 230));
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    IM_COL32(20, 20, 20, 255));
+            }
+            if (ImGui::SmallButton("测量")) {
+                state.measurement.toggle_measure_mode();
+                if (!state.measurement.measure_mode_active()) {
+                    state.measurement.clear_pending();
+                }
+            }
+            if (measure_active) {
+                ImGui::PopStyleColor(4);
+            }
         }
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 150));
