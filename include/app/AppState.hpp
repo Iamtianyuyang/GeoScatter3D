@@ -41,6 +41,7 @@ struct PanelVisibilityState {
     bool tile_inspector = false;
     bool lod_view = false;
     bool performance = false;
+    bool navigation_map = true;
 };
 
 struct DatasetSummaryState {
@@ -65,7 +66,7 @@ struct DatasetSummaryState {
 };
 
 struct RenderSettingsState {
-    float point_size = 1.0f;
+    float point_size = 1.5f;
     float opacity = 1.0f;
     int blend_mode = 0;
 
@@ -245,6 +246,38 @@ struct RenderViewState {
     bool gizmo_axes_valid = false;
 };
 
+/*
+ * 导航图（概览图）状态。
+ *
+ * 缩略图是一次性预渲染的（离屏正交俯视），存为 VkDescriptorSet 供 ImGui
+ * 显示。坐标映射（bbox → 像素）只写在这里一处，缩略图渲染和视野框绘制
+ * 共用同一个映射参数。
+ */
+struct NavigationMapState {
+    bool valid = false;     // 缩略图已渲染，可显示
+    bool dirty = true;      // 需要重新渲染（初次加载 / 着色属性变更）
+
+    // ImGui 显示用的纹理 descriptor
+    VkDescriptorSet texture_descriptor = VK_NULL_HANDLE;
+
+    // 缩略图纹理实际尺寸（匹配 bbox 宽高比）
+    float tex_w = 256.0f;
+    float tex_h = 256.0f;
+
+    // 数据集 XY 包围盒（坐标映射的基准）
+    float bbox_min_x = 0.0f;
+    float bbox_min_y = 0.0f;
+    float bbox_max_x = 0.0f;
+    float bbox_max_y = 0.0f;
+
+    // 当前视野框（主视图可见 XY 范围），缩略图像素坐标
+    float view_rect_min_x = 0.0f;
+    float view_rect_min_y = 0.0f;
+    float view_rect_max_x = 0.0f;
+    float view_rect_max_y = 0.0f;
+    bool  view_rect_valid = false;
+};
+
 struct AppState {
     PanelVisibilityState panels;
     DatasetSummaryState dataset;
@@ -252,6 +285,7 @@ struct AppState {
     DebugLogState debug_log;
     PerformanceState performance;
     StatusBarState status_bar;
+    NavigationMapState navigation_map;
     std::vector<RenderViewState> render_views;
 };
 

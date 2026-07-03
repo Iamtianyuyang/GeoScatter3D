@@ -63,7 +63,7 @@ struct ViewerAppConfig {
         1.0f
     };
 
-    float initial_point_size = 1.0f;
+    float initial_point_size = 1.5f;
 
     // Source-field labels for the physical Value and Z channels.
     std::string primary_value_field_name = "fold";

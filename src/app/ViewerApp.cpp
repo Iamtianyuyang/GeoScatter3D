@@ -3129,6 +3129,141 @@ int ViewerApp::run() {
             app_state.panels.lod_view = false;
             app_state.panels.performance = false;
         }
+
+        // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
+        // bbox 宽高比决定纹理尺寸，保证纹理像素全部有效，无 letterbox。
+        const float nav_bbox_w =
+            dataset.bbox_max_x() - dataset.bbox_min_x();
+        const float nav_bbox_h_ =
+            dataset.bbox_max_y() - dataset.bbox_min_y();
+        const float nav_aspect =
+            nav_bbox_h_ > 0.0f ? nav_bbox_w / nav_bbox_h_ : 1.0f;
+        constexpr float kNavBaseSize = 256.0f;
+        std::uint32_t nav_tex_w = kNavBaseSize;
+        std::uint32_t nav_tex_h = kNavBaseSize;
+        if (nav_aspect >= 1.0f) {
+            nav_tex_h = std::max(
+                64u,
+                static_cast<std::uint32_t>(kNavBaseSize / nav_aspect)
+            );
+        } else {
+            nav_tex_w = std::max(
+                64u,
+                static_cast<std::uint32_t>(kNavBaseSize * nav_aspect)
+            );
+        }
+
+        gs3d::render::OffscreenFramebuffer nav_thumbnail_fb;
+        nav_thumbnail_fb.create(
+            context,
+            VkExtent2D{nav_tex_w, nav_tex_h},
+            swapchain.image_format()
+        );
+
+        // 坐标系映射：纹理像素 ↔ 数据集 XY 包围盒，只在这里写一次。
+        // 缩略图渲染相机和视野框绘制共用这组参数。
+        auto& nm = app_state.navigation_map;
+        nm.tex_w = static_cast<float>(nav_tex_w);
+        nm.tex_h = static_cast<float>(nav_tex_h);
+        nm.bbox_min_x = dataset.bbox_min_x();
+        nm.bbox_min_y = dataset.bbox_min_y();
+        nm.bbox_max_x = dataset.bbox_max_x();
+        nm.bbox_max_y = dataset.bbox_max_y();
+
+        // 单次命令缓冲区：渲染缩略图
+        {
+            VkCommandBufferAllocateInfo alloc_info{};
+            alloc_info.sType =
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            alloc_info.commandPool = renderer.command_pool();
+            alloc_info.commandBufferCount = 1;
+
+            VkCommandBuffer cmd = VK_NULL_HANDLE;
+            vkAllocateCommandBuffers(
+                context.device(),
+                &alloc_info,
+                &cmd
+            );
+
+            VkCommandBufferBeginInfo begin_info{};
+            begin_info.sType =
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags =
+                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(cmd, &begin_info);
+
+            // 正交俯视相机：从上往下看，覆盖整个 bbox 的 XY 范围
+            gs3d::camera::Camera nav_cam;
+            nav_cam.set_viewport(nav_tex_w, nav_tex_h);
+            nav_cam.set_orthographic(
+                nav_bbox_h_,
+                0.001f,
+                std::max(1.0f, nav_bbox_h_ * 10.0f)
+            );
+            const float nav_cx =
+                (nm.bbox_min_x + nm.bbox_max_x) * 0.5f;
+            const float nav_cy =
+                (nm.bbox_min_y + nm.bbox_max_y) * 0.5f;
+            nav_cam.look_at(
+                {nav_cx, nav_cy, dataset.bbox_max_z() + nav_bbox_h_},
+                {nav_cx, nav_cy, 0.0f},
+                {0.0f, 1.0f, 0.0f}
+            );
+
+            const auto nav_mvp = nav_cam.view_projection_matrix();
+            gs3d::render::PointPushConstants nav_push = push;
+            std::memcpy(nav_push.mvp, nav_mvp.data(), sizeof(nav_push.mvp));
+
+            const auto& nav_cloud =
+                lod_gpu_cloud
+                    ? lod_gpu_cloud->lowest_detail().gpu_cloud
+                    : *full_gpu_cloud;
+
+            nav_thumbnail_fb.render(
+                cmd,
+                [&](VkCommandBuffer cb) {
+                    point_pipeline.draw(
+                        cb,
+                        nav_cloud,
+                        VkExtent2D{nav_tex_w, nav_tex_h},
+                        nav_push
+                    );
+                }
+            );
+
+            vkEndCommandBuffer(cmd);
+
+            VkFence fence = VK_NULL_HANDLE;
+            VkFenceCreateInfo fence_info{};
+            fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            vkCreateFence(context.device(), &fence_info, nullptr, &fence);
+
+            VkSubmitInfo submit_info{};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &cmd;
+            vkQueueSubmit(
+                context.graphics_queue(),
+                1,
+                &submit_info,
+                fence
+            );
+
+            vkWaitForFences(context.device(), 1, &fence, VK_TRUE, UINT64_MAX);
+            vkDestroyFence(context.device(), fence, nullptr);
+            vkFreeCommandBuffers(
+                context.device(),
+                renderer.command_pool(),
+                1,
+                &cmd
+            );
+        }
+
+        nm.texture_descriptor = nav_thumbnail_fb.imgui_descriptor();
+        nm.valid = true;
+        nm.dirty = false;
+
         std::vector<int> visible_viewports;
         visible_viewports.reserve(
             static_cast<std::size_t>(viewport_manager.viewport_count())
@@ -3869,6 +4004,96 @@ int ViewerApp::run() {
                 }
             }
 
+            // ── 导航图视野框：主视图可见 XY 范围 → 缩略图像素坐标 ──
+            if (nm.valid) {
+                const auto& nav_cam =
+                    viewport_manager.camera(streaming_viewport_index);
+                const gs3d::camera::Viewport nav_vp{
+                    nav_cam.viewport_width(),
+                    nav_cam.viewport_height()
+                };
+                const float plane_z = nav_cam.target().z;
+                const float corners[4][2] = {
+                    {0.0f, 0.0f},
+                    {static_cast<float>(nav_vp.width), 0.0f},
+                    {0.0f, static_cast<float>(nav_vp.height)},
+                    {static_cast<float>(nav_vp.width),
+                     static_cast<float>(nav_vp.height)}
+                };
+
+                float xs[4], ys[4];
+                int n_hit = 0;
+                for (int ci = 0; ci < 4; ++ci) {
+                    const auto ray =
+                        gs3d::camera::MouseRay::from_screen(
+                            static_cast<double>(corners[ci][0]),
+                            static_cast<double>(corners[ci][1]),
+                            nav_vp,
+                            nav_cam
+                        );
+                    const auto hit =
+                        gs3d::camera::MouseRay::intersect_plane(
+                            ray,
+                            {0.0f, 0.0f, plane_z},
+                            {0.0f, 0.0f, 1.0f}
+                        );
+                    if (hit) {
+                        xs[n_hit] = hit->x;
+                        ys[n_hit] = hit->y;
+                        ++n_hit;
+                    }
+                }
+
+                if (n_hit == 0) {
+                    // 回退：相机的 target ± ortho 半范围
+                    float hw, hh;
+                    if (nav_cam.projection_mode() ==
+                        gs3d::camera::ProjectionMode::Orthographic) {
+                        hh = nav_cam.ortho_height() * 0.5f;
+                        hw = hh * nav_cam.aspect_ratio();
+                    } else {
+                        const float d = nav_cam.distance();
+                        const float fov_rad =
+                            nav_cam.fov_y_degrees() *
+                            (3.14159265f / 180.0f);
+                        hh = d * std::tan(fov_rad * 0.5f);
+                        hw = hh * nav_cam.aspect_ratio();
+                    }
+                    xs[0] = nav_cam.target().x - hw;
+                    xs[1] = nav_cam.target().x + hw;
+                    ys[0] = nav_cam.target().y - hh;
+                    ys[1] = nav_cam.target().y + hh;
+                    n_hit = 2;
+                }
+
+                float wx_min = xs[0], wx_max = xs[0];
+                float wy_min = ys[0], wy_max = ys[0];
+                for (int ci = 1; ci < n_hit; ++ci) {
+                    if (xs[ci] < wx_min) wx_min = xs[ci];
+                    if (xs[ci] > wx_max) wx_max = xs[ci];
+                    if (ys[ci] < wy_min) wy_min = ys[ci];
+                    if (ys[ci] > wy_max) wy_max = ys[ci];
+                }
+
+                // 单一映射：世界 → 纹理像素
+                const float bbox_w = nm.bbox_max_x - nm.bbox_min_x;
+                const float bbox_h = nm.bbox_max_y - nm.bbox_min_y;
+                if (bbox_w > 0.0f && bbox_h > 0.0f) {
+                    nm.view_rect_min_x =
+                        (wx_min - nm.bbox_min_x) / bbox_w * nm.tex_w;
+                    nm.view_rect_max_x =
+                        (wx_max - nm.bbox_min_x) / bbox_w * nm.tex_w;
+                    // Y 翻转：世界 Y↑ → 纹理像素 Y↓
+                    nm.view_rect_min_y =
+                        (1.0f - (wy_max - nm.bbox_min_y) / bbox_h) *
+                        nm.tex_h;
+                    nm.view_rect_max_y =
+                        (1.0f - (wy_min - nm.bbox_min_y) / bbox_h) *
+                        nm.tex_h;
+                    nm.view_rect_valid = true;
+                }
+            }
+
             // Enforce configured viewport count — ghost viewport windows
             // restored by ImGui layout persistence must not render or
             // consume hover hit-tests (they steal the tooltip).
@@ -3997,6 +4222,7 @@ int ViewerApp::run() {
                 push.color_range  = a.range();
                 if (push.color_range <= 0.0f) push.color_range = 1.0f;
                 std::cout << "[COLOR] switched to: " << a.name << '\n';
+                nm.dirty = true;
             }
             if (gui_cmds.height_by_changed) {
                 const int new_idx = std::clamp(
@@ -4020,6 +4246,7 @@ int ViewerApp::run() {
                 push.flags &= ~gs3d::render::PointFlags::kColormapMask;
                 push.flags |= (static_cast<std::uint32_t>(gui_cmds.colormap_index) << 1)
                     & gs3d::render::PointFlags::kColormapMask;
+                nm.dirty = true;
             }
             if (gui_cmds.value_clip_changed) {
                 if (gui_cmds.value_clip_enabled) {
@@ -4036,6 +4263,7 @@ int ViewerApp::run() {
                 } else {
                     push.flags &= ~gs3d::render::PointFlags::kValueClip;
                 }
+                nm.dirty = true;
             }
             if (gui_cmds.clear_cache_requested) {
                 if (tile_preload_enabled && !tiles_fully_resident &&
@@ -4964,6 +5192,67 @@ int ViewerApp::run() {
                     // vkCmdBeginRenderPass / draw / vkCmdEndRenderPass sequence into
                     // cmd; none of them nest inside each other or the swapchain pass.
                     .pre_pass = [&](VkCommandBuffer cmd) {
+                        // ── 导航图缩略图重渲（着色属性变更时触发）──
+                        if (nm.dirty && nav_thumbnail_fb.valid()) {
+                            gs3d::camera::Camera nav_cam;
+                            nav_cam.set_viewport(
+                                static_cast<std::uint32_t>(nm.tex_w),
+                                static_cast<std::uint32_t>(nm.tex_h)
+                            );
+                            const float nav_bbox_h =
+                                nm.bbox_max_y - nm.bbox_min_y;
+                            nav_cam.set_orthographic(
+                                nav_bbox_h,
+                                0.001f,
+                                std::max(1.0f, nav_bbox_h * 10.0f)
+                            );
+                            const float nav_cx =
+                                (nm.bbox_min_x + nm.bbox_max_x) * 0.5f;
+                            const float nav_cy =
+                                (nm.bbox_min_y + nm.bbox_max_y) * 0.5f;
+                            nav_cam.look_at(
+                                {nav_cx, nav_cy,
+                                 dataset.bbox_max_z() + nav_bbox_h},
+                                {nav_cx, nav_cy, 0.0f},
+                                {0.0f, 1.0f, 0.0f}
+                            );
+
+                            const auto nav_mvp =
+                                nav_cam.view_projection_matrix();
+                            gs3d::render::PointPushConstants nav_push =
+                                push;
+                            std::memcpy(
+                                nav_push.mvp,
+                                nav_mvp.data(),
+                                sizeof(nav_push.mvp)
+                            );
+
+                            const auto& nav_cloud =
+                                lod_gpu_cloud
+                                    ? lod_gpu_cloud->lowest_detail()
+                                          .gpu_cloud
+                                    : *full_gpu_cloud;
+
+                            nav_thumbnail_fb.render(
+                                cmd,
+                                [&](VkCommandBuffer cb) {
+                                    point_pipeline.draw(
+                                        cb,
+                                        nav_cloud,
+                                        VkExtent2D{static_cast<std::uint32_t>(
+                                             nm.tex_w),
+                                         static_cast<std::uint32_t>(
+                                             nm.tex_h)},
+                                        nav_push
+                                    );
+                                }
+                            );
+
+                            nm.texture_descriptor =
+                                nav_thumbnail_fb.imgui_descriptor();
+                            nm.dirty = false;
+                        }
+
                         bool pick_debug_dump_recorded_this_frame = false;
                         for (const int viewport_index :
                              visible_viewports) {
