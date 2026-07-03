@@ -9,6 +9,7 @@
 #include "render/FrameUploadBudget.hpp"
 #include "render/LodSelector.hpp"
 #include "render/NearestPointQuery.hpp"
+#include "render/TileSelection.hpp"
 #include "scene/SceneState.hpp"
 #include "ui/UiRoot.hpp"
 
@@ -447,6 +448,181 @@ void test_orthographic_fit_bounds_uses_true_top_down_view()
         camera.ortho_height() >=
             bounds.max.y - bounds.min.y,
         "top-down orthographic fit contains the full dataset height"
+    );
+}
+
+void test_tile_selection_honors_full_z_range_config()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(400, 400);
+    camera.set_orthographic(40.0f, 0.1f, 200.0f);
+    camera.look_at(
+        {5.0f, 50.0f, 80.0f},
+        {5.0f, 0.0f, 80.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::core::TileIndexView tile_index;
+    tile_index.header.tile_size_x = 10.0f;
+    tile_index.header.tile_size_y = 10.0f;
+    tile_index.header.grid_origin_x = 0.0f;
+    tile_index.header.grid_origin_y = 0.0f;
+    tile_index.header.bbox_min_z = 0.0f;
+    tile_index.header.bbox_max_z = 100.0f;
+    tile_index.records.push_back({
+        7,
+        0,
+        0,
+        100,
+        0.0f,
+        0.0f,
+        0.0f,
+        10.0f,
+        10.0f,
+        10.0f
+    });
+
+    gs3d::render::TileSelectionConfig local_z_config;
+    local_z_config.min_tile_pixel_size = 1.0f;
+    local_z_config.use_full_z_range = false;
+
+    gs3d::render::TileSelectionConfig full_z_config = local_z_config;
+    full_z_config.use_full_z_range = true;
+
+    gs3d::render::TileSelection local_z_selection(local_z_config);
+    gs3d::render::TileSelection full_z_selection(full_z_config);
+
+    const auto local_z_result =
+        local_z_selection.update(camera, tile_index);
+    const auto full_z_result =
+        full_z_selection.update(camera, tile_index);
+
+    expect(
+        local_z_result.tile_ids.empty(),
+        "per-tile Z culling can reject a tile outside the visible Z band"
+    );
+    expect(
+        full_z_result.tile_ids.size() == 1 &&
+            full_z_result.tile_ids.front() == 7,
+        "use_full_z_range keeps XY tiles visible in side views"
+    );
+}
+
+void test_tile_selection_uses_mapped_height_space()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(400, 400);
+    camera.set_orthographic(40.0f, 0.1f, 200.0f);
+    camera.look_at(
+        {5.0f, 50.0f, 80.0f},
+        {5.0f, 0.0f, 80.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::core::TileIndexView tile_index;
+    tile_index.header.tile_size_x = 10.0f;
+    tile_index.header.tile_size_y = 10.0f;
+    tile_index.header.grid_origin_x = 0.0f;
+    tile_index.header.grid_origin_y = 0.0f;
+    tile_index.header.bbox_min_z = 0.0f;
+    tile_index.header.bbox_max_z = 10.0f;
+    tile_index.records.push_back({
+        8,
+        0,
+        0,
+        100,
+        0.0f,
+        0.0f,
+        0.0f,
+        10.0f,
+        10.0f,
+        10.0f
+    });
+
+    gs3d::render::TileSelectionConfig raw_space_config;
+    raw_space_config.min_tile_pixel_size = 1.0f;
+    raw_space_config.use_full_z_range = true;
+    raw_space_config.height_mult = 1.0f;
+
+    gs3d::render::TileSelectionConfig mapped_space_config =
+        raw_space_config;
+    mapped_space_config.height_mult = 10.0f;
+
+    gs3d::render::TileSelection raw_space_selection(raw_space_config);
+    gs3d::render::TileSelection mapped_space_selection(
+        mapped_space_config
+    );
+
+    const auto raw_space_result =
+        raw_space_selection.update(camera, tile_index);
+    const auto mapped_space_result =
+        mapped_space_selection.update(camera, tile_index);
+
+    expect(
+        raw_space_result.tile_ids.empty(),
+        "raw tile Z bounds can miss tiles after camera focus in mapped space"
+    );
+    expect(
+        mapped_space_result.tile_ids.size() == 1 &&
+            mapped_space_result.tile_ids.front() == 8,
+        "tile selection follows the rendered height mapping"
+    );
+}
+
+void test_tile_selection_does_not_cap_orthographic_tiles()
+{
+    gs3d::camera::Camera camera;
+    camera.set_viewport(400, 400);
+    camera.set_orthographic(40.0f, 0.1f, 200.0f);
+    camera.look_at(
+        {15.0f, 50.0f, 5.0f},
+        {15.0f, 0.0f, 5.0f},
+        {0.0f, 0.0f, 1.0f}
+    );
+
+    gs3d::core::TileIndexView tile_index;
+    tile_index.header.tile_size_x = 10.0f;
+    tile_index.header.tile_size_y = 10.0f;
+    tile_index.header.grid_origin_x = 0.0f;
+    tile_index.header.grid_origin_y = 0.0f;
+    tile_index.header.bbox_min_z = 0.0f;
+    tile_index.header.bbox_max_z = 10.0f;
+    tile_index.records.push_back({
+        1,
+        2,
+        0,
+        100,
+        20.0f,
+        0.0f,
+        0.0f,
+        30.0f,
+        10.0f,
+        10.0f
+    });
+    tile_index.records.push_back({
+        2,
+        0,
+        0,
+        100,
+        0.0f,
+        0.0f,
+        0.0f,
+        10.0f,
+        10.0f,
+        10.0f
+    });
+
+    gs3d::render::TileSelectionConfig config;
+    config.min_tile_pixel_size = 1.0f;
+    config.use_full_z_range = true;
+    config.max_visible_tiles = 1;
+
+    gs3d::render::TileSelection selection(config);
+    const auto result = selection.update(camera, tile_index);
+
+    expect(
+        result.tile_ids.size() == 2,
+        "orthographic tile selection ignores max_visible_tiles to avoid holes"
     );
 }
 
@@ -2647,6 +2823,9 @@ int main()
     test_fit_bounds_distance_is_orientation_independent();
     test_fit_bounds_keeps_panorama_far_end_visible();
     test_orthographic_fit_bounds_uses_true_top_down_view();
+    test_tile_selection_honors_full_z_range_config();
+    test_tile_selection_uses_mapped_height_space();
+    test_tile_selection_does_not_cap_orthographic_tiles();
     test_zoom_caps_depth_ratio_for_close_large_scene();
     test_rotate_refreshes_depth_ratio();
     test_pan_refreshes_depth_ratio();

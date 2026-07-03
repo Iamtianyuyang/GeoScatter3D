@@ -12,6 +12,33 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
+struct Range1f {
+    float min = 0.0f;
+    float max = 0.0f;
+};
+
+[[nodiscard]]
+Range1f mapped_height_range(
+    const TileSelectionConfig& config,
+    const gs3d::core::TileHeaderView& header,
+    const gs3d::core::TileRecordView& record
+) noexcept {
+    const bool use_value = config.height_source == 1u;
+    const float raw_min = use_value
+        ? (config.use_full_z_range ? header.value_min : record.value_min)
+        : (config.use_full_z_range ? header.bbox_min_z : record.bbox_min_z);
+    const float raw_max = use_value
+        ? (config.use_full_z_range ? header.value_max : record.value_max)
+        : (config.use_full_z_range ? header.bbox_max_z : record.bbox_max_z);
+
+    const float mapped_min = config.height_offset + raw_min * config.height_mult;
+    const float mapped_max = config.height_offset + raw_max * config.height_mult;
+    return {
+        std::min(mapped_min, mapped_max),
+        std::max(mapped_min, mapped_max)
+    };
+}
+
 } // namespace
 
 TileSelection::TileSelection(TileSelectionConfig config)
@@ -37,6 +64,7 @@ TileSelectionResult TileSelection::update(
     struct CandidateTile {
         std::uint64_t tile_id = 0;
         float projected_pixels = 0.0f;
+        float center_distance_sq = 0.0f;
         float bbox_min_x = 0.0f;
         float bbox_min_y = 0.0f;
         float bbox_min_z = 0.0f;
@@ -88,29 +116,35 @@ TileSelectionResult TileSelection::update(
             header.grid_origin_y + record.tile_y * header.tile_size_y;
         const float cell_max_y =
             header.grid_origin_y + (record.tile_y + 1) * header.tile_size_y;
-        // Per-tile Z bbox from the tile record (not the global dataset Z),
-        // so frustum culling correctly rejects tiles whose Z range is
-        // entirely outside the view frustum.
-        const float cell_min_z = record.bbox_min_z;
-        const float cell_max_z = record.bbox_max_z;
+        const Range1f mapped_z =
+            mapped_height_range(config_, header, record);
 
         if (aabb_outside_frustum(
                 frustum,
-                cell_min_x, cell_min_y, cell_min_z,
-                cell_max_x, cell_max_y, cell_max_z)) {
+                cell_min_x, cell_min_y, mapped_z.min,
+                cell_max_x, cell_max_y, mapped_z.max)) {
             continue;
         }
 
         const float projected_pixels =
-            tile_projected_pixels(camera, header, record);
+            tile_projected_pixels(camera, config_, header, record);
 
         if (projected_pixels < config_.min_tile_pixel_size) {
             continue;
         }
 
+        const float center_x = 0.5f * (cell_min_x + cell_max_x);
+        const float center_y = 0.5f * (cell_min_y + cell_max_y);
+        const float center_z = 0.5f * (mapped_z.min + mapped_z.max);
+        const float dx = center_x - camera.target().x;
+        const float dy = center_y - camera.target().y;
+        const float dz = center_z - camera.target().z;
+        const float center_distance_sq = dx * dx + dy * dy + dz * dz;
+
         candidates.push_back({
             record.tile_id,
             projected_pixels,
+            center_distance_sq,
             record.bbox_min_x,
             record.bbox_min_y,
             record.bbox_min_z,
@@ -131,11 +165,19 @@ TileSelectionResult TileSelection::update(
                 return a.projected_pixels > b.projected_pixels;
             }
 
+            if (a.center_distance_sq != b.center_distance_sq) {
+                return a.center_distance_sq < b.center_distance_sq;
+            }
+
             return a.tile_id < b.tile_id;
         }
     );
 
-    if (config_.max_visible_tiles > 0 &&
+    const bool apply_visible_tile_cap =
+        config_.max_visible_tiles > 0 &&
+        camera.projection_mode() !=
+            gs3d::camera::ProjectionMode::Orthographic;
+    if (apply_visible_tile_cap &&
         candidates.size() > config_.max_visible_tiles) {
         candidates.resize(config_.max_visible_tiles);
     }
@@ -324,6 +366,7 @@ bool TileSelection::aabb_outside_frustum(
 
 float TileSelection::tile_projected_pixels(
     const gs3d::camera::Camera& camera,
+    const TileSelectionConfig& config,
     const gs3d::core::TileHeaderView& header,
     const gs3d::core::TileRecordView& record
 ) noexcept {
@@ -332,7 +375,9 @@ float TileSelection::tile_projected_pixels(
         header.grid_origin_x + (record.tile_x + 0.5f) * header.tile_size_x;
     const float cy =
         header.grid_origin_y + (record.tile_y + 0.5f) * header.tile_size_y;
-    const float cz = 0.5f * (header.bbox_min_z + header.bbox_max_z);
+    const Range1f mapped_z =
+        mapped_height_range(config, header, record);
+    const float cz = 0.5f * (mapped_z.min + mapped_z.max);
 
     const float dx = cx - camera.position().x;
     const float dy = cy - camera.position().y;

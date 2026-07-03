@@ -266,6 +266,7 @@ if(BUILD_TESTING)
         src/camera/MouseRay.cpp
         src/render/LodSelector.cpp
         src/render/NearestPointQuery.cpp
+        src/render/TileSelection.cpp
         src/render/AxisGrid.cpp
     )
 

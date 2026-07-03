@@ -4320,6 +4320,10 @@ int ViewerApp::run() {
                     std::cout
                         << "[CAMERA] focused selected point in viewport "
                         << streaming_viewport_index << '\n';
+                } else {
+                    std::cout
+                        << "[CAMERA] focus skipped: no selected point in viewport "
+                        << streaming_viewport_index << '\n';
                 }
             }
 
@@ -4508,6 +4512,15 @@ int ViewerApp::run() {
                     interacting,
                     delta_seconds
                 );
+            }
+
+            if (config_.tile_enabled && tile_reader.has_value()) {
+                auto tile_config =
+                    make_tile_selection_config(config_);
+                tile_config.height_offset = push.height_offset;
+                tile_config.height_mult = push.height_mult;
+                tile_config.height_source = push.height_source;
+                tile_selection.set_config(tile_config);
             }
 
             /*

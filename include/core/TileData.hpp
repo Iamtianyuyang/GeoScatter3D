@@ -24,6 +24,9 @@ struct TileHeaderView {
 
     float bbox_min_z = 0.0f;
     float bbox_max_z = 0.0f;
+
+    float value_min = 0.0f;
+    float value_max = 0.0f;
 };
 
 struct TileRecordView {
@@ -41,6 +44,9 @@ struct TileRecordView {
     float bbox_max_x = 0.0f;
     float bbox_max_y = 0.0f;
     float bbox_max_z = 0.0f;
+
+    float value_min = 0.0f;
+    float value_max = 0.0f;
 };
 
 struct TileIndexView {

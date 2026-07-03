@@ -46,6 +46,8 @@ inline gs3d::core::TileIndexView make_tile_index_view(
     view.header.grid_origin_y = header.grid_origin_y;
     view.header.bbox_min_z = header.bbox_min_z;
     view.header.bbox_max_z = header.bbox_max_z;
+    view.header.value_min = header.value_min;
+    view.header.value_max = header.value_max;
 
     view.records.reserve(reader.records().size());
     for (const auto& record : reader.records()) {
@@ -59,7 +61,9 @@ inline gs3d::core::TileIndexView make_tile_index_view(
             record.bbox_min_z,
             record.bbox_max_x,
             record.bbox_max_y,
-            record.bbox_max_z
+            record.bbox_max_z,
+            record.value_min,
+            record.value_max
         });
     }
 

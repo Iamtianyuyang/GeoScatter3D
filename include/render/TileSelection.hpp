@@ -27,6 +27,12 @@ struct TileSelectionConfig {
      * 默认 true，适合 2.5D 地震散点数据。
      */
     bool use_full_z_range = true;
+
+    // Match tile culling with the point shader's height mapping so camera
+    // focus, exaggeration, and value-as-height all operate in one space.
+    float height_offset = 0.0f;
+    float height_mult = 1.0f;
+    std::uint32_t height_source = 0;
 };
 
 struct TileSelectionResult {
@@ -112,6 +118,7 @@ private:
     [[nodiscard]]
     static float tile_projected_pixels(
         const gs3d::camera::Camera& camera,
+        const TileSelectionConfig& config,
         const gs3d::core::TileHeaderView& header,
         const gs3d::core::TileRecordView& record
     ) noexcept;
