@@ -19,6 +19,12 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 set(GEOSCATTER3D_CORE_SOURCES
     src/gui/ImGuiLayer.cpp
     src/ui/UiRoot.cpp
+    src/ui/RegionStatsPanel.cpp
+    src/ui/DatasetPanel.cpp
+    src/ui/NavigationMapPanel.cpp
+    src/ui/MeasurementPanel.cpp
+    src/ui/AuxiliaryPanels.cpp
+    src/ui/RenderSettingsPanel.cpp
 
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
@@ -85,6 +91,12 @@ set(GEOSCATTER3D_CORE_SOURCES
 
     include/gui/ImGuiLayer.hpp
     include/ui/UiRoot.hpp
+    include/ui/RegionStatsPanel.hpp
+    include/ui/DatasetPanel.hpp
+    include/ui/NavigationMapPanel.hpp
+    include/ui/MeasurementPanel.hpp
+    include/ui/AuxiliaryPanels.hpp
+    include/ui/RenderSettingsPanel.hpp
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp

@@ -3,6 +3,8 @@
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
 
+struct ImFont;
+
 namespace gs3d::ui {
 
 struct ViewportScreenRect {
@@ -120,6 +122,13 @@ inline ScreenPoint framebuffer_to_plot_screen(
         fb_y * plot_h / static_cast<float>(framebuffer_height)
     };
 }
+
+// Font helpers used by panel drawing functions.
+[[nodiscard]] ::ImFont* panel_title_font();
+
+// Shared panel drawing helpers.
+void draw_panel_section_label(const char* label);
+[[nodiscard]] float bytes_to_mb(std::uint64_t bytes);
 
 class UiRoot {
 public:
