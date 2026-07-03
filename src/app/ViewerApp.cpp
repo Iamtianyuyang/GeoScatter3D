@@ -296,31 +296,6 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
     return tile_config;
 }
 
-gs3d::data::Gs3dLodDataset build_runtime_lod_dataset(
-    const gs3d::data::Gs3dDataset& dataset,
-    const ViewerAppConfig& config
-) {
-    gs3d::data::Gs3dLodBuildConfig lod_config;
-    lod_config.include_full_resolution_level = false;
-    lod_config.finest_target_points =
-        config.lod_finest_target_points;
-    lod_config.growth_factor =
-        config.lod_growth_factor;
-    lod_config.min_points_per_level =
-        config.lod_min_points_per_level;
-    lod_config.voxel_mode =
-        parse_lod_voxel_mode(config.lod_voxel_mode);
-    lod_config.voxel_scale =
-        config.lod_voxel_scale;
-    lod_config.verbose =
-        config.lod_verbose;
-
-    return gs3d::data::Gs3dLodDataset::build(
-        dataset,
-        lod_config
-    );
-}
-
 gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
     const gs3d::data::Gs3dDataset& dataset,
     const ViewerAppConfig& config
@@ -332,83 +307,43 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
     const auto& sidecar_path =
         config.lod_sidecar_path;
 
-    if (config.lod_auto_load_sidecar &&
-        !sidecar_path.empty() &&
-        std::filesystem::exists(sidecar_path)) {
-        try {
-            gs3d::data::Gs3dLodReadConfig read_config;
-            read_config.validate_against_source = true;
-            read_config.verbose = config.lod_verbose;
-
-            const auto read_result =
-                gs3d::data::Gs3dLodReader::read(
-                    sidecar_path,
-                    dataset.header(),
-                    read_config
-                );
-
-            std::cout << "[OK] LOD sidecar loaded.\n";
-            std::cout << "path = "
-                      << sidecar_path.string()
-                      << '\n';
-
-            return read_result.dataset;
-
-        } catch (const std::exception& e) {
-            std::cout << "[WARN] Failed to load LOD sidecar.\n";
-            std::cout << "[WARN] path = "
-                      << sidecar_path.string()
-                      << '\n';
-            std::cout << "[WARN] reason = "
-                      << e.what()
-                      << '\n';
-            std::cout << "[WARN] Falling back to runtime LOD build.\n";
-        }
-    } else if (config.lod_auto_load_sidecar &&
-               !sidecar_path.empty()) {
-        std::cout << "[LOD] sidecar not found, runtime build required.\n";
-        std::cout << "path = "
-                  << sidecar_path.string()
-                  << '\n';
+    if (!config.lod_auto_load_sidecar) {
+        throw std::runtime_error(
+            "ViewerApp: lod.enabled is true but runtime LOD build is "
+            "disabled and lod.auto_load_sidecar is false"
+        );
     }
 
-    auto lod_dataset =
-        build_runtime_lod_dataset(
-            dataset,
-            config
+    if (sidecar_path.empty()) {
+        throw std::runtime_error(
+            "ViewerApp: lod.enabled is true but lod.sidecar_path is empty"
+        );
+    }
+
+    if (!std::filesystem::exists(sidecar_path)) {
+        throw std::runtime_error(
+            "ViewerApp: required LOD sidecar not found: " +
+            sidecar_path.string()
+        );
+    }
+
+    gs3d::data::Gs3dLodReadConfig read_config;
+    read_config.validate_against_source = true;
+    read_config.verbose = config.lod_verbose;
+
+    const auto read_result =
+        gs3d::data::Gs3dLodReader::read(
+            sidecar_path,
+            dataset.header(),
+            read_config
         );
 
-    std::cout << lod_dataset.summary();
+    std::cout << "[OK] LOD sidecar loaded.\n";
+    std::cout << "path = "
+              << sidecar_path.string()
+              << '\n';
 
-    if (config.lod_auto_save_sidecar &&
-        !sidecar_path.empty()) {
-        try {
-            const auto write_stats =
-                gs3d::preprocess::Gs3dLodWriter::write(
-                    sidecar_path,
-                    lod_dataset
-                );
-
-            std::cout << "[OK] LOD sidecar written.\n";
-            std::cout << "path = "
-                      << write_stats.path.string()
-                      << '\n';
-            std::cout << "file_bytes = "
-                      << write_stats.total_file_bytes
-                      << '\n';
-
-        } catch (const std::exception& e) {
-            std::cout << "[WARN] Failed to write LOD sidecar.\n";
-            std::cout << "[WARN] path = "
-                      << sidecar_path.string()
-                      << '\n';
-            std::cout << "[WARN] reason = "
-                      << e.what()
-                      << '\n';
-        }
-    }
-
-    return lod_dataset;
+    return read_result.dataset;
 }
 
 [[nodiscard]]
@@ -2278,35 +2213,11 @@ int ViewerApp::run() {
 
         if (config_.lod_enabled) {
             gs3d::util::Stopwatch lod_timer;
-            try {
-                lod_dataset =
-                    load_or_build_lod_dataset(
-                        dataset,
-                        config_
-                    );
-            } catch (const std::exception&) {
-                if (!dataset.metadata_only()) {
-                    throw;
-                }
-
-                std::cout
-                    << "[WARN] Metadata-only startup cannot build LOD; "
-                    << "loading full GS3D data.\n";
-                gs3d::util::Stopwatch fallback_load_timer;
-                dataset =
-                    gs3d::data::Gs3dDatasetLoader::load(
-                        config_.gs3d_path
-                    );
-                std::cout
-                    << "[TIME] viewer.dataset_fallback_load_seconds = "
-                    << fallback_load_timer.elapsed_seconds()
-                    << '\n';
-                lod_dataset =
-                    load_or_build_lod_dataset(
-                        dataset,
-                        config_
-                    );
-            }
+            lod_dataset =
+                load_or_build_lod_dataset(
+                    dataset,
+                    config_
+                );
             std::cout << "[TIME] viewer.lod_prepare_seconds = "
                       << lod_timer.elapsed_seconds()
                       << '\n';

@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -231,7 +232,25 @@ VoxelKey make_voxel_key(
 }
 
 [[nodiscard]]
-Gs3dLodLevel build_voxel_level(
+Gs3dLodLevel make_empty_level(
+    const Gs3dDataset& dataset,
+    std::uint32_t level_index,
+    std::uint64_t target_point_count,
+    float voxel_size,
+    Gs3dLodVoxelMode voxel_mode
+) {
+    Gs3dLodLevel level;
+    level.level_index = level_index;
+    level.name = "lod_" + std::to_string(level_index);
+    level.source_point_count = dataset.point_count();
+    level.target_point_count = target_point_count;
+    level.voxel_size = voxel_size;
+    level.voxel_mode = voxel_mode;
+    return level;
+}
+
+[[nodiscard]]
+Gs3dLodLevel build_voxel_level_serial(
     const Gs3dDataset& dataset,
     std::uint32_t level_index,
     std::uint64_t target_point_count,
@@ -252,13 +271,14 @@ Gs3dLodLevel build_voxel_level(
                 voxel_mode
             );
 
-    Gs3dLodLevel level;
-    level.level_index = level_index;
-    level.name = "lod_" + std::to_string(level_index);
-    level.source_point_count = dataset.point_count();
-    level.target_point_count = target_point_count;
-    level.voxel_size = voxel_size;
-    level.voxel_mode = voxel_mode;
+    Gs3dLodLevel level =
+        make_empty_level(
+            dataset,
+            level_index,
+            target_point_count,
+            voxel_size,
+            voxel_mode
+        );
 
     const std::size_t reserve_count =
         static_cast<std::size_t>(
@@ -308,6 +328,181 @@ Gs3dLodLevel build_voxel_level(
         ).count();
 
     return level;
+}
+
+struct ChunkFirstPoint {
+    const Gs3dPoint* point = nullptr;
+    VoxelKey key{};
+};
+
+struct ChunkFirstPointResult {
+    std::vector<ChunkFirstPoint> ordered_points;
+};
+
+[[nodiscard]]
+Gs3dLodLevel build_voxel_level_parallel(
+    const Gs3dDataset& dataset,
+    std::uint32_t level_index,
+    std::uint64_t target_point_count,
+    float voxel_scale,
+    Gs3dLodVoxelMode voxel_mode,
+    float explicit_voxel_size = 0.0f
+) {
+    const auto start_time =
+        std::chrono::steady_clock::now();
+
+    const float voxel_size =
+        explicit_voxel_size > 0.0f
+            ? explicit_voxel_size
+            : estimate_voxel_size(
+                dataset,
+                target_point_count,
+                voxel_scale,
+                voxel_mode
+            );
+
+    Gs3dLodLevel level =
+        make_empty_level(
+            dataset,
+            level_index,
+            target_point_count,
+            voxel_size,
+            voxel_mode
+        );
+
+    const auto& source_points = dataset.points();
+    const std::size_t point_count = source_points.size();
+    const std::uint32_t thread_count =
+        resolve_lod_build_threads(point_count);
+
+    if (thread_count <= 1 || point_count < 100'000) {
+        return build_voxel_level_serial(
+            dataset,
+            level_index,
+            target_point_count,
+            voxel_scale,
+            voxel_mode,
+            explicit_voxel_size
+        );
+    }
+
+    const std::size_t reserve_count =
+        static_cast<std::size_t>(
+            std::min<std::uint64_t>(
+                target_point_count,
+                dataset.point_count()
+            )
+        );
+    level.points.reserve(reserve_count);
+
+    const std::size_t chunk_size =
+        (point_count + static_cast<std::size_t>(thread_count) - 1u) /
+        static_cast<std::size_t>(thread_count);
+
+    gs3d::util::ThreadPool pool(thread_count);
+    std::vector<std::future<ChunkFirstPointResult>> futures;
+    futures.reserve(thread_count);
+
+    for (std::uint32_t task_index = 0; task_index < thread_count; ++task_index) {
+        const std::size_t begin =
+            static_cast<std::size_t>(task_index) * chunk_size;
+        if (begin >= point_count) {
+            break;
+        }
+
+        const std::size_t end =
+            std::min(begin + chunk_size, point_count);
+
+        futures.push_back(pool.submit([&, begin, end] {
+            ChunkFirstPointResult result;
+            result.ordered_points.reserve(
+                static_cast<std::size_t>(
+                    std::max<std::uint64_t>(
+                        1ull,
+                        std::min<std::uint64_t>(
+                            target_point_count,
+                            static_cast<std::uint64_t>(end - begin)
+                        ) * 2ull
+                    )
+                )
+            );
+            std::unordered_set<VoxelKey, VoxelKeyHash> local_occupied_voxels;
+            local_occupied_voxels.reserve(
+                result.ordered_points.capacity() * 2u
+            );
+
+            for (std::size_t i = begin; i < end; ++i) {
+                const auto& point = source_points[i];
+                const VoxelKey key =
+                    make_voxel_key(
+                        point,
+                        dataset,
+                        voxel_size,
+                        voxel_mode
+                    );
+
+                const auto [_, inserted] =
+                    local_occupied_voxels.insert(key);
+                if (inserted) {
+                    result.ordered_points.push_back(
+                        ChunkFirstPoint{&point, key}
+                    );
+                }
+            }
+
+            return result;
+        }));
+    }
+
+    std::unordered_set<VoxelKey, VoxelKeyHash> occupied_voxels;
+    occupied_voxels.reserve(
+        static_cast<std::size_t>(
+            std::min<std::uint64_t>(
+                target_point_count * 2ull,
+                dataset.point_count()
+            )
+        )
+    );
+
+    for (auto& future : futures) {
+        auto chunk_result = future.get();
+        for (const auto& first_point : chunk_result.ordered_points) {
+            auto [it, inserted] =
+                occupied_voxels.insert(first_point.key);
+            if (inserted) {
+                level.points.push_back(*first_point.point);
+            }
+        }
+    }
+
+    const auto end_time =
+        std::chrono::steady_clock::now();
+
+    level.build_seconds =
+        std::chrono::duration<double>(
+            end_time - start_time
+        ).count();
+
+    return level;
+}
+
+[[nodiscard]]
+Gs3dLodLevel build_voxel_level(
+    const Gs3dDataset& dataset,
+    std::uint32_t level_index,
+    std::uint64_t target_point_count,
+    float voxel_scale,
+    Gs3dLodVoxelMode voxel_mode,
+    float explicit_voxel_size = 0.0f
+) {
+    return build_voxel_level_parallel(
+        dataset,
+        level_index,
+        target_point_count,
+        voxel_scale,
+        voxel_mode,
+        explicit_voxel_size
+    );
 }
 
 [[nodiscard]]

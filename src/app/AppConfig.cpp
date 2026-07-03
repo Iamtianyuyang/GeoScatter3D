@@ -144,14 +144,43 @@ bool input_mode_is_csv(const AppConfig& config) noexcept {
     return config.input_mode == "csv" || config.input_mode == "dat";
 }
 
+[[nodiscard]]
+bool input_mode_is_bundle(const AppConfig& config) noexcept {
+    return config.input_mode == "bundle";
+}
+
 void validate_input_mode(const std::string& mode) {
-    if (mode == "csv" || mode == "dat" || mode == "gs3d") {
+    if (mode == "csv" ||
+        mode == "dat" ||
+        mode == "gs3d" ||
+        mode == "bundle") {
         return;
     }
 
     throw std::runtime_error(
-        "AppConfig: input.mode must be \"csv\", \"dat\", or \"gs3d\""
+        "AppConfig: input.mode must be \"csv\", \"dat\", \"gs3d\", or "
+        "\"bundle\""
     );
+}
+
+[[nodiscard]]
+std::filesystem::path resolve_non_existing_path(
+    const std::filesystem::path& path,
+    const std::filesystem::path& config_path
+) {
+    if (path.empty() || path.is_absolute()) {
+        return path;
+    }
+
+    const auto config_dir =
+        ResourcePath::config_directory(config_path);
+
+    if (!config_dir.empty() && config_dir.has_parent_path()) {
+        return (config_dir.parent_path() / path).lexically_normal();
+    }
+
+    return (ResourcePath::current_working_directory() / path)
+        .lexically_normal();
 }
 
 void resolve_viewer_resource_paths(
@@ -163,7 +192,22 @@ void resolve_viewer_resource_paths(
     context.config_path = config_path;
     context.executable_path = executable_path;
 
-    if (!input_mode_is_csv(config)) {
+    if (!config.bundle_dir.empty()) {
+        config.bundle_dir = resolve_non_existing_path(
+            config.bundle_dir,
+            config_path
+        );
+    }
+
+    if (input_mode_is_bundle(config)) {
+        if (config.bundle_dir.empty()) {
+            throw std::runtime_error(
+                "AppConfig: input.mode is \"bundle\" but input.bundle_dir "
+                "is empty"
+            );
+        }
+
+    } else if (!input_mode_is_csv(config)) {
         config.viewer.gs3d_path =
             ResourcePath::resolve_existing_file(
                 config.viewer.gs3d_path,
@@ -193,23 +237,15 @@ void resolve_viewer_resource_paths(
      * .gs3dlod 可能还不存在，因为 auto_save_sidecar 会在运行时生成。
      * 所以不能用 resolve_existing_file。
      */
-    if (!config.viewer.lod_sidecar_path.empty() &&
-        !config.viewer.lod_sidecar_path.is_absolute()) {
-        const auto config_dir =
-            ResourcePath::config_directory(config_path);
-
-        if (!config_dir.empty() && config_dir.has_parent_path()) {
-            config.viewer.lod_sidecar_path =
-                (config_dir.parent_path() /
-                 config.viewer.lod_sidecar_path).lexically_normal();
-        } else {
-            config.viewer.lod_sidecar_path =
-                (ResourcePath::current_working_directory() /
-                 config.viewer.lod_sidecar_path).lexically_normal();
-        }
+    if (!input_mode_is_bundle(config)) {
+        config.viewer.lod_sidecar_path = resolve_non_existing_path(
+            config.viewer.lod_sidecar_path,
+            config_path
+        );
     }
 
     if (!input_mode_is_csv(config) &&
+        !input_mode_is_bundle(config) &&
         config.viewer.tile_enabled) {
             config.viewer.tile_index_path =
                 ResourcePath::resolve_existing_file(
@@ -442,6 +478,12 @@ AppConfig AppConfigLoader::load_from_file(
             *input,
             "csv_path",
             config.csv_input_path
+        );
+
+        config.bundle_dir = path_or_default(
+            *input,
+            "bundle_dir",
+            config.bundle_dir
         );
     }
 
@@ -1021,6 +1063,18 @@ void AppConfigLoader::apply_command_line_overrides(
             config.csv_input_path =
                 argument_at(argc, argv, i + 1);
         }
+
+        if (arg == "--bundle") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(
+                    "AppConfig: --bundle requires a directory path"
+                );
+            }
+
+            config.input_mode = "bundle";
+            config.bundle_dir =
+                argument_at(argc, argv, i + 1);
+        }
     }
 }
 
@@ -1033,6 +1087,9 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] input.csv_path = "
               << config.csv_input_path.string() << '\n';
+
+    std::cout << "[CONFIG] input.bundle_dir = "
+              << config.bundle_dir.string() << '\n';
 
     std::cout << "[CONFIG] csv_convert.num_threads = "
               << config.csv_convert.num_threads << '\n';

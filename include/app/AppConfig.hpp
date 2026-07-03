@@ -83,6 +83,7 @@ struct AppConfig {
 
     std::string input_mode = "gs3d";
     std::filesystem::path csv_input_path;
+    std::filesystem::path bundle_dir;
 };
 
 class AppConfigLoader {

@@ -29,6 +29,7 @@ set(GEOSCATTER3D_CORE_SOURCES
 
     src/app/ViewerApp.cpp
     src/app/AppConfig.cpp
+    src/app/PreprocessedBundle.cpp
     src/app/ResourcePath.cpp
     src/app/TilePointCache.cpp
     src/app/ViewportResizeScheduler.cpp
@@ -86,6 +87,7 @@ set(GEOSCATTER3D_CORE_SOURCES
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp
+    include/app/PreprocessedBundle.hpp
     include/app/ResourcePath.hpp
     include/app/AppState.hpp
     include/app/UiActions.hpp
@@ -186,6 +188,7 @@ copy_runtime_assets(GeoScatter3D)
 set(GEOSCATTER3D_PREPROCESS_SOURCES
     src/preprocess_main.cpp
     src/app/AppConfig.cpp
+    src/app/PreprocessedBundle.cpp
     src/app/ResourcePath.cpp
 
     src/data/CsvStreamReader.cpp

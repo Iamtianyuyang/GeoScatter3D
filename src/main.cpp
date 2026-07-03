@@ -1,6 +1,9 @@
 #include "app/AppConfig.hpp"
+#include "app/PreprocessedBundle.hpp"
 #include "app/ViewerApp.hpp"
+#include "data/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
+#include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
 #include "util/Stopwatch.hpp"
 
@@ -9,6 +12,187 @@
 #include <iostream>
 
 namespace {
+
+[[nodiscard]]
+gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
+    const gs3d::app::ViewerAppConfig& viewer
+) {
+    gs3d::data::Gs3dLodBuildConfig config;
+    config.include_full_resolution_level = false;
+    config.finest_target_points = viewer.lod_finest_target_points;
+    config.growth_factor = viewer.lod_growth_factor;
+    config.min_points_per_level = viewer.lod_min_points_per_level;
+    config.voxel_scale = viewer.lod_voxel_scale;
+    config.verbose = viewer.lod_verbose;
+
+    if (viewer.lod_voxel_mode == "XYZ") {
+        config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XYZ;
+    } else {
+        config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XY;
+    }
+
+    return config;
+}
+
+[[nodiscard]]
+gs3d::app::PreprocessedBundlePaths resolve_bundle_paths(
+    gs3d::app::AppConfig& app_config,
+    const std::filesystem::path& source_path
+) {
+    if (app_config.bundle_dir.empty()) {
+        app_config.bundle_dir =
+            gs3d::app::derive_bundle_paths(source_path).bundle_dir;
+    }
+
+    auto paths =
+        gs3d::app::make_bundle_paths(app_config.bundle_dir);
+    paths.lod_enabled = app_config.viewer.lod_enabled;
+    paths.tile_enabled = app_config.viewer.tile_enabled;
+    return paths;
+}
+
+void preprocess_csv_input(
+    gs3d::app::AppConfig& app_config
+) {
+    if (app_config.input_mode != "csv" &&
+        app_config.input_mode != "dat") {
+        return;
+    }
+
+    if (app_config.csv_input_path.empty()) {
+        throw std::runtime_error(
+            "AppConfig: input.mode is \"csv\" but input.csv_path is empty"
+        );
+    }
+
+    const auto bundle_paths =
+        resolve_bundle_paths(
+            app_config,
+            app_config.csv_input_path
+        );
+    std::filesystem::create_directories(bundle_paths.bundle_dir);
+    gs3d::app::apply_bundle_paths(app_config.viewer, bundle_paths);
+
+    gs3d::util::Stopwatch preprocess_timer;
+
+    std::cout << "[PREPROCESS] csv_path = "
+              << app_config.csv_input_path.string()
+              << '\n';
+    std::cout << "[PREPROCESS] bundle_dir = "
+              << bundle_paths.bundle_dir.string()
+              << '\n';
+    std::cout << "[PREPROCESS] gs3d_path = "
+              << app_config.viewer.gs3d_path.string()
+              << '\n';
+
+    gs3d::data::CsvChunkPlanConfig csv_chunk_plan_config;
+    csv_chunk_plan_config.num_threads =
+        app_config.csv_convert.num_threads;
+    csv_chunk_plan_config.target_chunk_bytes =
+        app_config.csv_convert.chunk_bytes;
+    csv_chunk_plan_config.min_parallel_file_bytes =
+        app_config.csv_convert.min_parallel_file_bytes;
+
+    gs3d::data::CsvReadConfig csv_read_config;
+    csv_read_config.schema.x_field =
+        app_config.csv_convert.x_field;
+    csv_read_config.schema.y_field =
+        app_config.csv_convert.y_field;
+    csv_read_config.schema.z_field =
+        app_config.csv_convert.z_field;
+    csv_read_config.schema.primary_value_field =
+        app_config.csv_convert.primary_value_field;
+
+    gs3d::preprocess::CsvToGs3dConverter converter(
+        csv_read_config,
+        csv_chunk_plan_config
+    );
+    gs3d::util::Stopwatch convert_timer;
+    auto [convert_result, dataset] =
+        converter.convert(
+            app_config.csv_input_path,
+            app_config.viewer.gs3d_path
+        );
+
+    std::cout << "[PREPROCESS] written_points = "
+              << convert_result.written_points
+              << '\n';
+    std::cout << "[TIME] preprocess.csv_convert_seconds = "
+              << convert_timer.elapsed_seconds()
+              << '\n';
+
+    if (app_config.viewer.lod_enabled) {
+        gs3d::util::Stopwatch lod_timer;
+        const auto lod_dataset =
+            gs3d::data::Gs3dLodDataset::build(
+                dataset,
+                make_lod_build_config(app_config.viewer)
+            );
+        const auto lod_stats =
+            gs3d::preprocess::Gs3dLodWriter::write(
+                app_config.viewer.lod_sidecar_path,
+                lod_dataset
+            );
+
+        std::cout << "[PREPROCESS] lod_levels = "
+                  << lod_stats.level_count
+                  << '\n';
+        std::cout << "[TIME] preprocess.lod_write_seconds = "
+                  << lod_timer.elapsed_seconds()
+                  << '\n';
+    }
+
+    if (app_config.viewer.tile_enabled) {
+        gs3d::preprocess::Gs3dTileWriteConfig tile_config;
+        tile_config.num_threads = app_config.tile_build.num_threads;
+        tile_config.verbose = app_config.viewer.tile_verbose;
+
+        gs3d::util::Stopwatch tile_timer;
+        const auto tile_stats =
+            gs3d::preprocess::Gs3dTileWriter::write(
+                app_config.viewer.tile_index_path,
+                app_config.viewer.tile_data_path,
+                dataset,
+                tile_config
+            );
+
+        std::cout << "[PREPROCESS] tile_count = "
+                  << tile_stats.tile_count
+                  << '\n';
+        std::cout << "[TIME] preprocess.tile_write_seconds = "
+                  << tile_timer.elapsed_seconds()
+                  << '\n';
+    }
+
+    gs3d::app::write_bundle_manifest(
+        bundle_paths,
+        app_config,
+        dataset
+    );
+
+    std::cout << "[TIME] preprocess.total_seconds = "
+              << preprocess_timer.elapsed_seconds()
+              << '\n';
+}
+
+void load_bundle_input(
+    gs3d::app::AppConfig& app_config
+) {
+    if (app_config.input_mode != "bundle") {
+        return;
+    }
+
+    if (app_config.bundle_dir.empty()) {
+        throw std::runtime_error(
+            "AppConfig: input.mode is \"bundle\" but input.bundle_dir is "
+            "empty"
+        );
+    }
+
+    const auto bundle_paths =
+        gs3d::app::load_bundle_manifest(app_config.bundle_dir);
+    gs3d::app::apply_bundle_paths(app_config.viewer, bundle_paths);
+}
 
 gs3d::app::ViewerAppConfig make_viewer_config(
     const gs3d::app::AppConfig& app_config
@@ -72,138 +256,6 @@ gs3d::app::ViewerAppConfig make_viewer_config(
     return viewer;
 }
 
-void apply_generated_paths_from_csv(
-    gs3d::app::ViewerAppConfig& viewer,
-    const std::filesystem::path& csv_path
-) {
-    viewer.gs3d_path = csv_path;
-    viewer.gs3d_path.replace_extension(".gs3d");
-
-    viewer.lod_sidecar_path = csv_path;
-    viewer.lod_sidecar_path.replace_extension(".gs3dlod");
-
-    viewer.tile_data_path = csv_path;
-    viewer.tile_data_path.replace_extension(".gs3dtiles");
-
-    viewer.tile_index_path = csv_path;
-    viewer.tile_index_path.replace_extension(".gs3dtiles.index");
-}
-
-void preprocess_csv_input(
-    gs3d::app::AppConfig& app_config
-) {
-    if (app_config.input_mode != "csv" &&
-        app_config.input_mode != "dat") {
-        return;
-    }
-
-    if (app_config.csv_input_path.empty()) {
-        throw std::runtime_error(
-            "AppConfig: input.mode is \"csv\" but input.csv_path is empty"
-        );
-    }
-
-    apply_generated_paths_from_csv(
-        app_config.viewer,
-        app_config.csv_input_path
-    );
-
-    gs3d::util::Stopwatch preprocess_timer;
-
-    std::cout << "[PREPROCESS] csv_path = "
-              << app_config.csv_input_path.string()
-              << '\n';
-    std::cout << "[PREPROCESS] gs3d_path = "
-              << app_config.viewer.gs3d_path.string()
-              << '\n';
-
-    gs3d::data::CsvChunkPlanConfig csv_chunk_plan_config;
-    csv_chunk_plan_config.num_threads =
-        app_config.csv_convert.num_threads;
-    csv_chunk_plan_config.target_chunk_bytes =
-        app_config.csv_convert.chunk_bytes;
-    csv_chunk_plan_config.min_parallel_file_bytes =
-        app_config.csv_convert.min_parallel_file_bytes;
-
-    gs3d::data::CsvReadConfig csv_read_config;
-    csv_read_config.schema.x_field =
-        app_config.csv_convert.x_field;
-    csv_read_config.schema.y_field =
-        app_config.csv_convert.y_field;
-    csv_read_config.schema.z_field =
-        app_config.csv_convert.z_field;
-    csv_read_config.schema.primary_value_field =
-        app_config.csv_convert.primary_value_field;
-
-    gs3d::preprocess::CsvToGs3dConverter converter(
-        csv_read_config,
-        csv_chunk_plan_config
-    );
-    gs3d::util::Stopwatch convert_timer;
-    auto [convert_result, dataset] =
-        converter.convert(
-            app_config.csv_input_path,
-            app_config.viewer.gs3d_path
-        );
-
-    std::cout << "[PREPROCESS] written_points = "
-              << convert_result.written_points
-              << '\n';
-    std::cout << "[TIME] preprocess.csv_convert_seconds = "
-              << convert_timer.elapsed_seconds()
-              << '\n';
-
-    if (!app_config.viewer.lod_sidecar_path.empty() &&
-        std::filesystem::exists(app_config.viewer.lod_sidecar_path)) {
-        std::error_code remove_ec;
-        const bool removed =
-            std::filesystem::remove(
-                app_config.viewer.lod_sidecar_path,
-                remove_ec
-            );
-
-        if (removed) {
-            std::cout << "[PREPROCESS] removed stale lod sidecar = "
-                      << app_config.viewer.lod_sidecar_path.string()
-                      << '\n';
-        } else if (remove_ec) {
-            std::cout << "[WARN] Failed to remove stale LOD sidecar.\n";
-            std::cout << "[WARN] path = "
-                      << app_config.viewer.lod_sidecar_path.string()
-                      << '\n';
-            std::cout << "[WARN] reason = "
-                      << remove_ec.message()
-                      << '\n';
-        }
-    }
-
-    if (app_config.viewer.tile_enabled) {
-        gs3d::preprocess::Gs3dTileWriteConfig tile_config;
-        tile_config.num_threads = app_config.tile_build.num_threads;
-        tile_config.verbose = app_config.viewer.tile_verbose;
-
-        gs3d::util::Stopwatch tile_timer;
-        const auto tile_stats =
-            gs3d::preprocess::Gs3dTileWriter::write(
-                app_config.viewer.tile_index_path,
-                app_config.viewer.tile_data_path,
-                dataset,
-                tile_config
-            );
-
-        std::cout << "[PREPROCESS] tile_count = "
-                  << tile_stats.tile_count
-                  << '\n';
-        std::cout << "[TIME] preprocess.tile_write_seconds = "
-                  << tile_timer.elapsed_seconds()
-                  << '\n';
-    }
-
-    std::cout << "[TIME] preprocess.total_seconds = "
-              << preprocess_timer.elapsed_seconds()
-              << '\n';
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -215,6 +267,7 @@ int main(int argc, char** argv) {
             );
 
         preprocess_csv_input(app_config);
+        load_bundle_input(app_config);
 
         gs3d::app::AppConfigPrinter::print(app_config);
         

@@ -1,9 +1,8 @@
 # config/viewer.toml
 
 [input]
-mode = "gs3d"
-gs3d_path = "data/field_and_ele_source_rec_50m.gs3d"
-csv_path = "data/field_and_ele_source_rec_50m.csv"
+mode = "bundle"
+bundle_dir = "data/field_and_ele_source_rec_50m.gs3d.bundle"
 
 [csv_convert]
 num_threads = 12
@@ -57,7 +56,7 @@ invert_pan_y = false
 enabled = true
 keep_full_buffer = false
 
-sidecar_path = "data/field_and_ele_source_rec_50m.gs3dlod"
+# sidecar_path = "data/field_and_ele_source_rec_50m.gs3dlod"
 auto_load_sidecar = true
 auto_save_sidecar = true
 # Potree 式自动分层（替代旧的 target_point_counts / target_point_ratios）。
@@ -98,8 +97,8 @@ count = 1
 
 [tile]
 enabled = true
-index_path = "data/field_and_ele_source_rec_50m.gs3dtiles.index"
-data_path = "data/field_and_ele_source_rec_50m.gs3dtiles"
+# index_path = "data/field_and_ele_source_rec_50m.gs3dtiles.index"
+# data_path = "data/field_and_ele_source_rec_50m.gs3dtiles"
 num_threads = 12
 
 # tile 投影宽度 >= 该像素值时加载全精度数据（对应 Potree 屏幕空间阈值）

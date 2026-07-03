@@ -97,6 +97,34 @@ void write_points(
     }
 }
 
+void write_points_span(
+    std::ofstream& file,
+    const Gs3dPoint* points,
+    std::size_t point_count
+) {
+    if (points == nullptr || point_count == 0) {
+        throw std::runtime_error(
+            "Gs3dTileWriter: cannot write empty point span"
+        );
+    }
+
+    const auto byte_count =
+        static_cast<std::streamsize>(
+            point_count * sizeof(Gs3dPoint)
+        );
+
+    file.write(
+        reinterpret_cast<const char*>(points),
+        byte_count
+    );
+
+    if (!file.good()) {
+        throw std::runtime_error(
+            "Gs3dTileWriter: failed to write tile point data"
+        );
+    }
+}
+
 [[nodiscard]]
 std::uint64_t file_size_or_zero(
     const std::filesystem::path& path
@@ -571,7 +599,8 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
     const std::filesystem::path& data_path,
     const Gs3dDataset& dataset,
     const std::vector<TileBuildBucket>& tiles,
-    std::uint64_t non_empty_tile_count
+    std::uint64_t non_empty_tile_count,
+    std::uint32_t num_threads
 ) {
     create_parent_directories(data_path);
 
@@ -614,69 +643,162 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
 
     const auto& points =
         dataset.points();
-
-    std::vector<Gs3dPoint> tile_points;
-
+    std::vector<const TileBuildBucket*> non_empty_tiles;
+    non_empty_tiles.reserve(
+        static_cast<std::size_t>(non_empty_tile_count)
+    );
     for (const auto& tile : tiles) {
-        if (tile.empty()) {
-            continue;
+        if (!tile.empty()) {
+            non_empty_tiles.push_back(&tile);
+        }
+    }
+
+    struct PreparedTileMetadata {
+        const TileBuildBucket* tile = nullptr;
+        std::uint64_t point_count = 0;
+    };
+
+    struct PreparedTileChunk {
+        std::vector<PreparedTileMetadata> tiles;
+        std::vector<Gs3dPoint> points;
+    };
+
+    constexpr std::uint64_t kTargetChunkPoints = 1'000'000ull;
+    std::vector<std::pair<std::size_t, std::size_t>> chunk_ranges;
+    chunk_ranges.reserve(non_empty_tiles.size());
+
+    std::size_t chunk_begin = 0;
+    std::uint64_t chunk_points = 0;
+    for (std::size_t i = 0; i < non_empty_tiles.size(); ++i) {
+        const auto tile_points =
+            non_empty_tiles[i]->point_count();
+
+        if (i > chunk_begin &&
+            chunk_points + tile_points > kTargetChunkPoints) {
+            chunk_ranges.push_back({chunk_begin, i});
+            chunk_begin = i;
+            chunk_points = 0;
         }
 
-        tile_points.clear();
-        tile_points.reserve(
-            static_cast<std::size_t>(tile.point_count())
+        chunk_points += tile_points;
+    }
+
+    if (chunk_begin < non_empty_tiles.size()) {
+        chunk_ranges.push_back(
+            {chunk_begin, non_empty_tiles.size()}
+        );
+    }
+
+    const auto gather_threads =
+        resolve_thread_count(
+            num_threads,
+            static_cast<std::uint64_t>(chunk_ranges.size())
         );
 
-        for (const auto point_index : tile.point_indices) {
-            tile_points.push_back(
-                points[static_cast<std::size_t>(point_index)]
+    std::vector<PreparedTileChunk> prepared_chunks;
+    prepared_chunks.reserve(chunk_ranges.size());
+
+    if (gather_threads <= 1 || chunk_ranges.size() <= 1) {
+        prepared_chunks.resize(chunk_ranges.size());
+        for (std::size_t chunk_index = 0;
+             chunk_index < chunk_ranges.size();
+             ++chunk_index) {
+            const auto [begin, end] = chunk_ranges[chunk_index];
+            auto& prepared = prepared_chunks[chunk_index];
+
+            std::uint64_t total_chunk_points = 0;
+            prepared.tiles.reserve(end - begin);
+            for (std::size_t i = begin; i < end; ++i) {
+                const auto* tile = non_empty_tiles[i];
+                prepared.tiles.push_back(
+                    PreparedTileMetadata{tile, tile->point_count()}
+                );
+                total_chunk_points += tile->point_count();
+            }
+
+            prepared.points.reserve(
+                static_cast<std::size_t>(total_chunk_points)
+            );
+            for (const auto& meta : prepared.tiles) {
+                for (const auto point_index : meta.tile->point_indices) {
+                    prepared.points.push_back(
+                        points[static_cast<std::size_t>(point_index)]
+                    );
+                }
+            }
+        }
+    } else {
+        gs3d::util::ThreadPool pool(gather_threads);
+        std::vector<std::future<PreparedTileChunk>> futures;
+        futures.reserve(chunk_ranges.size());
+
+        for (const auto [begin, end] : chunk_ranges) {
+            futures.push_back(pool.submit([&, begin, end] {
+                PreparedTileChunk prepared;
+                std::uint64_t total_chunk_points = 0;
+                prepared.tiles.reserve(end - begin);
+
+                for (std::size_t i = begin; i < end; ++i) {
+                    const auto* tile = non_empty_tiles[i];
+                    prepared.tiles.push_back(
+                        PreparedTileMetadata{tile, tile->point_count()}
+                    );
+                    total_chunk_points += tile->point_count();
+                }
+
+                prepared.points.reserve(
+                    static_cast<std::size_t>(total_chunk_points)
+                );
+                for (const auto& meta : prepared.tiles) {
+                    for (const auto point_index : meta.tile->point_indices) {
+                        prepared.points.push_back(
+                            points[static_cast<std::size_t>(point_index)]
+                        );
+                    }
+                }
+
+                return prepared;
+            }));
+        }
+
+        for (auto& future : futures) {
+            prepared_chunks.push_back(future.get());
+        }
+    }
+
+    std::uint64_t stable_tile_id = 0;
+    for (const auto& prepared_chunk : prepared_chunks) {
+        if (!prepared_chunk.points.empty()) {
+            write_points_span(
+                file,
+                prepared_chunk.points.data(),
+                prepared_chunk.points.size()
             );
         }
 
-        const auto tile_id =
-            linear_tile_id(
-                tile.tile_x,
-                tile.tile_y,
-                static_cast<std::uint32_t>(
-                    std::max<std::uint32_t>(tile.tile_x + 1, 1)
-                )
-            );
+        for (const auto& meta : prepared_chunk.tiles) {
+            const auto& tile = *meta.tile;
+            const auto record =
+                Gs3dTileFormat::make_tile_record(
+                    stable_tile_id,
+                    tile.tile_x,
+                    tile.tile_y,
+                    meta.point_count,
+                    point_data_offset,
+                    tile.bbox_min_x,
+                    tile.bbox_min_y,
+                    tile.bbox_min_z,
+                    tile.bbox_max_x,
+                    tile.bbox_max_y,
+                    tile.bbox_max_z,
+                    tile.value_min,
+                    tile.value_max
+                );
 
-        /*
-         * 注意：上面的 tile_id 不用于定位，只作为调试标识。
-         * 下面会在调用处重新覆盖为稳定的全局 tile_id。
-         */
-        (void) tile_id;
-
-        const std::uint64_t stable_tile_id =
-            records.size();
-
-        const auto record =
-            Gs3dTileFormat::make_tile_record(
-                stable_tile_id,
-                tile.tile_x,
-                tile.tile_y,
-                tile.point_count(),
-                point_data_offset,
-                tile.bbox_min_x,
-                tile.bbox_min_y,
-                tile.bbox_min_z,
-                tile.bbox_max_x,
-                tile.bbox_max_y,
-                tile.bbox_max_z,
-                tile.value_min,
-                tile.value_max
-            );
-
-        write_points(
-            file,
-            tile_points
-        );
-
-        point_data_offset +=
-            record.point_data_bytes;
-
-        records.push_back(record);
+            point_data_offset += record.point_data_bytes;
+            records.push_back(record);
+            ++stable_tile_id;
+        }
     }
 
     file.flush();
@@ -928,7 +1050,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
             data_path,
             dataset,
             tiles,
-            non_empty_tile_count
+            non_empty_tile_count,
+            config.num_threads
         );
     const double data_write_seconds =
         data_write_timer.elapsed_seconds();
