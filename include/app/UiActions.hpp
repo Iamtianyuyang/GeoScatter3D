@@ -79,6 +79,9 @@ struct UiActions {
     float value_clip_min = 0.0f;
     float value_clip_max = 1.0f;
 
+    bool point_shape_changed = false;
+    int  point_shape = 0;
+
     std::vector<ViewportFrameCmd> viewport_frames;
 };
 

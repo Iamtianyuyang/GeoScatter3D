@@ -176,6 +176,34 @@ void main() {
     uint spatial_clip  = pc.flags & 1u;
     uint colormap_idx  = (pc.flags >> 1u) & 0x7Fu;
     uint value_clip    = (pc.flags >> 8u) & 1u;
+    uint point_shape   = (pc.flags >> 9u) & 0x7u;
+
+    // ── Point shape via gl_PointCoord discard ──
+    // gl_PointCoord ∈ [0,1]², (0,0)=top-left of the rasterized square.
+    // Discard fragments outside the selected shape's implicit region.
+    {
+        vec2  pc = gl_PointCoord - vec2(0.5);       // center at (0,0)
+        float r  = 0.5;                              // inscribed radius
+
+        if (point_shape == 1u) {
+            // Circle: discard outside radius
+            if (dot(pc, pc) > r * r) discard;
+        } else if (point_shape == 2u) {
+            // Diamond: discard outside Manhattan distance
+            float md = abs(pc.x) + abs(pc.y);
+            if (md > r) discard;
+        } else if (point_shape == 3u) {
+            // Triangle (upward-pointing): top vertex at (0.5, 0.15),
+            // base from (0.1, 0.88) to (0.9, 0.88).
+            float top_y   = -0.35;
+            float base_y  =  0.38;
+            float half_b  =  0.40;
+            float ty      = (pc.y - top_y) / (base_y - top_y);
+            float hw      = half_b * ty;
+            if (ty < 0.0 || ty > 1.0 || abs(pc.x) > hw) discard;
+        }
+        // point_shape == 0u: Square — no discard, hardware default.
+    }
 
     // Spatial clip (tile overlay clipping).
     if (spatial_clip > 0u) {

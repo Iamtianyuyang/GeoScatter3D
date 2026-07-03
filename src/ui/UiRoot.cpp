@@ -1104,6 +1104,21 @@ void draw_render_settings(
                 actions.point_size = point_size;
             }
 
+            property_table_label("形状");
+            const char* shape_names[] = {"方形", "圆形", "菱形", "三角形"};
+            int shape = state.render_settings.point_shape;
+            if (shape < 0 || shape > 3) shape = 0;
+            if (ImGui::BeginCombo("##PointShape", shape_names[shape])) {
+                for (int i = 0; i < 4; ++i) {
+                    if (ImGui::Selectable(shape_names[i], i == shape)) {
+                        state.render_settings.point_shape = i;
+                        actions.point_shape_changed = true;
+                        actions.point_shape = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
             const auto& height_options = state.render_settings.height_by_options;
             const char* h_preview = "无";
             if (!height_options.empty()) {

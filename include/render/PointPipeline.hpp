@@ -53,6 +53,7 @@ struct PointPushConstants {
      *   bit 0     = spatial_clip_enable (1=discard inside clip bbox)
      *   bits 1–7  = colormap_index (0–127)
      *   bit 8     = value_clip_enable (1=discard outside [value_clip_min, value_clip_max])
+     *   bits 9–11 = point_shape (0=square, 1=circle, 2=diamond, 3=triangle)
      *
      * Colormap indices:
      *   0 = Geo     (blue-cyan-green-yellow-red)
@@ -80,9 +81,11 @@ static_assert(offsetof(PointPushConstants, flags) == 124,
 
 // Bit masks for the flags field.
 namespace PointFlags {
-inline constexpr std::uint32_t kSpatialClip  = 1u << 0;
-inline constexpr std::uint32_t kColormapMask = 0x7Fu << 1;  // bits 1–7
-inline constexpr std::uint32_t kValueClip    = 1u << 8;
+inline constexpr std::uint32_t kSpatialClip   = 1u << 0;
+inline constexpr std::uint32_t kColormapMask  = 0x7Fu << 1;  // bits 1–7
+inline constexpr std::uint32_t kValueClip     = 1u << 8;
+inline constexpr std::uint32_t kPointShapeShift = 9;
+inline constexpr std::uint32_t kPointShapeMask  = 0x7u << 9;  // bits 9–11
 } // namespace PointFlags
 
 struct PointPipelineConfig {

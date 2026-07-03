@@ -4265,6 +4265,13 @@ int ViewerApp::run() {
                 }
                 nm.dirty = true;
             }
+            if (gui_cmds.point_shape_changed) {
+                // 清零 point_shape bits 再写入新索引
+                push.flags &= ~gs3d::render::PointFlags::kPointShapeMask;
+                push.flags |= (static_cast<std::uint32_t>(gui_cmds.point_shape)
+                    << gs3d::render::PointFlags::kPointShapeShift)
+                    & gs3d::render::PointFlags::kPointShapeMask;
+            }
             if (gui_cmds.clear_cache_requested) {
                 if (tile_preload_enabled && !tiles_fully_resident &&
                     !tile_preload_failed) {

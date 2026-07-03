@@ -67,6 +67,7 @@ struct DatasetSummaryState {
 
 struct RenderSettingsState {
     float point_size = 1.5f;
+    int   point_shape = 0;   // 0=方形, 1=圆形, 2=菱形, 3=三角形
     float opacity = 1.0f;
     int blend_mode = 0;
 
