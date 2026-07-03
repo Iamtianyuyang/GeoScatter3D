@@ -45,6 +45,7 @@ struct PanelVisibilityState {
     bool performance = false;
     bool navigation_map = true;
     bool measurement = true;
+    bool region_stats = true;
 };
 
 struct DatasetSummaryState {
@@ -177,6 +178,11 @@ struct RenderViewState {
     bool box_select_dragging = false;
     float box_select_start_x = 0.0f;
     float box_select_start_y = 0.0f;
+
+    // Shift+左键拖框选统计状态（测量模式下），跨帧持续到松开鼠标。
+    bool stats_select_dragging = false;
+    float stats_select_start_x = 0.0f;
+    float stats_select_start_y = 0.0f;
 
     // 悬浮 tooltip：由 ViewerApp 在上一帧算好写入，这一帧 UiRoot 直接读取渲染。
     bool hover_tooltip_visible = false;
@@ -317,6 +323,17 @@ struct NavigationMapState {
     bool  view_rect_valid = false;
 };
 
+struct RegionStatsResult {
+    bool valid = false;
+    std::uint64_t point_count = 0;
+    float fold_min = 0.0f;
+    float fold_max = 0.0f;
+    float fold_avg = 0.0f;
+    float elev_min = 0.0f;
+    float elev_max = 0.0f;
+    float elev_avg = 0.0f;
+};
+
 struct AppState {
     PanelVisibilityState panels;
     DatasetSummaryState dataset;
@@ -326,6 +343,7 @@ struct AppState {
     StatusBarState status_bar;
     NavigationMapState navigation_map;
     MeasurementManager measurement;
+    RegionStatsResult region_stats;
     std::vector<RenderViewState> render_views;
 };
 

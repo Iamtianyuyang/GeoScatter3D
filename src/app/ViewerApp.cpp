@@ -14,6 +14,7 @@
 #include "camera/MouseRay.hpp"
 #include "core/DatasetDescriptor.hpp"
 #include "data/Gs3dDataset.hpp"
+#include "data/Gs3dReader.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dLodTargets.hpp"
@@ -4261,6 +4262,93 @@ int ViewerApp::run() {
                         screenshot_pending = true;
                     }
                     break;
+                }
+            }
+
+            // ── 区域统计：测量模式下 Shift+左键框选 ──
+            // 屏幕空间判断：逐点 world→screen 投影，检查是否落在框选矩形内。
+            // 斜视/俯视均正确，不依赖平面反投影近似。
+            for (const auto& frame : gui_cmds.viewport_frames) {
+                if (!frame.stats_select_completed || !frame.mouse_on_image) {
+                    continue;
+                }
+                if (frame.index < 0 ||
+                    frame.index >= viewport_manager.viewport_count()) {
+                    continue;
+                }
+
+                const auto& cam = viewport_manager.camera(frame.index);
+                const gs3d::camera::Mat4 vp =
+                    cam.view_projection_matrix();
+                const float vp_w =
+                    static_cast<float>(cam.viewport_width());
+                const float vp_h =
+                    static_cast<float>(cam.viewport_height());
+
+                const float sx_min = frame.stats_select_min_x;
+                const float sx_max = frame.stats_select_max_x;
+                const float sy_min = frame.stats_select_min_y;
+                const float sy_max = frame.stats_select_max_y;
+
+                double fold_sum = 0.0;
+                double elev_sum = 0.0;
+                float fold_min = std::numeric_limits<float>::max();
+                float fold_max = std::numeric_limits<float>::lowest();
+                float elev_min = std::numeric_limits<float>::max();
+                float elev_max = std::numeric_limits<float>::lowest();
+                std::uint64_t count = 0;
+
+                const auto process = [&](const gs3d::data::Gs3dPoint& p) {
+                    const auto sp =
+                        gs3d::camera::MouseRay::world_to_screen(
+                            vp, p.x, p.y, p.z, vp_w, vp_h);
+                    if (!sp) return;  // behind camera (clip_w <= 0)
+                    if (sp->x < sx_min || sp->x > sx_max ||
+                        sp->y < sy_min || sp->y > sy_max) {
+                        return;
+                    }
+                    ++count;
+                    const float f = p.value;
+                    const float e = p.z;
+                    fold_sum += static_cast<double>(f);
+                    elev_sum += static_cast<double>(e);
+                    if (f < fold_min) fold_min = f;
+                    if (f > fold_max) fold_max = f;
+                    if (e < elev_min) elev_min = e;
+                    if (e > elev_max) elev_max = e;
+                };
+
+                if (dataset.has_point_data()) {
+                    for (const auto& p : dataset.points()) {
+                        process(p);
+                    }
+                } else {
+                    auto result = gs3d::data::Gs3dReader::read_all(
+                        config_.gs3d_path);
+                    for (const auto& p : result.points) {
+                        process(p);
+                    }
+                }
+
+                app_state.region_stats.valid = true;
+                app_state.region_stats.point_count = count;
+                if (count > 0) {
+                    const double inv = 1.0 / static_cast<double>(count);
+                    app_state.region_stats.fold_min = fold_min;
+                    app_state.region_stats.fold_max = fold_max;
+                    app_state.region_stats.fold_avg =
+                        static_cast<float>(fold_sum * inv);
+                    app_state.region_stats.elev_min = elev_min;
+                    app_state.region_stats.elev_max = elev_max;
+                    app_state.region_stats.elev_avg =
+                        static_cast<float>(elev_sum * inv);
+                } else {
+                    app_state.region_stats.fold_min = 0.0f;
+                    app_state.region_stats.fold_max = 0.0f;
+                    app_state.region_stats.fold_avg = 0.0f;
+                    app_state.region_stats.elev_min = 0.0f;
+                    app_state.region_stats.elev_max = 0.0f;
+                    app_state.region_stats.elev_avg = 0.0f;
                 }
             }
 

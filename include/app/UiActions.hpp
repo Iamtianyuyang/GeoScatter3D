@@ -39,6 +39,16 @@ struct ViewportFrameCmd {
     float box_select_max_x = 0.0f;
     float box_select_max_y = 0.0f;
 
+    /*
+     * Shift+左键拖框统计完成时为 true（测量模式下）。
+     * 坐标约定同 box_select_completed。
+     */
+    bool  stats_select_completed = false;
+    float stats_select_min_x = 0.0f;
+    float stats_select_min_y = 0.0f;
+    float stats_select_max_x = 0.0f;
+    float stats_select_max_y = 0.0f;
+
     [[nodiscard]]
     bool interacting() const noexcept {
         return

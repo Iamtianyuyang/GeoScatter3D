@@ -33,6 +33,8 @@ constexpr const char* kNavigationMapWindowName =
     "导航图###NavigationMap";
 constexpr const char* kMeasurementWindowName =
     "测量###Measurement";
+constexpr const char* kRegionStatsWindowName =
+    "区域统计###RegionStats";
 
 std::string render_view_window_name(int index)
 {
@@ -520,7 +522,7 @@ void draw_viewport_window(
         constexpr float kBadgePadY = 5.0f;
         constexpr ImU32 kBadgeBg = IM_COL32(255, 180, 30, 220);
         constexpr ImU32 kBadgeText = IM_COL32(20, 20, 20, 255);
-        const char* badge_label = "测量模式";
+        const char* badge_label = "测量模式  中键量距  Shift框选统计";
         const ImVec2 ts = ImGui::CalcTextSize(badge_label);
         const ImVec2 badge_min{
             plot_min.x + kBadgePadX,
@@ -1147,17 +1149,26 @@ void draw_viewport_window(
     }
 
     // Ctrl+左键 = 框选放大，普通左键 = 轨道旋转；两者互斥，框选时不旋转。
+    // 测量模式下 Shift+左键 = 框选统计，同样不旋转。
     const bool box_select_button_down =
         active &&
         frame.mouse_on_image &&
         io.KeyCtrl &&
         ImGui::IsMouseDown(ImGuiMouseButton_Left);
 
+    const bool stats_select_button_down =
+        active &&
+        frame.mouse_on_image &&
+        view.measure_mode_active &&
+        io.KeyShift &&
+        ImGui::IsMouseDown(ImGuiMouseButton_Left);
+
     frame.rotate =
         active &&
         frame.mouse_on_image &&
         ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
-        !io.KeyCtrl;
+        !io.KeyCtrl &&
+        !io.KeyShift;
     frame.pan =
         active &&
         frame.mouse_on_image &&
@@ -1166,6 +1177,7 @@ void draw_viewport_window(
         active &&
         frame.mouse_on_image &&
         !io.KeyCtrl &&
+        !io.KeyShift &&
         ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     frame.measure_pick_requested =
         active &&
@@ -1218,6 +1230,53 @@ void draw_viewport_window(
                 frame.box_select_min_y = min_y;
                 frame.box_select_max_x = max_x;
                 frame.box_select_max_y = max_y;
+            }
+        }
+    }
+
+    // ── Shift+左键框选统计（测量模式下）──
+    if (stats_select_button_down && !view.stats_select_dragging) {
+        view.stats_select_dragging = true;
+        view.stats_select_start_x = frame.mouse_local_x;
+        view.stats_select_start_y = frame.mouse_local_y;
+    }
+
+    if (view.stats_select_dragging) {
+        const auto scr_start = framebuffer_to_plot_screen(
+            view.stats_select_start_x, view.stats_select_start_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const auto scr_curr = framebuffer_to_plot_screen(
+            frame.mouse_local_x, frame.mouse_local_y,
+            canvas_rect, view.show_map_axis,
+            view.image_width, view.image_height);
+        const ImVec2 rect_a(plot_min.x + scr_start.x,
+                            plot_min.y + scr_start.y);
+        const ImVec2 rect_b(plot_min.x + scr_curr.x,
+                            plot_min.y + scr_curr.y);
+        ImGui::GetWindowDrawList()->AddRect(
+            rect_a, rect_b, IM_COL32(100, 255, 100, 255)
+        );
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            rect_a, rect_b, IM_COL32(100, 255, 100, 32)
+        );
+
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            view.stats_select_dragging = false;
+
+            const float min_x = std::min(view.stats_select_start_x, frame.mouse_local_x);
+            const float min_y = std::min(view.stats_select_start_y, frame.mouse_local_y);
+            const float max_x = std::max(view.stats_select_start_x, frame.mouse_local_x);
+            const float max_y = std::max(view.stats_select_start_y, frame.mouse_local_y);
+
+            if (frame.mouse_on_image &&
+                max_x - min_x >= 4.0f &&
+                max_y - min_y >= 4.0f) {
+                frame.stats_select_completed = true;
+                frame.stats_select_min_x = min_x;
+                frame.stats_select_min_y = min_y;
+                frame.stats_select_max_x = max_x;
+                frame.stats_select_max_y = max_y;
             }
         }
     }
@@ -1759,6 +1818,57 @@ void draw_measurement_panel(gs3d::app::AppState& state)
     ImGui::End();
 }
 
+void draw_region_stats_panel(gs3d::app::AppState& state)
+{
+    if (!ImGui::Begin(kRegionStatsWindowName, &state.panels.region_stats)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto& stats = state.region_stats;
+
+    if (!stats.valid) {
+        ImGui::TextDisabled("在测量模式下 Shift+左键框选区域");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Text("框内点数  %llu",
+        static_cast<unsigned long long>(stats.point_count));
+
+    ImGui::Separator();
+
+    // ── Fold (场值) ──
+    if (panel_title_font() != nullptr) {
+        ImGui::PushFont(panel_title_font());
+    }
+    ImGui::TextUnformatted("Fold (场值)");
+    if (panel_title_font() != nullptr) {
+        ImGui::PopFont();
+    }
+
+    ImGui::Text("最小值  %.3f", static_cast<double>(stats.fold_min));
+    ImGui::Text("最大值  %.3f", static_cast<double>(stats.fold_max));
+    ImGui::Text("平均值  %.3f", static_cast<double>(stats.fold_avg));
+
+    ImGui::Spacing();
+
+    // ── Elevation (高程) ──
+    if (panel_title_font() != nullptr) {
+        ImGui::PushFont(panel_title_font());
+    }
+    ImGui::TextUnformatted("Elevation (高程)");
+    if (panel_title_font() != nullptr) {
+        ImGui::PopFont();
+    }
+
+    ImGui::Text("最小值  %.3f", static_cast<double>(stats.elev_min));
+    ImGui::Text("最大值  %.3f", static_cast<double>(stats.elev_max));
+    ImGui::Text("平均值  %.3f", static_cast<double>(stats.elev_avg));
+
+    ImGui::End();
+}
+
 void draw_auxiliary_panels(gs3d::app::AppState& state)
 {
     if (state.panels.performance) {
@@ -1841,6 +1951,10 @@ void draw_auxiliary_panels(gs3d::app::AppState& state)
     if (state.panels.measurement) {
         draw_measurement_panel(state);
     }
+
+    if (state.panels.region_stats) {
+        draw_region_stats_panel(state);
+    }
 }
 
 } // namespace
@@ -1881,7 +1995,8 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         state.panels.tile_inspector ||
         state.panels.lod_view ||
         state.panels.navigation_map ||
-        state.panels.measurement;
+        state.panels.measurement ||
+        state.panels.region_stats;
     const bool has_right_panels =
         state.panels.render_settings ||
         state.panels.performance ||
@@ -1933,6 +2048,9 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         }
         if (state.panels.measurement) {
             ImGui::DockBuilderDockWindow(kMeasurementWindowName, left_top_id);
+        }
+        if (state.panels.region_stats) {
+            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, left_top_id);
         }
     }
     if (left_bottom_id != 0) {
@@ -2086,6 +2204,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     "测量",
                     nullptr,
                     &state.panels.measurement
+                );
+                ImGui::MenuItem(
+                    "区域统计",
+                    nullptr,
+                    &state.panels.region_stats
                 );
                 ImGui::EndMenu();
             }
