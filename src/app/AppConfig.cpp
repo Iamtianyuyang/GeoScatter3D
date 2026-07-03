@@ -531,6 +531,9 @@ AppConfig AppConfigLoader::load_from_file(
         );
     }
 
+    config.tile_build.num_threads =
+        config.csv_convert.num_threads;
+
     validate_input_mode(config.input_mode);
 
     if (const auto* shader = root["shader"].as_table()) {
@@ -918,11 +921,6 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.tile_preload_upload_budget_bytes
         );
 
-        config.tile_build.num_threads = uint_or_default(
-            *tile,
-            "num_threads",
-            config.tile_build.num_threads
-        );
     }
 
     if (const auto* debug = root["debug"].as_table()) {
@@ -1093,6 +1091,9 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] csv_convert.num_threads = "
               << config.csv_convert.num_threads << '\n';
+
+    std::cout << "[CONFIG] preprocess.num_threads = "
+              << config.tile_build.num_threads << '\n';
 
     std::cout << "[CONFIG] csv_convert.chunk_bytes = "
               << config.csv_convert.chunk_bytes << '\n';
@@ -1315,10 +1316,6 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] tile.preload_upload_budget_bytes = "
               << config.viewer.tile_preload_upload_budget_bytes
-              << '\n';
-
-    std::cout << "[CONFIG] tile.num_threads = "
-              << config.tile_build.num_threads
               << '\n';
 
     std::cout << "[CONFIG] viewport.count = "

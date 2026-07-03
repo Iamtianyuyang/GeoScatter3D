@@ -5,7 +5,8 @@ mode = "bundle"
 bundle_dir = "data/field_and_ele_source_rec_50m.gs3d.bundle"
 
 [csv_convert]
-num_threads = 12
+# Shared preprocessing thread count for CSV/DAT conversion and tile build.
+num_threads = 16
 chunk_bytes = 16777216
 min_parallel_file_bytes = 67108864
 x_field = "X"
@@ -99,7 +100,6 @@ count = 1
 enabled = true
 # index_path = "data/field_and_ele_source_rec_50m.gs3dtiles.index"
 # data_path = "data/field_and_ele_source_rec_50m.gs3dtiles"
-num_threads = 12
 
 # tile 投影宽度 >= 该像素值时加载全精度数据（对应 Potree 屏幕空间阈值）
 min_tile_pixel_size = 50
