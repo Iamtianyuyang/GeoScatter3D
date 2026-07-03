@@ -4265,9 +4265,13 @@ int ViewerApp::run() {
                 }
             }
 
-            // ── 区域统计：测量模式下 Shift+左键框选 ──
+            // ── 区域统计：测量模式下 Shift+左键框选（异步计算）──
             // 屏幕空间判断：逐点 world→screen 投影，检查是否落在框选矩形内。
             // 斜视/俯视均正确，不依赖平面反投影近似。
+            //
+            // 计算在后台线程执行，主线程立即返回继续渲染。
+            // generation counter 实现取消：新框选使旧任务的 gen 失配，旧任务
+            // 每 64K 点检查一次并提前退出，结果被丢弃。
             for (const auto& frame : gui_cmds.viewport_frames) {
                 if (!frame.stats_select_completed || !frame.mouse_on_image) {
                     continue;
@@ -4276,6 +4280,9 @@ int ViewerApp::run() {
                     frame.index >= viewport_manager.viewport_count()) {
                     continue;
                 }
+
+                // Cancel any in-flight computation by bumping the generation.
+                const auto gen = ++region_stats_gen_;
 
                 const auto& cam = viewport_manager.camera(frame.index);
                 const gs3d::camera::Mat4 vp =
@@ -4290,65 +4297,130 @@ int ViewerApp::run() {
                 const float sy_min = frame.stats_select_min_y;
                 const float sy_max = frame.stats_select_max_y;
 
-                double fold_sum = 0.0;
-                double elev_sum = 0.0;
-                float fold_min = std::numeric_limits<float>::max();
-                float fold_max = std::numeric_limits<float>::lowest();
-                float elev_min = std::numeric_limits<float>::max();
-                float elev_max = std::numeric_limits<float>::lowest();
-                std::uint64_t count = 0;
+                // Snapshot point-data access: raw pointer when in-memory
+                // (dataset lives for the entire run() scope, safe to
+                // reference from the short-lived worker), or copy the path
+                // and let the worker read from disk.
+                const bool has_points = dataset.has_point_data();
+                const gs3d::data::Gs3dPoint* points_data =
+                    has_points ? dataset.points().data() : nullptr;
+                const std::uint64_t point_count =
+                    has_points ? dataset.point_count() : 0;
+                const std::filesystem::path gs3d_path =
+                    has_points ? std::filesystem::path{} : config_.gs3d_path;
 
-                const auto process = [&](const gs3d::data::Gs3dPoint& p) {
-                    const auto sp =
-                        gs3d::camera::MouseRay::world_to_screen(
-                            vp, p.x, p.y, p.z, vp_w, vp_h);
-                    if (!sp) return;  // behind camera (clip_w <= 0)
-                    if (sp->x < sx_min || sp->x > sx_max ||
-                        sp->y < sy_min || sp->y > sy_max) {
-                        return;
-                    }
-                    ++count;
-                    const float f = p.value;
-                    const float e = p.z;
-                    fold_sum += static_cast<double>(f);
-                    elev_sum += static_cast<double>(e);
-                    if (f < fold_min) fold_min = f;
-                    if (f > fold_max) fold_max = f;
-                    if (e < elev_min) elev_min = e;
-                    if (e > elev_max) elev_max = e;
-                };
+                app_state.region_stats = RegionStatsResult{};
+                app_state.region_stats.computing = true;
 
-                if (dataset.has_point_data()) {
-                    for (const auto& p : dataset.points()) {
-                        process(p);
-                    }
-                } else {
-                    auto result = gs3d::data::Gs3dReader::read_all(
-                        config_.gs3d_path);
-                    for (const auto& p : result.points) {
-                        process(p);
-                    }
-                }
+                region_stats_future_ = std::async(
+                    std::launch::async,
+                    [gen,
+                     vp, vp_w, vp_h,
+                     sx_min, sx_max, sy_min, sy_max,
+                     has_points, points_data, point_count,
+                     gs3d_path,
+                     &gen_counter = region_stats_gen_]() -> RegionStatsResult
+                    {
+                        double fold_sum = 0.0;
+                        double elev_sum = 0.0;
+                        float fold_min =
+                            std::numeric_limits<float>::max();
+                        float fold_max =
+                            std::numeric_limits<float>::lowest();
+                        float elev_min =
+                            std::numeric_limits<float>::max();
+                        float elev_max =
+                            std::numeric_limits<float>::lowest();
+                        std::uint64_t count = 0;
 
-                app_state.region_stats.valid = true;
-                app_state.region_stats.point_count = count;
-                if (count > 0) {
-                    const double inv = 1.0 / static_cast<double>(count);
-                    app_state.region_stats.fold_min = fold_min;
-                    app_state.region_stats.fold_max = fold_max;
-                    app_state.region_stats.fold_avg =
-                        static_cast<float>(fold_sum * inv);
-                    app_state.region_stats.elev_min = elev_min;
-                    app_state.region_stats.elev_max = elev_max;
-                    app_state.region_stats.elev_avg =
-                        static_cast<float>(elev_sum * inv);
-                } else {
-                    app_state.region_stats.fold_min = 0.0f;
-                    app_state.region_stats.fold_max = 0.0f;
-                    app_state.region_stats.fold_avg = 0.0f;
-                    app_state.region_stats.elev_min = 0.0f;
-                    app_state.region_stats.elev_max = 0.0f;
-                    app_state.region_stats.elev_avg = 0.0f;
+                        const auto process =
+                            [&](const gs3d::data::Gs3dPoint& p) {
+                                const auto sp =
+                                    gs3d::camera::MouseRay::world_to_screen(
+                                        vp, p.x, p.y, p.z, vp_w, vp_h);
+                                if (!sp) return;
+                                if (sp->x < sx_min || sp->x > sx_max ||
+                                    sp->y < sy_min || sp->y > sy_max) {
+                                    return;
+                                }
+                                ++count;
+                                const float f = p.value;
+                                const float e = p.z;
+                                fold_sum += static_cast<double>(f);
+                                elev_sum += static_cast<double>(e);
+                                if (f < fold_min) fold_min = f;
+                                if (f > fold_max) fold_max = f;
+                                if (e < elev_min) elev_min = e;
+                                if (e > elev_max) elev_max = e;
+                            };
+
+                        constexpr std::uint64_t kCancelCheckInterval =
+                            65536;
+
+                        if (has_points) {
+                            for (std::uint64_t i = 0; i < point_count;
+                                 ++i) {
+                                if ((i & (kCancelCheckInterval - 1)) == 0) {
+                                    if (gen_counter.load(
+                                            std::memory_order_relaxed) !=
+                                        gen) {
+                                        return RegionStatsResult{};
+                                    }
+                                }
+                                process(points_data[i]);
+                            }
+                        } else {
+                            auto read_result =
+                                gs3d::data::Gs3dReader::read_all(
+                                    gs3d_path);
+                            std::uint64_t i = 0;
+                            for (const auto& p : read_result.points) {
+                                if ((i & (kCancelCheckInterval - 1)) == 0) {
+                                    if (gen_counter.load(
+                                            std::memory_order_relaxed) !=
+                                        gen) {
+                                        return RegionStatsResult{};
+                                    }
+                                }
+                                process(p);
+                                ++i;
+                            }
+                        }
+
+                        RegionStatsResult out;
+                        out.valid = true;
+                        out.point_count = count;
+                        if (count > 0) {
+                            const double inv =
+                                1.0 / static_cast<double>(count);
+                            out.fold_min = fold_min;
+                            out.fold_max = fold_max;
+                            out.fold_avg =
+                                static_cast<float>(fold_sum * inv);
+                            out.elev_min = elev_min;
+                            out.elev_max = elev_max;
+                            out.elev_avg =
+                                static_cast<float>(elev_sum * inv);
+                        }
+                        return out;
+                    });
+
+                break; // one launch per frame
+            }
+
+            // Poll completion: when the worker finishes, swap its result
+            // into app_state.  If the result is invalid (cancelled),
+            // just clear the computing flag so the panel goes back to idle.
+            if (region_stats_future_.valid()) {
+                if (region_stats_future_.wait_for(
+                        std::chrono::seconds(0)) ==
+                    std::future_status::ready) {
+                    auto result = region_stats_future_.get();
+                    if (result.valid) {
+                        app_state.region_stats = std::move(result);
+                    } else {
+                        app_state.region_stats.computing = false;
+                    }
                 }
             }
 

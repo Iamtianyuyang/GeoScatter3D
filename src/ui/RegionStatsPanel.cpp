@@ -18,6 +18,12 @@ void draw_region_stats_panel(gs3d::app::AppState& state)
 
     const auto& stats = state.region_stats;
 
+    if (stats.computing) {
+        ImGui::TextUnformatted("统计中...");
+        ImGui::End();
+        return;
+    }
+
     if (!stats.valid) {
         ImGui::TextDisabled("在测量模式下 Shift+左键框选区域");
         ImGui::End();

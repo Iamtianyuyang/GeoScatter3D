@@ -1,8 +1,12 @@
 #pragma once
 
+#include "app/AppState.hpp"
+
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <string>
 #include <vector>
 
@@ -225,6 +229,8 @@ public:
 
 private:
     ViewerAppConfig config_;
+    std::future<RegionStatsResult> region_stats_future_;
+    std::atomic<std::uint64_t>     region_stats_gen_{0};
 };
 
 } // namespace gs3d::app
