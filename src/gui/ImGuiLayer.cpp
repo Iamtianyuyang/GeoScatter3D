@@ -211,7 +211,11 @@ void ImGuiLayer::init(
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    // ImGuiConfigFlags_ViewportsEnable is intentionally not set:
+    // offscreen-framebuffer textures cannot be shared across independent
+    // OS windows (platform viewports) without per-viewport render targets.
+    // Disabling viewports keeps all 3D viewport windows docked inside the
+    // main window, where the single offscreen texture works correctly.
 
     if (ini_path.empty()) {
         io.IniFilename = nullptr;
