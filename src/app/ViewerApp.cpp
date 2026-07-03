@@ -4004,78 +4004,16 @@ int ViewerApp::run() {
                 }
             }
 
-            // ── 导航图视野框：主视图可见 XY 范围 → 缩略图像素坐标 ──
+            // ── 导航图视野框：复用 compute_map_axis_overlay 的可见 XY 范围 ──
             if (nm.valid) {
-                const auto& nav_cam =
-                    viewport_manager.camera(streaming_viewport_index);
-                const gs3d::camera::Viewport nav_vp{
-                    nav_cam.viewport_width(),
-                    nav_cam.viewport_height()
-                };
-                const float plane_z = nav_cam.target().z;
-                const float corners[4][2] = {
-                    {0.0f, 0.0f},
-                    {static_cast<float>(nav_vp.width), 0.0f},
-                    {0.0f, static_cast<float>(nav_vp.height)},
-                    {static_cast<float>(nav_vp.width),
-                     static_cast<float>(nav_vp.height)}
-                };
+                const auto& sv =
+                    app_state.render_views[static_cast<std::size_t>(
+                        streaming_viewport_index)];
+                const float wx_min = sv.map_axis_x_min;
+                const float wx_max = sv.map_axis_x_max;
+                const float wy_min = sv.map_axis_y_min;
+                const float wy_max = sv.map_axis_y_max;
 
-                float xs[4], ys[4];
-                int n_hit = 0;
-                for (int ci = 0; ci < 4; ++ci) {
-                    const auto ray =
-                        gs3d::camera::MouseRay::from_screen(
-                            static_cast<double>(corners[ci][0]),
-                            static_cast<double>(corners[ci][1]),
-                            nav_vp,
-                            nav_cam
-                        );
-                    const auto hit =
-                        gs3d::camera::MouseRay::intersect_plane(
-                            ray,
-                            {0.0f, 0.0f, plane_z},
-                            {0.0f, 0.0f, 1.0f}
-                        );
-                    if (hit) {
-                        xs[n_hit] = hit->x;
-                        ys[n_hit] = hit->y;
-                        ++n_hit;
-                    }
-                }
-
-                if (n_hit == 0) {
-                    // 回退：相机的 target ± ortho 半范围
-                    float hw, hh;
-                    if (nav_cam.projection_mode() ==
-                        gs3d::camera::ProjectionMode::Orthographic) {
-                        hh = nav_cam.ortho_height() * 0.5f;
-                        hw = hh * nav_cam.aspect_ratio();
-                    } else {
-                        const float d = nav_cam.distance();
-                        const float fov_rad =
-                            nav_cam.fov_y_degrees() *
-                            (3.14159265f / 180.0f);
-                        hh = d * std::tan(fov_rad * 0.5f);
-                        hw = hh * nav_cam.aspect_ratio();
-                    }
-                    xs[0] = nav_cam.target().x - hw;
-                    xs[1] = nav_cam.target().x + hw;
-                    ys[0] = nav_cam.target().y - hh;
-                    ys[1] = nav_cam.target().y + hh;
-                    n_hit = 2;
-                }
-
-                float wx_min = xs[0], wx_max = xs[0];
-                float wy_min = ys[0], wy_max = ys[0];
-                for (int ci = 1; ci < n_hit; ++ci) {
-                    if (xs[ci] < wx_min) wx_min = xs[ci];
-                    if (xs[ci] > wx_max) wx_max = xs[ci];
-                    if (ys[ci] < wy_min) wy_min = ys[ci];
-                    if (ys[ci] > wy_max) wy_max = ys[ci];
-                }
-
-                // 单一映射：世界 → 纹理像素
                 const float bbox_w = nm.bbox_max_x - nm.bbox_min_x;
                 const float bbox_h = nm.bbox_max_y - nm.bbox_min_y;
                 if (bbox_w > 0.0f && bbox_h > 0.0f) {
@@ -4083,7 +4021,7 @@ int ViewerApp::run() {
                         (wx_min - nm.bbox_min_x) / bbox_w * nm.tex_w;
                     nm.view_rect_max_x =
                         (wx_max - nm.bbox_min_x) / bbox_w * nm.tex_w;
-                    // Y 翻转：世界 Y↑ → 纹理像素 Y↓
+                    // 纹理北在上(tex_y=0)，世界 Y↑ 映射到 tex_y↓
                     nm.view_rect_min_y =
                         (1.0f - (wy_max - nm.bbox_min_y) / bbox_h) *
                         nm.tex_h;
