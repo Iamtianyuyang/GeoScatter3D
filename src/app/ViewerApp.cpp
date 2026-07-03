@@ -1748,7 +1748,9 @@ void compute_axis_overlay(
     const gs3d::camera::Camera& camera,
     double origin_x,
     double origin_y,
-    double origin_z
+    double origin_z,
+    float  z_label_mult   = 1.0f,
+    float  z_label_offset = 0.0f
 ) {
     view.axis_lines.clear();
     view.axis_tick_labels.clear();
@@ -1787,25 +1789,28 @@ void compute_axis_overlay(
             }
         };
 
-    // ---- 1. 底面矩形框（四条边）----
-    add_line(sv(min_x, min_y, min_z), sv(max_x, min_y, min_z)); // 底边
-    add_line(sv(max_x, min_y, min_z), sv(max_x, max_y, min_z)); // 右边
-    add_line(sv(max_x, max_y, min_z), sv(min_x, max_y, min_z)); // 顶边
-    add_line(sv(min_x, max_y, min_z), sv(min_x, min_y, min_z)); // 左边
+    // ---- 1. 底面矩形框（四条边，参考面 = z_label_offset，对应属性值 0）----
+    const float ref_z = z_label_offset;
+    add_line(sv(min_x, min_y, ref_z), sv(max_x, min_y, ref_z)); // 底边
+    add_line(sv(max_x, min_y, ref_z), sv(max_x, max_y, ref_z)); // 右边
+    add_line(sv(max_x, max_y, ref_z), sv(min_x, max_y, ref_z)); // 顶边
+    add_line(sv(min_x, max_y, ref_z), sv(min_x, min_y, ref_z)); // 左边
 
-    // ---- 2. 四根角柱（底面角点 -> 顶面角点）----
-    add_line(sv(min_x, min_y, min_z), sv(min_x, min_y, max_z));
-    add_line(sv(max_x, min_y, min_z), sv(max_x, min_y, max_z));
-    add_line(sv(max_x, max_y, min_z), sv(max_x, max_y, max_z));
-    add_line(sv(min_x, max_y, min_z), sv(min_x, max_y, max_z));
+    // ---- 2. 四根角柱（覆盖数据范围 + 参考面）----
+    const float pillar_base = std::min(min_z, ref_z);
+    const float pillar_top  = std::max(max_z, ref_z);
+    add_line(sv(min_x, min_y, pillar_base), sv(min_x, min_y, pillar_top));
+    add_line(sv(max_x, min_y, pillar_base), sv(max_x, min_y, pillar_top));
+    add_line(sv(max_x, max_y, pillar_base), sv(max_x, max_y, pillar_top));
+    add_line(sv(min_x, max_y, pillar_base), sv(min_x, max_y, pillar_top));
 
-    // ---- 3. X 轴刻度（底边 + 顶边）----
+    // ---- 3. X 轴刻度（底边 + 顶边，参考面）----
     {
         const auto x_ticks =
             gs3d::render::compute_axis_ticks(min_x, max_x, 5);
         for (const float tick : x_ticks) {
-            const auto bottom = sv(tick, min_y, min_z);
-            const auto top    = sv(tick, max_y, min_z);
+            const auto bottom = sv(tick, min_y, ref_z);
+            const auto top    = sv(tick, max_y, ref_z);
             // small tick mark (8 px outward from the frame)
             constexpr float kMarkPx = 8.0f;
             if (bottom) {
@@ -1834,13 +1839,13 @@ void compute_axis_overlay(
         }
     }
 
-    // ---- 4. Y 轴刻度（左边 + 右边）----
+    // ---- 4. Y 轴刻度（左边 + 右边，参考面）----
     {
         const auto y_ticks =
             gs3d::render::compute_axis_ticks(min_y, max_y, 5);
         for (const float tick : y_ticks) {
-            const auto left  = sv(min_x, tick, min_z);
-            const auto right = sv(max_x, tick, min_z);
+            const auto left  = sv(min_x, tick, ref_z);
+            const auto right = sv(max_x, tick, ref_z);
             constexpr float kMarkPx = 8.0f;
             if (left) {
                 view.axis_lines.push_back(
@@ -1868,19 +1873,32 @@ void compute_axis_overlay(
     }
 
     // ---- 5. Z / 高程刻度（左下角柱）----
+    // 在标签空间（属性原始值范围）确定刻度，再映射回世界 Z 画几何。
+    // nice_step 进位激进（>2.0→5.0），对小范围可能只产 1 个 tick，
+    // 逐步提高目标数兜底，确保至少 2 个刻度。
     {
-        const auto z_ticks =
-            gs3d::render::compute_axis_ticks(min_z, max_z, 4);
-        for (const float tick : z_ticks) {
-            const auto p = sv(min_x, min_y, tick);
+        const float label_min =
+            (min_z - z_label_offset) / z_label_mult;
+        const float label_max =
+            (max_z - z_label_offset) / z_label_mult;
+        std::vector<float> label_ticks;
+        for (int target = 4; target <= 12 && label_ticks.size() < 2; target += 2) {
+            label_ticks =
+                gs3d::render::compute_axis_ticks(label_min, label_max, target);
+        }
+
+        for (const float label_val : label_ticks) {
+            const float world_z =
+                label_val * z_label_mult + z_label_offset;
+            const auto p = sv(min_x, min_y, world_z);
             if (!p) continue;
             constexpr float kMarkPx = 8.0f;
             view.axis_lines.push_back(
                 {p->x, p->y, p->x - kMarkPx, p->y}
             );
             char label[32];
-            std::snprintf(label, sizeof(label), "%.0f",
-                static_cast<double>(tick) + origin_z);
+            std::snprintf(label, sizeof(label), "%.6g",
+                static_cast<double>(label_val));
             view.axis_tick_labels.push_back(
                 {p->x - kMarkPx - 3.0f, p->y, label}
             );
@@ -3890,13 +3908,31 @@ int ViewerApp::run() {
                 }
                 view.scale = format_scale_distance(scale_world);
 
+                // Z 轴范围 + 刻度标签同步当前高度属性 & 夸张系数。
+                // 几何：包围盒 Z 用 world-space 范围（含 exag）。
+                // 标签：逆映射回属性原始值。
+                //   - Z source: 参考面 = 世界 Z=0 (= -origin_z * exag 渲染坐标)
+                //   - Value source: 参考面 = 属性值 0 (= height_offset 渲染坐标)
+                auto axis_bounds = bounds;
+                const float z_label_mult   = push.height_mult;
+                float       z_label_offset = push.height_offset;
+                if (push.height_source == static_cast<std::uint32_t>(gs3d::app::AttrPhysicalSource::Z)) {
+                    axis_bounds.min.z = push.height_offset + dataset.bbox_min_z() * push.height_mult;
+                    axis_bounds.max.z = push.height_offset + dataset.bbox_max_z() * push.height_mult;
+                } else {
+                    axis_bounds.min.z = push.height_offset + dataset.value_min() * push.height_mult;
+                    axis_bounds.max.z = push.height_offset + dataset.value_max() * push.height_mult;
+                }
+
                 compute_axis_overlay(
                     view,
-                    bounds,
+                    axis_bounds,
                     camera,
                     dataset.origin_x(),
                     dataset.origin_y(),
-                    dataset.origin_z()
+                    dataset.origin_z(),
+                    z_label_mult,
+                    z_label_offset
                 );
 
                 compute_map_axis_overlay(
