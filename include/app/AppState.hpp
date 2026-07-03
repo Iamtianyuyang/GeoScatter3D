@@ -87,8 +87,18 @@ struct RenderSettingsState {
         "z"
     };
 
+    int  colormap_index = 0;   // 色标索引 (0=Geo, 1=Viridis, 2=Jet, ...)
     bool reverse_colormap = false;
     bool clamp_colormap = true;
+
+    // 数据显示范围裁切 (原始数据值，非归一化)
+    bool  value_clip_enabled = false;
+    float value_clip_min = 0.0f;  // 原始数据值下限
+    float value_clip_max = 1.0f;  // 原始数据值上限
+
+    // 当前颜色属性的数据范围 (dataset value_min/max)，UI 只读显示
+    float data_value_min = 0.0f;
+    float data_value_max = 1.0f;
 
     bool use_box_clipping = false;
     bool use_plane_clipping = false;

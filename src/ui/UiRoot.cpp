@@ -1164,21 +1164,143 @@ void draw_render_settings(
         }
 
         ImGui::Spacing();
-        draw_panel_section_label("颜色映射");
-        const ImVec2 start = ImGui::GetCursorScreenPos();
-        const float width = ImGui::GetContentRegionAvail().x;
-        ImGui::InvisibleButton(
-            "##ColorMapPreview",
-            ImVec2(width, 14.0f)
-        );
-        ImGui::GetWindowDrawList()->AddRectFilledMultiColor(
-            start,
-            {start.x + width, start.y + 14.0f},
-            IM_COL32(60, 105, 215, 255),
-            IM_COL32(55, 190, 175, 255),
-            IM_COL32(235, 190, 75, 255),
-            IM_COL32(218, 82, 76, 255)
-        );
+        draw_panel_section_label("色调映射");
+
+        // ── 色标选择 ──
+        {
+            const char* colormap_names[] = {
+                "Geo",
+                "Viridis",
+                "Jet",
+                "Grayscale",
+                "Thermal",
+                "Coolwarm",
+                "Turbo",
+                "Plasma"
+            };
+            int cmap = state.render_settings.colormap_index;
+            if (cmap < 0 || cmap > 7) cmap = 0;
+            ImGui::TextUnformatted("色标");
+            if (ImGui::BeginCombo("##Colormap", colormap_names[cmap])) {
+                for (int i = 0; i < 8; ++i) {
+                    if (ImGui::Selectable(colormap_names[i], i == cmap)) {
+                        state.render_settings.colormap_index = i;
+                        actions.colormap_changed = true;
+                        actions.colormap_index = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            // 色标预览条 — 根据当前选中的色标切换颜色
+            const ImVec2 start = ImGui::GetCursorScreenPos();
+            const float bar_width = ImGui::GetContentRegionAvail().x;
+            ImGui::InvisibleButton("##ColorMapPreview",
+                ImVec2(bar_width, 14.0f));
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+
+            // Each colormap: {left, mid-left, mid-right, right} corner colours
+            // matching the approximate endpoints used in the fragment shader.
+            struct CmapColors { ImU32 c0, c1, c2, c3; };
+            const CmapColors cmap_colors[8] = {
+                // Geo: blue → cyan → green → yellow-red
+                { IM_COL32(60,  105, 215, 255), IM_COL32(55,  190, 175, 255),
+                  IM_COL32(235, 190, 75,  255), IM_COL32(218, 82,  76,  255) },
+                // Viridis: deep purple → teal → green → yellow
+                { IM_COL32(68,  1,   84,  255), IM_COL32(59,  82,  139, 255),
+                  IM_COL32(33,  145, 140, 255), IM_COL32(94,  201, 98,  255) },
+                // Jet: blue → cyan → yellow → red
+                { IM_COL32(0,   0,   143, 255), IM_COL32(0,   191, 255, 255),
+                  IM_COL32(255, 255, 0,   255), IM_COL32(255, 0,   0,   255) },
+                // Grayscale: black → gray → light → white
+                { IM_COL32(0,   0,   0,   255), IM_COL32(85,  85,  85,  255),
+                  IM_COL32(170, 170, 170, 255), IM_COL32(255, 255, 255, 255) },
+                // Thermal: black → red → orange → yellow-white
+                { IM_COL32(0,   0,   0,   255), IM_COL32(153, 0,   0,   255),
+                  IM_COL32(255, 128, 0,   255), IM_COL32(255, 255, 128, 255) },
+                // Coolwarm: blue → light blue → light red → dark red
+                { IM_COL32(59,  76,  192, 255), IM_COL32(144, 161, 255, 255),
+                  IM_COL32(255, 128, 128, 255), IM_COL32(180, 4,   38,  255) },
+                // Turbo: dark blue → teal → green-yellow → orange-red
+                { IM_COL32(48,  18,  59,  255), IM_COL32(18,  145, 190, 255),
+                  IM_COL32(162, 211, 55,  255), IM_COL32(122, 4,   3,   255) },
+                // Plasma: dark purple → magenta → orange → yellow
+                { IM_COL32(13,  8,   135, 255), IM_COL32(126, 3,   168, 255),
+                  IM_COL32(224, 100, 40,  255), IM_COL32(240, 249, 33,  255) },
+            };
+            int ci = state.render_settings.colormap_index;
+            if (ci < 0 || ci > 7) ci = 0;
+            const auto& cc = cmap_colors[ci];
+            dl->AddRectFilledMultiColor(
+                start,
+                {start.x + bar_width, start.y + 14.0f},
+                cc.c0, cc.c1, cc.c2, cc.c3
+            );
+        }
+
+        // ── 数据范围显示 ──
+        {
+            ImGui::Spacing();
+            char range_buf[64];
+            std::snprintf(range_buf, sizeof(range_buf),
+                "%.4g – %.4g",
+                static_cast<double>(state.render_settings.data_value_min),
+                static_cast<double>(state.render_settings.data_value_max));
+            ImGui::TextUnformatted("数据范围:");
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 180));
+            ImGui::TextUnformatted(range_buf);
+            ImGui::PopStyleColor();
+        }
+
+        // ── 数据范围裁切 ──
+        {
+            const float data_lo = state.render_settings.data_value_min;
+            const float data_hi = state.render_settings.data_value_max;
+            const float data_range = data_hi - data_lo;
+            const float step = data_range > 0.0f ? data_range * 0.001f : 0.001f;
+
+            bool clip_enabled = state.render_settings.value_clip_enabled;
+            if (ImGui::Checkbox("值域裁切", &clip_enabled)) {
+                state.render_settings.value_clip_enabled = clip_enabled;
+                if (clip_enabled) {
+                    // 首次启用时初始化为当前属性的完整数据范围
+                    state.render_settings.value_clip_min = data_lo;
+                    state.render_settings.value_clip_max = data_hi;
+                }
+                actions.value_clip_changed = true;
+                actions.value_clip_enabled = clip_enabled;
+                actions.value_clip_min = state.render_settings.value_clip_min;
+                actions.value_clip_max = state.render_settings.value_clip_max;
+            }
+            if (clip_enabled) {
+                ImGui::Indent(12.0f);
+                float lo = state.render_settings.value_clip_min;
+                float hi = state.render_settings.value_clip_max;
+                // Clamp to data range if stale
+                if (lo < data_lo) lo = data_lo;
+                if (hi > data_hi) hi = data_hi;
+                ImGui::SetNextItemWidth(
+                    ImGui::CalcTextSize("0.0000").x + 48.0f);
+                if (ImGui::DragFloat("下限", &lo, step, data_lo, hi, "%.4g")) {
+                    state.render_settings.value_clip_min = lo;
+                    actions.value_clip_changed = true;
+                    actions.value_clip_enabled = true;
+                    actions.value_clip_min = lo;
+                    actions.value_clip_max = hi;
+                }
+                ImGui::SetNextItemWidth(
+                    ImGui::CalcTextSize("0.0000").x + 48.0f);
+                if (ImGui::DragFloat("上限", &hi, step, lo, data_hi, "%.4g")) {
+                    state.render_settings.value_clip_max = hi;
+                    actions.value_clip_changed = true;
+                    actions.value_clip_enabled = true;
+                    actions.value_clip_min = lo;
+                    actions.value_clip_max = hi;
+                }
+                ImGui::Unindent(12.0f);
+            }
+        }
 
         ImGui::Spacing();
         draw_panel_section_label("流式加载");

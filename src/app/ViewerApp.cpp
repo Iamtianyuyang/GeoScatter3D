@@ -1682,9 +1682,8 @@ void fill_push_constants(
 ) {
     const auto mvp = camera.view_projection_matrix();
     std::copy(mvp.m.begin(), mvp.m.end(), push.mvp);
-    // value_min / value_range / attr_index are managed by the
-    // attribute-selection system and must not be overwritten here.
-    push.clip_mode = 0.0f;
+    // flags (colormap, value_clip, spatial_clip) are managed on the
+    // template push object and copied per-viewport — do NOT reset here.
 }
 
 /*
@@ -2618,7 +2617,7 @@ int ViewerApp::run() {
         gs3d::render::PointPushConstants push{};
         push.point_size  = config_.initial_point_size;
         // Channel attributes set below after attr_list is built.
-        // MVP is set per-viewport inside render_all; clip_mode is zero-initialized.
+        // MVP is set per-viewport inside render_all; flags is zero-initialized.
 
         /*
          * Tracks the query box of the tile buffer currently on the GPU.
@@ -3669,6 +3668,9 @@ int ViewerApp::run() {
             app_state.render_settings.color_attr_index = scene_state.active_attribute_index;
             app_state.render_settings.height_attr_index = scene_state.active_height_index;
             app_state.render_settings.height_exaggeration = height_exag;
+            app_state.render_settings.data_value_min = push.color_min;
+            app_state.render_settings.data_value_max =
+                push.color_min + push.color_range;
             app_state.render_settings.loaded_tiles = loaded_tiles;
             app_state.render_settings.pending_tiles = pending_tiles;
             app_state.render_settings.cache_usage =
@@ -4012,6 +4014,28 @@ int ViewerApp::run() {
                     attr_list[static_cast<std::size_t>(scene_state.active_height_index)],
                     height_exag
                 );
+            }
+            if (gui_cmds.colormap_changed) {
+                // 清零 colormap bits 再写入新索引
+                push.flags &= ~gs3d::render::PointFlags::kColormapMask;
+                push.flags |= (static_cast<std::uint32_t>(gui_cmds.colormap_index) << 1)
+                    & gs3d::render::PointFlags::kColormapMask;
+            }
+            if (gui_cmds.value_clip_changed) {
+                if (gui_cmds.value_clip_enabled) {
+                    push.flags |= gs3d::render::PointFlags::kValueClip;
+                    // 将原始数据值转换为归一化 [0,1] 传给 shader
+                    const float cr = push.color_range > 0.0f
+                        ? push.color_range : 1.0f;
+                    const float norm_lo =
+                        (gui_cmds.value_clip_min - push.color_min) / cr;
+                    const float norm_hi =
+                        (gui_cmds.value_clip_max - push.color_min) / cr;
+                    push.clip_min[3] = std::clamp(norm_lo, 0.0f, 1.0f);
+                    push.clip_max[3] = std::clamp(norm_hi, 0.0f, 1.0f);
+                } else {
+                    push.flags &= ~gs3d::render::PointFlags::kValueClip;
+                }
             }
             if (gui_cmds.clear_cache_requested) {
                 if (tile_preload_enabled && !tiles_fully_resident &&
@@ -5034,15 +5058,15 @@ int ViewerApp::run() {
                                     .has_value()) {
                                 const auto& b =
                                     *viewport_tile_query_boxes[view_index];
-                                lod_push.clip_mode   = 1.0f;
+                                lod_push.flags |= gs3d::render::PointFlags::kSpatialClip;
                                 lod_push.clip_min[0] = b.min_x;
                                 lod_push.clip_min[1] = b.min_y;
                                 lod_push.clip_min[2] = b.min_z;
-                                lod_push.clip_min[3] = 0.0f;
+                                // lod_push.clip_min[3] 保留 value_clip_min（可能已设置）
                                 lod_push.clip_max[0] = b.max_x;
                                 lod_push.clip_max[1] = b.max_y;
                                 lod_push.clip_max[2] = b.max_z;
-                                lod_push.clip_max[3] = 0.0f;
+                                // lod_push.clip_max[3] 保留 value_clip_max（可能已设置）
                             }
 
                             point_pipeline.bind_for_viewport(
@@ -5051,19 +5075,12 @@ int ViewerApp::run() {
                             );
 
                             // --- LOD safety net: coarsest level, always drawn ---
-                            // Renders with clip_mode=0 (never clipped) and
-                            // enlarged point size so even the sparsest LOD
-                            // covers the full data extent.  "Blurry beats
-                            // black" — guarantees no clear-colour holes
-                            // regardless of tile residency.
-                            // --- LOD safety net: coarsest level, always drawn ---
-                            // Uses same point_size as other passes for uniform
-                            // visual density.  clip_mode=0 so it is never
-                            // clipped — guarantees no clear-colour holes.
+                            // spatial_clip=0 so it is never clipped
+                            // — guarantees no clear-colour holes.
                             if (config_.lod_enabled) {
                                 gs3d::render::PointPushConstants safety_push =
                                     lod_push;
-                                safety_push.clip_mode = 0.0f;
+                                safety_push.flags &= ~gs3d::render::PointFlags::kSpatialClip;
                                 point_pipeline.draw_per_tile(
                                     c,
                                     lod_gpu_cloud->lowest_detail().gpu_cloud,

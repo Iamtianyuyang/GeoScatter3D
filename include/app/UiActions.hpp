@@ -71,6 +71,14 @@ struct UiActions {
     bool color_by_changed = false;
     int  color_by_index = 0;
 
+    bool colormap_changed = false;
+    int  colormap_index = 0;
+
+    bool  value_clip_changed = false;
+    bool  value_clip_enabled = false;
+    float value_clip_min = 0.0f;
+    float value_clip_max = 1.0f;
+
     std::vector<ViewportFrameCmd> viewport_frames;
 };
 

@@ -17,8 +17,8 @@ layout(location = 2) flat out uint out_point_id;
  */
 layout(push_constant) uniform PointPushConstants {
     mat4  mvp;            // offset   0
-    vec4  clip_min;       // offset  64 — xyz = clip bounds, w = unused
-    vec4  clip_max;       // offset  80 — xyz = clip bounds, w = unused
+    vec4  clip_min;       // offset  64 — xyz = spatial clip, w = value_clip_min
+    vec4  clip_max;       // offset  80 — xyz = spatial clip, w = value_clip_max
     float color_min;      // offset  96 — min of the selected color attribute
     float color_range;    // offset 100 — range of the selected color attribute
     float height_offset;  // offset 104 — height = offset + raw * mult (pre-computed on CPU)
@@ -26,7 +26,7 @@ layout(push_constant) uniform PointPushConstants {
     float point_size;     // offset 112
     uint  height_source;  // offset 116 — AttrPhysicalSource: 0=z, 1=value, ...
     uint  color_source;   // offset 120 — AttrPhysicalSource: 0=z, 1=value, ...
-    uint  clip_mode;      // offset 124
+    uint  flags;          // offset 124 — bit0=spatial_clip, bits1-7=colormap, bit8=value_clip
 } pc;
 
 void main() {

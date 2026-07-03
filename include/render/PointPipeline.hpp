@@ -20,6 +20,9 @@ struct PointPushConstants {
     /*
      * clip_min[4] / clip_max[4]: vec3 + 1 float padding.
      * Moved before channel params to keep 16-byte alignment.
+     *   .xyz = spatial clip bbox (world-space bounds)
+     *   .w   = value clip range (normalized [0,1]):
+     *          clip_min.w = value_clip_min, clip_max.w = value_clip_max
      */
     float clip_min[4] = {};     // offset  64, size 16
     float clip_max[4] = {};     // offset  80, size 16
@@ -46,11 +49,22 @@ struct PointPushConstants {
     std::uint32_t color_source  = 1;  // offset 120, 默认 Value (fold)
 
     /*
-     * clip_mode:
-     *   0 = no clipping
-     *   1 = discard points whose world-space XYZ is INSIDE [clip_min, clip_max]
+     * flags: bit-packed render control.
+     *   bit 0     = spatial_clip_enable (1=discard inside clip bbox)
+     *   bits 1–7  = colormap_index (0–127)
+     *   bit 8     = value_clip_enable (1=discard outside [value_clip_min, value_clip_max])
+     *
+     * Colormap indices:
+     *   0 = Geo     (blue-cyan-green-yellow-red)
+     *   1 = Viridis (perceptually uniform)
+     *   2 = Jet     (classic rainbow)
+     *   3 = Gray    (grayscale)
+     *   4 = Thermal (black-red-yellow-white)
+     *   5 = Coolwarm (blue-white-red, diverging)
+     *   6 = Turbo
+     *   7 = Plasma
      */
-    std::uint32_t clip_mode = 0;  // offset 124
+    std::uint32_t flags = 0;    // offset 124
 };                                // total: 128 bytes
 
 static_assert(
@@ -61,8 +75,15 @@ static_assert(offsetof(PointPushConstants, clip_min)  == 64,
     "PointPushConstants: clip_min must be at offset 64");
 static_assert(offsetof(PointPushConstants, clip_max)  == 80,
     "PointPushConstants: clip_max must be at offset 80");
-static_assert(offsetof(PointPushConstants, clip_mode) == 124,
-    "PointPushConstants: clip_mode must be at offset 124");
+static_assert(offsetof(PointPushConstants, flags) == 124,
+    "PointPushConstants: flags must be at offset 124");
+
+// Bit masks for the flags field.
+namespace PointFlags {
+inline constexpr std::uint32_t kSpatialClip  = 1u << 0;
+inline constexpr std::uint32_t kColormapMask = 0x7Fu << 1;  // bits 1–7
+inline constexpr std::uint32_t kValueClip    = 1u << 8;
+} // namespace PointFlags
 
 struct PointPipelineConfig {
     std::filesystem::path vertex_shader_path =
