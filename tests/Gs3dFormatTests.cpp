@@ -1,9 +1,14 @@
+#include "data/CsvChunkPlanner.hpp"
+#include "data/CsvSniffer.hpp"
+#include "data/DataSchema.hpp"
 #include "data/Gs3dDataset.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dReader.hpp"
+#include "preprocess/CsvToGs3dConverter.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -145,6 +150,204 @@ void test_metadata_only_dataset()
     expect(!dataset.has_point_data(), "metadata-only has no point buffer");
 }
 
+void test_chunk_plan_has_no_overlap_at_record_boundary()
+{
+    TemporaryFile file;
+    constexpr std::string_view contents =
+        "h\n"
+        "111\n"
+        "222\n"
+        "333\n";
+    {
+        std::ofstream out(file.path(), std::ios::binary | std::ios::trunc);
+        out.write(
+            contents.data(),
+            static_cast<std::streamsize>(contents.size())
+        );
+    }
+
+    gs3d::data::CsvSniffResult sniff;
+    sniff.header_end_offset = 2;
+
+    gs3d::data::CsvChunkPlanConfig config;
+    config.num_threads = 3;
+    config.target_chunk_bytes = 4;
+    config.min_parallel_file_bytes = 0;
+
+    const auto chunks =
+        gs3d::data::CsvChunkPlanner::plan(file.path(), sniff, config);
+
+    expect(chunks.size() == 3, "exact-boundary chunk count");
+    expect(
+        !chunks.empty() && chunks.front().aligned_begin == 2,
+        "chunk plan begins after header"
+    );
+    expect(
+        !chunks.empty() &&
+            chunks.back().aligned_end == contents.size(),
+        "chunk plan reaches end of file"
+    );
+    for (std::size_t i = 1; i < chunks.size(); ++i) {
+        expect(
+            chunks[i - 1].aligned_end == chunks[i].aligned_begin,
+            "adjacent chunks neither overlap nor leave gaps"
+        );
+    }
+}
+
+void test_dat_schema_maps_field_statics()
+{
+    const std::vector<std::string> header{
+        "X", "Y", "elevation", "field_statics"
+    };
+    const std::unordered_map<std::string, std::size_t> field_map{
+        {"x", 0},
+        {"y", 1},
+        {"elevation", 2},
+        {"field_statics", 3}
+    };
+
+    auto schema = gs3d::data::DataSchema::default_fold_elevation();
+    schema.primary_value_field = "field_statics";
+    const auto resolved = schema.resolve(field_map, header);
+
+    expect(resolved.x_col == 0, "DAT X column");
+    expect(resolved.y_col == 1, "DAT Y column");
+    expect(resolved.z_col == 2, "DAT elevation column");
+    expect(resolved.primary_value_col == 3, "DAT field_statics column");
+}
+
+void test_csv_and_dat_conversion_preserve_field_semantics_and_precision()
+{
+    {
+        TemporaryFile input;
+        TemporaryFile output;
+        constexpr std::string_view text =
+            "x,y,fold,elevation\n"
+            "100,200,7.5,1000.25\n"
+            "104,208,9.5,1002.25\n";
+        {
+            std::ofstream out(
+                input.path(),
+                std::ios::binary | std::ios::trunc
+            );
+            out.write(
+                text.data(),
+                static_cast<std::streamsize>(text.size())
+            );
+        }
+
+        gs3d::data::CsvReadConfig read_config;
+        read_config.schema.x_field = "x";
+        read_config.schema.y_field = "y";
+        read_config.schema.z_field = "elevation";
+        read_config.schema.primary_value_field = "fold";
+
+        gs3d::data::CsvChunkPlanConfig plan_config;
+        plan_config.num_threads = 1;
+
+        gs3d::preprocess::CsvToGs3dConverter converter(
+            read_config,
+            plan_config
+        );
+        const auto [result, dataset] =
+            converter.convert(input.path(), output.path());
+
+        expect(result.written_points == 2, "CSV writes every data row");
+        expect(result.invalid_records == 0, "CSV has no invalid rows");
+        expect(
+            dataset.points()[0].value == 7.5f,
+            "CSV maps fold to primary value"
+        );
+        expect(
+            std::abs(dataset.points()[0].z + 1.0f) < 1.0e-6f,
+            "CSV maps elevation to Z before origin rebasing"
+        );
+    }
+
+    {
+        TemporaryFile input;
+        TemporaryFile parallel_output;
+        TemporaryFile sequential_output;
+        constexpr std::string_view text =
+            "X Y elevation field_statics\n"
+            "18966454 54945337 2994.0 109.8\n"
+            "9476500 37005628 2843.0 -10.0\n"
+            "46853979 77057736 3644.0 282.52\n";
+        {
+            std::ofstream out(
+                input.path(),
+                std::ios::binary | std::ios::trunc
+            );
+            out.write(
+                text.data(),
+                static_cast<std::streamsize>(text.size())
+            );
+        }
+
+        gs3d::data::CsvReadConfig read_config;
+        read_config.schema.x_field = "X";
+        read_config.schema.y_field = "Y";
+        read_config.schema.z_field = "elevation";
+        read_config.schema.primary_value_field = "field_statics";
+
+        gs3d::data::CsvChunkPlanConfig plan_config;
+        plan_config.num_threads = 2;
+        plan_config.target_chunk_bytes = 32;
+        plan_config.min_parallel_file_bytes = 0;
+
+        gs3d::preprocess::CsvToGs3dConverter converter(
+            read_config,
+            plan_config
+        );
+        const auto [result, dataset] =
+            converter.convert(input.path(), parallel_output.path());
+
+        gs3d::data::CsvChunkPlanConfig sequential_plan;
+        sequential_plan.num_threads = 1;
+        gs3d::preprocess::CsvToGs3dConverter sequential_converter(
+            read_config,
+            sequential_plan
+        );
+        const auto [sequential_result, sequential_dataset] =
+            sequential_converter.convert(
+                input.path(),
+                sequential_output.path()
+            );
+
+        expect(result.written_points == 3, "DAT writes every data row");
+        expect(result.invalid_records == 0, "DAT has no invalid rows");
+        expect(
+            std::abs(dataset.points()[0].y - (-2'086'345.0f)) < 0.01f,
+            "DAT subtracts the double-precision origin before float storage"
+        );
+        expect(
+            std::abs(dataset.points()[0].value - 109.8f) < 1.0e-4f,
+            "DAT maps field_statics to primary value"
+        );
+        bool same_points =
+            sequential_dataset.points().size() == dataset.points().size();
+        for (std::size_t i = 0;
+             same_points && i < dataset.points().size();
+             ++i) {
+            const auto& a = sequential_dataset.points()[i];
+            const auto& b = dataset.points()[i];
+            same_points =
+                a.x == b.x && a.y == b.y && a.z == b.z &&
+                a.value == b.value;
+        }
+        expect(
+            sequential_result.written_points == result.written_points &&
+                sequential_dataset.header().origin_x ==
+                    dataset.header().origin_x &&
+                sequential_dataset.header().origin_y ==
+                    dataset.header().origin_y &&
+                same_points,
+            "DAT sequential and parallel conversion produce identical output"
+        );
+    }
+}
+
 void test_lod_ratios_empty_falls_back_to_explicit_counts()
 {
     const auto result = gs3d::data::resolve_lod_target_point_counts(
@@ -228,6 +431,9 @@ int main()
     test_truncated_dataset_is_rejected();
     test_overflowing_header_is_rejected();
     test_metadata_only_dataset();
+    test_chunk_plan_has_no_overlap_at_record_boundary();
+    test_dat_schema_maps_field_statics();
+    test_csv_and_dat_conversion_preserve_field_semantics_and_precision();
     test_lod_ratios_empty_falls_back_to_explicit_counts();
     test_lod_ratios_scale_with_source_point_count();
     test_lod_ratios_same_ratios_give_different_counts_for_smaller_source();

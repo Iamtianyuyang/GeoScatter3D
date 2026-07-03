@@ -160,6 +160,26 @@ bool CsvStreamReader::parse_float(std::string_view text, float& value) {
     return result.ptr == trimmed.data() + trimmed.size();
 }
 
+bool CsvStreamReader::parse_double(std::string_view text, double& value) {
+    const auto trimmed = Delimiter::trim_view(text);
+
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    const auto result = std::from_chars(
+        trimmed.data(),
+        trimmed.data() + trimmed.size(),
+        value
+    );
+
+    if (result.ec != std::errc{}) {
+        return false;
+    }
+
+    return result.ptr == trimmed.data() + trimmed.size();
+}
+
 std::unordered_map<std::string, std::size_t> CsvStreamReader::build_field_map(
     const std::vector<std::string>& header_fields,
     bool case_insensitive
@@ -206,15 +226,15 @@ bool CsvStreamReader::parse_record(
         return false;
     }
 
-    if (!parse_float(fields[schema.x_col], record.x)) {
+    if (!parse_double(fields[schema.x_col], record.x)) {
         return false;
     }
 
-    if (!parse_float(fields[schema.y_col], record.y)) {
+    if (!parse_double(fields[schema.y_col], record.y)) {
         return false;
     }
 
-    if (!parse_float(fields[schema.z_col], record.z)) {
+    if (!parse_double(fields[schema.z_col], record.z)) {
         return false;
     }
 

@@ -181,18 +181,74 @@ target_link_libraries(GeoScatter3D PRIVATE
 
 copy_runtime_assets(GeoScatter3D)
 
+# Standalone preprocessor CLI — CSV → GS3D conversion + tile building.
+# Links only the data/preprocess sources; no Vulkan / GLFW / ImGui.
+set(GEOSCATTER3D_PREPROCESS_SOURCES
+    src/preprocess_main.cpp
+    src/app/AppConfig.cpp
+    src/app/ResourcePath.cpp
+
+    src/data/CsvStreamReader.cpp
+    src/data/CsvSniffer.cpp
+    src/data/CsvChunkUtils.cpp
+    src/data/CsvChunkPlanner.cpp
+    src/data/CsvChunkReader.cpp
+    src/data/DataSchema.cpp
+    src/data/Delimiter.cpp
+    src/data/Gs3dFormat.cpp
+    src/data/Gs3dReader.cpp
+    src/data/Gs3dVerifier.cpp
+    src/data/Gs3dDataset.cpp
+    src/data/Gs3dLodDataset.cpp
+    src/data/Gs3dLodFormat.cpp
+    src/data/Gs3dLodReader.cpp
+    src/data/Gs3dTileFormat.cpp
+    src/data/Gs3dTileReader.cpp
+
+    src/preprocess/StatisticsPass.cpp
+    src/preprocess/Gs3dWriter.cpp
+    src/preprocess/CsvToGs3dConverter.cpp
+    src/preprocess/Gs3dLodWriter.cpp
+    src/preprocess/Gs3dTileWriter.cpp
+)
+
+add_executable(GeoScatter3DPreprocess
+    ${GEOSCATTER3D_PREPROCESS_SOURCES}
+)
+
+target_include_directories(GeoScatter3DPreprocess PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+)
+
+target_link_libraries(GeoScatter3DPreprocess PRIVATE
+    Threads::Threads
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
     add_executable(GeoScatter3DDataTests
         tests/Gs3dFormatTests.cpp
+        src/data/CsvChunkReader.cpp
+        src/data/CsvChunkPlanner.cpp
+        src/data/CsvChunkUtils.cpp
+        src/data/CsvSniffer.cpp
+        src/data/CsvStreamReader.cpp
+        src/data/DataSchema.cpp
+        src/data/Delimiter.cpp
         src/data/Gs3dFormat.cpp
         src/data/Gs3dReader.cpp
         src/data/Gs3dDataset.cpp
+        src/preprocess/CsvToGs3dConverter.cpp
     )
 
     target_include_directories(GeoScatter3DDataTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DDataTests PRIVATE
+        Threads::Threads
     )
 
     add_test(

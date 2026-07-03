@@ -4,6 +4,7 @@
 #include "data/CsvChunkReader.hpp"
 #include "data/CsvSniffer.hpp"
 #include "data/Gs3dFormat.hpp"
+#include "preprocess/StatisticsPass.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <algorithm>
@@ -81,7 +82,7 @@ void update_bounds(BoundsAccum& b, const CsvPointRecord& rec) noexcept {
 void merge_bounds(
     BoundsAccum& out,
     bool& has_bounds,
-    const gs3d::data::CsvChunkBufferedPointResult& chunk
+    const gs3d::data::CsvChunkStatsResult& chunk
 ) {
     if (chunk.empty) {
         return;
@@ -110,12 +111,9 @@ void merge_bounds(
     out.value_max = std::max(out.value_max, chunk.value_max);
 }
 
-void assemble_transformed_points(
-    std::vector<gs3d::data::CsvChunkBufferedPointResult>& chunk_results,
+void assemble_chunk_points(
+    std::vector<gs3d::data::CsvChunkPointResult>& chunk_results,
     std::vector<Gs3dPoint>& output_points,
-    double origin_x,
-    double origin_y,
-    double origin_z,
     gs3d::util::ThreadPool& pool
 ) {
     std::vector<std::size_t> offsets(
@@ -142,19 +140,7 @@ void assemble_transformed_points(
                     output_points.data() + offsets[i];
 
                 for (std::size_t j = 0; j < chunk_points.size(); ++j) {
-                    const auto& src = chunk_points[j];
-                    out[j] = Gs3dPoint{
-                        .x = static_cast<float>(
-                            static_cast<double>(src.x) - origin_x
-                        ),
-                        .y = static_cast<float>(
-                            static_cast<double>(src.y) - origin_y
-                        ),
-                        .z = static_cast<float>(
-                            static_cast<double>(src.z) - origin_z
-                        ),
-                        .value = src.value,
-                    };
+                    out[j] = chunk_points[j];
                 }
 
                 std::vector<Gs3dPoint>().swap(chunk_points);
@@ -311,32 +297,19 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
         size_ec ? (1024 * 1024)
                 : std::max<std::size_t>(file_bytes / kBytesPerLineEstimate, 1);
 
-    // Phase 1: single CSV pass — buffer raw (pre-origin) point values and
-    // accumulate bounding-box statistics simultaneously.
-    std::vector<Gs3dPoint> points;
-    points.reserve(estimated_points);
-
+    // Phase 1: collect bounds in source double precision.  Large geospatial
+    // coordinates must not be narrowed to float before origin subtraction.
     BoundsAccum bounds;
-    bool first_record = true;
-
     gs3d::data::CsvStreamReader reader(config_);
 
     const auto read_stats = reader.read(
         csv_path,
         [&](const CsvPointRecord& rec, std::uint64_t) {
-            if (first_record) {
-                bounds.value_min = rec.primary_value;
-                bounds.value_max = rec.primary_value;
-                first_record = false;
-            }
             update_bounds(bounds, rec);
-            // Store raw values — origin subtraction happens after full bounds
-            // are known.
-            points.push_back({rec.x, rec.y, rec.z, rec.primary_value});
         }
     );
 
-    if (points.empty()) {
+    if (read_stats.valid_records == 0) {
         throw std::runtime_error(
             "CsvToGs3dConverter: no valid point records found in " +
             csv_path.string()
@@ -348,14 +321,35 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     const double origin_y = 0.5 * (bounds.ymin + bounds.ymax);
     const double origin_z = 0.5 * (bounds.zmin + bounds.zmax);
 
-    // Phase 3: apply origin offset in-place (matches Gs3dWriter::make_point).
-    for (auto& pt : points) {
-        pt.x = static_cast<float>(static_cast<double>(pt.x) - origin_x);
-        pt.y = static_cast<float>(static_cast<double>(pt.y) - origin_y);
-        pt.z = static_cast<float>(static_cast<double>(pt.z) - origin_z);
+    // Phase 2: parse again and immediately rebase into the final float
+    // representation.  This keeps memory bounded without sacrificing source
+    // coordinate precision.
+    std::vector<Gs3dPoint> points;
+    points.reserve(std::max<std::size_t>(
+        estimated_points,
+        static_cast<std::size_t>(read_stats.valid_records)
+    ));
+    const auto point_stats = reader.read(
+        csv_path,
+        [&](const CsvPointRecord& rec, std::uint64_t) {
+            points.push_back({
+                static_cast<float>(rec.x - origin_x),
+                static_cast<float>(rec.y - origin_y),
+                static_cast<float>(rec.z - origin_z),
+                rec.primary_value
+            });
+        }
+    );
+
+    if (point_stats.valid_records != read_stats.valid_records ||
+        point_stats.invalid_records != read_stats.invalid_records) {
+        throw std::runtime_error(
+            "CsvToGs3dConverter: input changed between statistics and "
+            "point conversion passes"
+        );
     }
 
-    // Phase 4: build header and validate.
+    // Phase 3: build header and validate.
     const auto header = build_header(
         bounds,
         static_cast<std::uint64_t>(points.size()),
@@ -371,7 +365,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
         );
     }
 
-    // Phase 5: bulk-write .gs3d (header + all points in one write call).
+    // Phase 4: bulk-write .gs3d (header + all points in one write call).
     write_gs3d(gs3d_path, header, points);
 
     const std::uint64_t output_bytes =
@@ -383,7 +377,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     result.invalid_records = read_stats.invalid_records;
     result.output_file_size = output_bytes;
 
-    // Phase 6: construct Gs3dDataset by moving the point buffer — no file
+    // Phase 5: construct Gs3dDataset by moving the point buffer — no file
     // reload required for downstream tile/LOD writing.
     Gs3dDataset dataset(header, std::move(points), gs3d_path);
 
@@ -403,12 +397,12 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     gs3d::data::CsvChunkReader reader(config_);
     gs3d::util::ThreadPool pool(worker_count);
 
-    std::vector<std::future<gs3d::data::CsvChunkBufferedPointResult>> futures;
-    futures.reserve(chunks.size());
+    std::vector<std::future<gs3d::data::CsvChunkStatsResult>> stat_futures;
+    stat_futures.reserve(chunks.size());
 
     for (const auto& chunk : chunks) {
-        futures.push_back(pool.submit([&, chunk] {
-            return reader.parse_chunk_buffered_points(
+        stat_futures.push_back(pool.submit([&, chunk] {
+            return reader.parse_chunk_for_stats(
                 csv_path,
                 sniff,
                 chunk
@@ -416,21 +410,18 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
         }));
     }
 
-    std::vector<gs3d::data::CsvChunkBufferedPointResult> chunk_results(
-        chunks.size()
-    );
-
     BoundsAccum bounds;
     bool has_bounds = false;
     std::uint64_t written_points = 0;
     std::uint64_t invalid_records = 0;
+    std::vector<std::uint64_t> chunk_point_counts(chunks.size(), 0);
 
-    for (auto& future : futures) {
+    for (auto& future : stat_futures) {
         auto chunk = future.get();
         written_points += chunk.valid_records;
         invalid_records += chunk.invalid_records;
         merge_bounds(bounds, has_bounds, chunk);
-        chunk_results[chunk.chunk_id] = std::move(chunk);
+        chunk_point_counts[chunk.chunk_id] = chunk.valid_records;
     }
 
     if (!has_bounds || written_points == 0) {
@@ -444,13 +435,65 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     const double origin_y = 0.5 * (bounds.ymin + bounds.ymax);
     const double origin_z = 0.5 * (bounds.zmin + bounds.zmax);
 
+    StatisticsResult statistics;
+    statistics.point_count = written_points;
+    statistics.valid_records = written_points;
+    statistics.invalid_records = invalid_records;
+    statistics.xmin = bounds.xmin;
+    statistics.xmax = bounds.xmax;
+    statistics.ymin = bounds.ymin;
+    statistics.ymax = bounds.ymax;
+    statistics.zmin = bounds.zmin;
+    statistics.zmax = bounds.zmax;
+    statistics.value_min = bounds.value_min;
+    statistics.value_max = bounds.value_max;
+    statistics.origin_x = origin_x;
+    statistics.origin_y = origin_y;
+    statistics.origin_z = origin_z;
+    statistics.empty = false;
+
+    std::vector<std::future<gs3d::data::CsvChunkPointResult>> point_futures;
+    point_futures.reserve(chunks.size());
+    for (const auto& chunk : chunks) {
+        point_futures.push_back(pool.submit([&, chunk] {
+            return reader.parse_chunk_for_points(
+                csv_path,
+                sniff,
+                chunk,
+                statistics
+            );
+        }));
+    }
+
+    std::vector<gs3d::data::CsvChunkPointResult> chunk_results(
+        chunks.size()
+    );
+    std::uint64_t second_pass_points = 0;
+    std::uint64_t second_pass_invalid = 0;
+    for (auto& future : point_futures) {
+        auto chunk = future.get();
+        second_pass_points += chunk.valid_records;
+        second_pass_invalid += chunk.invalid_records;
+        if (chunk.valid_records != chunk_point_counts[chunk.chunk_id]) {
+            throw std::runtime_error(
+                "CsvToGs3dConverter: input changed between parallel "
+                "statistics and point conversion passes"
+            );
+        }
+        chunk_results[chunk.chunk_id] = std::move(chunk);
+    }
+
+    if (second_pass_points != written_points ||
+        second_pass_invalid != invalid_records) {
+        throw std::runtime_error(
+            "CsvToGs3dConverter: parallel conversion pass counts differ"
+        );
+    }
+
     std::vector<Gs3dPoint> points;
-    assemble_transformed_points(
+    assemble_chunk_points(
         chunk_results,
         points,
-        origin_x,
-        origin_y,
-        origin_z,
         pool
     );
 

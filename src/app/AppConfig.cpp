@@ -141,16 +141,16 @@ std::vector<double> double_array_or_default(
 
 [[nodiscard]]
 bool input_mode_is_csv(const AppConfig& config) noexcept {
-    return config.input_mode == "csv";
+    return config.input_mode == "csv" || config.input_mode == "dat";
 }
 
 void validate_input_mode(const std::string& mode) {
-    if (mode == "csv" || mode == "gs3d") {
+    if (mode == "csv" || mode == "dat" || mode == "gs3d") {
         return;
     }
 
     throw std::runtime_error(
-        "AppConfig: input.mode must be \"csv\" or \"gs3d\""
+        "AppConfig: input.mode must be \"csv\", \"dat\", or \"gs3d\""
     );
 }
 
@@ -462,6 +462,30 @@ AppConfig AppConfigLoader::load_from_file(
             *csv_convert,
             "min_parallel_file_bytes",
             config.csv_convert.min_parallel_file_bytes
+        );
+
+        config.csv_convert.x_field = string_or_default(
+            *csv_convert,
+            "x_field",
+            config.csv_convert.x_field
+        );
+
+        config.csv_convert.y_field = string_or_default(
+            *csv_convert,
+            "y_field",
+            config.csv_convert.y_field
+        );
+
+        config.csv_convert.z_field = string_or_default(
+            *csv_convert,
+            "z_field",
+            config.csv_convert.z_field
+        );
+
+        config.csv_convert.primary_value_field = string_or_default(
+            *csv_convert,
+            "primary_value_field",
+            config.csv_convert.primary_value_field
         );
     }
 
@@ -982,6 +1006,18 @@ void AppConfigLoader::apply_command_line_overrides(
             }
 
             config.input_mode = "csv";
+            config.csv_input_path =
+                argument_at(argc, argv, i + 1);
+        }
+
+        if (arg == "--dat") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(
+                    "AppConfig: --dat requires a file path"
+                );
+            }
+
+            config.input_mode = "dat";
             config.csv_input_path =
                 argument_at(argc, argv, i + 1);
         }

@@ -49,6 +49,22 @@ bool parse_float(std::string_view text, float& value) {
            result.ptr == trimmed.data() + trimmed.size();
 }
 
+bool parse_double(std::string_view text, double& value) {
+    const auto trimmed = Delimiter::trim_view(text);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    const auto result = std::from_chars(
+        trimmed.data(),
+        trimmed.data() + trimmed.size(),
+        value
+    );
+
+    return result.ec == std::errc{} &&
+           result.ptr == trimmed.data() + trimmed.size();
+}
+
 struct RequiredFieldViews {
     std::string_view x;
     std::string_view y;
@@ -235,9 +251,9 @@ bool parse_record_from_line(
         return false;
     }
 
-    if (!parse_float(fields.x, record.x) ||
-        !parse_float(fields.y, record.y) ||
-        !parse_float(fields.z, record.z) ||
+    if (!parse_double(fields.x, record.x) ||
+        !parse_double(fields.y, record.y) ||
+        !parse_double(fields.z, record.z) ||
         !parse_float(fields.value, record.primary_value)) {
         error_code = CsvParseErrorCode::InvalidFloat;
         return false;
@@ -550,9 +566,9 @@ CsvChunkBufferedPointResult CsvChunkReader::parse_chunk_buffered_points(
                 )) {
                 ++result.valid_records;
 
-                const double x = static_cast<double>(record.x);
-                const double y = static_cast<double>(record.y);
-                const double z = static_cast<double>(record.z);
+                const double x = record.x;
+                const double y = record.y;
+                const double z = record.z;
                 const float value = record.primary_value;
 
                 if (result.empty) {

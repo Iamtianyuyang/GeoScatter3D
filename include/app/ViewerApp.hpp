@@ -65,7 +65,11 @@ struct ViewerAppConfig {
 
     float initial_point_size = 1.0f;
 
-    std::string camera_mode = "fixed";
+    // Source-field labels for the physical Value and Z channels.
+    std::string primary_value_field_name = "fold";
+    std::string z_field_name = "elevation";
+
+    std::string camera_mode = "fit";
 
     std::array<float, 3> camera_position{
         0.0f,

@@ -21,6 +21,12 @@ gs3d::app::ViewerAppConfig make_viewer_config(
     viewer.initial_point_size =
         app_config.render.initial_point_size;
 
+    viewer.primary_value_field_name =
+        app_config.csv_convert.primary_value_field;
+
+    viewer.z_field_name =
+        app_config.csv_convert.z_field;
+
     viewer.camera_mode =
         app_config.camera.mode;
 
@@ -86,7 +92,8 @@ void apply_generated_paths_from_csv(
 void preprocess_csv_input(
     gs3d::app::AppConfig& app_config
 ) {
-    if (app_config.input_mode != "csv") {
+    if (app_config.input_mode != "csv" &&
+        app_config.input_mode != "dat") {
         return;
     }
 
@@ -118,8 +125,18 @@ void preprocess_csv_input(
     csv_chunk_plan_config.min_parallel_file_bytes =
         app_config.csv_convert.min_parallel_file_bytes;
 
+    gs3d::data::CsvReadConfig csv_read_config;
+    csv_read_config.schema.x_field =
+        app_config.csv_convert.x_field;
+    csv_read_config.schema.y_field =
+        app_config.csv_convert.y_field;
+    csv_read_config.schema.z_field =
+        app_config.csv_convert.z_field;
+    csv_read_config.schema.primary_value_field =
+        app_config.csv_convert.primary_value_field;
+
     gs3d::preprocess::CsvToGs3dConverter converter(
-        {},
+        csv_read_config,
         csv_chunk_plan_config
     );
     gs3d::util::Stopwatch convert_timer;

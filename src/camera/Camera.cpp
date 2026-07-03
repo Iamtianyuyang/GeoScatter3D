@@ -301,9 +301,14 @@ void Camera::fit_bounds(const CameraBounds& bounds) noexcept {
             length(sub(position_, target_)) + safe_radius * 3.0f,
             near_plane_ + 1.0f);
 
-        // Position: top-down view above the dataset centre.
-        const Vec3 dir = normalize({0.0f, -1.0f, 0.6f});
-        position_ = add(target_, mul(dir, safe_radius * 2.0f));
+        // Map-style orthographic reset is a true top-down view.  Using an
+        // oblique direction here foreshortens large, flat terrain datasets
+        // into a narrow strip and makes the Z=0 map-axis intersection explode.
+        up_ = {0.0f, 1.0f, 0.0f};
+        position_ = add(
+            target_,
+            Vec3{0.0f, 0.0f, safe_radius * 2.0f}
+        );
 
     } else {
         const float fov   = to_radians(fov_y_degrees_);

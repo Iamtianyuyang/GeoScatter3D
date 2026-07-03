@@ -809,27 +809,65 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         );
     }
 
+    // Auto-scale tile size so the grid has a manageable number of
+    // cells — a 512×512 tile on a dataset spanning millions of units
+    // would produce billions of empty tiles and exhaust memory.
+    float effective_tile_size_x = config.tile_size_x;
+    float effective_tile_size_y = config.tile_size_y;
+
+    const float extent_x = safe_extent(
+        dataset.bbox_min_x(), dataset.bbox_max_x());
+    const float extent_y = safe_extent(
+        dataset.bbox_min_y(), dataset.bbox_max_y());
+
+    // Target ≤ 40 000 tiles (200×200 grid).
+    constexpr float kMaxGridPerAxis = 200.0f;
+    const float scale_x = std::max(
+        1.0f,
+        std::ceil(extent_x / effective_tile_size_x) / kMaxGridPerAxis);
+    const float scale_y = std::max(
+        1.0f,
+        std::ceil(extent_y / effective_tile_size_y) / kMaxGridPerAxis);
+    const float scale = std::max(scale_x, scale_y);
+
+    effective_tile_size_x *= scale;
+    effective_tile_size_y *= scale;
+
     const std::uint32_t grid_count_x =
         compute_grid_count(
             dataset.bbox_min_x(),
             dataset.bbox_max_x(),
-            config.tile_size_x
+            effective_tile_size_x
         );
 
     const std::uint32_t grid_count_y =
         compute_grid_count(
             dataset.bbox_min_y(),
             dataset.bbox_max_y(),
-            config.tile_size_y
+            effective_tile_size_y
         );
 
     if (config.verbose) {
         std::cout << "[TILE] building XY tiles\n";
-        std::cout << "tile_size = ["
-                  << config.tile_size_x
-                  << ", "
-                  << config.tile_size_y
-                  << "]\n";
+        if (scale > 1.0f) {
+            std::cout << "tile_size = ["
+                      << effective_tile_size_x
+                      << ", "
+                      << effective_tile_size_y
+                      << "] (auto-scaled "
+                      << scale
+                      << "× from ["
+                      << config.tile_size_x
+                      << ", "
+                      << config.tile_size_y
+                      << "])\n";
+        } else {
+            std::cout << "tile_size = ["
+                      << config.tile_size_x
+                      << ", "
+                      << config.tile_size_y
+                      << "]\n";
+        }
         std::cout << "grid_count = ["
                   << grid_count_x
                   << ", "
@@ -841,8 +879,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
     auto tiles =
         build_tile_buckets(
             dataset,
-            config.tile_size_x,
-            config.tile_size_y,
+            effective_tile_size_x,
+            effective_tile_size_y,
             grid_count_x,
             grid_count_y,
             config.num_threads
@@ -900,8 +938,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         index_path,
         dataset,
         records,
-        config.tile_size_x,
-        config.tile_size_y,
+        effective_tile_size_x,
+        effective_tile_size_y,
         grid_count_x,
         grid_count_y
     );
@@ -924,8 +962,8 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         file_size_or_zero(index_path);
     stats.data_file_bytes =
         file_size_or_zero(data_path);
-    stats.tile_size_x = config.tile_size_x;
-    stats.tile_size_y = config.tile_size_y;
+    stats.tile_size_x = effective_tile_size_x;
+    stats.tile_size_y = effective_tile_size_y;
     stats.bucket_build_seconds = bucket_build_seconds;
     stats.tile_stats_seconds = tile_stats_seconds;
     stats.data_write_seconds = data_write_seconds;

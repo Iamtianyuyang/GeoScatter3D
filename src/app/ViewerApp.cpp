@@ -2905,17 +2905,22 @@ int ViewerApp::run() {
         bool tab_was_pressed = false;
         bool shift_tab_was_pressed = false;
 
-        /*
-         * 属性列表：从数据集元数据构建，每项绑定到 Gs3dPoint 的一个物理槽。
-         * 当前 2 项 (fold→Value, elevation→Z)；将来扩展只加条目。
-         * 通道选择用索引引用，不硬编码 0=value/1=z。
-         */
+        const std::string primary_value_name =
+            config_.primary_value_field_name.empty()
+                ? "value"
+                : config_.primary_value_field_name;
+        const std::string z_field_name =
+            config_.z_field_name.empty()
+                ? "z"
+                : config_.z_field_name;
+
+        // Logical names come from preprocessing; physical slots stay Value/Z.
         const std::vector<gs3d::app::AttrDescriptor> attr_list = {
-            { "Fold（褶皱）",
+            { primary_value_name,
               gs3d::app::AttrPhysicalSource::Value,
               dataset.value_min(),
               dataset.value_max() },
-            { "Elevation（高程）",
+            { z_field_name,
               gs3d::app::AttrPhysicalSource::Z,
               dataset.bbox_min_z(),
               dataset.bbox_max_z() }
@@ -3618,7 +3623,10 @@ int ViewerApp::run() {
                     )
                 );
             std::uint64_t gpu_buffer_bytes = 0;
-            std::uint64_t visible_points = dataset.point_count();
+            std::uint64_t gpu_resident_points = 0;
+            // LOD/tile streaming only changes the GPU representation.  With
+            // no filtering, the logical point count remains the source count.
+            const std::uint64_t visible_points = dataset.point_count();
 
             if (config_.tile_enabled && tile_gpu_cloud) {
                 const auto& ts = tile_gpu_cloud->stats();
@@ -3626,21 +3634,26 @@ int ViewerApp::run() {
                     static_cast<std::uint32_t>(
                         ts.resident_tile_count
                     );
-                gpu_buffer_bytes = ts.gpu_buffer_bytes;
-                visible_points = ts.point_count > 0 ? ts.point_count : dataset.point_count();
-            } else if (full_gpu_cloud) {
-                gpu_buffer_bytes =
+                gpu_buffer_bytes += ts.gpu_buffer_bytes;
+                gpu_resident_points += ts.point_count;
+            }
+            if (full_gpu_cloud) {
+                gpu_buffer_bytes +=
                     static_cast<std::uint64_t>(full_gpu_cloud->vertex_buffer_size());
-            } else if (lod_gpu_cloud) {
+                gpu_resident_points += full_gpu_cloud->point_count();
+            }
+            if (lod_gpu_cloud) {
                 for (std::size_t i = 0; i < lod_gpu_cloud->level_count(); ++i) {
                     gpu_buffer_bytes += static_cast<std::uint64_t>(
                         lod_gpu_cloud->gpu_cloud(i).vertex_buffer_size()
                     );
+                    gpu_resident_points +=
+                        lod_gpu_cloud->level(i).gpu_point_count;
                 }
             }
 
             app_state.dataset.point_count = dataset.point_count();
-            app_state.dataset.loaded_points = visible_points;
+            app_state.dataset.loaded_points = gpu_resident_points;
             app_state.render_settings.point_size = push.point_size;
             app_state.render_settings.color_attr_index = scene_state.active_attribute_index;
             app_state.render_settings.height_attr_index = scene_state.active_height_index;
@@ -3761,6 +3774,8 @@ int ViewerApp::run() {
                 view.hover_y = 0.0f;
                 view.hover_fold = 0.0f;
                 view.hover_elevation = 0.0f;
+                view.hover_primary_value_label = primary_value_name;
+                view.hover_z_label = z_field_name;
                 view.hover_screen_x = -1.0f;
                 view.hover_screen_y = -1.0f;
                 if (hover_point) {

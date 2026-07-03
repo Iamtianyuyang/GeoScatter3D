@@ -63,6 +63,13 @@ struct CsvChunkPointResult {
     std::vector<CsvParseError> errors;
 };
 
+struct CsvRawPoint {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    float value = 0.0f;
+};
+
 struct CsvChunkBufferedPointResult {
     std::uint32_t chunk_id = 0;
 
@@ -81,7 +88,7 @@ struct CsvChunkBufferedPointResult {
     float value_min = 0.0f;
     float value_max = 0.0f;
 
-    std::vector<Gs3dPoint> points;
+    std::vector<CsvRawPoint> points;
     std::vector<CsvParseError> errors;
 };
 

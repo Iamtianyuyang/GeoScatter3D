@@ -88,7 +88,7 @@ std::vector<CsvByteChunk> CsvChunkPlanner::plan(
             : align_to_next_record_begin(file, nominal_begin);
         chunk.aligned_end = nominal_end >= total_size
             ? total_size
-            : extend_to_record_end(file, nominal_end);
+            : align_to_next_record_begin(file, nominal_end);
 
         if (chunk.aligned_begin < chunk.aligned_end) {
             chunks.push_back(chunk);

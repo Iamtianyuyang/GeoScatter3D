@@ -2,13 +2,17 @@
 
 [input]
 mode = "gs3d"
-gs3d_path = "data/test.gs3d"
-csv_path = "data/test.csv"
+gs3d_path = "data/field_and_ele_source_rec_50m.gs3d"
+csv_path = "data/field_and_ele_source_rec_50m.csv"
 
 [csv_convert]
 num_threads = 12
 chunk_bytes = 16777216
 min_parallel_file_bytes = 67108864
+x_field = "X"
+y_field = "Y"
+z_field = "elevation"
+primary_value_field = "field_statics"
 
 [shader]
 vertex_shader_path = "assets/shaders/point.vert.spv"
@@ -31,7 +35,7 @@ clear_color = [0.015, 0.018, 0.025, 1.0]
 initial_point_size = 1.0
 
 [camera]
-mode = "fixed"
+mode = "fit"
 position = [0.0, -14000.0, 6000.0]
 target = [0.0, 0.0, 0.0]
 up = [0.0, 0.0, 1.0]
@@ -53,7 +57,7 @@ invert_pan_y = false
 enabled = true
 keep_full_buffer = false
 
-sidecar_path = "data/test.gs3dlod"
+sidecar_path = "data/field_and_ele_source_rec_50m.gs3dlod"
 auto_load_sidecar = true
 auto_save_sidecar = true
 # Potree 式自动分层（替代旧的 target_point_counts / target_point_ratios）。
@@ -94,8 +98,8 @@ count = 1
 
 [tile]
 enabled = true
-index_path = "data/test.gs3dtiles.index"
-data_path = "data/test.gs3dtiles"
+index_path = "data/field_and_ele_source_rec_50m.gs3dtiles.index"
+data_path = "data/field_and_ele_source_rec_50m.gs3dtiles"
 num_threads = 12
 
 # tile 投影宽度 >= 该像素值时加载全精度数据（对应 Potree 屏幕空间阈值）
@@ -110,7 +114,7 @@ verbose = true
 # LRU 淘汰上限。设为可见 tile 数的 2-3× 让淘汰真正生效，
 # 避免长时间浏览后所有 tile 全量驻留 GPU（159 个=660MB）。
 # 72 ≈ 单帧可见 30-60 的 ~2×，留有相邻视野缓冲。
-gpu_cache_max_tiles = 72
+gpu_cache_max_tiles = 144
 # Upload at most 8 MiB of newly visible tile data per frame.
 gpu_upload_budget_bytes = 8388608
 # CPU tile cache memory budget. Cached tiles are evicted by LRU.

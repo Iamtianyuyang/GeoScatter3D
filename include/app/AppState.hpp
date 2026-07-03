@@ -57,8 +57,8 @@ struct DatasetSummaryState {
         "属性"
     };
     std::vector<std::string> attributes{
-        "Fold（褶皱）",
-        "Elevation（高程）"
+        "value",
+        "z"
     };
     std::array<char, 128> search_text{};
     int selected_tab = 0;
@@ -79,12 +79,12 @@ struct RenderSettingsState {
 
     // 从 attr_list 动态填充，UI 下拉直接遍历
     std::vector<std::string> height_by_options{
-        "Fold（褶皱）",
-        "Elevation（高程）"
+        "value",
+        "z"
     };
     std::vector<std::string> color_by_options{
-        "Fold（褶皱）",
-        "Elevation（高程）"
+        "value",
+        "z"
     };
 
     bool reverse_colormap = false;
@@ -169,6 +169,8 @@ struct RenderViewState {
     float hover_y = 0.0f;
     float hover_fold = 0.0f;
     float hover_elevation = 0.0f;
+    std::string hover_primary_value_label = "value";
+    std::string hover_z_label = "z";
     // Screen-space position of the hovered point (viewport-local px, origin top-left).
     float hover_screen_x = -1.0f;
     float hover_screen_y = -1.0f;

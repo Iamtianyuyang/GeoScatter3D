@@ -419,6 +419,37 @@ void test_fit_bounds_keeps_panorama_far_end_visible()
     );
 }
 
+void test_orthographic_fit_bounds_uses_true_top_down_view()
+{
+    gs3d::camera::CameraBounds bounds;
+    bounds.min = {-18'688'740.0f, -20'026'054.0f, -400.5f};
+    bounds.max = {18'688'740.0f, 20'026'054.0f, 400.5f};
+
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_orthographic(10.0f, 0.01f, 10000.0f);
+    camera.fit_bounds(bounds);
+
+    expect(
+        std::abs(camera.position().x - camera.target().x) < 1.0f &&
+            std::abs(camera.position().y - camera.target().y) < 1.0f &&
+            camera.position().z > camera.target().z,
+        "orthographic fit_bounds() places the camera directly above the "
+        "dataset instead of using an oblique view"
+    );
+    expect(
+        std::abs(camera.up().x) < 1.0e-6f &&
+            std::abs(camera.up().y - 1.0f) < 1.0e-6f &&
+            std::abs(camera.up().z) < 1.0e-6f,
+        "top-down orthographic fit uses +Y as screen up"
+    );
+    expect(
+        camera.ortho_height() >=
+            bounds.max.y - bounds.min.y,
+        "top-down orthographic fit contains the full dataset height"
+    );
+}
+
 void test_zoom_caps_depth_ratio_for_close_large_scene()
 {
     // Ortho near/far are set by fit_bounds() and stay fixed — zoom does
@@ -2615,6 +2646,7 @@ int main()
     test_zoom_respects_max_distance_from_bounds();
     test_fit_bounds_distance_is_orientation_independent();
     test_fit_bounds_keeps_panorama_far_end_visible();
+    test_orthographic_fit_bounds_uses_true_top_down_view();
     test_zoom_caps_depth_ratio_for_close_large_scene();
     test_rotate_refreshes_depth_ratio();
     test_pan_refreshes_depth_ratio();

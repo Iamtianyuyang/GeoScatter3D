@@ -21,7 +21,7 @@ struct RenderConfig {
 };
 
 struct CameraConfig {
-    std::string mode = "fixed";
+    std::string mode = "fit";
 
     std::array<float, 3> position{
         0.0f,
@@ -61,6 +61,12 @@ struct CsvConvertConfig {
     std::uint32_t num_threads = 0;
     std::uint64_t chunk_bytes = 16ull * 1024ull * 1024ull;
     std::uint64_t min_parallel_file_bytes = 64ull * 1024ull * 1024ull;
+
+    // Column name mapping (case-insensitive).
+    std::string x_field = "x";
+    std::string y_field = "y";
+    std::string z_field = "elevation";
+    std::string primary_value_field = "fold";
 };
 
 struct TileBuildConfig {

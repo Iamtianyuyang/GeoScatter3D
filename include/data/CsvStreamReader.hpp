@@ -12,9 +12,12 @@
 namespace gs3d::data {
 
 struct CsvPointRecord {
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
+    // Source coordinates stay double precision until the dataset origin is
+    // subtracted.  Parsing large map coordinates directly to float loses
+    // metre-scale detail before origin rebasing can preserve it.
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
     float primary_value = 0.0f;
 
     std::vector<float> extra_values;
@@ -65,6 +68,9 @@ private:
 
     [[nodiscard]]
     static bool parse_float(std::string_view text, float& value);
+
+    [[nodiscard]]
+    static bool parse_double(std::string_view text, double& value);
 
     [[nodiscard]]
     static std::unordered_map<std::string, std::size_t> build_field_map(

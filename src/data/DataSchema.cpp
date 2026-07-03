@@ -36,10 +36,43 @@ ResolvedDataSchema DataSchema::resolve(
 
     ResolvedDataSchema resolved;
 
+    // X and Y are always required by name — every format has them.
     resolved.x_col = find_required(x_field);
     resolved.y_col = find_required(y_field);
-    resolved.z_col = find_required(z_field);
-    resolved.primary_value_col = find_required(primary_value_field);
+
+    // Z and primary value: try the configured name first.
+    // If not found, fall back by position — column 2 (third) for Z,
+    // then the first unused column for the value.  This handles .dat
+    // files whose 3rd/4th column names vary (elevation / height / z,
+    // field_statics / fold / value / ...) without manual config.
+    {
+        const std::string z_key = normalize(z_field);
+        const auto z_it = field_to_column.find(z_key);
+        resolved.z_col = (z_it != field_to_column.end())
+            ? z_it->second
+            : (header_fields.size() > 2 ? std::size_t{2} : std::size_t{0});
+    }
+
+    {
+        std::size_t primary_col = resolved.z_col;
+        const std::string pv_key = normalize(primary_value_field);
+        const auto pv_it = field_to_column.find(pv_key);
+        if (pv_it != field_to_column.end()) {
+            primary_col = pv_it->second;
+        } else {
+            // First column that isn't x, y, or z.
+            for (std::size_t col = 0;
+                 col < header_fields.size(); ++col) {
+                if (col != resolved.x_col &&
+                    col != resolved.y_col &&
+                    col != resolved.z_col) {
+                    primary_col = col;
+                    break;
+                }
+            }
+        }
+        resolved.primary_value_col = primary_col;
+    }
 
     std::vector<std::size_t> used_columns = {
         resolved.x_col,
