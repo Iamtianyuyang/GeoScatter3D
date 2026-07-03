@@ -221,6 +221,10 @@ struct RenderViewState {
      */
     bool show_map_axis = true;
 
+    // 悬停十字准线：贯穿全图的十字线 + 轴交点坐标值。
+    // 仅在地图轴开启时生效，关闭时只保留悬停 tooltip。
+    bool show_crosshair = true;
+
     // 当前视口中可见的 X/Y 坐标范围（世界坐标，已去除 origin 偏移的内
     // 部值，ViewerApp 填入）。用于地图坐标轴的刻度计算。
     float map_axis_x_min = 0.0f;

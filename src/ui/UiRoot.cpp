@@ -445,6 +445,13 @@ void draw_viewport_window(
             view.show_map_axis = false;
         }
     }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("十字准线", &view.show_crosshair)) {
+        if (view.show_crosshair && !view.show_map_axis) {
+            view.show_map_axis = true;
+            view.show_world_axis = false;
+        }
+    }
     const float hint_threshold = 520.0f;
     const float short_hint_threshold = 250.0f;
     const float hint_space = ImGui::GetContentRegionAvail().x;
@@ -807,6 +814,104 @@ void draw_viewport_window(
                         ImVec2(plot_min.x - tick_len_minor, py),
                         AxisStyle::kMinorTick, AxisStyle::kMinorTickWidth);
                 }
+            }
+        }
+
+        // ── 悬停十字准线 ──
+        // Crosshair spanning the full plot area, with coordinate
+        // readout at the axis intersection points.
+        // Only active when both show_crosshair and show_map_axis are on.
+        if (view.show_crosshair &&
+            view.hover_tooltip_visible &&
+            view.hover_screen_x >= 0.0f &&
+            view.hover_screen_y >= 0.0f &&
+            view.image_width > 0 && view.image_height > 0) {
+            const auto scr = framebuffer_to_plot_screen(
+                view.hover_screen_x, view.hover_screen_y,
+                canvas_rect, view.show_map_axis,
+                view.image_width, view.image_height);
+            const float cx = plot_min.x + scr.x;
+            const float cy = plot_min.y + scr.y;
+
+            constexpr ImU32 kCrosshairLine  = IM_COL32(255, 220, 60, 80);
+            constexpr ImU32 kCrosshairBg    = IM_COL32(14,  15,  18,  200);
+            constexpr ImU32 kCrosshairText  = IM_COL32(255, 220, 60, 240);
+            constexpr float kCrosshairWidth = 1.0f;
+            constexpr float kLabelPad = 3.0f;
+            constexpr float kLabelAxisGap = 3.0f;
+
+            dl->AddLine(ImVec2(plot_min.x, cy), ImVec2(plot_max.x, cy),
+                        kCrosshairLine, kCrosshairWidth);
+            dl->AddLine(ImVec2(cx, plot_min.y), ImVec2(cx, plot_max.y),
+                        kCrosshairLine, kCrosshairWidth);
+
+            // Precision from axis major-step estimate, same family as
+            // fmt_label used by tick labels.
+            const auto hover_prec = [](float step) -> int {
+                if (step <= 0.0f || step >= 1.0f) return 0;
+                int p = static_cast<int>(
+                    std::ceil(-std::log10(
+                        static_cast<double>(std::max(step, 1.0e-6f)))));
+                return std::clamp(p, 0, 6);
+            };
+
+            const float x_step = (x_range > 0.0f)
+                ? x_range / static_cast<float>(std::max(major_cnt, 1))
+                : 1.0f;
+            const float y_step = (y_range > 0.0f)
+                ? y_range / static_cast<float>(std::max(major_cnt, 1))
+                : 1.0f;
+
+            char label_x[32], label_y[32];
+            std::snprintf(label_x, sizeof(label_x), "%.*f",
+                hover_prec(x_step),
+                static_cast<double>(view.hover_x));
+            std::snprintf(label_y, sizeof(label_y), "%.*f",
+                hover_prec(y_step),
+                static_cast<double>(view.hover_y));
+
+            if (axis_font() != nullptr) {
+                ImGui::PushFont(axis_font());
+            }
+            const ImVec2 tx = ImGui::CalcTextSize(label_x);
+            const ImVec2 ty = ImGui::CalcTextSize(label_y);
+
+            // X value: at top-axis intersection (vertical line meets X axis).
+            // Background box above axis line, outside plot.
+            {
+                const float bg_min_x = cx - tx.x * 0.5f - kLabelPad;
+                const float bg_max_x = cx + tx.x * 0.5f + kLabelPad;
+                const float bg_min_y = plot_min.y - tx.y - kLabelPad * 2.0f
+                                       - kLabelAxisGap;
+                const float bg_max_y = plot_min.y - kLabelAxisGap;
+                dl->AddRectFilled(
+                    ImVec2(bg_min_x, bg_min_y),
+                    ImVec2(bg_max_x, bg_max_y),
+                    kCrosshairBg, 3.0f);
+                dl->AddText(
+                    ImVec2(cx - tx.x * 0.5f, bg_min_y + kLabelPad),
+                    kCrosshairText, label_x);
+            }
+
+            // Y value: at left-axis intersection (horizontal line meets Y axis).
+            // Background box left of axis line, outside plot.
+            {
+                const float bg_min_x = plot_min.x - ty.x - kLabelPad * 2.0f
+                                       - kLabelAxisGap;
+                const float bg_max_x = plot_min.x - kLabelAxisGap;
+                const float bg_min_y = cy - ty.y * 0.5f - kLabelPad;
+                const float bg_max_y = cy + ty.y * 0.5f + kLabelPad;
+                dl->AddRectFilled(
+                    ImVec2(bg_min_x, bg_min_y),
+                    ImVec2(bg_max_x, bg_max_y),
+                    kCrosshairBg, 3.0f);
+                dl->AddText(
+                    ImVec2(bg_min_x + kLabelPad, cy - ty.y * 0.5f),
+                    kCrosshairText, label_y);
+            }
+
+            if (axis_font() != nullptr) {
+                ImGui::PopFont();
             }
         }
 
