@@ -1100,7 +1100,7 @@ void draw_viewport_window(
     // Tooltip: shown whenever we have valid hover data and the cursor is on the image.
     if (frame.mouse_on_image && view.hover_tooltip_visible) {
         ImGui::SetTooltip(
-            "x: %.2f\ny: %.2f\n%s: %.3f\n%s: %.2f",
+            "x: %.6f\ny: %.6f\n%s: %.6f\n%s: %.6f",
             static_cast<double>(view.hover_x),
             static_cast<double>(view.hover_y),
             view.hover_primary_value_label.c_str(),
@@ -1118,7 +1118,7 @@ void draw_viewport_window(
         !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
         char clip_buf[256];
         std::snprintf(clip_buf, sizeof(clip_buf),
-            "%.6f,%.6f,%.2f,%.2f",
+            "%.6f,%.6f,%.6f,%.6f",
             static_cast<double>(view.hover_x),
             static_cast<double>(view.hover_y),
             static_cast<double>(view.hover_elevation),
