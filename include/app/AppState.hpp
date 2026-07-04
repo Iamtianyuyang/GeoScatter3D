@@ -330,6 +330,10 @@ struct RegionStatsResult {
     bool valid = false;
     bool computing = false;
     std::uint64_t point_count = 0;
+    double world_x_min = 0.0;
+    double world_x_max = 0.0;
+    double world_y_min = 0.0;
+    double world_y_max = 0.0;
     float fold_min = 0.0f;
     float fold_max = 0.0f;
     float fold_avg = 0.0f;

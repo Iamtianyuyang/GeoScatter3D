@@ -4312,6 +4312,35 @@ int ViewerApp::run() {
                 app_state.region_stats = RegionStatsResult{};
                 app_state.region_stats.computing = true;
 
+                // Compute world-space XY bounds of the selection rectangle
+                // so the panel can display the approximate coordinate range.
+                // box_select_world_bounds returns local-space coords (matching
+                // the camera space); add origin to get absolute coords that
+                // match the hover tooltip / map axis display.
+                double world_x_min = 0.0;
+                double world_x_max = 0.0;
+                double world_y_min = 0.0;
+                double world_y_max = 0.0;
+                {
+                    const gs3d::camera::Viewport stats_viewport{
+                        static_cast<std::uint32_t>(vp_w),
+                        static_cast<std::uint32_t>(vp_h)
+                    };
+                    const float plane_z = cam.target().z;
+                    const auto selection_bounds =
+                        gs3d::camera::box_select_world_bounds(
+                            sx_min, sy_min, sx_max, sy_max,
+                            stats_viewport, cam, bounds, plane_z);
+                    if (selection_bounds) {
+                        const double ox = dataset.origin_x();
+                        const double oy = dataset.origin_y();
+                        world_x_min = static_cast<double>(selection_bounds->min.x) + ox;
+                        world_x_max = static_cast<double>(selection_bounds->max.x) + ox;
+                        world_y_min = static_cast<double>(selection_bounds->min.y) + oy;
+                        world_y_max = static_cast<double>(selection_bounds->max.y) + oy;
+                    }
+                }
+
                 region_stats_future_ = std::async(
                     std::launch::async,
                     [gen,
@@ -4319,6 +4348,7 @@ int ViewerApp::run() {
                      sx_min, sx_max, sy_min, sy_max,
                      has_points, points_data, point_count,
                      gs3d_path,
+                     world_x_min, world_x_max, world_y_min, world_y_max,
                      &gen_counter = region_stats_gen_]() -> RegionStatsResult
                     {
                         double fold_sum = 0.0;
@@ -4390,6 +4420,10 @@ int ViewerApp::run() {
                         RegionStatsResult out;
                         out.valid = true;
                         out.point_count = count;
+                        out.world_x_min = world_x_min;
+                        out.world_x_max = world_x_max;
+                        out.world_y_min = world_y_min;
+                        out.world_y_max = world_y_max;
                         if (count > 0) {
                             const double inv =
                                 1.0 / static_cast<double>(count);
