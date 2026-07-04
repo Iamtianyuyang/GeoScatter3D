@@ -3745,9 +3745,21 @@ int ViewerApp::run() {
             app_state.render_settings.color_attr_index = scene_state.active_attribute_index;
             app_state.render_settings.height_attr_index = scene_state.active_height_index;
             app_state.render_settings.height_exaggeration = height_exag;
-            app_state.render_settings.data_value_min = push.color_min;
-            app_state.render_settings.data_value_max =
-                push.color_min + push.color_range;
+            // 色标数据范围：绝对属性值，与 pick tooltip 同体系。
+            // 高程(Z源)在 Gs3dPoint 中存的是相对值(z - origin_z)，
+            // 需要加回 origin_z 还原为绝对高程显示。
+            {
+                float display_min = push.color_min;
+                if (push.color_source ==
+                    static_cast<std::uint32_t>(
+                        gs3d::app::AttrPhysicalSource::Z)) {
+                    display_min +=
+                        static_cast<float>(dataset.origin_z());
+                }
+                app_state.render_settings.data_value_min = display_min;
+                app_state.render_settings.data_value_max =
+                    display_min + push.color_range;
+            }
             app_state.render_settings.loaded_tiles = loaded_tiles;
             app_state.render_settings.pending_tiles = pending_tiles;
             app_state.render_settings.cache_usage =
@@ -4202,13 +4214,27 @@ int ViewerApp::run() {
             if (gui_cmds.value_clip_changed) {
                 if (gui_cmds.value_clip_enabled) {
                     push.flags |= gs3d::render::PointFlags::kValueClip;
-                    // 将原始数据值转换为归一化 [0,1] 传给 shader
+                    // 将原始数据值转换为归一化 [0,1] 传给 shader。
+                    // UI 输入的是绝对属性值（与 data_value 同体系），
+                    // 对着色器需要转回 push.color_min 所在的空间。
                     const float cr = push.color_range > 0.0f
                         ? push.color_range : 1.0f;
+                    float clip_lo = gui_cmds.value_clip_min;
+                    float clip_hi = gui_cmds.value_clip_max;
+                    float ref_min = push.color_min;
+                    if (push.color_source ==
+                        static_cast<std::uint32_t>(
+                            gs3d::app::AttrPhysicalSource::Z)) {
+                        const float oz =
+                            static_cast<float>(dataset.origin_z());
+                        clip_lo -= oz;
+                        clip_hi -= oz;
+                        // ref_min (push.color_min) 已经是相对值，不调整
+                    }
                     const float norm_lo =
-                        (gui_cmds.value_clip_min - push.color_min) / cr;
+                        (clip_lo - ref_min) / cr;
                     const float norm_hi =
-                        (gui_cmds.value_clip_max - push.color_min) / cr;
+                        (clip_hi - ref_min) / cr;
                     push.clip_min[3] = std::clamp(norm_lo, 0.0f, 1.0f);
                     push.clip_max[3] = std::clamp(norm_hi, 0.0f, 1.0f);
                 } else {
