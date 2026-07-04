@@ -174,13 +174,14 @@ void draw_render_settings(
                 "Thermal",
                 "Coolwarm",
                 "Turbo",
-                "Plasma"
+                "Plasma",
+                "Rainbow256"
             };
             int cmap = state.render_settings.colormap_index;
-            if (cmap < 0 || cmap > 7) cmap = 0;
+            if (cmap < 0 || cmap > 8) cmap = 0;
             ImGui::TextUnformatted("色标");
             if (ImGui::BeginCombo("##Colormap", colormap_names[cmap])) {
-                for (int i = 0; i < 8; ++i) {
+                for (int i = 0; i < 9; ++i) {
                     if (ImGui::Selectable(colormap_names[i], i == cmap)) {
                         state.render_settings.colormap_index = i;
                         actions.colormap_changed = true;
@@ -200,7 +201,7 @@ void draw_render_settings(
             // Each colormap: {left, mid-left, mid-right, right} corner colours
             // matching the approximate endpoints used in the fragment shader.
             struct CmapColors { ImU32 c0, c1, c2, c3; };
-            const CmapColors cmap_colors[8] = {
+            const CmapColors cmap_colors[9] = {
                 // Geo: blue → cyan → green → yellow-red
                 { IM_COL32(60,  105, 215, 255), IM_COL32(55,  190, 175, 255),
                   IM_COL32(235, 190, 75,  255), IM_COL32(218, 82,  76,  255) },
@@ -225,9 +226,12 @@ void draw_render_settings(
                 // Plasma: dark purple → magenta → orange → yellow
                 { IM_COL32(13,  8,   135, 255), IM_COL32(126, 3,   168, 255),
                   IM_COL32(224, 100, 40,  255), IM_COL32(240, 249, 33,  255) },
+                // Rainbow256: blue → cyan → yellow → red (Jet 256 discrete)
+                { IM_COL32(0,   0,   128, 255), IM_COL32(0,   191, 255, 255),
+                  IM_COL32(255, 255, 0,   255), IM_COL32(128, 0,   0,   255) },
             };
             int ci = state.render_settings.colormap_index;
-            if (ci < 0 || ci > 7) ci = 0;
+            if (ci < 0 || ci > 8) ci = 0;
             const auto& cc = cmap_colors[ci];
             dl->AddRectFilledMultiColor(
                 start,

@@ -83,7 +83,7 @@ struct UiActions {
     int  color_by_index = 0;
 
     bool colormap_changed = false;
-    int  colormap_index = 0;
+    int  colormap_index = 8;
 
     bool  value_clip_changed = false;
     bool  value_clip_enabled = false;

@@ -93,7 +93,7 @@ struct RenderSettingsState {
         "z"
     };
 
-    int  colormap_index = 0;   // 色标索引 (0=Geo, 1=Viridis, 2=Jet, ...)
+    int  colormap_index = 8;   // 色标索引 (默认 Rainbow256)
     bool reverse_colormap = false;
     bool clamp_colormap = true;
 

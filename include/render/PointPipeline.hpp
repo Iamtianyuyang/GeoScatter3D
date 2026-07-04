@@ -64,6 +64,7 @@ struct PointPushConstants {
      *   5 = Coolwarm (blue-white-red, diverging)
      *   6 = Turbo
      *   7 = Plasma
+     *   8 = Rainbow256 (256-level discrete Jet LUT, no interpolation)
      */
     std::uint32_t flags = 0;    // offset 124
 };                                // total: 128 bytes

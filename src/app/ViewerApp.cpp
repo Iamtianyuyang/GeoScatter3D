@@ -2891,6 +2891,10 @@ int ViewerApp::run() {
         }
         apply_height_attr(attr_list[1], height_exag);
 
+        // 初始化默认色标 Rainbow256 (索引 8)
+        push.flags &= ~gs3d::render::PointFlags::kColormapMask;
+        push.flags |= (8u << 1) & gs3d::render::PointFlags::kColormapMask;
+
         std::size_t last_lod_level =
              static_cast<std::size_t>(-1);
         // Hoisted out of the loop body so report_frame_time() can pair the
