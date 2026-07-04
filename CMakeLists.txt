@@ -243,6 +243,27 @@ target_link_libraries(GeoScatter3DPreprocess PRIVATE
     Threads::Threads
 )
 
+# Standalone ground-truth CLI — reads raw .gs3d, no LOD/tiles/Vulkan/GLFW.
+# Used to verify the viewer's pick accuracy, region coverage, and dataset stats.
+add_executable(gs3d_groundtruth
+    tools/gs3d_groundtruth.cpp
+    src/data/Gs3dFormat.cpp
+    src/data/Gs3dReader.cpp
+    src/data/Gs3dDataset.cpp
+    src/data/CsvStreamReader.cpp
+    src/data/CsvSniffer.cpp
+    src/data/DataSchema.cpp
+    src/data/Delimiter.cpp
+)
+
+target_include_directories(gs3d_groundtruth PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_groundtruth PRIVATE
+    Threads::Threads
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
