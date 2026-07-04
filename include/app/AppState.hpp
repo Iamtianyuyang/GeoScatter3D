@@ -334,6 +334,8 @@ struct RegionStatsResult {
     double world_x_max = 0.0;
     double world_y_min = 0.0;
     double world_y_max = 0.0;
+    std::string primary_label;
+    std::string secondary_label;
     float fold_min = 0.0f;
     float fold_max = 0.0f;
     float fold_avg = 0.0f;

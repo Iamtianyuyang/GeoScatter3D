@@ -20,9 +20,9 @@ std::string format_clipboard_text(const gs3d::app::RegionStatsResult& stats)
     oss << "X范围: [" << stats.world_x_min << ", " << stats.world_x_max << "]\n";
     oss << "Y范围: [" << stats.world_y_min << ", " << stats.world_y_max << "]\n";
     oss << "框内点数: " << stats.point_count << '\n';
-    oss << "Fold 最小值/最大值/平均值: "
+    oss << stats.primary_label << " 最小值/最大值/平均值: "
         << stats.fold_min << " / " << stats.fold_max << " / " << stats.fold_avg << '\n';
-    oss << "Elevation 最小值/最大值/平均值: "
+    oss << stats.secondary_label << " 最小值/最大值/平均值: "
         << stats.elev_min << " / " << stats.elev_max << " / " << stats.elev_avg;
 
     return oss.str();
@@ -68,33 +68,38 @@ void draw_region_stats_panel(gs3d::app::AppState& state)
 
     ImGui::Separator();
 
-    // ── Fold (场值) ──
+    const char* primary_label = stats.primary_label.empty()
+        ? "Fold" : stats.primary_label.c_str();
+    const char* secondary_label = stats.secondary_label.empty()
+        ? "Elevation" : stats.secondary_label.c_str();
+
+    // ── 主属性 ──
     if (auto* font = gs3d::gui::ui_fonts().panel_title) {
         ImGui::PushFont(font);
     }
-    ImGui::TextUnformatted("Fold (场值)");
+    ImGui::TextUnformatted(primary_label);
     if (auto* font = gs3d::gui::ui_fonts().panel_title) {
         ImGui::PopFont();
     }
 
-    ImGui::Text("最小值  %.3f", static_cast<double>(stats.fold_min));
-    ImGui::Text("最大值  %.3f", static_cast<double>(stats.fold_max));
-    ImGui::Text("平均值  %.3f", static_cast<double>(stats.fold_avg));
+    ImGui::Text("最小值  %.6f", static_cast<double>(stats.fold_min));
+    ImGui::Text("最大值  %.6f", static_cast<double>(stats.fold_max));
+    ImGui::Text("平均值  %.6f", static_cast<double>(stats.fold_avg));
 
     ImGui::Spacing();
 
-    // ── Elevation (高程) ──
+    // ── 副属性 ──
     if (auto* font = gs3d::gui::ui_fonts().panel_title) {
         ImGui::PushFont(font);
     }
-    ImGui::TextUnformatted("Elevation (高程)");
+    ImGui::TextUnformatted(secondary_label);
     if (auto* font = gs3d::gui::ui_fonts().panel_title) {
         ImGui::PopFont();
     }
 
-    ImGui::Text("最小值  %.3f", static_cast<double>(stats.elev_min));
-    ImGui::Text("最大值  %.3f", static_cast<double>(stats.elev_max));
-    ImGui::Text("平均值  %.3f", static_cast<double>(stats.elev_avg));
+    ImGui::Text("最小值  %.6f", static_cast<double>(stats.elev_min));
+    ImGui::Text("最大值  %.6f", static_cast<double>(stats.elev_max));
+    ImGui::Text("平均值  %.6f", static_cast<double>(stats.elev_avg));
 
     ImGui::End();
 }

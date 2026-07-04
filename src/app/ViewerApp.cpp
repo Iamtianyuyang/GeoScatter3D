@@ -4311,6 +4311,8 @@ int ViewerApp::run() {
 
                 app_state.region_stats = RegionStatsResult{};
                 app_state.region_stats.computing = true;
+                app_state.region_stats.primary_label = primary_value_name;
+                app_state.region_stats.secondary_label = z_field_name;
 
                 // Compute world-space XY bounds of the selection rectangle
                 // so the panel can display the approximate coordinate range.
@@ -4349,6 +4351,8 @@ int ViewerApp::run() {
                      has_points, points_data, point_count,
                      gs3d_path,
                      world_x_min, world_x_max, world_y_min, world_y_max,
+                     primary_label = primary_value_name,
+                     secondary_label = z_field_name,
                      &gen_counter = region_stats_gen_]() -> RegionStatsResult
                     {
                         double fold_sum = 0.0;
@@ -4424,6 +4428,8 @@ int ViewerApp::run() {
                         out.world_x_max = world_x_max;
                         out.world_y_min = world_y_min;
                         out.world_y_max = world_y_max;
+                        out.primary_label = primary_label;
+                        out.secondary_label = secondary_label;
                         if (count > 0) {
                             const double inv =
                                 1.0 / static_cast<double>(count);
