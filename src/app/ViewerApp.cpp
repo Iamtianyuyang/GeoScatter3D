@@ -1689,8 +1689,9 @@ void compute_axis_overlay(
     double origin_x,
     double origin_y,
     double origin_z,
-    float  z_label_mult   = 1.0f,
-    float  z_label_offset = 0.0f
+    float  z_label_mult        = 1.0f,
+    float  z_label_offset      = 0.0f,
+    bool   z_axis_add_origin_z = false
 ) {
     view.axis_lines.clear();
     view.axis_tick_labels.clear();
@@ -1833,14 +1834,18 @@ void compute_axis_overlay(
             const auto p = sv(min_x, min_y, world_z);
             if (!p) continue;
             constexpr float kMarkPx = 8.0f;
+            // Z 刻度向右伸出，避免与 Y 刻度（向左）在左下角重叠。
             view.axis_lines.push_back(
-                {p->x, p->y, p->x - kMarkPx, p->y}
+                {p->x, p->y, p->x + kMarkPx, p->y}
             );
             char label[32];
-            std::snprintf(label, sizeof(label), "%.6g",
-                static_cast<double>(label_val));
+            double display_val = static_cast<double>(label_val);
+            if (z_axis_add_origin_z) {
+                display_val += origin_z;
+            }
+            std::snprintf(label, sizeof(label), "%.6g", display_val);
             view.axis_tick_labels.push_back(
-                {p->x - kMarkPx - 3.0f, p->y, label}
+                {p->x + kMarkPx + 2.0f, p->y, label}
             );
         }
     }
@@ -3870,7 +3875,10 @@ int ViewerApp::run() {
                     dataset.origin_y(),
                     dataset.origin_z(),
                     z_label_mult,
-                    z_label_offset
+                    z_label_offset,
+                    push.height_source ==
+                        static_cast<std::uint32_t>(
+                            gs3d::app::AttrPhysicalSource::Z)
                 );
 
                 compute_map_axis_overlay(
