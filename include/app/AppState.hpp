@@ -289,6 +289,9 @@ struct RenderViewState {
     bool pending_point_visible = false;
     float pending_point_screen_x = -1.0f;
     float pending_point_screen_y = -1.0f;
+
+    // "已复制" feedback overlay countdown (C-key copy-to-clipboard).
+    int copy_feedback_frames = 0;
 };
 
 /*

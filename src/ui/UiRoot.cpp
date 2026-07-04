@@ -951,6 +951,22 @@ void draw_viewport_window(
         dl->AddLine({cx - kR, cy}, {cx + kR, cy}, kColor, kThick);
         dl->AddLine({cx, cy - kR}, {cx, cy + kR}, kColor, kThick);
         dl->AddCircle({cx, cy}, kR + 2.0f, kColor, 0, kThick * 0.7f);
+
+        // "已复制" feedback overlay
+        if (view.copy_feedback_frames > 0) {
+            constexpr float kFeedbackPad = 4.0f;
+            constexpr ImU32 kFeedbackBg = IM_COL32(40, 180, 80, 210);
+            constexpr ImU32 kFeedbackText = IM_COL32(255, 255, 255, 240);
+            const char* feedback = "已复制";
+            const ImVec2 fs = ImGui::CalcTextSize(feedback);
+            const float fb_x = cx - fs.x * 0.5f;
+            const float fb_y = cy - kR - fs.y - kFeedbackPad * 2.0f - 8.0f;
+            dl->AddRectFilled(
+                ImVec2(fb_x - kFeedbackPad, fb_y - kFeedbackPad),
+                ImVec2(fb_x + fs.x + kFeedbackPad, fb_y + fs.y + kFeedbackPad),
+                kFeedbackBg, 3.0f);
+            dl->AddText(ImVec2(fb_x, fb_y), kFeedbackText, feedback);
+        }
     }
 
     if (view.selected_point_visible &&
@@ -1092,6 +1108,23 @@ void draw_viewport_window(
             view.hover_z_label.c_str(),
             static_cast<double>(view.hover_elevation)
         );
+    }
+
+    // ── C key: copy hovered point values to clipboard ──
+    if (view.copy_feedback_frames > 0) {
+        --view.copy_feedback_frames;
+    }
+    if (frame.mouse_on_image && view.hover_tooltip_visible &&
+        !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+        char clip_buf[256];
+        std::snprintf(clip_buf, sizeof(clip_buf),
+            "%.6f,%.6f,%.2f,%.2f",
+            static_cast<double>(view.hover_x),
+            static_cast<double>(view.hover_y),
+            static_cast<double>(view.hover_elevation),
+            static_cast<double>(view.hover_fold));
+        ImGui::SetClipboardText(clip_buf);
+        view.copy_feedback_frames = 90; // ~1.5 s at 60 fps
     }
 
     // Ctrl+左键 = 框选放大，普通左键 = 轨道旋转；两者互斥，框选时不旋转。
