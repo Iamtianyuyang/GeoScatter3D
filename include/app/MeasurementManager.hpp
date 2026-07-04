@@ -81,7 +81,7 @@ public:
 
 private:
     bool measure_mode_active_ = false;
-    DistanceDisplayMode display_mode_ = DistanceDisplayMode::Both;
+    DistanceDisplayMode display_mode_ = DistanceDisplayMode::Planar;
     std::optional<gs3d::data::Gs3dPoint> pending_first_point_{};
     std::vector<MeasurementLine> lines_{};
     int next_color_index_ = 0;
