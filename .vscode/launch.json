@@ -1,0 +1,93 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "🚀 启动 GeoScatter3D（F5）",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/GeoScatter3D",
+            "args": [
+                "--config",
+                "config/viewer.toml"
+            ],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cmake build",
+            "initCommands": [
+                "settings set target.process.thread.step-avoid-regexp \"\""
+            ],
+            "detail": "编译并运行（Release + LTO，加载 config/viewer.toml）"
+        },
+        {
+            "name": "🔧 启动（不编译，直接调试）",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/GeoScatter3D",
+            "args": [
+                "--config",
+                "config/viewer.toml"
+            ],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "initCommands": [
+                "settings set target.process.thread.step-avoid-regexp \"\""
+            ],
+            "detail": "跳过编译，直接用已编译的二进制调试"
+        },
+        {
+            "name": "📊 性能基准",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/GeoScatter3DBenchmark",
+            "args": [
+                "--config",
+                "config/viewer.toml"
+            ],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GS3D_BENCHMARK_FRAMES",
+                    "value": "1800"
+                },
+                {
+                    "name": "GS3D_BENCHMARK_SUBMODE",
+                    "value": "pick"
+                }
+            ],
+            "preLaunchTask": "cmake build",
+            "initCommands": [
+                "settings set target.process.thread.step-avoid-regexp \"\""
+            ],
+            "detail": "编译并运行 GPU pick 基准（GS3D_BENCHMARK_SUBMODE=pick）"
+        },
+        {
+            "name": "🧪 DataTests",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/GeoScatter3DDataTests",
+            "args": [],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cmake build",
+            "initCommands": [
+                "settings set target.process.thread.step-avoid-regexp \"\""
+            ],
+            "detail": "编译并运行数据/CSV/I/O 单元测试"
+        },
+        {
+            "name": "🧪 RuntimeTests",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/GeoScatter3DRuntimeTests",
+            "args": [],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cmake build",
+            "initCommands": [
+                "settings set target.process.thread.step-avoid-regexp \"\""
+            ],
+            "detail": "编译并运行渲染/管线/缓存运行时测试"
+        }
+    ]
+}
