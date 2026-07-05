@@ -10,6 +10,7 @@ out/
 *.log
 *.bak
 data/
+bench/
 tools/__pycache__/
 config/imgui_layout.ini
 
