@@ -1,6 +1,3 @@
-.idea/
-.vscode/
-.claude/
 cmake-build-*/
 build/
 build-*/
@@ -12,17 +9,13 @@ out/
 *.ilk
 *.log
 *.bak
-data/*.gs3dlod
-data/*.gs3dtiles
-data/*.gs3dtiles.index
+data/
+tools/__pycache__/
 config/imgui_layout.ini
-
-# Hidden directories and files
-.*
-!.gitignore
 
 # Generated / temporary
 Testing/
+.reasonix/
 debug-zoom-horizon-singularity.md
 rc include -maxdepth 2 -type d
 reasonix.toml
