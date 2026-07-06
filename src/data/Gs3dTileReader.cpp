@@ -420,6 +420,20 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
         );
     }
 
+    /*
+     * v2 format stores Gs3dPointWithId (20 bytes) interleaved.
+     * read_tile_points_with_ids handles the split correctly.
+     * Delegate to avoid a heap buffer overflow from reading
+     * 20-byte records into a 16-byte Gs3dPoint buffer.
+     */
+    if (has_embedded_point_ids()) {
+        auto block = read_tile_points_with_ids(tile_id);
+        return std::move(block.points);
+    }
+
+    const auto count =
+        static_cast<std::size_t>(tile_record.point_count);
+
     std::ifstream data_file(
         data_path_,
         std::ios::binary
@@ -443,16 +457,12 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
         );
     }
 
-    std::vector<Gs3dPoint> points(
-        static_cast<std::size_t>(
-            tile_record.point_count
-        )
-    );
+    std::vector<Gs3dPoint> points(count);
 
     data_file.read(
         reinterpret_cast<char*>(points.data()),
         static_cast<std::streamsize>(
-            tile_record.point_data_bytes
+            sizeof(Gs3dPoint) * count
         )
     );
 

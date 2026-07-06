@@ -2770,16 +2770,36 @@ int ViewerApp::run() {
         const auto load_tile_points_with_ids =
             [&tile_reader, &tile_point_ids_by_tile](std::uint64_t tile_id) {
                 auto loaded = std::make_shared<TilePoints>();
-                loaded->points =
-                    tile_reader->read_tile_points(tile_id);
-                const auto found =
-                    tile_point_ids_by_tile.find(tile_id);
-                if (found == tile_point_ids_by_tile.end()) {
-                    throw std::runtime_error(
-                        "ViewerApp: missing runtime tile point ids"
-                    );
+
+                if (tile_reader->has_embedded_point_ids()) {
+                    /*
+                     * v2 tile: points and point_ids are embedded
+                     * (20-byte interleaved Gs3dPointWithId on disk).
+                     * read_tile_points_with_ids splits them into
+                     * 16-byte Gs3dPoint + uint32_t vectors.
+                     */
+                    auto block =
+                        tile_reader->read_tile_points_with_ids(tile_id);
+                    loaded->points = std::move(block.points);
+                    loaded->point_ids = std::move(block.point_ids);
+                } else {
+                    /*
+                     * v1 tile: points-only on disk (16-byte Gs3dPoint).
+                     * Point IDs come from the runtime-built
+                     * tile_point_ids_by_tile map.
+                     */
+                    loaded->points =
+                        tile_reader->read_tile_points(tile_id);
+                    const auto found =
+                        tile_point_ids_by_tile.find(tile_id);
+                    if (found == tile_point_ids_by_tile.end()) {
+                        throw std::runtime_error(
+                            "ViewerApp: missing runtime tile point ids"
+                        );
+                    }
+                    loaded->point_ids = found->second;
                 }
-                loaded->point_ids = found->second;
+
                 if (loaded->points.size() != loaded->point_ids.size()) {
                     throw std::runtime_error(
                         "ViewerApp: tile point/id size mismatch"
