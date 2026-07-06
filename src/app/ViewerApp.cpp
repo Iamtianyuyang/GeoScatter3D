@@ -4,6 +4,7 @@
 #include "app/TilePointCache.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
+#include "ui/SvgLogoTexture.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
@@ -2318,6 +2319,16 @@ int ViewerApp::run() {
         clear_color.a = config_.clear_color[3];
         renderer.set_clear_color(clear_color);
 
+        gs3d::ui::SvgLogoTexture logo_texture(
+            context.device(),
+            context.physical_device(),
+            context.graphics_queue(),
+            renderer.command_pool(),
+            "assets/icon.svg",
+            128
+        );
+        std::cout << "[OK] SvgLogoTexture loaded.\n";
+
         std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud;
         std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud;
         std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud;
@@ -3074,6 +3085,8 @@ int ViewerApp::run() {
             app_state.panels.lod_view = false;
             app_state.panels.performance = false;
         }
+
+        app_state.logo_texture = logo_texture.descriptor();
 
         // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
         // bbox 宽高比决定纹理尺寸，保证纹理像素全部有效，无 letterbox。

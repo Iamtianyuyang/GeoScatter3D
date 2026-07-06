@@ -26,6 +26,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/ui/AuxiliaryPanels.cpp
     src/ui/RenderSettingsPanel.cpp
     src/ui/WelcomePage.cpp
+    src/ui/SvgLogoTexture.cpp
 
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
@@ -100,6 +101,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/ui/AuxiliaryPanels.hpp
     include/ui/RenderSettingsPanel.hpp
     include/ui/WelcomePage.hpp
+    include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp
@@ -190,6 +192,7 @@ target_include_directories(GeoScatter3D PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
 )
@@ -346,6 +349,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
     )

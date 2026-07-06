@@ -358,6 +358,7 @@ struct AppState {
     MeasurementManager measurement;
     RegionStatsResult region_stats;
     std::vector<RenderViewState> render_views;
+    VkDescriptorSet logo_texture = VK_NULL_HANDLE;
 };
 
 } // namespace gs3d::app
