@@ -465,6 +465,109 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
     return points;
 }
 
+bool Gs3dTileReader::has_embedded_point_ids() const noexcept {
+    return Gs3dTileFormat::has_embedded_point_ids(
+        data_header_.version
+    );
+}
+
+Gs3dTilePointBlock Gs3dTileReader::read_tile_points_with_ids(
+    std::uint64_t tile_id
+) const {
+    const auto& tile_record =
+        record(tile_id);
+
+    if (tile_record.point_count >
+        static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()
+        )) {
+        throw std::runtime_error(
+            "Gs3dTileReader: tile point_count exceeds size_t range"
+        );
+    }
+
+    const auto count =
+        static_cast<std::size_t>(tile_record.point_count);
+
+    Gs3dTilePointBlock result;
+    result.points.reserve(count);
+    result.point_ids.reserve(count);
+
+    std::ifstream data_file(
+        data_path_,
+        std::ios::binary
+    );
+
+    if (!data_file.is_open()) {
+        throw std::runtime_error(
+            "Gs3dTileReader: failed to open tile data file: " +
+            data_path_.string()
+        );
+    }
+
+    data_file.seekg(
+        static_cast<std::streamoff>(tile_record.point_data_offset),
+        std::ios::beg
+    );
+
+    if (!data_file.good()) {
+        throw std::runtime_error(
+            "Gs3dTileReader: failed to seek tile data"
+        );
+    }
+
+    if (has_embedded_point_ids()) {
+        /*
+         * v2 interleaved format:  Gs3dPointWithId (20 bytes).
+         * Read all elements in one shot, then split into
+         * separate points / point_ids vectors.
+         */
+        std::vector<Gs3dPointWithId> raw(count);
+
+        data_file.read(
+            reinterpret_cast<char*>(raw.data()),
+            static_cast<std::streamsize>(tile_record.point_data_bytes)
+        );
+
+        if (!data_file.good()) {
+            throw std::runtime_error(
+                "Gs3dTileReader: failed to read tile points with ids"
+            );
+        }
+
+        result.points.resize(count);
+        result.point_ids.resize(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            result.points[i] = {
+                raw[i].x,
+                raw[i].y,
+                raw[i].z,
+                raw[i].value
+            };
+            result.point_ids[i] = raw[i].point_id;
+        }
+    } else {
+        /*
+         * v1 format:  Gs3dPoint (16 bytes), no embedded IDs.
+         * Read points only; point_ids stays empty.
+         */
+        result.points.resize(count);
+
+        data_file.read(
+            reinterpret_cast<char*>(result.points.data()),
+            static_cast<std::streamsize>(tile_record.point_data_bytes)
+        );
+
+        if (!data_file.good()) {
+            throw std::runtime_error(
+                "Gs3dTileReader: failed to read tile points (v1)"
+            );
+        }
+    }
+
+    return result;
+}
+
 std::vector<Gs3dTileRecord> Gs3dTileReader::query_records_by_bbox(
     const Gs3dTileQueryBox& box
 ) const {

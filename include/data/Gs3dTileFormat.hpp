@@ -16,7 +16,27 @@ inline constexpr std::array<char, 8> GS3D_TILE_DATA_MAGIC{
     'G', 'S', '3', 'D', 'T', 'I', 'L', '\0'
 };
 
-inline constexpr std::uint32_t GS3D_TILE_VERSION = 1;
+inline constexpr std::uint32_t GS3D_TILE_VERSION = 2;
+
+/*
+ * Supported tile format versions.
+ *
+ * v1 — point_stride = 16 (Gs3dPoint: x, y, z, value).  No embedded
+ *      point_id; runtime must rebuild tile→point_id mapping by scanning
+ *      the full source dataset (slow path).
+ *
+ * v2 — point_stride = 20 (Gs3dPointWithId: x, y, z, value, point_id).
+ *      Embedded global 1-based point_id eliminates the startup scan.
+ *      New preprocessing writes v2; the reader auto-detects and uses
+ *      the fast path.  Old v1 tiles still open with the v1 slow path.
+ */
+inline constexpr std::uint32_t GS3D_TILE_VERSION_V1 = 1;
+inline constexpr std::uint32_t GS3D_TILE_VERSION_V2 = 2;
+
+inline constexpr std::uint32_t GS3D_TILE_POINT_STRIDE_V1 =
+    sizeof(Gs3dPoint);          // 16
+inline constexpr std::uint32_t GS3D_TILE_POINT_STRIDE_V2 =
+    sizeof(Gs3dPointWithId);    // 20
 
 enum class Gs3dTileSplitMode : std::uint32_t {
     XY = 1
@@ -128,6 +148,21 @@ public:
     ) noexcept;
 
     [[nodiscard]]
+    static bool has_embedded_point_ids(
+        std::uint32_t version
+    ) noexcept;
+
+    [[nodiscard]]
+    static std::uint32_t point_stride_for_version(
+        std::uint32_t version
+    );
+
+    [[nodiscard]]
+    static bool is_valid_point_stride(
+        std::uint32_t stride
+    ) noexcept;
+
+    [[nodiscard]]
     static Gs3dTileIndexFileHeader make_index_file_header(
         const Gs3dHeader& source_header,
         std::uint64_t tile_count,
@@ -145,7 +180,8 @@ public:
     static Gs3dTileDataFileHeader make_data_file_header(
         const Gs3dHeader& source_header,
         std::uint64_t tile_count,
-        std::uint64_t total_point_count
+        std::uint64_t total_point_count,
+        std::uint32_t version = GS3D_TILE_VERSION
     );
 
     [[nodiscard]]
@@ -162,7 +198,8 @@ public:
         float bbox_max_y,
         float bbox_max_z,
         float value_min,
-        float value_max
+        float value_max,
+        std::uint32_t point_stride = GS3D_TILE_POINT_STRIDE_V2
     );
 
     static void validate_index_file_header(

@@ -25,7 +25,6 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/ui/MeasurementPanel.cpp
     src/ui/AuxiliaryPanels.cpp
     src/ui/RenderSettingsPanel.cpp
-    src/ui/WelcomePage.cpp
     src/ui/SvgLogoTexture.cpp
 
     ${IMGUI_DIR}/imgui.cpp
@@ -100,7 +99,6 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/ui/MeasurementPanel.hpp
     include/ui/AuxiliaryPanels.hpp
     include/ui/RenderSettingsPanel.hpp
-    include/ui/WelcomePage.hpp
     include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp
@@ -177,6 +175,12 @@ set(GEOSCATTER3D_CORE_SOURCES
 
 add_executable(GeoScatter3D
     src/main.cpp
+    src/app/WelcomeWindow.cpp
+    src/platform/NativeFileDialog.cpp
+    src/ui/WelcomePage.cpp
+    include/app/WelcomeWindow.hpp
+    include/platform/NativeFileDialog.hpp
+    include/ui/WelcomePage.hpp
     ${GEOSCATTER3D_CORE_SOURCES}
 )
 
@@ -202,6 +206,10 @@ target_link_libraries(GeoScatter3D PRIVATE
     glfw
     Threads::Threads
 )
+
+if(WIN32)
+    target_link_libraries(GeoScatter3D PRIVATE comdlg32 ole32 shell32)
+endif()
 
 copy_runtime_assets(GeoScatter3D)
 
@@ -286,6 +294,7 @@ if(BUILD_TESTING)
         src/data/Gs3dFormat.cpp
         src/data/Gs3dReader.cpp
         src/data/Gs3dDataset.cpp
+        src/data/Gs3dTileFormat.cpp
         src/preprocess/CsvToGs3dConverter.cpp
     )
 

@@ -2191,33 +2191,65 @@ int ViewerApp::run() {
             tile_index_view =
                 gs3d::data::make_tile_index_view(*tile_reader);
 
-            if (dataset.metadata_only()) {
-                // tile runtime-id reconstruction needs to scan the
-                // full point buffer (map_subsequence_point_ids does an
-                // exact point match against dataset.points()); in the
-                // metadata-only startup path the dataset has no points
-                // resident, so fall back to loading the full GS3D
-                // before building tile ids. Mirrors the LOD fallback
-                // below.
-                std::cout
-                    << "[WARN] Metadata-only startup cannot build "
-                    << "tile runtime ids; loading full GS3D data.\n";
-                gs3d::util::Stopwatch fallback_load_timer;
-                dataset = gs3d::data::Gs3dDatasetLoader::load(
-                    config_.gs3d_path
-                );
-                std::cout
-                    << "[TIME] viewer.dataset_fallback_load_seconds = "
-                    << fallback_load_timer.elapsed_seconds()
-                    << '\n';
-            }
+            const bool tile_has_embedded_ids =
+                tile_reader->has_embedded_point_ids();
 
-            tile_point_ids_by_tile =
-                build_runtime_tile_point_ids(
-                    dataset,
-                    *tile_reader,
-                    full_point_ids
-                );
+            if (tile_has_embedded_ids) {
+                std::cout
+                    << "[OK] Tile format v2 — embedded point IDs. "
+                    << "Fast startup (no source point scan needed).\n";
+            } else {
+                std::cout
+                    << "[INFO] Tile format v1 — no embedded point IDs. "
+                    << "Using slow startup path.\n";
+
+                if (dataset.metadata_only()) {
+                    // tile runtime-id reconstruction needs to scan the
+                    // full point buffer (map_subsequence_point_ids does an
+                    // exact point match against dataset.points()); in the
+                    // metadata-only startup path the dataset has no points
+                    // resident, so fall back to loading the full GS3D
+                    // before building tile ids.
+                    std::cout
+                        << "[WARN] Metadata-only startup cannot build "
+                        << "tile runtime ids; loading full GS3D data.\n";
+                    gs3d::util::Stopwatch fallback_load_timer;
+                    dataset = gs3d::data::Gs3dDatasetLoader::load(
+                        config_.gs3d_path
+                    );
+                    std::cout
+                        << "[TIME] viewer.dataset_fallback_load_seconds = "
+                        << fallback_load_timer.elapsed_seconds()
+                        << '\n';
+                }
+
+                tile_point_ids_by_tile =
+                    build_runtime_tile_point_ids(
+                        dataset,
+                        *tile_reader,
+                        full_point_ids
+                    );
+            }
+        }
+
+        /*
+         * Even with v2 tile-embedded IDs, LOD point-id mapping
+         * still needs the full source point buffer for exact
+         * point matching (map_subsequence_point_ids).  Load it
+         * now if we're still in metadata-only mode.
+         */
+        if (config_.lod_enabled && dataset.metadata_only()) {
+            std::cout
+                << "[INFO] LOD enabled — loading full GS3D data "
+                << "for point-id mapping.\n";
+            gs3d::util::Stopwatch lod_load_timer;
+            dataset = gs3d::data::Gs3dDatasetLoader::load(
+                config_.gs3d_path
+            );
+            std::cout
+                << "[TIME] viewer.lod_dataset_load_seconds = "
+                << lod_load_timer.elapsed_seconds()
+                << '\n';
         }
 
         gs3d::data::Gs3dLodDataset lod_dataset;

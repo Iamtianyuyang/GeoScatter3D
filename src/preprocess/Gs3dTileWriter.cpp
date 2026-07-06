@@ -97,9 +97,10 @@ void write_points(
     }
 }
 
+template <typename PointT>
 void write_points_span(
     std::ofstream& file,
-    const Gs3dPoint* points,
+    const PointT* points,
     std::size_t point_count
 ) {
     if (points == nullptr || point_count == 0) {
@@ -110,7 +111,7 @@ void write_points_span(
 
     const auto byte_count =
         static_cast<std::streamsize>(
-            point_count * sizeof(Gs3dPoint)
+            point_count * sizeof(PointT)
         );
 
     file.write(
@@ -660,7 +661,7 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
 
     struct PreparedTileChunk {
         std::vector<PreparedTileMetadata> tiles;
-        std::vector<Gs3dPoint> points;
+        std::vector<gs3d::data::Gs3dPointWithId> points;
     };
 
     constexpr std::uint64_t kTargetChunkPoints = 1'000'000ull;
@@ -721,9 +722,15 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
             );
             for (const auto& meta : prepared.tiles) {
                 for (const auto point_index : meta.tile->point_indices) {
-                    prepared.points.push_back(
-                        points[static_cast<std::size_t>(point_index)]
-                    );
+                    const auto& src =
+                        points[static_cast<std::size_t>(point_index)];
+                    prepared.points.push_back({
+                        src.x,
+                        src.y,
+                        src.z,
+                        src.value,
+                        static_cast<std::uint32_t>(point_index) + 1
+                    });
                 }
             }
         }
@@ -751,9 +758,15 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
                 );
                 for (const auto& meta : prepared.tiles) {
                     for (const auto point_index : meta.tile->point_indices) {
-                        prepared.points.push_back(
-                            points[static_cast<std::size_t>(point_index)]
-                        );
+                        const auto& src =
+                            points[static_cast<std::size_t>(point_index)];
+                        prepared.points.push_back({
+                            src.x,
+                            src.y,
+                            src.z,
+                            src.value,
+                            static_cast<std::uint32_t>(point_index) + 1
+                        });
                     }
                 }
 

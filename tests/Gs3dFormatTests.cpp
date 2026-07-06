@@ -5,6 +5,7 @@
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dReader.hpp"
+#include "data/Gs3dTileFormat.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 
 #include <chrono>
@@ -423,6 +424,159 @@ void test_lod_ratios_tiny_ratio_floors_to_one_point()
     );
 }
 
+void test_tile_format_v2_has_embedded_point_ids()
+{
+    using gs3d::data::Gs3dTileFormat;
+    expect(
+        Gs3dTileFormat::has_embedded_point_ids(
+            gs3d::data::GS3D_TILE_VERSION_V2
+        ),
+        "v2 format reports embedded point IDs"
+    );
+}
+
+void test_tile_format_v1_no_embedded_point_ids()
+{
+    using gs3d::data::Gs3dTileFormat;
+    expect(
+        !Gs3dTileFormat::has_embedded_point_ids(
+            gs3d::data::GS3D_TILE_VERSION_V1
+        ),
+        "v1 format does NOT report embedded point IDs"
+    );
+}
+
+void test_point_with_id_struct_size()
+{
+    expect(
+        sizeof(gs3d::data::Gs3dPointWithId) == 20,
+        "Gs3dPointWithId is 20 bytes (interleaved x,y,z,value,point_id)"
+    );
+}
+
+void test_tile_format_v2_stride_is_20()
+{
+    using gs3d::data::Gs3dTileFormat;
+    const auto stride =
+        Gs3dTileFormat::point_stride_for_version(
+            gs3d::data::GS3D_TILE_VERSION_V2
+        );
+    expect(
+        stride == 20,
+        "v2 tile point stride is 20 bytes"
+    );
+}
+
+void test_tile_format_v1_stride_is_16()
+{
+    using gs3d::data::Gs3dTileFormat;
+    const auto stride =
+        Gs3dTileFormat::point_stride_for_version(
+            gs3d::data::GS3D_TILE_VERSION_V1
+        );
+    expect(
+        stride == 16,
+        "v1 tile point stride is 16 bytes"
+    );
+}
+
+void test_tile_format_accepts_both_strides()
+{
+    using gs3d::data::Gs3dTileFormat;
+    expect(
+        Gs3dTileFormat::is_valid_point_stride(16),
+        "stride 16 (v1) is valid"
+    );
+    expect(
+        Gs3dTileFormat::is_valid_point_stride(20),
+        "stride 20 (v2) is valid"
+    );
+    expect(
+        !Gs3dTileFormat::is_valid_point_stride(0),
+        "stride 0 is invalid"
+    );
+    expect(
+        !Gs3dTileFormat::is_valid_point_stride(24),
+        "stride 24 is invalid"
+    );
+}
+
+void test_tile_format_v1_and_v2_are_supported_versions()
+{
+    using gs3d::data::Gs3dTileFormat;
+    expect(
+        Gs3dTileFormat::is_supported_version(
+            gs3d::data::GS3D_TILE_VERSION_V1
+        ),
+        "v1 is a supported version"
+    );
+    expect(
+        Gs3dTileFormat::is_supported_version(
+            gs3d::data::GS3D_TILE_VERSION_V2
+        ),
+        "v2 is a supported version"
+    );
+    expect(
+        !Gs3dTileFormat::is_supported_version(0),
+        "version 0 is NOT supported"
+    );
+    expect(
+        !Gs3dTileFormat::is_supported_version(3),
+        "version 3 is NOT supported"
+    );
+}
+
+void test_tile_record_validates_both_strides()
+{
+    using gs3d::data::Gs3dTileFormat;
+    using gs3d::data::Gs3dTileRecord;
+
+    // v1 record:  point_count=100, stride=16 → point_data_bytes=1600
+    {
+        Gs3dTileRecord record{};
+        record.point_count = 100;
+        record.point_data_bytes = 1600; // 100 × 16
+        record.bbox_min_x = 0.0f;
+        record.bbox_min_y = 0.0f;
+        record.bbox_min_z = 0.0f;
+        record.bbox_max_x = 1.0f;
+        record.bbox_max_y = 1.0f;
+        record.bbox_max_z = 1.0f;
+        record.value_min = 0.0f;
+        record.value_max = 1.0f;
+        Gs3dTileFormat::validate_tile_record(record);
+        expect(true, "v1 tile record with stride 16 passes validation");
+    }
+
+    // v2 record:  point_count=100, stride=20 → point_data_bytes=2000
+    {
+        Gs3dTileRecord record{};
+        record.point_count = 100;
+        record.point_data_bytes = 2000; // 100 × 20
+        record.bbox_min_x = 0.0f;
+        record.bbox_min_y = 0.0f;
+        record.bbox_min_z = 0.0f;
+        record.bbox_max_x = 1.0f;
+        record.bbox_max_y = 1.0f;
+        record.bbox_max_z = 1.0f;
+        record.value_min = 0.0f;
+        record.value_max = 1.0f;
+        Gs3dTileFormat::validate_tile_record(record);
+        expect(true, "v2 tile record with stride 20 passes validation");
+    }
+}
+
+void test_tile_format_stride_for_unknown_version_throws()
+{
+    using gs3d::data::Gs3dTileFormat;
+    expect_throws(
+        [] {
+            Gs3dTileFormat::point_stride_for_version(99);
+        },
+        "point_stride_for_version(99) throws"
+    );
+}
+
 } // namespace
 
 int main()
@@ -439,6 +593,15 @@ int main()
     test_lod_ratios_same_ratios_give_different_counts_for_smaller_source();
     test_lod_ratios_negative_ratio_clamped_to_zero();
     test_lod_ratios_tiny_ratio_floors_to_one_point();
+    test_tile_format_v2_has_embedded_point_ids();
+    test_tile_format_v1_no_embedded_point_ids();
+    test_point_with_id_struct_size();
+    test_tile_format_v2_stride_is_20();
+    test_tile_format_v1_stride_is_16();
+    test_tile_format_accepts_both_strides();
+    test_tile_format_v1_and_v2_are_supported_versions();
+    test_tile_record_validates_both_strides();
+    test_tile_format_stride_for_unknown_version_throws();
 
     if (failures == 0) {
         std::cout << "[PASS] GS3D format tests\n";

@@ -48,6 +48,25 @@ struct Gs3dPoint {
 
 static_assert(sizeof(Gs3dPoint) == 16, "Gs3dPoint must be 16 bytes");
 
+/*
+ * Gs3dPointWithId — v2 tile data format.
+ *
+ * Extends Gs3dPoint with the original global 1-based point_id from the
+ * source GS3D file.  point_id == 0 is reserved (invalid / no hit).
+ *
+ * Stored interleaved in tile data files (20 bytes per point) so that a
+ * single sequential read delivers both geometry and identity.
+ */
+struct Gs3dPointWithId {
+    float x;
+    float y;
+    float z;
+    float value;
+    std::uint32_t point_id;
+};
+
+static_assert(sizeof(Gs3dPointWithId) == 20, "Gs3dPointWithId must be 20 bytes");
+
 class Gs3dFormat {
 public:
     static Gs3dHeader create_empty_header();

@@ -10,6 +10,16 @@
 
 namespace gs3d::data {
 
+/*
+ * Returned by read_tile_points_with_ids().
+ * In v1 format point_ids is empty; in v2 it is populated from the
+ * embedded per-point uint32_t in the tile data file.
+ */
+struct Gs3dTilePointBlock {
+    std::vector<Gs3dPoint> points;
+    std::vector<std::uint32_t> point_ids;
+};
+
 struct Gs3dTileQueryBox {
     float min_x = 0.0f;
     float min_y = 0.0f;
@@ -77,6 +87,28 @@ public:
 
     [[nodiscard]]
     std::vector<Gs3dPoint> read_tile_points(
+        std::uint64_t tile_id
+    ) const;
+
+    /*
+     * Returns true when the tile data file has embedded per-point
+     * global IDs (format version >= 2).
+     */
+    [[nodiscard]]
+    bool has_embedded_point_ids() const noexcept;
+
+    /*
+     * Reads tile points and their global point_ids in one operation.
+     *
+     * v2 format (point_stride 20):  both points and point_ids are
+     *     populated from the interleaved on-disk data.
+     *
+     * v1 format (point_stride 16):  points are populated, point_ids
+     *     is empty.  The caller must supply point_ids externally via
+     *     the slow startup scan.
+     */
+    [[nodiscard]]
+    Gs3dTilePointBlock read_tile_points_with_ids(
         std::uint64_t tile_id
     ) const;
 

@@ -21,7 +21,35 @@ bool Gs3dTileFormat::is_valid_data_magic(
 bool Gs3dTileFormat::is_supported_version(
     std::uint32_t version
 ) noexcept {
-    return version == GS3D_TILE_VERSION;
+    return version == GS3D_TILE_VERSION_V1 ||
+           version == GS3D_TILE_VERSION_V2;
+}
+
+bool Gs3dTileFormat::has_embedded_point_ids(
+    std::uint32_t version
+) noexcept {
+    return version >= GS3D_TILE_VERSION_V2;
+}
+
+std::uint32_t Gs3dTileFormat::point_stride_for_version(
+    std::uint32_t version
+) {
+    if (version == GS3D_TILE_VERSION_V1) {
+        return GS3D_TILE_POINT_STRIDE_V1;
+    }
+    if (version == GS3D_TILE_VERSION_V2) {
+        return GS3D_TILE_POINT_STRIDE_V2;
+    }
+    throw std::runtime_error(
+        "Gs3dTileFormat: unsupported version for point_stride"
+    );
+}
+
+bool Gs3dTileFormat::is_valid_point_stride(
+    std::uint32_t stride
+) noexcept {
+    return stride == GS3D_TILE_POINT_STRIDE_V1 ||
+           stride == GS3D_TILE_POINT_STRIDE_V2;
 }
 
 Gs3dTileIndexFileHeader Gs3dTileFormat::make_index_file_header(
@@ -50,7 +78,7 @@ Gs3dTileIndexFileHeader Gs3dTileFormat::make_index_file_header(
     header.total_point_count = total_point_count;
 
     header.point_stride =
-        static_cast<std::uint32_t>(sizeof(Gs3dPoint));
+        point_stride_for_version(GS3D_TILE_VERSION);
 
     header.tile_record_size =
         static_cast<std::uint32_t>(sizeof(Gs3dTileRecord));
@@ -86,12 +114,13 @@ Gs3dTileIndexFileHeader Gs3dTileFormat::make_index_file_header(
 Gs3dTileDataFileHeader Gs3dTileFormat::make_data_file_header(
     const Gs3dHeader& source_header,
     std::uint64_t tile_count,
-    std::uint64_t total_point_count
+    std::uint64_t total_point_count,
+    std::uint32_t version
 ) {
     Gs3dTileDataFileHeader header;
 
     header.magic = GS3D_TILE_DATA_MAGIC;
-    header.version = GS3D_TILE_VERSION;
+    header.version = version;
     header.header_size =
         static_cast<std::uint32_t>(
             sizeof(Gs3dTileDataFileHeader)
@@ -101,12 +130,13 @@ Gs3dTileDataFileHeader Gs3dTileFormat::make_data_file_header(
     header.tile_count = tile_count;
     header.total_point_count = total_point_count;
 
+    const auto stride = point_stride_for_version(version);
+
     header.total_point_bytes =
         total_point_count *
-        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+        static_cast<std::uint64_t>(stride);
 
-    header.point_stride =
-        static_cast<std::uint32_t>(sizeof(Gs3dPoint));
+    header.point_stride = stride;
 
     validate_data_file_header(header);
 
@@ -126,7 +156,8 @@ Gs3dTileRecord Gs3dTileFormat::make_tile_record(
     float bbox_max_y,
     float bbox_max_z,
     float value_min,
-    float value_max
+    float value_max,
+    std::uint32_t point_stride
 ) {
     Gs3dTileRecord record;
 
@@ -139,7 +170,7 @@ Gs3dTileRecord Gs3dTileFormat::make_tile_record(
 
     record.point_data_bytes =
         point_count *
-        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+        static_cast<std::uint64_t>(point_stride);
 
     record.bbox_min_x = bbox_min_x;
     record.bbox_min_y = bbox_min_y;
@@ -196,7 +227,7 @@ void Gs3dTileFormat::validate_index_file_header(
         );
     }
 
-    if (header.point_stride != sizeof(Gs3dPoint)) {
+    if (!is_valid_point_stride(header.point_stride)) {
         throw std::runtime_error(
             "Gs3dTileFormat: invalid point stride"
         );
@@ -278,7 +309,7 @@ void Gs3dTileFormat::validate_data_file_header(
         );
     }
 
-    if (header.point_stride != sizeof(Gs3dPoint)) {
+    if (!is_valid_point_stride(header.point_stride)) {
         throw std::runtime_error(
             "Gs3dTileFormat: data invalid point stride"
         );
@@ -286,7 +317,7 @@ void Gs3dTileFormat::validate_data_file_header(
 
     const std::uint64_t expected_bytes =
         header.total_point_count *
-        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+        static_cast<std::uint64_t>(header.point_stride);
 
     if (header.total_point_bytes != expected_bytes) {
         throw std::runtime_error(
@@ -304,11 +335,22 @@ void Gs3dTileFormat::validate_tile_record(
         );
     }
 
-    const std::uint64_t expected_bytes =
+    /*
+     * Accept both v1 (16-byte) and v2 (20-byte) strides.
+     * The tile record alone doesn't carry the stride — the caller
+     * must pass the data-header stride if a specific check is needed.
+     * For standalone validation we accept either.
+     */
+    const bool valid_v1 =
+        record.point_data_bytes ==
         record.point_count *
-        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+            static_cast<std::uint64_t>(GS3D_TILE_POINT_STRIDE_V1);
+    const bool valid_v2 =
+        record.point_data_bytes ==
+        record.point_count *
+            static_cast<std::uint64_t>(GS3D_TILE_POINT_STRIDE_V2);
 
-    if (record.point_data_bytes != expected_bytes) {
+    if (!valid_v1 && !valid_v2) {
         throw std::runtime_error(
             "Gs3dTileFormat: tile point_data_bytes mismatch"
         );
