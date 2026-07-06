@@ -584,6 +584,12 @@ AppConfig AppConfigLoader::load_from_file(
             "ui_layout_ini_path",
             config.viewer.ui_layout_ini_path
         );
+
+        config.viewer.ui_scale_multiplier = float_or_default(
+            *window,
+            "ui_scale_multiplier",
+            config.viewer.ui_scale_multiplier
+        );
     }
 
     if (const auto* vulkan = root["vulkan"].as_table()) {
@@ -1121,6 +1127,9 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] window.ui_layout_ini_path = "
               << config.viewer.ui_layout_ini_path.string() << '\n';
+
+    std::cout << "[CONFIG] window.ui_scale_multiplier = "
+              << config.viewer.ui_scale_multiplier << '\n';
 
     std::cout << "[CONFIG] debug.pick_debug_dump_enabled = "
               << (config.viewer.pick_debug_dump_enabled ? "true" : "false")

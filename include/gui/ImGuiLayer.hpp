@@ -29,7 +29,8 @@ public:
         const gs3d::render::VulkanContext&  context,
         const gs3d::render::VulkanRenderer& renderer,
         std::uint32_t min_image_count,
-        std::filesystem::path ini_path = {}
+        std::filesystem::path ini_path = {},
+        float ui_scale_multiplier = 1.0f
     );
 
     void shutdown();

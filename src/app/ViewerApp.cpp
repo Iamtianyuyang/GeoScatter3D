@@ -2306,7 +2306,8 @@ int ViewerApp::run() {
             context,
             renderer,
             swapchain.image_count(),
-            config_.ui_layout_ini_path
+            config_.ui_layout_ini_path,
+            config_.ui_scale_multiplier
         );
 
         gs3d::render::ClearColor clear_color;

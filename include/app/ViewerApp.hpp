@@ -58,6 +58,15 @@ struct ViewerAppConfig {
      */
     std::filesystem::path ui_layout_ini_path = "config/imgui_layout.ini";
 
+    /*
+     * User comfort multiplier applied on top of the PPI-derived ui_scale:
+     *   final_ui_scale = clamp(ppi_scale * ui_scale_multiplier, 1.0, 2.5)
+     * PPI alone gives an objectively-correct baseline; this multiplier lets
+     * the user nudge the overall UI size without touching code. Default 1.15
+     * gives a modest comfort bump.
+     */
+    float ui_scale_multiplier = 1.15f;
+
     bool enable_validation_layers = true;
 
     std::array<float, 4> clear_color{

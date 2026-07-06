@@ -29,12 +29,24 @@ bool begin_labeled_property_table(const char* id)
     );
 }
 
+// Wide enough for a 2-column [label | value] layout? Threshold scales with
+// font size: need at least ~12 chars of width (4 CJK label + 8 value).
+bool panel_supports_two_column()
+{
+    return ImGui::GetContentRegionAvail().x >= 12.0f * ImGui::GetFontSize();
+}
+
 void setup_labeled_property_table()
 {
+    // Proportional label width — adapts to panel width instead of a fixed
+    // pixel value. Clamped so labels don't collapse on tiny panels or eat
+    // the entire value column on wide ones.
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float label_w = std::clamp(avail * 0.40f, 70.0f, 140.0f);
     ImGui::TableSetupColumn(
         "label",
         ImGuiTableColumnFlags_WidthFixed,
-        LayoutMetrics::kPanelLabelWidth
+        label_w
     );
     ImGui::TableSetupColumn(
         "value",
@@ -43,14 +55,24 @@ void setup_labeled_property_table()
     );
 }
 
-void property_table_label(const char* label)
+// Label + position cursor for the control that follows.
+// In 2-column mode: label in column 0, control in column 1 (full column width).
+// In compact mode: label on its own line, control on the next line (full
+// available width) — prevents the value column from being squeezed to nothing
+// when the dock is narrow.
+void property_label(const char* label, bool two_col)
 {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("%s", label);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::SetNextItemWidth(-1.0f);
+    if (two_col) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", label);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-1.0f);
+    } else {
+        ImGui::TextDisabled("%s", label);
+        ImGui::SetNextItemWidth(-1.0f);
+    }
 }
 
 } // namespace
@@ -75,17 +97,18 @@ void draw_render_settings(
         draw_panel_section_label("点云外观");
 
         float point_size = state.render_settings.point_size;
-        if (begin_labeled_property_table("##RenderAppearanceTable")) {
-            setup_labeled_property_table();
+        const bool two_col = panel_supports_two_column();
+        if (two_col ? begin_labeled_property_table("##RenderAppearanceTable") : true) {
+            if (two_col) setup_labeled_property_table();
 
-            property_table_label("点大小");
+            property_label("点大小", two_col);
             if (ImGui::SliderFloat("##PointSize", &point_size, 1.0f, 10.0f, "%.1f")) {
                 state.render_settings.point_size = point_size;
                 actions.point_size_changed = true;
                 actions.point_size = point_size;
             }
 
-            property_table_label("形状");
+            property_label("形状", two_col);
             const char* shape_names[] = {"方形", "圆形", "菱形", "三角形"};
             int shape = state.render_settings.point_shape;
             if (shape < 0 || shape > 3) shape = 0;
@@ -110,7 +133,7 @@ void draw_render_settings(
                 );
                 h_preview = height_options[static_cast<std::size_t>(h_idx)].c_str();
             }
-            property_table_label("高度来源");
+            property_label("高度来源", two_col);
             if (ImGui::BeginCombo("##HeightSource", h_preview)) {
                 for (std::size_t i = 0; i < height_options.size(); ++i) {
                     const bool selected =
@@ -125,8 +148,10 @@ void draw_render_settings(
             }
 
             float exag = state.render_settings.height_exaggeration;
-            property_table_label("高度缩放");
-            ImGui::SetNextItemWidth(ImGui::CalcTextSize("000.00x").x + 24.0f);
+            property_label("高度缩放", two_col);
+            if (two_col) {
+                ImGui::SetNextItemWidth(ImGui::CalcTextSize("000.00x").x + 24.0f);
+            }
             if (ImGui::DragFloat("##HeightExaggeration", &exag, 0.1f,
                     0.01f, 100.0f, "%.2fx")) {
                 state.render_settings.height_exaggeration = exag;
@@ -144,7 +169,7 @@ void draw_render_settings(
                 );
                 preview = color_options[static_cast<std::size_t>(preview_index)].c_str();
             }
-            property_table_label("着色");
+            property_label("着色", two_col);
             if (ImGui::BeginCombo("##ColorBy", preview)) {
                 for (std::size_t i = 0; i < color_options.size(); ++i) {
                     const bool selected =
@@ -158,7 +183,7 @@ void draw_render_settings(
                 ImGui::EndCombo();
             }
 
-            ImGui::EndTable();
+            if (two_col) ImGui::EndTable();
         }
 
         ImGui::Spacing();
@@ -283,7 +308,7 @@ void draw_render_settings(
                 if (lo < data_lo) lo = data_lo;
                 if (hi > data_hi) hi = data_hi;
                 ImGui::SetNextItemWidth(
-                    ImGui::CalcTextSize("0.0000").x + 48.0f);
+                    two_col ? (ImGui::CalcTextSize("0.0000").x + 48.0f) : -1.0f);
                 if (ImGui::DragFloat("下限", &lo, step, data_lo, hi, "%.4g")) {
                     state.render_settings.value_clip_min = lo;
                     actions.value_clip_changed = true;
@@ -292,7 +317,7 @@ void draw_render_settings(
                     actions.value_clip_max = hi;
                 }
                 ImGui::SetNextItemWidth(
-                    ImGui::CalcTextSize("0.0000").x + 48.0f);
+                    two_col ? (ImGui::CalcTextSize("0.0000").x + 48.0f) : -1.0f);
                 if (ImGui::DragFloat("上限", &hi, step, lo, data_hi, "%.4g")) {
                     state.render_settings.value_clip_max = hi;
                     actions.value_clip_changed = true;
@@ -306,19 +331,20 @@ void draw_render_settings(
 
         ImGui::Spacing();
         draw_panel_section_label("流式加载");
-        if (begin_labeled_property_table("##StreamingInfoTable")) {
-            setup_labeled_property_table();
+        const bool two_col_stream = panel_supports_two_column();
+        if (two_col_stream ? begin_labeled_property_table("##StreamingInfoTable") : true) {
+            if (two_col_stream) setup_labeled_property_table();
 
-            property_table_label("GPU 瓦片");
+            property_label("GPU 瓦片", two_col_stream);
             ImGui::TextUnformatted(state.render_settings.cache_usage.c_str());
 
-            property_table_label("CPU 缓存");
+            property_label("CPU 缓存", two_col_stream);
             ImGui::TextUnformatted(state.render_settings.cpu_cache_usage.c_str());
 
-            property_table_label("缓存命中");
+            property_label("缓存命中", two_col_stream);
             ImGui::Text("%.1f%%", state.render_settings.cache_hit_rate);
 
-            ImGui::EndTable();
+            if (two_col_stream) ImGui::EndTable();
         }
         if (ImGui::Button("清空缓存")) {
             actions.clear_cache_requested = true;

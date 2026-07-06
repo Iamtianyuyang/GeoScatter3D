@@ -38,11 +38,12 @@ constexpr float kBaselineMonitorWidth = 1920.0f;
 constexpr float kBaselineMonitorHeight = 1080.0f;
 constexpr float kBaselineMonitorDiagonalInches = 23.4f;
 constexpr float kMinUiScale = 1.0f;
-// Conservative upper bound: ~4K at 14" would naively be ~3.16, but capping at
-// 2.25 keeps the CJK font atlas compact (together with oversample==1) so the
-// ImTextureData font texture uploads cleanly instead of tripping the
-// "ImTextureData wasn't uploaded to graphics system" assert.
-constexpr float kMaxUiScale = 2.25f;
+// Upper clamp on final_ui_scale (= ppi_scale * user_multiplier). 2.5 is safe
+// with oversample==1 + ChineseSimplifiedCommon (~2500 glyphs): the largest
+// atlas would be ~2500 * (14*2.5)² ≈ 3.1M px ≈ 12 MB RGBA, well within GPU
+// texture limits. The previous TexID crash was at oversample==2 with
+// ChineseFull (~20k glyphs), a fundamentally different regime.
+constexpr float kMaxUiScale = 2.5f;
 
 // Plausibility guards for glfwGetMonitorPhysicalSize(), which on Linux/X11
 // and some virtual/remote displays returns 0x0 or nonsensical values.
@@ -390,7 +391,8 @@ void ImGuiLayer::init(
     const gs3d::render::VulkanContext& context,
     const gs3d::render::VulkanRenderer& renderer,
     std::uint32_t min_image_count,
-    std::filesystem::path ini_path
+    std::filesystem::path ini_path,
+    float ui_scale_multiplier
 ) {
     device_ = context.device();
 
@@ -423,10 +425,29 @@ void ImGuiLayer::init(
     // on some Linux setups (e.g. reporting a large scale on a 1080p panel)
     // and led to oversized font atlases. When the physical size is missing or
     // bogus (common on Linux/X11), compute_ui_scale falls back to a
-    // resolution-only ratio. glfw content_scale is only read below for the
-    // diagnostic log.
+    // resolution-only ratio. The user-configurable multiplier then gives a
+    // comfort bump on top of the objective PPI baseline. glfw content_scale
+    // is only read below for the diagnostic log.
     const UiScaleResult scale_result = compute_ui_scale(window);
-    const float ui_scale = scale_result.ui_scale;
+    const float ppi_ui_scale = scale_result.ui_scale;
+    const float final_ui_scale = clamp_ui_scale(
+        ppi_ui_scale * ui_scale_multiplier);
+    const float ui_scale = final_ui_scale;
+
+    // Set a minimum window size proportional to ui_scale so the UI can't be
+    // shrunk below a usable layout. Computed from the actual space budget:
+    //   min_w = left_min(180) + center_min(scales with font for viewport
+    //             toolbar ≈ 300*S) + right_min(220, usable with compact mode)
+    //             + splitters(~10)
+    //   min_h = menu(20*S) + toolbar(28*S) + status(22*S) + viewport(350)
+    // Clamped so tiny 1080p panels and huge 4K panels both stay reasonable.
+    const int min_win_w = static_cast<int>(std::clamp(
+        410.0f + std::max(350.0f, 300.0f * final_ui_scale),
+        820.0f, 2200.0f));
+    const int min_win_h = static_cast<int>(std::clamp(
+        70.0f * final_ui_scale + 350.0f, 500.0f, 1600.0f));
+    glfwSetWindowSizeLimits(
+        window, min_win_w, min_win_h, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
     g_ui_fonts = load_ui_fonts(io, ini_path, ui_scale);
 
@@ -564,10 +585,14 @@ void ImGuiLayer::init(
         "[UI] monitor_res=%dx%d  monitor_physical=%dx%dmm  "
         "diagonal=%.2fin  ppi=%.1f  base_ppi=%.1f  fallback=%s  "
         "window=%dx%d  framebuffer=%dx%d  glfw_content_scale=%.2f  "
-        "ui_scale=%.3f (clamp %.2f..%.2f)  regular_font=%.1f  "
+        "ppi_ui_scale=%.3f  user_multiplier=%.2f  "
+        "final_ui_scale=%.3f (clamp %.2f..%.2f)  "
+        "regular=%.1f small=%.1f panel=%.1f axis=%.1f status=%.1f  "
+        "overlay_scale=font_derived  "
         "oversample=1/1  glyph_range=ChineseSimplifiedCommon  "
         "DisplayFramebufferScale=io(%.2f,%.2f) live_ratio(%.2f,%.2f)  "
-        "build_called=false  descriptor_pool_size=%u\n",
+        "build_called=false  descriptor_pool_size=%u  "
+        "min_window=%dx%d\n",
         monitor_info.resolution.width, monitor_info.resolution.height,
         monitor_info.physical_mm.width_mm, monitor_info.physical_mm.height_mm,
         static_cast<double>(scale_result.diagonal_inches),
@@ -577,15 +602,22 @@ void ImGuiLayer::init(
         win_w, win_h,
         fb_w, fb_h,
         static_cast<double>(glfw_content_scale),
-        static_cast<double>(ui_scale),
+        static_cast<double>(ppi_ui_scale),
+        static_cast<double>(ui_scale_multiplier),
+        static_cast<double>(final_ui_scale),
         static_cast<double>(kMinUiScale),
         static_cast<double>(kMaxUiScale),
-        static_cast<double>(kRegularFontSize * ui_scale),
+        static_cast<double>(kRegularFontSize * final_ui_scale),
+        static_cast<double>(kSmallFontSize * final_ui_scale),
+        static_cast<double>(kPanelTitleFontSize * final_ui_scale),
+        static_cast<double>(kAxisFontSize * final_ui_scale),
+        static_cast<double>(kStatusFontSize * final_ui_scale),
         static_cast<double>(io.DisplayFramebufferScale.x),
         static_cast<double>(io.DisplayFramebufferScale.y),
         static_cast<double>(fb_ratio_x),
         static_cast<double>(fb_ratio_y),
-        init_info.DescriptorPoolSize);
+        init_info.DescriptorPoolSize,
+        min_win_w, min_win_h);
 
     initialized_ = true;
 }

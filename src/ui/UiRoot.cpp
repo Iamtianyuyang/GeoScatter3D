@@ -183,19 +183,20 @@ bool rects_overlap(const ImVec2& a_min,
 
 BadgeOverlay make_badge_overlay(
     const gs3d::app::RenderViewState& view,
-    const ImVec2& plot_min)
+    const ImVec2& plot_min,
+    float ui_scale)
 {
     BadgeOverlay badge{};
     std::snprintf(badge.text, sizeof(badge.text), "%llu 点  |  %.2f ms",
         static_cast<unsigned long long>(view.points_visible),
         static_cast<double>(view.frame_time_ms));
     badge.text_size = ImGui::CalcTextSize(badge.text);
-    const float bx0 = plot_min.x + LayoutMetrics::kBadgePadX;
-    const float by0 = plot_min.y + LayoutMetrics::kBadgePadY;
+    const float bx0 = plot_min.x + LayoutMetrics::kBadgePadX * ui_scale;
+    const float by0 = plot_min.y + LayoutMetrics::kBadgePadY * ui_scale;
     badge.box_min = {bx0, by0};
     badge.box_max = {
-        bx0 + badge.text_size.x + 16.0f,
-        by0 + badge.text_size.y + 10.0f
+        bx0 + badge.text_size.x + 16.0f * ui_scale,
+        by0 + badge.text_size.y + 10.0f * ui_scale
     };
     return badge;
 }
@@ -261,31 +262,30 @@ void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
  * 同步旋转。
  */
 void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
-                            const ImVec2& plot_max)
+                            const ImVec2& plot_max,
+                            float ui_scale)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    const float r = LayoutMetrics::kGizmoRadius;
+    const float r = LayoutMetrics::kGizmoRadius * ui_scale;
     const ImVec2 origin{
-        plot_max.x - r - LayoutMetrics::kGizmoInsetRight,
-        plot_max.y - r - LayoutMetrics::kGizmoInsetBottom
+        plot_max.x - r - LayoutMetrics::kGizmoInsetRight * ui_scale,
+        plot_max.y - r - LayoutMetrics::kGizmoInsetBottom * ui_scale
     };
 
     dl->AddCircleFilled(origin, r, AxisStyle::kGizmoBg);
 
-    // 用相机实时方向绘制三轴（不再是硬编码的静态方向）
     if (view.gizmo_axes_valid) {
-        const float len = r - 2.0f;
+        const float len = r - 2.0f * ui_scale;
         const auto draw_axis = [&](const gs3d::app::RenderViewState::GizmoAxisEnd& end,
                                    ImU32 color) {
-            // 归一化屏幕空间方向，缩放到 gizmo 半径
             const float mag = std::sqrt(end.dx * end.dx + end.dy * end.dy);
             if (mag < 1.0e-6f) return;
             const float s = len / mag;
             dl->AddLine(origin,
                         ImVec2(origin.x + end.dx * s,
                                origin.y + end.dy * s),
-                        color, 1.5f);
+                        color, 1.5f * ui_scale);
         };
         draw_axis(view.gizmo_x_axis, IM_COL32(225, 92, 92, 220));
         draw_axis(view.gizmo_y_axis, IM_COL32(91, 204, 122, 220));
@@ -298,22 +298,25 @@ void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
  */
 void draw_scale_bar(const ImVec2& plot_min,
                     const ImVec2& plot_max,
-                    const char* label)
+                    const char* label,
+                    float ui_scale)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    const float bar_w = LayoutMetrics::kScaleBarLen;
-    const float x0 = plot_min.x + LayoutMetrics::kScaleBarInsetLeft;
-    const float y  = plot_max.y - LayoutMetrics::kScaleBarInsetBottom;
+    const float bar_w = LayoutMetrics::kScaleBarLen * ui_scale;
+    const float x0 = plot_min.x + LayoutMetrics::kScaleBarInsetLeft * ui_scale;
+    const float y  = plot_max.y - LayoutMetrics::kScaleBarInsetBottom * ui_scale;
     const float x1 = x0 + bar_w;
+    const float tick_h = 4.0f * ui_scale;
+    const float thick = 1.5f * ui_scale;
 
-    dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine, 1.5f);
-    dl->AddLine({x0, y - 4.0f}, {x0, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
-    dl->AddLine({x1, y - 4.0f}, {x1, y + 1.0f}, AxisStyle::kScaleLine, 1.5f);
+    dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine, thick);
+    dl->AddLine({x0, y - tick_h}, {x0, y + 1.0f * ui_scale}, AxisStyle::kScaleLine, thick);
+    dl->AddLine({x1, y - tick_h}, {x1, y + 1.0f * ui_scale}, AxisStyle::kScaleLine, thick);
     if (axis_font() != nullptr) {
         ImGui::PushFont(axis_font());
     }
-    dl->AddText({x0, y - 18.0f}, AxisStyle::kScaleLabel, label);
+    dl->AddText({x0, y - 18.0f * ui_scale}, AxisStyle::kScaleLabel, label);
     if (axis_font() != nullptr) {
         ImGui::PopFont();
     }
@@ -325,28 +328,28 @@ void draw_scale_bar(const ImVec2& plot_min,
 void draw_viewport_overlay(
     const gs3d::app::RenderViewState& view,
     const ImVec2& plot_min,
-    const ImVec2& plot_max)
+    const ImVec2& plot_max,
+    float ui_scale)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    const BadgeOverlay badge = make_badge_overlay(view, plot_min);
+    const BadgeOverlay badge = make_badge_overlay(view, plot_min, ui_scale);
     dl->AddRectFilled(
         badge.box_min, badge.box_max,
-        AxisStyle::kBadgeBg, LayoutMetrics::kBadgeRound);
+        AxisStyle::kBadgeBg, LayoutMetrics::kBadgeRound * ui_scale);
     if (small_font() != nullptr) {
         ImGui::PushFont(small_font());
     }
     dl->AddText(
-        {badge.box_min.x + 8.0f, badge.box_min.y + 5.0f},
+        {badge.box_min.x + 8.0f * ui_scale, badge.box_min.y + 5.0f * ui_scale},
         AxisStyle::kBadgeText,
         badge.text);
     if (small_font() != nullptr) {
         ImGui::PopFont();
     }
 
-    // ── 比例尺和方向指示器 ──
-    draw_scale_bar(plot_min, plot_max, view.scale.c_str());
-    draw_orientation_gizmo(view, plot_max);
+    draw_scale_bar(plot_min, plot_max, view.scale.c_str(), ui_scale);
+    draw_orientation_gizmo(view, plot_max, ui_scale);
 }
 
 void draw_viewport_window(
@@ -472,12 +475,11 @@ void draw_viewport_window(
     if (view.measure_mode_active) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         constexpr ImU32 kMeasureBorder = IM_COL32(255, 200, 40, 180);
-        constexpr float kBorderWidth = 3.5f;
+        const float kBorderWidth = 3.5f * ui_scale;
         dl->AddRect(plot_min, plot_max, kMeasureBorder, 0.0f, 0, kBorderWidth);
 
-        // Corner badge
-        constexpr float kBadgePadX = 8.0f;
-        constexpr float kBadgePadY = 5.0f;
+        const float kBadgePadX = 8.0f * ui_scale;
+        const float kBadgePadY = 5.0f * ui_scale;
         constexpr ImU32 kBadgeBg = IM_COL32(255, 180, 30, 220);
         constexpr ImU32 kBadgeText = IM_COL32(20, 20, 20, 255);
         const char* badge_label = "测量模式  中键量距  Shift框选统计";
@@ -488,7 +490,7 @@ void draw_viewport_window(
         const ImVec2 badge_max{
             badge_min.x + ts.x + kBadgePadX * 2.0f,
             badge_min.y + ts.y + kBadgePadY * 2.0f};
-        dl->AddRectFilled(badge_min, badge_max, kBadgeBg, 4.0f);
+        dl->AddRectFilled(badge_min, badge_max, kBadgeBg, 4.0f * ui_scale);
         dl->AddText(
             ImVec2(badge_min.x + kBadgePadX, badge_min.y + kBadgePadY),
             kBadgeText, badge_label);
@@ -511,7 +513,7 @@ void draw_viewport_window(
     if (view.show_map_axis) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->PushClipRect(canvas_min, canvas_max, true);
-        const BadgeOverlay badge = make_badge_overlay(view, plot_min);
+        const BadgeOverlay badge = make_badge_overlay(view, plot_min, ui_scale);
         const float axis_outer_pad = LayoutMetrics::kAxisOuterPadding * ui_scale;
 
         // 轴线：顶部 X 轴 + 左侧 Y 轴，全部保持在 plot 外侧科学绘图风格
@@ -824,13 +826,15 @@ void draw_viewport_window(
             const float cy = plot_min.y + scr.y;
 
             constexpr ImU32 kCrosshairLine  = IM_COL32(255, 220, 60, 80);
-            constexpr ImU32 kCrosshairBg    = IM_COL32(14,  15,  18,  200);
+            constexpr ImU32 kCrosshairBg    = IM_COL32(14,  15,  18, 200);
             constexpr ImU32 kCrosshairText  = IM_COL32(255, 220, 60, 240);
-            constexpr float kCrosshairWidth = 1.0f;
-            constexpr float kLabelPad = 3.0f;
-            constexpr float kLabelAxisGap = 3.0f;
+            const float kCrosshairWidth = 1.0f * ui_scale;
+            const float kLabelPad = 3.0f * ui_scale;
+            const float kLabelAxisGap = 3.0f * ui_scale;
 
             dl->AddLine(ImVec2(plot_min.x, cy), ImVec2(plot_max.x, cy),
+                        kCrosshairLine, kCrosshairWidth);
+            dl->AddLine(ImVec2(cx, plot_min.y), ImVec2(cx, plot_max.y),
                         kCrosshairLine, kCrosshairWidth);
             dl->AddLine(ImVec2(cx, plot_min.y), ImVec2(cx, plot_max.y),
                         kCrosshairLine, kCrosshairWidth);
@@ -877,7 +881,7 @@ void draw_viewport_window(
                 dl->AddRectFilled(
                     ImVec2(bg_min_x, bg_min_y),
                     ImVec2(bg_max_x, bg_max_y),
-                    kCrosshairBg, 3.0f);
+                    kCrosshairBg, 3.0f * ui_scale);
                 dl->AddText(
                     ImVec2(cx - tx.x * 0.5f, bg_min_y + kLabelPad),
                     kCrosshairText, label_x);
@@ -894,7 +898,7 @@ void draw_viewport_window(
                 dl->AddRectFilled(
                     ImVec2(bg_min_x, bg_min_y),
                     ImVec2(bg_max_x, bg_max_y),
-                    kCrosshairBg, 3.0f);
+                    kCrosshairBg, 3.0f * ui_scale);
                 dl->AddText(
                     ImVec2(bg_min_x + kLabelPad, cy - ty.y * 0.5f),
                     kCrosshairText, label_y);
@@ -940,7 +944,7 @@ void draw_viewport_window(
         draw_list->PopClipRect();
     }
 
-    draw_viewport_overlay(view, plot_min, plot_max);
+    draw_viewport_overlay(view, plot_min, plot_max, ui_scale);
 
 
     // ── 悬浮高亮标记 ──
@@ -959,26 +963,26 @@ void draw_viewport_window(
         const float cx = plot_min.x + scr.x;
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        constexpr float kR = 8.0f;
+        const float kR = 8.0f * ui_scale;
         constexpr ImU32 kColor = IM_COL32(255, 220, 60, 220);
-        constexpr float kThick = 2.0f;
+        const float kThick = 2.0f * ui_scale;
         dl->AddLine({cx - kR, cy}, {cx + kR, cy}, kColor, kThick);
         dl->AddLine({cx, cy - kR}, {cx, cy + kR}, kColor, kThick);
-        dl->AddCircle({cx, cy}, kR + 2.0f, kColor, 0, kThick * 0.7f);
+        dl->AddCircle({cx, cy}, kR + 2.0f * ui_scale, kColor, 0, kThick * 0.7f);
 
         // "已复制" feedback overlay
         if (view.copy_feedback_frames > 0) {
-            constexpr float kFeedbackPad = 4.0f;
+            const float kFeedbackPad = 4.0f * ui_scale;
             constexpr ImU32 kFeedbackBg = IM_COL32(40, 180, 80, 210);
             constexpr ImU32 kFeedbackText = IM_COL32(255, 255, 255, 240);
             const char* feedback = "已复制";
             const ImVec2 fs = ImGui::CalcTextSize(feedback);
             const float fb_x = cx - fs.x * 0.5f;
-            const float fb_y = cy - kR - fs.y - kFeedbackPad * 2.0f - 8.0f;
+            const float fb_y = cy - kR - fs.y - kFeedbackPad * 2.0f - 8.0f * ui_scale;
             dl->AddRectFilled(
                 ImVec2(fb_x - kFeedbackPad, fb_y - kFeedbackPad),
                 ImVec2(fb_x + fs.x + kFeedbackPad, fb_y + fs.y + kFeedbackPad),
-                kFeedbackBg, 3.0f);
+                kFeedbackBg, 3.0f * ui_scale);
             dl->AddText(ImVec2(fb_x, fb_y), kFeedbackText, feedback);
         }
     }
@@ -996,8 +1000,8 @@ void draw_viewport_window(
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
         constexpr ImU32 kSelectedColor = IM_COL32(70, 220, 255, 240);
-        dl->AddCircle({cx, cy}, 12.0f, kSelectedColor, 0, 2.5f);
-        dl->AddCircleFilled({cx, cy}, 3.0f, kSelectedColor);
+        dl->AddCircle({cx, cy}, 12.0f * ui_scale, kSelectedColor, 0, 2.5f * ui_scale);
+        dl->AddCircleFilled({cx, cy}, 3.0f * ui_scale, kSelectedColor);
     }
 
     // ── 测量线绘制 ──
@@ -1028,7 +1032,7 @@ void draw_viewport_window(
             const ImVec2 pa{plot_min.x + sa.x, plot_min.y + sa.y};
             const ImVec2 pb{plot_min.x + sb.x, plot_min.y + sb.y};
 
-            dl->AddLine(pa, pb, overlay.color, kMeasureLineWidth);
+            dl->AddLine(pa, pb, overlay.color, kMeasureLineWidth * ui_scale);
 
             // Distance label at midpoint.
             if (!overlay.label.empty()) {
@@ -1038,11 +1042,11 @@ void draw_viewport_window(
                 const ImVec2 ts = ImGui::CalcTextSize(
                     overlay.label.c_str());
                 dl->AddRectFilled(
-                    ImVec2(pmid.x - ts.x * 0.5f - kMeasureLabelPad,
-                           pmid.y - ts.y * 0.5f - kMeasureLabelPad),
-                    ImVec2(pmid.x + ts.x * 0.5f + kMeasureLabelPad,
-                           pmid.y + ts.y * 0.5f + kMeasureLabelPad),
-                    kMeasureLabelBg, 3.0f);
+                    ImVec2(pmid.x - ts.x * 0.5f - kMeasureLabelPad * ui_scale,
+                           pmid.y - ts.y * 0.5f - kMeasureLabelPad * ui_scale),
+                    ImVec2(pmid.x + ts.x * 0.5f + kMeasureLabelPad * ui_scale,
+                           pmid.y + ts.y * 0.5f + kMeasureLabelPad * ui_scale),
+                    kMeasureLabelBg, 3.0f * ui_scale);
                 dl->AddText(
                     ImVec2(pmid.x - ts.x * 0.5f,
                            pmid.y - ts.y * 0.5f),
@@ -1069,11 +1073,11 @@ void draw_viewport_window(
         dl->PushClipRect(canvas_min, canvas_max, true);
 
         // Filled circle + outer ring in bright measurement-amber.
-        constexpr float kMarkerR = 7.0f;
+        const float kMarkerR = 7.0f * ui_scale;
         constexpr ImU32 kMarkerFill = IM_COL32(255, 200, 40, 200);
         constexpr ImU32 kMarkerRing = IM_COL32(255, 220, 60, 255);
         dl->AddCircleFilled({px, py}, kMarkerR, kMarkerFill);
-        dl->AddCircle({px, py}, kMarkerR + 2.0f, kMarkerRing, 0, 2.5f);
+        dl->AddCircle({px, py}, kMarkerR + 2.0f * ui_scale, kMarkerRing, 0, 2.5f * ui_scale);
 
         // Preview line to mouse cursor while the cursor is on the plot area.
         const ImGuiIO& io = ImGui::GetIO();
@@ -1082,7 +1086,7 @@ void draw_viewport_window(
         if (mx >= plot_min.x && mx < plot_max.x &&
             my >= plot_min.y && my < plot_max.y) {
             constexpr ImU32 kPreviewLine = IM_COL32(255, 220, 60, 100);
-            dl->AddLine({px, py}, {mx, my}, kPreviewLine, 1.5f);
+            dl->AddLine({px, py}, {mx, my}, kPreviewLine, 1.5f * ui_scale);
         }
 
         dl->PopClipRect();
@@ -1207,7 +1211,8 @@ void draw_viewport_window(
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
                             plot_min.y + scr_curr.y);
         ImGui::GetWindowDrawList()->AddRect(
-            rect_a, rect_b, IM_COL32(255, 220, 0, 255)
+            rect_a, rect_b, IM_COL32(255, 220, 0, 255),
+            0.0f, 0, 1.5f * ui_scale
         );
         ImGui::GetWindowDrawList()->AddRectFilled(
             rect_a, rect_b, IM_COL32(255, 220, 0, 32)
@@ -1257,7 +1262,8 @@ void draw_viewport_window(
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
                             plot_min.y + scr_curr.y);
         ImGui::GetWindowDrawList()->AddRect(
-            rect_a, rect_b, IM_COL32(100, 255, 100, 255)
+            rect_a, rect_b, IM_COL32(100, 255, 100, 255),
+            0.0f, 0, 1.5f * ui_scale
         );
         ImGui::GetWindowDrawList()->AddRectFilled(
             rect_a, rect_b, IM_COL32(100, 255, 100, 32)
@@ -1663,13 +1669,17 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             }
         }
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 150));
-        ImGui::TextUnformatted(
-            state.dataset.active_dataset.empty()
-                ? "未加载数据"
-                : state.dataset.active_dataset.c_str()
-        );
-        ImGui::PopStyleColor();
+        // Only show the dataset name when there's enough room; hide it on
+        // narrow windows so the toolbar buttons don't get squeezed.
+        if (ImGui::GetContentRegionAvail().x > 200.0f * ui_scale) {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 150));
+            ImGui::TextUnformatted(
+                state.dataset.active_dataset.empty()
+                    ? "未加载数据"
+                    : state.dataset.active_dataset.c_str()
+            );
+            ImGui::PopStyleColor();
+        }
         ImGui::EndChild();
         ImGui::PopStyleVar(2);
 
