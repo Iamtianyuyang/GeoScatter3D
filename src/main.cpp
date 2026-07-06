@@ -312,8 +312,17 @@ int main(int argc, char** argv) {
             !app_config.viewer.benchmark_mode;
         for (;;) {
             if (show_welcome_window) {
+                const auto recent_projects =
+                    gs3d::app::load_recent_projects();
+
+                // "当前会话" reflects the most recently opened project
+                // (the first entry in recent-projects.txt), NOT the
+                // static bundle_dir from config/viewer.toml — the toml
+                // is never auto-updated and would stay stale forever.
                 std::filesystem::path current_path;
-                if (!app_config.bundle_dir.empty()) {
+                if (!recent_projects.empty()) {
+                    current_path = recent_projects.front().path;
+                } else if (!app_config.bundle_dir.empty()) {
                     current_path = app_config.bundle_dir;
                 } else if (!app_config.csv_input_path.empty()) {
                     current_path = app_config.csv_input_path;
@@ -327,8 +336,7 @@ int main(int argc, char** argv) {
                     .ui_scale_multiplier =
                         app_config.viewer.ui_scale_multiplier,
                     .current_path = std::move(current_path),
-                    .recent_projects =
-                        gs3d::app::load_recent_projects()
+                    .recent_projects = recent_projects
                 });
                 const auto welcome_result = welcome.run();
                 if (welcome_result.kind ==
