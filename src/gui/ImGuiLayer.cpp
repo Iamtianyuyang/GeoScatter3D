@@ -454,13 +454,15 @@ void ImGuiLayer::init(
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(ui_scale);
-    style.WindowRounding = 3.0f * ui_scale;
+    // Adobe-style workbench: neutral charcoal surfaces, compact controls,
+    // restrained corner radii, and blue reserved for interaction state.
+    style.WindowRounding = 2.0f * ui_scale;
     style.ChildRounding = 0.0f;
-    style.FrameRounding = 3.0f * ui_scale;
-    style.PopupRounding = 3.0f * ui_scale;
-    style.ScrollbarRounding = 3.0f * ui_scale;
-    style.GrabRounding = 3.0f * ui_scale;
-    style.TabRounding = 3.0f * ui_scale;
+    style.FrameRounding = 2.0f * ui_scale;
+    style.PopupRounding = 2.0f * ui_scale;
+    style.ScrollbarRounding = 2.0f * ui_scale;
+    style.GrabRounding = 2.0f * ui_scale;
+    style.TabRounding = 1.0f * ui_scale;
     style.WindowBorderSize = 0.8f * ui_scale;
     style.ChildBorderSize = 0.0f;
     style.FrameBorderSize = 0.0f;
@@ -473,15 +475,15 @@ void ImGuiLayer::init(
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
     auto& colors = style.Colors;
-    colors[ImGuiCol_Text] = ImVec4(0.84f, 0.85f, 0.87f, 1.00f);
+    colors[ImGuiCol_Text] = ImVec4(0.88f, 0.89f, 0.91f, 1.00f);
     colors[ImGuiCol_TextDisabled] =
         ImVec4(0.52f, 0.55f, 0.59f, 0.90f);
     colors[ImGuiCol_WindowBg] =
-        ImVec4(0.104f, 0.109f, 0.118f, 1.00f);
+        ImVec4(0.090f, 0.094f, 0.102f, 1.00f);
     colors[ImGuiCol_ChildBg] =
-        ImVec4(0.125f, 0.130f, 0.140f, 1.00f);
+        ImVec4(0.118f, 0.122f, 0.130f, 1.00f);
     colors[ImGuiCol_PopupBg] =
-        ImVec4(0.110f, 0.116f, 0.126f, 0.98f);
+        ImVec4(0.105f, 0.109f, 0.117f, 0.99f);
     colors[ImGuiCol_Border] =
         ImVec4(0.300f, 0.325f, 0.360f, 0.26f);
     colors[ImGuiCol_FrameBg] =
@@ -495,7 +497,7 @@ void ImGuiLayer::init(
     colors[ImGuiCol_TitleBgActive] =
         ImVec4(0.108f, 0.114f, 0.124f, 1.00f);
     colors[ImGuiCol_MenuBarBg] =
-        ImVec4(0.095f, 0.100f, 0.108f, 1.00f);
+        ImVec4(0.082f, 0.086f, 0.093f, 1.00f);
     colors[ImGuiCol_Button] =
         ImVec4(0.168f, 0.175f, 0.187f, 0.92f);
     colors[ImGuiCol_ButtonHovered] =
@@ -513,7 +515,7 @@ void ImGuiLayer::init(
     colors[ImGuiCol_TabHovered] =
         ImVec4(0.118f, 0.330f, 0.560f, 0.80f);
     colors[ImGuiCol_TabSelected] =
-        ImVec4(0.160f, 0.168f, 0.184f, 1.00f);
+        ImVec4(0.190f, 0.197f, 0.210f, 1.00f);
     colors[ImGuiCol_TabSelectedOverline] =
         ImVec4(0.120f, 0.420f, 0.760f, 0.88f);
     colors[ImGuiCol_DockingPreview] =

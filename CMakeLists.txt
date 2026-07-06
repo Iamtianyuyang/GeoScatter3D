@@ -25,6 +25,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/ui/MeasurementPanel.cpp
     src/ui/AuxiliaryPanels.cpp
     src/ui/RenderSettingsPanel.cpp
+    src/ui/WelcomePage.cpp
 
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
@@ -36,6 +37,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/ViewerApp.cpp
     src/app/AppConfig.cpp
     src/app/PreprocessedBundle.cpp
+    src/app/RecentProjects.cpp
     src/app/ResourcePath.cpp
     src/app/TilePointCache.cpp
     src/app/ViewportResizeScheduler.cpp
@@ -97,10 +99,12 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/ui/MeasurementPanel.hpp
     include/ui/AuxiliaryPanels.hpp
     include/ui/RenderSettingsPanel.hpp
+    include/ui/WelcomePage.hpp
 
     include/app/ViewerApp.hpp
     include/app/AppConfig.hpp
     include/app/PreprocessedBundle.hpp
+    include/app/RecentProjects.hpp
     include/app/ResourcePath.hpp
     include/app/AppState.hpp
     include/app/UiActions.hpp
@@ -297,6 +301,7 @@ if(BUILD_TESTING)
 
     add_executable(GeoScatter3DRuntimeTests
         tests/RuntimePerformanceTests.cpp
+        src/app/RecentProjects.cpp
         src/app/TilePointCache.cpp
         src/app/ViewportResizeScheduler.cpp
         src/camera/BoxSelect.cpp

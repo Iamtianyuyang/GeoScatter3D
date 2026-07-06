@@ -2115,6 +2115,7 @@ ViewerApp::ViewerApp(ViewerAppConfig config)
 
 int ViewerApp::run() {
     try {
+        open_request_.reset();
         gs3d::util::Stopwatch startup_timer;
 
         const bool can_start_from_metadata =
@@ -3032,6 +3033,9 @@ int ViewerApp::run() {
         scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])
         scene_state.active_height_index    = 1;  // 高度=高程 (attr_list[1])
         gs3d::app::AppState app_state;
+        app_state.show_welcome_page_on_startup =
+            config_.show_welcome_page_on_startup;
+        app_state.recent_projects = config_.recent_projects;
         app_state.dataset.active_dataset = dataset_descriptor.display_name;
         app_state.dataset.path = dataset_descriptor.path;
         app_state.dataset.format = dataset_descriptor.format;
@@ -3062,6 +3066,7 @@ int ViewerApp::run() {
             view.camera_linked = false;
         }
         if (config_.benchmark_mode) {
+            app_state.show_welcome_page_on_startup = false;
             app_state.panels.dataset = false;
             app_state.panels.render_settings = false;
             app_state.panels.debug_log = false;
@@ -4075,6 +4080,19 @@ int ViewerApp::run() {
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
+            if (!gui_cmds.open_project_path.empty()) {
+                open_request_ = ViewerOpenRequest{
+                    .kind = ViewerOpenRequestKind::Project,
+                    .path = gui_cmds.open_project_path
+                };
+                window.request_close();
+            } else if (!gui_cmds.open_raw_data_path.empty()) {
+                open_request_ = ViewerOpenRequest{
+                    .kind = ViewerOpenRequestKind::RawData,
+                    .path = gui_cmds.open_raw_data_path
+                };
+                window.request_close();
+            }
             const double now_seconds =
                 std::chrono::duration<double>(
                     current_time.time_since_epoch()

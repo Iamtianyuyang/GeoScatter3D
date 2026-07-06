@@ -1,3 +1,4 @@
+#include "app/RecentProjects.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "camera/BoxSelect.hpp"
@@ -14,7 +15,10 @@
 #include "ui/UiRoot.hpp"
 
 #include <cmath>
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string_view>
@@ -37,6 +41,47 @@ std::shared_ptr<gs3d::app::TilePoints> make_points(std::size_t count)
     points->points.resize(count);
     points->point_ids.resize(count);
     return points;
+}
+
+void test_recent_projects_persist_and_dedupe()
+{
+    const auto nonce =
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count();
+    const auto test_root =
+        std::filesystem::temp_directory_path() /
+        ("gs3d-recent-projects-" + std::to_string(nonce));
+    const auto storage = test_root / "recent-projects.txt";
+    const auto project_a = test_root / "a.gs3d.bundle";
+    const auto project_b = test_root / "b.gs3d.bundle";
+    std::filesystem::create_directories(project_a);
+    std::filesystem::create_directories(project_b);
+    setenv(
+        "GS3D_RECENT_PROJECTS_PATH",
+        storage.string().c_str(),
+        1
+    );
+
+    gs3d::app::remember_recent_project(project_a);
+    gs3d::app::remember_recent_project(project_b);
+    gs3d::app::remember_recent_project(project_a);
+    const auto entries = gs3d::app::load_recent_projects();
+
+    expect(
+        entries.size() == 2,
+        "recent projects deduplicate repeated paths"
+    );
+    expect(
+        !entries.empty() &&
+            entries.front().path.filename() ==
+                project_a.filename(),
+        "most recently reopened project moves to the front"
+    );
+
+    unsetenv("GS3D_RECENT_PROJECTS_PATH");
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
 }
 
 float dot(
@@ -2811,6 +2856,7 @@ void test_hover_cleared_when_no_hit()
 
 int main()
 {
+    test_recent_projects_persist_and_dedupe();
     test_resize_debounce();
     test_resize_batch();
     test_tile_cache_budget_and_lru();

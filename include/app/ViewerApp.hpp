@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,16 @@ enum class InteractiveDisplayMode {
     KeepStableHighQuality,
     AllowCoarseLOD,
     FreezeLastFrameTexture
+};
+
+enum class ViewerOpenRequestKind {
+    Project,
+    RawData
+};
+
+struct ViewerOpenRequest {
+    ViewerOpenRequestKind kind = ViewerOpenRequestKind::Project;
+    std::filesystem::path path;
 };
 
 struct ViewerAppConfig {
@@ -225,6 +236,9 @@ struct ViewerAppConfig {
     bool pick_debug_dump_enabled = false;
     std::filesystem::path pick_debug_dump_dir = "bench/.pick_debug";
     bool pick_debug_dump_once_on_hover = true;
+
+    bool show_welcome_page_on_startup = true;
+    std::vector<RecentProjectEntry> recent_projects;
 };
 
 class ViewerApp {
@@ -236,8 +250,14 @@ public:
     [[nodiscard]]
     int run();
 
+    [[nodiscard]]
+    const std::optional<ViewerOpenRequest>& open_request() const noexcept {
+        return open_request_;
+    }
+
 private:
     ViewerAppConfig config_;
+    std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
     std::atomic<std::uint64_t>     region_stats_gen_{0};
 };

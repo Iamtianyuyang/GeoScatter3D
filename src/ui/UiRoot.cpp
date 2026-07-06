@@ -5,6 +5,7 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/WelcomePage.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -1516,6 +1517,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImVec2(0.0f, 0.0f)
     );
 
+    bool render_workspace = false;
     if (ImGui::Begin(kHostWindowName, nullptr, host_flags)) {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("文件")) {
@@ -1609,6 +1611,10 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("帮助")) {
+                if (ImGui::MenuItem("欢迎页")) {
+                    welcome_page_visible_ = true;
+                }
+                ImGui::Separator();
                 ImGui::TextUnformatted(
                     "视图可作为标签页使用，也可拖到其他显示器。"
                 );
@@ -1620,148 +1626,190 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::EndMenuBar();
         }
 
-        ImGui::PushStyleVar(
-            ImGuiStyleVar_FramePadding,
-            ImVec2(5.0f, 3.0f)
-        );
-        ImGui::PushStyleVar(
-            ImGuiStyleVar_ItemSpacing,
-            ImVec2(6.0f, 4.0f)
-        );
-        ImGui::BeginChild(
-            "##TopToolbar",
-            ImVec2(0.0f, LayoutMetrics::kTopToolbarHeightBase * ui_scale),
-            false,
-            ImGuiWindowFlags_NoScrollbar
-        );
-        if (ImGui::SmallButton("打开")) {
-            actions.open_requested = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+ 视图")) {
-            show_first_hidden_view(state);
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("截图")) {
-            actions.screenshot_requested = true;
-        }
-        ImGui::SameLine();
-        {
-            bool measure_active = state.measurement.measure_mode_active();
-            if (measure_active) {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                    IM_COL32(220, 150, 30, 230));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                    IM_COL32(240, 170, 40, 240));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                    IM_COL32(200, 130, 20, 230));
-                ImGui::PushStyleColor(ImGuiCol_Text,
-                    IM_COL32(20, 20, 20, 255));
+        const bool render_welcome_page =
+            state.show_welcome_page_on_startup &&
+            welcome_page_visible_;
+        render_workspace = !render_welcome_page;
+        if (render_welcome_page) {
+            ImGui::BeginChild(
+                "##WelcomePageHost",
+                ImVec2(0.0f, 0.0f),
+                false,
+                ImGuiWindowFlags_None
+            );
+            if (draw_welcome_page(state, actions, ui_scale)) {
+                welcome_page_visible_ = false;
             }
-            if (ImGui::SmallButton("测量")) {
-                state.measurement.toggle_measure_mode();
-                if (!state.measurement.measure_mode_active()) {
-                    state.measurement.clear_pending();
+            ImGui::EndChild();
+        } else {
+            ImGui::PushStyleVar(
+                ImGuiStyleVar_FramePadding,
+                ImVec2(5.0f, 3.0f)
+            );
+            ImGui::PushStyleVar(
+                ImGuiStyleVar_ItemSpacing,
+                ImVec2(6.0f, 4.0f)
+            );
+            ImGui::BeginChild(
+                "##TopToolbar",
+                ImVec2(
+                    0.0f,
+                    LayoutMetrics::kTopToolbarHeightBase * ui_scale
+                ),
+                false,
+                ImGuiWindowFlags_NoScrollbar
+            );
+            if (ImGui::SmallButton("打开")) {
+                actions.open_requested = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+ 视图")) {
+                show_first_hidden_view(state);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("截图")) {
+                actions.screenshot_requested = true;
+            }
+            ImGui::SameLine();
+            {
+                bool measure_active =
+                    state.measurement.measure_mode_active();
+                if (measure_active) {
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Button,
+                        IM_COL32(220, 150, 30, 230)
+                    );
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonHovered,
+                        IM_COL32(240, 170, 40, 240)
+                    );
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ButtonActive,
+                        IM_COL32(200, 130, 20, 230)
+                    );
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Text,
+                        IM_COL32(20, 20, 20, 255)
+                    );
+                }
+                if (ImGui::SmallButton("测量")) {
+                    state.measurement.toggle_measure_mode();
+                    if (!state.measurement.measure_mode_active()) {
+                        state.measurement.clear_pending();
+                    }
+                }
+                if (measure_active) {
+                    ImGui::PopStyleColor(4);
                 }
             }
-            if (measure_active) {
-                ImGui::PopStyleColor(4);
+            ImGui::SameLine();
+            if (ImGui::GetContentRegionAvail().x >
+                200.0f * ui_scale) {
+                ImGui::PushStyleColor(
+                    ImGuiCol_Text,
+                    IM_COL32(176, 182, 192, 150)
+                );
+                ImGui::TextUnformatted(
+                    state.dataset.active_dataset.empty()
+                        ? "未加载数据"
+                        : state.dataset.active_dataset.c_str()
+                );
+                ImGui::PopStyleColor();
             }
-        }
-        ImGui::SameLine();
-        // Only show the dataset name when there's enough room; hide it on
-        // narrow windows so the toolbar buttons don't get squeezed.
-        if (ImGui::GetContentRegionAvail().x > 200.0f * ui_scale) {
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 150));
-            ImGui::TextUnformatted(
-                state.dataset.active_dataset.empty()
-                    ? "未加载数据"
-                    : state.dataset.active_dataset.c_str()
+            ImGui::EndChild();
+            ImGui::PopStyleVar(2);
+
+            ImDrawList* host_dl = ImGui::GetWindowDrawList();
+            const ImVec2 toolbar_min = ImGui::GetItemRectMin();
+            const ImVec2 toolbar_max = ImGui::GetItemRectMax();
+            host_dl->AddLine(
+                ImVec2(toolbar_min.x, toolbar_max.y),
+                ImVec2(toolbar_max.x, toolbar_max.y),
+                IM_COL32(92, 98, 108, 64),
+                1.0f
             );
+
+            const float content_avail_y =
+                ImGui::GetContentRegionAvail().y;
+            const float status_h = std::min(
+                LayoutMetrics::kStatusBarHeightBase * ui_scale,
+                std::max(0.0f, content_avail_y)
+            );
+            const float dock_h =
+                std::max(0.0f, content_avail_y - status_h);
+            build_default_layout(state);
+            ImGui::DockSpace(
+                ImGui::GetID("GeoScatter3D.DockSpace"),
+                ImVec2(0.0f, dock_h),
+                ImGuiDockNodeFlags_None
+            );
+
+            ImGui::BeginChild(
+                "##StatusBar",
+                ImVec2(0.0f, status_h),
+                false,
+                ImGuiWindowFlags_NoScrollbar |
+                    ImGuiWindowFlags_NoScrollWithMouse
+            );
+            const ImVec2 status_min = ImGui::GetWindowPos();
+            const ImVec2 status_max{
+                status_min.x + ImGui::GetWindowSize().x,
+                status_min.y + ImGui::GetWindowSize().y
+            };
+            host_dl->AddLine(
+                ImVec2(status_min.x, status_min.y),
+                ImVec2(status_max.x, status_min.y),
+                IM_COL32(92, 98, 108, 56),
+                1.0f
+            );
+            ImGui::SetCursorPosX(LayoutMetrics::kStatusInsetX);
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                IM_COL32(178, 184, 194, 158)
+            );
+            if (status_font() != nullptr) {
+                ImGui::PushFont(status_font());
+            }
+            ImGui::Text(
+                "%.1f FPS    %.2f ms    %llu 点    GPU %.1f MB    %s",
+                state.status_bar.fps,
+                state.performance.frame_time_ms,
+                static_cast<unsigned long long>(
+                    state.status_bar.visible_points
+                ),
+                bytes_to_mb(state.status_bar.gpu_memory_bytes),
+                state.status_bar.ready_state.c_str()
+            );
+            if (status_font() != nullptr) {
+                ImGui::PopFont();
+            }
             ImGui::PopStyleColor();
+            ImGui::EndChild();
         }
-        ImGui::EndChild();
-        ImGui::PopStyleVar(2);
-
-        ImDrawList* host_dl = ImGui::GetWindowDrawList();
-        const ImVec2 toolbar_min = ImGui::GetItemRectMin();
-        const ImVec2 toolbar_max = ImGui::GetItemRectMax();
-        host_dl->AddLine(
-            ImVec2(toolbar_min.x, toolbar_max.y),
-            ImVec2(toolbar_max.x, toolbar_max.y),
-            IM_COL32(92, 98, 108, 64),
-            1.0f
-        );
-
-        build_default_layout(state);
-        const float content_avail_y = ImGui::GetContentRegionAvail().y;
-        const float status_h = std::min(
-            LayoutMetrics::kStatusBarHeightBase * ui_scale,
-            std::max(0.0f, content_avail_y)
-        );
-        const float dock_h = std::max(0.0f, content_avail_y - status_h);
-        ImGui::DockSpace(
-            ImGui::GetID("GeoScatter3D.DockSpace"),
-            ImVec2(0.0f, dock_h),
-            ImGuiDockNodeFlags_None
-        );
-
-        ImGui::BeginChild(
-            "##StatusBar",
-            ImVec2(0.0f, status_h),
-            false,
-            ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoScrollWithMouse
-        );
-        const ImVec2 status_min = ImGui::GetWindowPos();
-        const ImVec2 status_max{
-            status_min.x + ImGui::GetWindowSize().x,
-            status_min.y + ImGui::GetWindowSize().y
-        };
-        host_dl->AddLine(
-            ImVec2(status_min.x, status_min.y),
-            ImVec2(status_max.x, status_min.y),
-            IM_COL32(92, 98, 108, 56),
-            1.0f
-        );
-        ImGui::SetCursorPosX(LayoutMetrics::kStatusInsetX);
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(178, 184, 194, 158));
-        if (status_font() != nullptr) {
-            ImGui::PushFont(status_font());
-        }
-        ImGui::Text(
-            "%.1f FPS    %.2f ms    %llu 点    GPU %.1f MB    %s",
-            state.status_bar.fps,
-            state.performance.frame_time_ms,
-            static_cast<unsigned long long>(
-                state.status_bar.visible_points
-            ),
-            bytes_to_mb(state.status_bar.gpu_memory_bytes),
-            state.status_bar.ready_state.c_str()
-        );
-        if (status_font() != nullptr) {
-            ImGui::PopFont();
-        }
-        ImGui::PopStyleColor();
-        ImGui::EndChild();
     }
     ImGui::End();
     ImGui::PopStyleVar(3);
 
-    draw_dataset_panel(state);
-    draw_render_settings(state, actions);
-    draw_navigation_map(state);
+    if (render_workspace) {
+        draw_dataset_panel(state);
+        draw_render_settings(state, actions);
+        draw_navigation_map(state);
 
-    for (auto& view : state.render_views) {
-        if (view.visible) {
-            draw_viewport_window(view, actions);
-        } else {
-            view.detached = false;
+        for (auto& view : state.render_views) {
+            if (view.visible) {
+                draw_viewport_window(view, actions);
+            } else {
+                view.detached = false;
+                view.render_requested = false;
+            }
+        }
+
+        draw_auxiliary_panels(state);
+    } else {
+        for (auto& view : state.render_views) {
             view.render_requested = false;
         }
     }
-
-    draw_auxiliary_panels(state);
     return actions;
 }
 

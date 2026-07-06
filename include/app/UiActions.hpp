@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace gs3d::app {
@@ -62,6 +63,8 @@ struct ViewportFrameCmd {
 
 struct UiActions {
     bool open_requested = false;
+    std::string open_project_path;
+    std::string open_raw_data_path;
     bool save_requested = false;
     bool add_data_requested = false;
     bool remove_requested = false;

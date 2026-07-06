@@ -140,6 +140,7 @@ public:
 private:
     void build_default_layout(const gs3d::app::AppState& state);
 
+    bool welcome_page_visible_ = true;
     bool dock_layout_initialized_ = false;
     std::uint32_t dock_layout_signature_ = 0;
     // Last work size (px) used when building the default dock layout. A large

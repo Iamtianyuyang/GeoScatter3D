@@ -1,5 +1,6 @@
 #include "app/AppConfig.hpp"
 #include "app/PreprocessedBundle.hpp"
+#include "app/RecentProjects.hpp"
 #include "app/ViewerApp.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
@@ -10,6 +11,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <string>
 
 namespace {
 
@@ -65,7 +67,7 @@ void preprocess_csv_input(
         );
     }
 
-    const auto bundle_paths =
+    auto bundle_paths =
         resolve_bundle_paths(
             app_config,
             app_config.csv_input_path
@@ -128,15 +130,22 @@ void preprocess_csv_input(
                 dataset,
                 make_lod_build_config(app_config.viewer)
             );
-        const auto lod_stats =
-            gs3d::preprocess::Gs3dLodWriter::write(
-                app_config.viewer.lod_sidecar_path,
-                lod_dataset
-            );
-
-        std::cout << "[PREPROCESS] lod_levels = "
-                  << lod_stats.level_count
-                  << '\n';
+        if (lod_dataset.empty()) {
+            app_config.viewer.lod_enabled = false;
+            bundle_paths.lod_enabled = false;
+            std::cout
+                << "[PREPROCESS] LOD skipped: dataset is below "
+                << "the configured minimum point count.\n";
+        } else {
+            const auto lod_stats =
+                gs3d::preprocess::Gs3dLodWriter::write(
+                    app_config.viewer.lod_sidecar_path,
+                    lod_dataset
+                );
+            std::cout << "[PREPROCESS] lod_levels = "
+                      << lod_stats.level_count
+                      << '\n';
+        }
         std::cout << "[TIME] preprocess.lod_write_seconds = "
                   << lod_timer.elapsed_seconds()
                   << '\n';
@@ -256,6 +265,37 @@ gs3d::app::ViewerAppConfig make_viewer_config(
     return viewer;
 }
 
+std::filesystem::path project_directory_from_selection(
+    const std::filesystem::path& selection
+) {
+    if (selection.filename() == "manifest.toml") {
+        return selection.parent_path();
+    }
+    return selection;
+}
+
+void apply_open_request(
+    gs3d::app::AppConfig& app_config,
+    const gs3d::app::ViewerOpenRequest& request
+) {
+    if (request.kind ==
+        gs3d::app::ViewerOpenRequestKind::Project) {
+        app_config.input_mode = "bundle";
+        app_config.bundle_dir =
+            project_directory_from_selection(request.path);
+        app_config.csv_input_path.clear();
+        return;
+    }
+
+    const auto extension = request.path.extension().string();
+    app_config.input_mode =
+        extension == ".dat" || extension == ".DAT"
+            ? "dat"
+            : "csv";
+    app_config.csv_input_path = request.path;
+    app_config.bundle_dir.clear();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -266,19 +306,35 @@ int main(int argc, char** argv) {
                 argv
             );
 
-        preprocess_csv_input(app_config);
-        load_bundle_input(app_config);
+        bool show_welcome_page = true;
+        for (;;) {
+            preprocess_csv_input(app_config);
+            load_bundle_input(app_config);
 
-        gs3d::app::AppConfigPrinter::print(app_config);
-        
-        const auto viewer_config =
-            make_viewer_config(app_config);
+            if (!app_config.bundle_dir.empty()) {
+                gs3d::app::remember_recent_project(
+                    app_config.bundle_dir
+                );
+            }
 
+            gs3d::app::AppConfigPrinter::print(app_config);
 
-        gs3d::app::ViewerApp app(viewer_config);
+            auto viewer_config =
+                make_viewer_config(app_config);
+            viewer_config.show_welcome_page_on_startup =
+                show_welcome_page;
+            viewer_config.recent_projects =
+                gs3d::app::load_recent_projects();
 
-        return app.run();
+            gs3d::app::ViewerApp app(viewer_config);
+            const int result = app.run();
+            if (result != 0 || !app.open_request().has_value()) {
+                return result;
+            }
 
+            apply_open_request(app_config, *app.open_request());
+            show_welcome_page = false;
+        }
     } catch (const std::exception& e) {
         std::cerr << "[FAIL] " << e.what() << '\n';
         return 1;
