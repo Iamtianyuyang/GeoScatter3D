@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <string>
@@ -120,6 +121,50 @@ bool has_raw_extension(const std::filesystem::path& path)
     return extension == ".csv" || extension == ".dat";
 }
 
+bool is_illegal_filename_char(char c)
+{
+    static constexpr char kIllegalChars[] =
+        "/\\:*?\"<>|";
+    for (const char illegal : kIllegalChars) {
+        if (c == illegal) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void filter_illegal_chars(char* buffer)
+{
+    char* write = buffer;
+    for (const char* read = buffer; *read != '\0'; ++read) {
+        if (!is_illegal_filename_char(*read)) {
+            *write = *read;
+            ++write;
+        }
+    }
+    *write = '\0';
+}
+
+bool has_illegal_chars(const char* buffer)
+{
+    for (const char* p = buffer; *p != '\0'; ++p) {
+        if (is_illegal_filename_char(*p)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool project_bundle_exists(
+    const std::filesystem::path& parent_dir,
+    const std::string& project_name
+) {
+    std::error_code ec;
+    const auto bundle_dir =
+        parent_dir / (project_name + ".gs3d.bundle");
+    return std::filesystem::exists(bundle_dir, ec);
+}
+
 bool is_valid_project(const std::filesystem::path& path)
 {
     std::error_code ec;
@@ -150,30 +195,6 @@ WelcomePageAction open_project()
     };
 }
 
-WelcomePageAction open_raw_data()
-{
-    const auto result =
-        gs3d::platform::choose_raw_data_file();
-    if (!result.error.empty()) {
-        g_error_message = result.error;
-        return {};
-    }
-    if (!result.path.has_value()) {
-        return {};
-    }
-    std::error_code ec;
-    if (!has_raw_extension(*result.path) ||
-        !std::filesystem::is_regular_file(*result.path, ec)) {
-        g_error_message = "请选择有效的 DAT 或 CSV 文件";
-        return {};
-    }
-    g_error_message.clear();
-    return {
-        .kind = WelcomePageActionKind::OpenRawData,
-        .path = *result.path
-    };
-}
-
 void draw_folder_icon(
     ImDrawList* draw_list,
     const ImVec2& center,
@@ -197,54 +218,6 @@ void draw_folder_icon(
         color,
         ImDrawFlags_Closed,
         thickness
-    );
-}
-
-void draw_data_icon(
-    ImDrawList* draw_list,
-    const ImVec2& center,
-    float scale,
-    ImU32 color
-) {
-    const float rx = 9.0f * scale;
-    const float ry = 3.4f * scale;
-    const float top = center.y - 6.0f * scale;
-    const float bottom = center.y + 6.0f * scale;
-    draw_list->AddEllipse(
-        ImVec2(center.x, top),
-        ImVec2(rx, ry),
-        color,
-        0.0f,
-        20,
-        1.5f * scale
-    );
-    draw_list->AddEllipse(
-        ImVec2(center.x, bottom),
-        ImVec2(rx, ry),
-        color,
-        0.0f,
-        20,
-        1.5f * scale
-    );
-    draw_list->AddLine(
-        ImVec2(center.x - rx, top),
-        ImVec2(center.x - rx, bottom),
-        color,
-        1.5f * scale
-    );
-    draw_list->AddLine(
-        ImVec2(center.x + rx, top),
-        ImVec2(center.x + rx, bottom),
-        color,
-        1.5f * scale
-    );
-    draw_list->AddEllipse(
-        ImVec2(center.x, center.y),
-        ImVec2(rx, ry),
-        rgb(180, 180, 180, 190),
-        0.0f,
-        20,
-        1.0f * scale
     );
 }
 
@@ -279,8 +252,7 @@ void draw_plus_icon(
 
 enum class CardIcon {
     NewProject,
-    Folder,
-    Data
+    Folder
 };
 
 bool draw_action_card(
@@ -324,8 +296,6 @@ bool draw_action_card(
         draw_plus_icon(draw_list, icon_center, scale, icon_color);
     } else if (icon == CardIcon::Folder) {
         draw_folder_icon(draw_list, icon_center, scale, icon_color);
-    } else {
-        draw_data_icon(draw_list, icon_center, scale, icon_color);
     }
 
     draw_text(
@@ -510,8 +480,332 @@ bool draw_recent_row(
     return clicked;
 }
 
+WelcomePageAction draw_new_project_dialog(
+    NewProjectDialogState& dialog,
+    float scale
+) {
+    WelcomePageAction action;
+    if (!dialog.active) {
+        return action;
+    }
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(
+        ImVec2(520.0f * scale, 0.0f),
+        ImGuiCond_Appearing
+    );
+
+    // --- Style: match welcome page design language ---
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGui::ColorConvertU32ToFloat4(kBackground));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kText));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f * scale, 24.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * scale, 7.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f * scale, 8.0f * scale));
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoTitleBar;
+
+    if (!ImGui::BeginPopupModal("##NewProjectDialog", nullptr, flags)) {
+        // Popup was closed externally (e.g. Escape key) — clean up state.
+        dialog.active = false;
+        ImGui::PopStyleVar(6);
+        ImGui::PopStyleColor(2);
+        return action;
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    bool should_close = false;
+    const ImVec2 content_min = ImGui::GetCursorScreenPos();
+
+    // ================================================================
+    // Title
+    // ================================================================
+    draw_text(
+        draw_list, bold_font(), 22.0f * scale,
+        content_min,
+        kText, "新建项目"
+    );
+    ImGui::SetCursorScreenPos(ImVec2(
+        content_min.x,
+        content_min.y + 28.0f * scale
+    ));
+    draw_text(
+        draw_list, regular_font(), 12.0f * scale,
+        ImGui::GetCursorScreenPos(),
+        kMuted, "选择原始数据文件并命名项目"
+    );
+    ImGui::SetCursorScreenPos(ImVec2(
+        content_min.x,
+        content_min.y + 54.0f * scale
+    ));
+
+    // ================================================================
+    // Data file section
+    // ================================================================
+    draw_text(
+        draw_list, medium_font(), 12.5f * scale,
+        ImGui::GetCursorScreenPos(),
+        kMuted, "数据文件"
+    );
+    ImGui::Dummy(ImVec2(1.0f, 7.0f * scale));
+
+    const float file_btn_width = 112.0f * scale;
+    const float file_btn_start_y = ImGui::GetCursorScreenPos().y;
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kSurface));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(kBackground));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(kBorder));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+
+    if (ImGui::Button("选择数据文件", ImVec2(file_btn_width, 0.0f))) {
+        const auto result =
+            gs3d::platform::choose_raw_data_file();
+        if (!result.error.empty()) {
+            dialog.error_message = result.error;
+        } else if (result.path.has_value()) {
+            std::error_code ec;
+            if (!has_raw_extension(*result.path) ||
+                !std::filesystem::is_regular_file(*result.path, ec)) {
+                dialog.error_message = "请选择有效的 DAT 或 CSV 文件";
+            } else {
+                dialog.data_file_path = result.path->string();
+                const auto stem =
+                    result.path->stem().string();
+                std::size_t len = std::min<std::size_t>(
+                    stem.size(),
+                    sizeof(dialog.project_name) - 1
+                );
+                std::memcpy(dialog.project_name, stem.c_str(), len);
+                dialog.project_name[len] = '\0';
+                dialog.error_message.clear();
+                dialog.name_conflict = false;
+            }
+        }
+    }
+
+    // File-name text aligned vertically centered with the button.
+    const float file_btn_frame_h = ImGui::GetFrameHeight();
+    const float file_text_size = 11.0f * scale;
+    const float file_text_row_h = file_text_size * 1.4f;
+    const float file_text_y =
+        file_btn_start_y + (file_btn_frame_h - file_text_row_h) * 0.5f;
+
+    ImGui::SameLine(0.0f, 12.0f * scale);
+    ImGui::SetCursorScreenPos(ImVec2(
+        ImGui::GetCursorScreenPos().x,
+        file_text_y
+    ));
+
+    if (dialog.data_file_path.empty()) {
+        draw_text(
+            draw_list, regular_font(), file_text_size,
+            ImGui::GetCursorScreenPos(),
+            kFaint, "未选择文件"
+        );
+    } else {
+        draw_text(
+            draw_list, regular_font(), file_text_size,
+            ImGui::GetCursorScreenPos(),
+            kText, dialog.data_file_path.c_str()
+        );
+    }
+    // Advance cursor past the button row.
+    ImGui::SetCursorScreenPos(ImVec2(
+        content_min.x,
+        file_btn_start_y + file_btn_frame_h + 6.0f * scale
+    ));
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+
+    // ================================================================
+    // Section gap
+    // ================================================================
+    ImGui::Dummy(ImVec2(1.0f, 16.0f * scale));
+
+    // ================================================================
+    // Project name section
+    // ================================================================
+    draw_text(
+        draw_list, medium_font(), 12.5f * scale,
+        ImGui::GetCursorScreenPos(),
+        kMuted, "项目名称"
+    );
+    ImGui::Dummy(ImVec2(1.0f, 7.0f * scale));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * scale, 9.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertU32ToFloat4(kSurface));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(kBorder));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kText));
+
+    const float input_width = ImGui::GetContentRegionAvail().x;
+    ImGui::PushItemWidth(input_width);
+    const bool name_edited = ImGui::InputText(
+        "##ProjectName",
+        dialog.project_name,
+        sizeof(dialog.project_name),
+        ImGuiInputTextFlags_None
+    );
+    ImGui::PopItemWidth();
+
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(3);
+
+    if (name_edited) {
+        filter_illegal_chars(dialog.project_name);
+        dialog.name_conflict = false;
+    }
+
+    // Hint
+    ImGui::Dummy(ImVec2(1.0f, 4.0f * scale));
+    draw_text(
+        draw_list, regular_font(), 10.0f * scale,
+        ImGui::GetCursorScreenPos(),
+        kFaint, "项目名不能包含: / \\ : * ? \" < > |"
+    );
+    // Advance cursor past the hint row.
+    ImGui::SetCursorScreenPos(ImVec2(
+        ImGui::GetCursorScreenPos().x,
+        ImGui::GetCursorScreenPos().y + 12.0f * scale
+    ));
+
+    // ================================================================
+    // Error message
+    // ================================================================
+    if (!dialog.error_message.empty()) {
+        ImGui::Dummy(ImVec2(1.0f, 6.0f * scale));
+        draw_text(
+            draw_list, regular_font(), 11.0f * scale,
+            ImGui::GetCursorScreenPos(),
+            kError, dialog.error_message.c_str()
+        );
+        ImGui::Dummy(ImVec2(1.0f, 18.0f * scale));
+    }
+
+    // ================================================================
+    // Buttons
+    // ================================================================
+    ImGui::Dummy(ImVec2(1.0f, 18.0f * scale));
+
+    const float btn_w = 90.0f * scale;
+    const float btn_spacing = 10.0f * scale;
+    const float btn_count = dialog.name_conflict ? 2.0f : 2.0f;
+    const float btn_total_w = btn_count * btn_w + (btn_count - 1.0f) * btn_spacing;
+    const float btn_x = content_min.x + ImGui::GetContentRegionAvail().x - btn_total_w;
+    ImGui::SetCursorScreenPos(ImVec2(btn_x, ImGui::GetCursorScreenPos().y));
+
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f * scale, 8.0f * scale));
+
+    if (dialog.name_conflict) {
+        // "重命名" button
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kSurface));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(kBackground));
+        if (ImGui::Button("重命名", ImVec2(btn_w, 0.0f))) {
+            dialog.name_conflict = false;
+            dialog.error_message.clear();
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.0f, btn_spacing);
+
+        // "覆盖" button — danger style
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kError));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(rgb(220, 50, 50)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(rgb(180, 30, 30)));
+        if (ImGui::Button("覆盖", ImVec2(btn_w, 0.0f))) {
+            action.kind = WelcomePageActionKind::NewProject;
+            action.path = dialog.data_file_path;
+            action.project_name = dialog.project_name;
+            dialog.active = false;
+            should_close = true;
+        }
+        ImGui::PopStyleColor(3);
+    } else {
+        // "取消" button
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kSurface));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(kBackground));
+        if (ImGui::Button("取消", ImVec2(btn_w, 0.0f))) {
+            dialog.active = false;
+            dialog.error_message.clear();
+            should_close = true;
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.0f, btn_spacing);
+
+        // "确定" button — blue accent
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kBlue));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kKeywordBlue));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(rgb(0, 90, 160)));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kBrandLight));
+        if (ImGui::Button("确定", ImVec2(btn_w, 0.0f))) {
+            const std::string name(dialog.project_name);
+            bool valid = true;
+            dialog.error_message.clear();
+
+            if (name.empty() || name.find_first_not_of(" \t") == std::string::npos) {
+                dialog.error_message = "项目名称不能为空";
+                valid = false;
+            } else if (dialog.data_file_path.empty()) {
+                dialog.error_message = "请先选择数据文件";
+                valid = false;
+            } else if (has_illegal_chars(dialog.project_name)) {
+                dialog.error_message = "项目名包含非法字符";
+                valid = false;
+            }
+
+            if (valid) {
+                std::filesystem::path data_path(dialog.data_file_path);
+                if (project_bundle_exists(
+                        data_path.parent_path(),
+                        name
+                    )) {
+                    dialog.name_conflict = true;
+                    dialog.error_message =
+                        "项目 \"" + name + ".gs3d.bundle\" 已存在，"
+                        "覆盖还是重命名？";
+                } else {
+                    action.kind = WelcomePageActionKind::NewProject;
+                    action.path = dialog.data_file_path;
+                    action.project_name = dialog.project_name;
+                    dialog.active = false;
+                    should_close = true;
+                }
+            }
+        }
+        ImGui::PopStyleColor(4);
+    }
+
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor();
+
+    if (should_close) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+
+    ImGui::PopStyleVar(6);
+    ImGui::PopStyleColor(2);
+
+    return action;
+}
+
 WelcomePageAction draw_start_panel(
-    const WelcomePageModel& model,
+    WelcomePageModel& model,
     const ImVec2& min,
     float width,
     float scale
@@ -531,10 +825,12 @@ WelcomePageAction draw_start_panel(
             card_height,
             scale,
             "新建项目",
-            "选择 DAT / CSV 创建工程",
+            "导入 DAT / CSV 数据创建项目",
             CardIcon::NewProject
         )) {
-        action = open_raw_data();
+        model.new_project_dialog = NewProjectDialogState{};
+        model.new_project_dialog.active = true;
+        model.new_project_dialog.should_open = true;
     }
     y += card_height + gap;
     if (draw_action_card(
@@ -548,19 +844,6 @@ WelcomePageAction draw_start_panel(
             CardIcon::Folder
         )) {
         action = open_project();
-    }
-    y += card_height + gap;
-    if (draw_action_card(
-            "##LoadRawData",
-            ImVec2(min.x, y),
-            width,
-            card_height,
-            scale,
-            "加载原始数据",
-            "导入 DAT / CSV 并创建项目",
-            CardIcon::Data
-        )) {
-        action = open_raw_data();
     }
     y += card_height;
 
@@ -604,7 +887,7 @@ WelcomePageAction draw_start_panel(
             kBorder,
             6.0f * scale
         );
-        draw_data_icon(
+        draw_folder_icon(
             draw_list,
             ImVec2(
                 min.x + 27.0f * scale,
@@ -864,7 +1147,7 @@ void draw_brand(
 } // namespace
 
 WelcomePageAction draw_welcome_page(
-    const WelcomePageModel& model,
+    WelcomePageModel& model,
     float ui_scale
 ) {
     WelcomePageAction action;
@@ -1019,6 +1302,24 @@ WelcomePageAction draw_welcome_page(
     ImGui::End();
     ImGui::PopStyleVar(3);
     ImGui::PopStyleColor();
+
+    // Render the new project dialog if active.
+    // OpenPopup must be called at the same ID-stack level as BeginPopupModal
+    // (outside any ImGui child window), otherwise the computed IDs mismatch.
+    if (model.new_project_dialog.active) {
+        if (model.new_project_dialog.should_open) {
+            model.new_project_dialog.should_open = false;
+            ImGui::OpenPopup("##NewProjectDialog");
+        }
+        const auto dialog_action = draw_new_project_dialog(
+            model.new_project_dialog,
+            scale
+        );
+        if (dialog_action.kind != WelcomePageActionKind::None) {
+            action = dialog_action;
+        }
+    }
+
     return action;
 }
 

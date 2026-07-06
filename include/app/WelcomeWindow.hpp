@@ -12,7 +12,7 @@ enum class WelcomeWindowResultKind {
     Cancelled,
     ContinueCurrent,
     OpenProject,
-    OpenRawData
+    NewProject
 };
 
 struct WelcomeWindowConfig {
@@ -26,6 +26,7 @@ struct WelcomeWindowResult {
     WelcomeWindowResultKind kind =
         WelcomeWindowResultKind::Cancelled;
     std::filesystem::path path;
+    std::string project_name;
 };
 
 class WelcomeWindow {

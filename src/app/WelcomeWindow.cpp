@@ -224,9 +224,10 @@ WelcomeWindowResult WelcomeWindow::run()
             result.path = action.path;
             window.request_close();
             break;
-        case gs3d::ui::WelcomePageActionKind::OpenRawData:
-            result.kind = WelcomeWindowResultKind::OpenRawData;
+        case gs3d::ui::WelcomePageActionKind::NewProject:
+            result.kind = WelcomeWindowResultKind::NewProject;
             result.path = action.path;
+            result.project_name = action.project_name;
             window.request_close();
             break;
         case gs3d::ui::WelcomePageActionKind::ClearRecent:

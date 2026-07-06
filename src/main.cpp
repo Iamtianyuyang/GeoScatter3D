@@ -347,16 +347,18 @@ int main(int argc, char** argv) {
                     );
                 } else if (
                     welcome_result.kind ==
-                    gs3d::app::WelcomeWindowResultKind::OpenRawData
+                    gs3d::app::WelcomeWindowResultKind::NewProject
                 ) {
-                    apply_open_request(
-                        app_config,
-                        {
-                            .kind =
-                                gs3d::app::ViewerOpenRequestKind::RawData,
-                            .path = welcome_result.path
-                        }
-                    );
+                    const auto extension =
+                        welcome_result.path.extension().string();
+                    app_config.input_mode =
+                        extension == ".dat" || extension == ".DAT"
+                            ? "dat"
+                            : "csv";
+                    app_config.csv_input_path = welcome_result.path;
+                    app_config.bundle_dir =
+                        welcome_result.path.parent_path() /
+                        (welcome_result.project_name + ".gs3d.bundle");
                 }
                 show_welcome_window = false;
             }
