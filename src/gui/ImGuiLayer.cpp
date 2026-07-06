@@ -45,6 +45,29 @@ constexpr float kMinUiScale = 1.0f;
 // ChineseFull (~20k glyphs), a fundamentally different regime.
 constexpr float kMaxUiScale = 2.5f;
 
+// ── VSCode Dark+ Syntax Colors (备用点缀色) ──────────────────────────
+// Not applied to ImGuiStyle; available for syntax highlighting / custom
+// drawing when needed.
+static constexpr ImVec4 kSyntaxComment  {0.341f, 0.651f, 0.290f, 1.00f}; // #57A64A  green
+static constexpr ImVec4 kSyntaxKeyword  {0.337f, 0.612f, 0.839f, 1.00f}; // #569CD6  blue
+static constexpr ImVec4 kSyntaxControl  {0.847f, 0.627f, 0.875f, 1.00f}; // #D8A0DF  purple
+static constexpr ImVec4 kSyntaxFunction {0.863f, 0.863f, 0.678f, 1.00f}; // #DCDCAA  yellow
+static constexpr ImVec4 kSyntaxType     {0.306f, 0.753f, 0.690f, 1.00f}; // #4EC9B0  cyan
+static constexpr ImVec4 kSyntaxVariable {0.612f, 0.804f, 0.937f, 1.00f}; // #9CDCFE  light blue
+static constexpr ImVec4 kSyntaxString   {0.808f, 0.573f, 0.486f, 1.00f}; // #CE9178  orange
+static constexpr ImVec4 kSyntaxNumber   {0.710f, 0.808f, 0.659f, 1.00f}; // #B5CEA8  light green
+static constexpr ImVec4 kSyntaxOperator {0.706f, 0.706f, 0.706f, 1.00f}; // #B4B4B4  gray
+
+// VSCode Dark+ UI tokens (used for ImGuiStyle below).
+static constexpr ImVec4 kVscBg         {0.118f, 0.118f, 0.118f, 1.00f}; // #1E1E1E
+static constexpr ImVec4 kVscText       {0.855f, 0.855f, 0.855f, 1.00f}; // #DADADA
+static constexpr ImVec4 kVscTextDim    {0.604f, 0.604f, 0.604f, 1.00f}; // #9A9A9A
+static constexpr ImVec4 kVscAccent     {0.000f, 0.478f, 0.800f, 1.00f}; // #007ACC
+static constexpr ImVec4 kVscError      {0.957f, 0.278f, 0.278f, 1.00f}; // #F44747
+static constexpr ImVec4 kVscFrameBg    {0.176f, 0.176f, 0.176f, 1.00f}; // #2D2D2D
+static constexpr ImVec4 kVscSurface    {0.145f, 0.145f, 0.145f, 1.00f}; // #252525
+static constexpr ImVec4 kVscBorder     {0.243f, 0.243f, 0.243f, 1.00f}; // #3E3E3E
+
 // Plausibility guards for glfwGetMonitorPhysicalSize(), which on Linux/X11
 // and some virtual/remote displays returns 0x0 or nonsensical values.
 constexpr int kMinPlausiblePhysicalSizeMm = 50;   // < 5 cm => bogus
@@ -388,8 +411,16 @@ UiFonts load_ui_fonts(ImGuiIO& io,
             );
         }
         fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
-        fonts.panel_title = load_font(
-            io, font_path.c_str(), kPanelTitleFontSize * ui_scale, glyph_ranges);
+        // Panel titles use medium weight for visual hierarchy.
+        if (!medium_path.empty()) {
+            fonts.panel_title = load_font(
+                io, medium_path.string().c_str(),
+                kPanelTitleFontSize * ui_scale, glyph_ranges);
+        } else {
+            fonts.panel_title = load_font(
+                io, font_path.c_str(),
+                kPanelTitleFontSize * ui_scale, glyph_ranges);
+        }
         fonts.axis = load_font(io, font_path.c_str(), kAxisFontSize * ui_scale, glyph_ranges);
         fonts.status = load_font(io, font_path.c_str(), kStatusFontSize * ui_scale, glyph_ranges);
     }
@@ -516,8 +547,8 @@ void ImGuiLayer::init(
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(ui_scale);
-    // Adobe-style workbench: neutral charcoal surfaces, compact controls,
-    // restrained corner radii, and blue reserved for interaction state.
+    // VSCode Dark+ theme: #1E1E1E background, #DADADA text,
+    // #007ACC accent reserved for interactive / selected states.
     style.WindowRounding = 2.0f * ui_scale;
     style.ChildRounding = 0.0f;
     style.FrameRounding = 2.0f * ui_scale;
@@ -536,62 +567,95 @@ void ImGuiLayer::init(
     style.ScrollbarSize = 11.0f * ui_scale;
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
+    // ── VSCode Dark+ Theme ───────────────────────────────────────────
+    // Rule: FrameBg defaults stay dark gray (#2D2D2D / #353535).
+    //       Only interactive states (hover/active/selected) get #007ACC.
     auto& colors = style.Colors;
-    colors[ImGuiCol_Text] = ImVec4(0.88f, 0.89f, 0.91f, 1.00f);
-    colors[ImGuiCol_TextDisabled] =
-        ImVec4(0.52f, 0.55f, 0.59f, 0.90f);
-    colors[ImGuiCol_WindowBg] =
-        ImVec4(0.090f, 0.094f, 0.102f, 1.00f);
-    colors[ImGuiCol_ChildBg] =
-        ImVec4(0.118f, 0.122f, 0.130f, 1.00f);
-    colors[ImGuiCol_PopupBg] =
-        ImVec4(0.105f, 0.109f, 0.117f, 0.99f);
-    colors[ImGuiCol_Border] =
-        ImVec4(0.300f, 0.325f, 0.360f, 0.26f);
-    colors[ImGuiCol_FrameBg] =
-        ImVec4(0.160f, 0.168f, 0.180f, 0.96f);
-    colors[ImGuiCol_FrameBgHovered] =
-        ImVec4(0.205f, 0.216f, 0.235f, 1.00f);
-    colors[ImGuiCol_FrameBgActive] =
-        ImVec4(0.230f, 0.242f, 0.264f, 1.00f);
-    colors[ImGuiCol_TitleBg] =
-        ImVec4(0.098f, 0.103f, 0.111f, 1.00f);
-    colors[ImGuiCol_TitleBgActive] =
-        ImVec4(0.108f, 0.114f, 0.124f, 1.00f);
-    colors[ImGuiCol_MenuBarBg] =
-        ImVec4(0.082f, 0.086f, 0.093f, 1.00f);
-    colors[ImGuiCol_Button] =
-        ImVec4(0.168f, 0.175f, 0.187f, 0.92f);
-    colors[ImGuiCol_ButtonHovered] =
-        ImVec4(0.110f, 0.330f, 0.560f, 0.92f);
-    colors[ImGuiCol_ButtonActive] =
-        ImVec4(0.095f, 0.290f, 0.500f, 1.00f);
-    colors[ImGuiCol_Header] =
-        ImVec4(0.170f, 0.178f, 0.192f, 0.72f);
-    colors[ImGuiCol_HeaderHovered] =
-        ImVec4(0.105f, 0.315f, 0.540f, 0.68f);
-    colors[ImGuiCol_HeaderActive] =
-        ImVec4(0.090f, 0.280f, 0.490f, 0.90f);
-    colors[ImGuiCol_Tab] =
-        ImVec4(0.118f, 0.123f, 0.134f, 1.00f);
-    colors[ImGuiCol_TabHovered] =
-        ImVec4(0.118f, 0.330f, 0.560f, 0.80f);
-    colors[ImGuiCol_TabSelected] =
-        ImVec4(0.190f, 0.197f, 0.210f, 1.00f);
-    colors[ImGuiCol_TabSelectedOverline] =
-        ImVec4(0.120f, 0.420f, 0.760f, 0.88f);
-    colors[ImGuiCol_DockingPreview] =
-        ImVec4(0.115f, 0.400f, 0.710f, 0.45f);
-    colors[ImGuiCol_DockingEmptyBg] =
-        ImVec4(0.088f, 0.093f, 0.101f, 1.00f);
-    colors[ImGuiCol_CheckMark] =
-        ImVec4(0.120f, 0.420f, 0.760f, 0.96f);
-    colors[ImGuiCol_SliderGrab] =
-        ImVec4(0.120f, 0.420f, 0.760f, 0.92f);
-    colors[ImGuiCol_SliderGrabActive] =
-        ImVec4(0.160f, 0.500f, 0.860f, 1.00f);
-    colors[ImGuiCol_Separator] =
-        ImVec4(0.300f, 0.325f, 0.360f, 0.22f);
+
+    colors[ImGuiCol_Text]                  = kVscText;                  // #DADADA
+    colors[ImGuiCol_TextDisabled]          = kVscTextDim;               // #9A9A9A
+    colors[ImGuiCol_WindowBg]              = kVscBg;                    // #1E1E1E
+    colors[ImGuiCol_ChildBg]               = kVscSurface;               // #252525
+    colors[ImGuiCol_PopupBg]               = kVscSurface;               // #252525
+    colors[ImGuiCol_Border]                = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.50f);
+    colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+
+    // Frame: inputs, combos — DARK GRAY, NOT BLUE
+    colors[ImGuiCol_FrameBg]               = ImVec4(kVscFrameBg.x, kVscFrameBg.y, kVscFrameBg.z, 0.96f);
+    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.208f, 0.208f, 0.208f, 1.00f); // #353535
+    colors[ImGuiCol_FrameBgActive]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.35f);
+
+    // Title bars
+    colors[ImGuiCol_TitleBg]               = kVscBg;                    // #1E1E1E
+    colors[ImGuiCol_TitleBgActive]         = kVscSurface;               // #252525
+    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(kVscBg.x, kVscBg.y, kVscBg.z, 0.51f);
+
+    // Menu bar
+    colors[ImGuiCol_MenuBarBg]             = ImVec4(0.106f, 0.106f, 0.106f, 1.00f); // #1B1B1B
+
+    // Scrollbar
+    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.098f, 0.098f, 0.098f, 0.53f);
+    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.259f, 0.259f, 0.259f, 1.00f); // #424242
+    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.333f, 0.333f, 0.333f, 1.00f); // #555555
+    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.400f, 0.400f, 0.400f, 1.00f); // #666666
+
+    // CheckMark / Slider — ACCENT BLUE
+    colors[ImGuiCol_CheckMark]             = kVscAccent;                // #007ACC
+    colors[ImGuiCol_SliderGrab]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.92f);
+    colors[ImGuiCol_SliderGrabActive]      = ImVec4(0.059f, 0.537f, 0.859f, 1.00f); // #0F89DB
+
+    // Button — ACCENT BLUE (default ~50%, hover/active ramp up)
+    colors[ImGuiCol_Button]                = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.50f);
+    colors[ImGuiCol_ButtonHovered]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.85f);
+    colors[ImGuiCol_ButtonActive]          = ImVec4(0.000f, 0.400f, 0.700f, 1.00f);
+
+    // Header — ACCENT BLUE
+    colors[ImGuiCol_Header]                = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.31f);
+    colors[ImGuiCol_HeaderHovered]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.70f);
+    colors[ImGuiCol_HeaderActive]          = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.90f);
+
+    // Separator
+    colors[ImGuiCol_Separator]             = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.50f);
+    colors[ImGuiCol_SeparatorHovered]      = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.78f);
+    colors[ImGuiCol_SeparatorActive]       = kVscAccent;
+
+    // Resize grip — ACCENT BLUE
+    colors[ImGuiCol_ResizeGrip]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.20f);
+    colors[ImGuiCol_ResizeGripHovered]     = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.67f);
+    colors[ImGuiCol_ResizeGripActive]      = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.95f);
+
+    // Tabs
+    colors[ImGuiCol_Tab]                   = kVscBg;                    // #1E1E1E
+    colors[ImGuiCol_TabHovered]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.58f);
+    colors[ImGuiCol_TabSelected]           = kVscFrameBg;               // #2D2D2D
+    colors[ImGuiCol_TabSelectedOverline]   = kVscAccent;                // #007ACC
+    colors[ImGuiCol_TabDimmed]             = ImVec4(0.098f, 0.098f, 0.098f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelected]     = kVscSurface;               // #252525
+
+    // Docking
+    colors[ImGuiCol_DockingPreview]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.45f);
+    colors[ImGuiCol_DockingEmptyBg]        = kVscBg;                    // #1E1E1E
+
+    // Plot — accent + error red as hover hint
+    colors[ImGuiCol_PlotLines]             = kVscAccent;
+    colors[ImGuiCol_PlotLinesHovered]      = kVscError;                 // #F44747
+    colors[ImGuiCol_PlotHistogram]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.70f);
+    colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(kVscError.x, kVscError.y, kVscError.z, 0.70f);
+
+    // Table
+    colors[ImGuiCol_TableHeaderBg]         = kVscSurface;               // #252525
+    colors[ImGuiCol_TableBorderStrong]     = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.60f);
+    colors[ImGuiCol_TableBorderLight]      = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.30f);
+    colors[ImGuiCol_TableRowBg]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
+
+    // Misc
+    colors[ImGuiCol_TextSelectedBg]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.35f);
+    colors[ImGuiCol_NavHighlight]          = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.50f);
+    colors[ImGuiCol_DragDropTarget]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.40f);
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(kVscText.x, kVscText.y, kVscText.z, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.20f);
+    colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.35f);
 
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         style.WindowRounding = 0.0f;
