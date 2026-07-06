@@ -25,6 +25,7 @@
 #include "data/TileDataAdapters.hpp"
 #include "data/Gs3dTileReader.hpp"
 
+#include "platform/NativeFileDialog.hpp"
 #include "platform/Window.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/LodSelector.hpp"
@@ -6137,30 +6138,29 @@ int ViewerApp::run() {
                     }
                 }
 
-                // Resolve output path: zenity dialog → fallback.
-                // If zenity is available and the user confirms, use that
-                // path. If the user cancels (zenity exit ≠ 0), skip save.
-                // If zenity is not available, fall back to timestamped file.
+                // Resolve output path: native file dialog → fallback.
+                // Cross-platform: uses NativeFileDialog (zenity/kdialog on
+                // Linux, GetSaveFileNameW on Windows, osascript on macOS).
+                // If the user cancels, skip save.
+                // If no dialog tool is available, fall back to timestamped file.
                 std::string out_path;
                 bool user_cancelled = false;
-                FILE* zf = popen(
-                    "zenity --file-selection --save "
-                    "--confirm-overwrite "
-                    "--filename=screenshot.png "
-                    "--file-filter='PNG Images | *.png' "
-                    "2>/dev/null", "r");
-                if (zf) {
-                    char buf[4096];
-                    if (fgets(buf, sizeof(buf), zf)) {
-                        out_path.assign(buf);
-                        while (!out_path.empty() &&
-                               (out_path.back() == '\n' ||
-                                out_path.back() == '\r')) {
-                            out_path.pop_back();
-                        }
+                {
+                    const auto save_result =
+                        gs3d::platform::choose_save_file(
+                            "screenshot.png",
+                            "保存截图",
+                            "PNG Images|*.png"
+                        );
+                    if (save_result.path.has_value()) {
+                        out_path = save_result.path->string();
+                    } else if (!save_result.error.empty()) {
+                        // Dialog tool unavailable — not a user cancel;
+                        // fall through to timestamped fallback below.
+                    } else {
+                        // Empty path + no error = user cancelled the dialog.
+                        user_cancelled = true;
                     }
-                    int zr = pclose(zf);
-                    user_cancelled = (out_path.empty() && zr != 0);
                 }
                 if (!user_cancelled && out_path.empty()) {
                     std::filesystem::create_directories("screenshots");

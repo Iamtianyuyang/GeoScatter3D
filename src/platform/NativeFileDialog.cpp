@@ -160,6 +160,75 @@ NativeFileDialogResult choose_project_directory()
 #endif
 }
 
+NativeFileDialogResult choose_save_file(
+    const std::string& default_filename,
+    const std::string& title,
+    const std::string& /*filters*/
+) {
+#if defined(_WIN32)
+    std::wstring wide_default(
+        default_filename.begin(),
+        default_filename.end()
+    );
+    std::wstring wide_title(title.begin(), title.end());
+
+    wchar_t path_buffer[32768]{};
+    if (wide_default.size() < std::size(path_buffer)) {
+        std::wcscpy(path_buffer, wide_default.c_str());
+    }
+    const std::wstring wfilter =
+        L"PNG Images (*.png)\0*.png\0"
+        L"所有文件 (*.*)\0*.*\0\0";
+
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.lpstrFile = path_buffer;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(path_buffer));
+    dialog.lpstrFilter = wfilter.c_str();
+    dialog.nFilterIndex = 1;
+    dialog.lpstrTitle = wide_title.c_str();
+    dialog.lpstrDefExt = L"png";
+    dialog.Flags =
+        OFN_OVERWRITEPROMPT |
+        OFN_NOCHANGEDIR |
+        OFN_EXPLORER |
+        OFN_PATHMUSTEXIST;
+
+    if (GetSaveFileNameW(&dialog) != FALSE) {
+        return {std::filesystem::path(path_buffer), {}};
+    }
+    return {};
+#elif defined(__APPLE__)
+    const std::string command =
+        "osascript -e 'POSIX path of (choose file name "
+        "with prompt \"" + title + "\" "
+        "default name \"" + default_filename + "\")' 2>/dev/null";
+    return run_dialog_command(command.c_str());
+#else
+    if (command_available("zenity")) {
+        const std::string command =
+            "zenity --file-selection --save "
+            "--confirm-overwrite "
+            "--title='" + title + "' "
+            "--filename='" + default_filename + "' "
+            "--file-filter='PNG Images | *.png' "
+            "2>/dev/null";
+        return run_dialog_command(command.c_str());
+    }
+    if (command_available("kdialog")) {
+        const std::string command =
+            "kdialog --getsavefilename . "
+            "'PNG Images (*.png)' "
+            "--title '" + title + "' 2>/dev/null";
+        return run_dialog_command(command.c_str());
+    }
+    return {
+        {},
+        "未找到系统文件选择器（需要 Zenity 或 KDialog）"
+    };
+#endif
+}
+
 NativeFileDialogResult choose_raw_data_file()
 {
 #if defined(_WIN32)

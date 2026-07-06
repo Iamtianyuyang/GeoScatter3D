@@ -11,6 +11,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <vector>
 #include <stdexcept>
@@ -267,9 +268,24 @@ std::vector<std::filesystem::path> bundled_font_candidates()
     };
 }
 
-const char* const* system_font_candidates()
+std::vector<std::string> system_font_candidates()
 {
-    static const char* kCandidates[] = {
+#if defined(_WIN32)
+    const char* windir = std::getenv("WINDIR");
+    if (!windir || windir[0] == '\0') {
+        windir = std::getenv("SystemRoot");
+    }
+    std::string base = (windir && windir[0] != '\0')
+        ? (std::string(windir) + "\\Fonts\\")
+        : "C:\\Windows\\Fonts\\";
+    return {
+        base + "msyh.ttc",
+        base + "msyh.ttf",
+        base + "segoeui.ttf",
+        base + "simhei.ttf"
+    };
+#else
+    return {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
@@ -281,10 +297,9 @@ const char* const* system_font_candidates()
         "C:/Windows/Fonts/simhei.ttf",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        nullptr
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
     };
-    return kCandidates;
+#endif
 }
 
 bool file_exists(const std::filesystem::path& path)
@@ -332,10 +347,10 @@ std::filesystem::path resolve_bundled_font_path(
 
 std::filesystem::path resolve_system_font_path()
 {
-    for (const char* const* p = system_font_candidates(); *p != nullptr; ++p) {
-        const std::filesystem::path candidate{*p};
-        if (file_exists(candidate)) {
-            return candidate;
+    for (const auto& candidate : system_font_candidates()) {
+        const std::filesystem::path path{candidate};
+        if (file_exists(path)) {
+            return path;
         }
     }
     return {};

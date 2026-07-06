@@ -37,6 +37,13 @@ std::filesystem::path recent_projects_storage_path()
     }
 
     std::filesystem::path config_root;
+#if defined(_WIN32)
+    if (const char* appdata = std::getenv("APPDATA")) {
+        if (appdata[0] != '\0') {
+            config_root = appdata;
+        }
+    }
+#else
     if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME")) {
         if (xdg_config[0] != '\0') {
             config_root = xdg_config;
@@ -50,6 +57,7 @@ std::filesystem::path recent_projects_storage_path()
             }
         }
     }
+#endif
     if (config_root.empty()) {
         std::error_code ec;
         config_root = std::filesystem::temp_directory_path(ec);

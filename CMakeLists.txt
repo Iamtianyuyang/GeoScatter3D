@@ -44,6 +44,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/MeasurementManager.cpp
 
     src/platform/Window.cpp
+    src/platform/NativeFileDialog.cpp
 
     src/data/CsvStreamReader.cpp
     src/data/CsvSniffer.cpp
@@ -176,7 +177,6 @@ set(GEOSCATTER3D_CORE_SOURCES
 add_executable(GeoScatter3D
     src/main.cpp
     src/app/WelcomeWindow.cpp
-    src/platform/NativeFileDialog.cpp
     src/ui/WelcomePage.cpp
     include/app/WelcomeWindow.hpp
     include/platform/NativeFileDialog.hpp
