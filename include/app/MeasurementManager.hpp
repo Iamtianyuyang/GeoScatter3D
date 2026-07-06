@@ -3,6 +3,7 @@
 #include "data/Gs3dFormat.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -78,6 +79,10 @@ public:
 
     // Preset color palette for auto-assignment.
     static const std::vector<std::uint32_t>& color_palette() noexcept;
+
+    // Called after any mutation (add/remove/toggle/color change).
+    // Set by the application layer to trigger auto-save.
+    std::function<void()> on_changed;
 
 private:
     bool measure_mode_active_ = false;

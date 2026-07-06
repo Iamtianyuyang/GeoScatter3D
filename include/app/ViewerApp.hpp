@@ -230,6 +230,10 @@ struct ViewerAppConfig {
     std::filesystem::path benchmark_pick_script_path{};
     std::filesystem::path benchmark_pick_result_path{};
 
+    // Bundle directory for per-project analysis data (e.g. analysis.toml).
+    // Empty when not in bundle mode (raw .gs3d / .csv / .dat input).
+    std::filesystem::path bundle_dir;
+
     // Diagnostic-only dump of the current frame's visible color image
     // and the matching R32_UINT pick-id attachment. Used to check
     // whether a point that is visibly rendered also writes a non-zero

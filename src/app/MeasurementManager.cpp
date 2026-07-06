@@ -59,31 +59,37 @@ bool MeasurementManager::add_point(const gs3d::data::Gs3dPoint& point) {
         false
     });
     pending_first_point_.reset();
+    if (on_changed) { on_changed(); }
     return true;
 }
 
 void MeasurementManager::remove_line(std::size_t index) noexcept {
     if (index < lines_.size()) {
         lines_.erase(lines_.begin() + static_cast<std::ptrdiff_t>(index));
+        if (on_changed) { on_changed(); }
     }
 }
 
 void MeasurementManager::remove_all_unfixed() noexcept {
+    const auto before = lines_.size();
     lines_.erase(
         std::remove_if(lines_.begin(), lines_.end(),
                        [](const MeasurementLine& line) { return !line.fixed; }),
         lines_.end());
+    if (lines_.size() != before && on_changed) { on_changed(); }
 }
 
 void MeasurementManager::toggle_fixed(std::size_t index) noexcept {
     if (index < lines_.size()) {
         lines_[index].fixed = !lines_[index].fixed;
+        if (on_changed) { on_changed(); }
     }
 }
 
 void MeasurementManager::set_line_color(std::size_t index, std::uint32_t color) noexcept {
     if (index < lines_.size()) {
         lines_[index].color = color;
+        if (on_changed) { on_changed(); }
     }
 }
 

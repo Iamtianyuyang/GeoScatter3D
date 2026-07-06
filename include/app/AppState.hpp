@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -345,6 +346,7 @@ struct RegionStatsResult {
 };
 
 struct AppState {
+    std::filesystem::path bundle_dir;
     PanelVisibilityState panels;
     DatasetSummaryState dataset;
     RenderSettingsState render_settings;

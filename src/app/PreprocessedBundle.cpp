@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -330,6 +331,133 @@ PreprocessedBundlePaths load_bundle_manifest(
     }
 
     return paths;
+}
+
+// ── analysis.toml persistence ─────────────────────────────────────────────
+
+namespace {
+
+constexpr std::string_view kAnalysisFileName = "analysis.toml";
+constexpr std::int64_t kAnalysisVersion = 1;
+
+} // namespace
+
+void save_analysis(
+    const std::filesystem::path& bundle_dir,
+    const MeasurementManager& measurement
+) {
+    if (bundle_dir.empty()) {
+        return;
+    }
+
+    std::filesystem::create_directories(bundle_dir);
+
+    const auto path = bundle_dir / kAnalysisFileName;
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        std::cerr << "[WARN] save_analysis: failed to open "
+                  << path.string() << " for writing\n";
+        return;
+    }
+
+    toml::table root;
+
+    // [meta]
+    auto meta = root["meta"].as_table();
+    if (!meta) {
+        root.insert("meta", toml::table{});
+        meta = root["meta"].as_table();
+    }
+    meta->insert("version", static_cast<std::int64_t>(kAnalysisVersion));
+
+    // [[measurements]]
+    toml::array measurements_array;
+    for (const auto& line : measurement.lines()) {
+        toml::table entry;
+        entry.insert("x1", static_cast<double>(line.point_a.x));
+        entry.insert("y1", static_cast<double>(line.point_a.y));
+        entry.insert("z1", static_cast<double>(line.point_a.z));
+        entry.insert("x2", static_cast<double>(line.point_b.x));
+        entry.insert("y2", static_cast<double>(line.point_b.y));
+        entry.insert("z2", static_cast<double>(line.point_b.z));
+        entry.insert("color",
+            static_cast<std::int64_t>(static_cast<std::uint64_t>(line.color)));
+        entry.insert("fixed", line.fixed);
+        measurements_array.push_back(std::move(entry));
+    }
+    root.insert("measurements", std::move(measurements_array));
+
+    out << toml::toml_formatter{root} << "\n";
+}
+
+void load_analysis(
+    const std::filesystem::path& bundle_dir,
+    MeasurementManager& measurement
+) {
+    if (bundle_dir.empty()) {
+        return;
+    }
+
+    const auto path = bundle_dir / kAnalysisFileName;
+    if (!std::filesystem::exists(path) ||
+        !std::filesystem::is_regular_file(path)) {
+        // New project — no analysis data yet. This is not an error.
+        return;
+    }
+
+    toml::table root;
+    try {
+        root = toml::parse_file(path.string());
+    } catch (const toml::parse_error& e) {
+        std::cerr << "[WARN] load_analysis: failed to parse "
+                  << path.string()
+                  << "\nReason: " << e.description() << '\n';
+        return;
+    }
+
+    // Clear any default / in-memory lines before loading from file.
+    measurement.lines().clear();
+
+    const auto* measurements_array = root["measurements"].as_array();
+    if (!measurements_array) {
+        return; // valid file but no measurements
+    }
+
+    for (std::size_t i = 0; i < measurements_array->size(); ++i) {
+        const auto* entry = (*measurements_array)[i].as_table();
+        if (!entry) {
+            continue;
+        }
+
+        MeasurementLine line{};
+
+        if (const auto v = (*entry)["x1"].value<double>()) {
+            line.point_a.x = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["y1"].value<double>()) {
+            line.point_a.y = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["z1"].value<double>()) {
+            line.point_a.z = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["x2"].value<double>()) {
+            line.point_b.x = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["y2"].value<double>()) {
+            line.point_b.y = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["z2"].value<double>()) {
+            line.point_b.z = static_cast<float>(*v);
+        }
+        if (const auto v = (*entry)["color"].value<std::int64_t>()) {
+            line.color = static_cast<std::uint32_t>(*v);
+        }
+        if (const auto v = (*entry)["fixed"].value<bool>()) {
+            line.fixed = *v;
+        }
+
+        measurement.lines().push_back(line);
+    }
 }
 
 } // namespace gs3d::app

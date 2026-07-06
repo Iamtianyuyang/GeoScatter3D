@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppConfig.hpp"
+#include "app/MeasurementManager.hpp"
 #include "data/Gs3dDataset.hpp"
 
 #include <filesystem>
@@ -42,6 +43,22 @@ void write_bundle_manifest(
 [[nodiscard]]
 PreprocessedBundlePaths load_bundle_manifest(
     const std::filesystem::path& bundle_dir
+);
+
+// ── analysis.toml persistence ─────────────────────────────────────────────
+
+// Load measurements from bundle_dir/analysis.toml into the manager.
+// Does nothing if the file does not exist (new project → empty list).
+void load_analysis(
+    const std::filesystem::path& bundle_dir,
+    MeasurementManager& measurement
+);
+
+// Write all current measurements to bundle_dir/analysis.toml.
+// Creates the bundle directory if it does not exist.
+void save_analysis(
+    const std::filesystem::path& bundle_dir,
+    const MeasurementManager& measurement
 );
 
 } // namespace gs3d::app

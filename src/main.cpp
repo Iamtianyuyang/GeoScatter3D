@@ -264,6 +264,8 @@ gs3d::app::ViewerAppConfig make_viewer_config(
     viewer.controller_invert_pan_y =
         app_config.controller.invert_pan_y;
 
+    viewer.bundle_dir = app_config.bundle_dir;
+
     return viewer;
 }
 

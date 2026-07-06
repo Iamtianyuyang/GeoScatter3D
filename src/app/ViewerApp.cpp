@@ -1,6 +1,7 @@
 #include "app/ViewerApp.hpp"
 
 #include "app/AppState.hpp"
+#include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
@@ -3188,6 +3189,13 @@ int ViewerApp::run() {
         }
 
         app_state.logo_texture = logo_texture.descriptor();
+
+        // ── analysis.toml persistence ──────────────────────────────────
+        app_state.bundle_dir = config_.bundle_dir;
+        load_analysis(app_state.bundle_dir, app_state.measurement);
+        app_state.measurement.on_changed = [&app_state]() {
+            save_analysis(app_state.bundle_dir, app_state.measurement);
+        };
 
         // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
         // bbox 宽高比决定纹理尺寸，保证纹理像素全部有效，无 letterbox。
