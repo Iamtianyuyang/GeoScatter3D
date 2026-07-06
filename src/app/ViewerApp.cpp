@@ -4,6 +4,7 @@
 #include "app/TilePointCache.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
+#include "gui/UiFonts.hpp"
 #include "ui/SvgLogoTexture.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
@@ -2343,6 +2344,58 @@ int ViewerApp::run() {
             config_.ui_layout_ini_path,
             config_.ui_scale_multiplier
         );
+
+        // Size the window adaptively to the monitor, mirroring the welcome
+        // page's approach but with a wider 16:10 ratio suitable for a
+        // multi-panel workbench.
+        {
+            const float ui_scale = gs3d::gui::ui_fonts().ui_scale;
+            constexpr int kBaseOuterWidth = 1440;
+            constexpr int kMinOuterWidth = 1100;
+            constexpr float kAspect = 16.0f / 10.0f;
+
+            int outer_w = std::max(kMinOuterWidth,
+                static_cast<int>(std::lround(
+                    static_cast<float>(kBaseOuterWidth) * ui_scale)));
+
+            GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+            if (monitor != nullptr) {
+                int work_x = 0, work_y = 0, work_w = 0, work_h = 0;
+                glfwGetMonitorWorkarea(
+                    monitor, &work_x, &work_y, &work_w, &work_h);
+                if (work_w > 0 && work_h > 0) {
+                    const int w_limit = static_cast<int>(
+                        std::floor(static_cast<float>(work_w) * 0.85f));
+                    const int h_limit = static_cast<int>(
+                        std::floor(static_cast<float>(work_h) * 0.85f));
+                    const int w_from_h = static_cast<int>(
+                        std::floor(static_cast<float>(h_limit) * kAspect));
+                    outer_w = std::clamp(outer_w, kMinOuterWidth,
+                        std::max(kMinOuterWidth,
+                                 std::min(w_limit, w_from_h)));
+                }
+            }
+
+            const int outer_h = static_cast<int>(std::lround(
+                static_cast<float>(outer_w) / kAspect));
+
+            int frame_l = 0, frame_t = 0, frame_r = 0, frame_b = 0;
+            glfwGetWindowFrameSize(window.native_handle(),
+                                   &frame_l, &frame_t, &frame_r, &frame_b);
+            const int client_w = std::max(1, outer_w - frame_l - frame_r);
+            const int client_h = std::max(1, outer_h - frame_t - frame_b);
+            glfwSetWindowSize(window.native_handle(), client_w, client_h);
+
+            GLFWmonitor* center_monitor = glfwGetPrimaryMonitor();
+            if (center_monitor != nullptr) {
+                int work_x = 0, work_y = 0, work_w = 0, work_h = 0;
+                glfwGetMonitorWorkarea(center_monitor,
+                                       &work_x, &work_y, &work_w, &work_h);
+                glfwSetWindowPos(window.native_handle(),
+                                 work_x + (work_w - outer_w) / 2,
+                                 work_y + (work_h - outer_h) / 2);
+            }
+        }
 
         gs3d::render::ClearColor clear_color;
         clear_color.r = config_.clear_color[0];
