@@ -63,6 +63,7 @@ struct ViewportFrameCmd {
 
 struct UiActions {
     bool open_requested = false;
+    bool show_welcome_requested = false;
     std::string open_project_path;
     std::string open_raw_data_path;
     bool save_requested = false;

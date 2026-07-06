@@ -78,6 +78,11 @@ void test_recent_projects_persist_and_dedupe()
                 project_a.filename(),
         "most recently reopened project moves to the front"
     );
+    gs3d::app::clear_recent_projects();
+    expect(
+        gs3d::app::load_recent_projects().empty(),
+        "recent projects can be cleared from the welcome window"
+    );
 
     unsetenv("GS3D_RECENT_PROJECTS_PATH");
     std::error_code ec;

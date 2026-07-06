@@ -52,6 +52,7 @@ private:
     double timestamp_period_ns_ = 0.0;
     double last_frame_time_ms_ = 0.0;
     bool has_last_frame_time_ = false;
+    std::vector<bool> frame_has_queries_;
 };
 
 } // namespace gs3d::render

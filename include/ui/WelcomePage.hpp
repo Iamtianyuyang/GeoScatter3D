@@ -1,16 +1,37 @@
 #pragma once
 
-#include "app/AppState.hpp"
-#include "app/UiActions.hpp"
+#include "app/RecentProjects.hpp"
+
+#include <vulkan/vulkan.h>
+
+#include <filesystem>
+#include <string>
+#include <vector>
 
 namespace gs3d::ui {
 
-// Draws the startup landing page inside the current ImGui child window.
-// Returns true when the user asks to enter the main workspace.
-[[nodiscard]]
-bool draw_welcome_page(
-    const gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
+enum class WelcomePageActionKind {
+    None,
+    ContinueCurrent,
+    OpenProject,
+    OpenRawData,
+    ClearRecent
+};
+
+struct WelcomePageModel {
+    VkDescriptorSet logo_texture = VK_NULL_HANDLE;
+    std::filesystem::path current_path;
+    std::vector<gs3d::app::RecentProjectEntry> recent_projects;
+};
+
+struct WelcomePageAction {
+    WelcomePageActionKind kind = WelcomePageActionKind::None;
+    std::filesystem::path path;
+};
+
+// Draws one frame of the standalone welcome window.
+WelcomePageAction draw_welcome_page(
+    const WelcomePageModel& model,
     float ui_scale
 );
 

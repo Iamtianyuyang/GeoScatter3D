@@ -38,6 +38,11 @@ public:
     [[nodiscard]]
     gs3d::app::UiActions new_frame(gs3d::app::AppState& state);
 
+    // Starts an ImGui frame without drawing the main workspace. Used by
+    // lightweight, independent application windows such as the welcome
+    // window.
+    void begin_frame();
+
     void discard_frame();
 
     void render(VkCommandBuffer command_buffer);

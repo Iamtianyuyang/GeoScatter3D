@@ -6,6 +6,8 @@ namespace gs3d::gui {
 
 struct UiFonts {
     ImFont* regular = nullptr;
+    ImFont* medium = nullptr;
+    ImFont* bold = nullptr;
     ImFont* small = nullptr;
     ImFont* panel_title = nullptr;
     ImFont* axis = nullptr;

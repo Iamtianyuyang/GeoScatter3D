@@ -229,12 +229,16 @@ ImFontConfig make_font_config(float size_pixels)
 std::vector<std::filesystem::path> bundled_font_candidates()
 {
     return {
+        "assets/fonts/SourceHanSansSC-Regular.otf",
         "assets/fonts/NotoSansSC-Regular.otf",
         "assets/fonts/NotoSansCJKsc-Regular.otf",
+        "../assets/fonts/SourceHanSansSC-Regular.otf",
         "../assets/fonts/NotoSansSC-Regular.otf",
         "../assets/fonts/NotoSansCJKsc-Regular.otf",
+        "../../assets/fonts/SourceHanSansSC-Regular.otf",
         "../../assets/fonts/NotoSansSC-Regular.otf",
         "../../assets/fonts/NotoSansCJKsc-Regular.otf",
+        "resources/fonts/SourceHanSansSC-Regular.otf",
         "resources/fonts/NotoSansSC-Regular.otf",
         "resources/fonts/NotoSansCJKsc-Regular.otf"
     };
@@ -314,6 +318,22 @@ std::filesystem::path resolve_system_font_path()
     return {};
 }
 
+std::filesystem::path resolve_font_weight(
+    const std::filesystem::path& regular_path,
+    const std::vector<std::string>& names
+) {
+    if (regular_path.empty()) {
+        return {};
+    }
+    for (const auto& name : names) {
+        const auto candidate = regular_path.parent_path() / name;
+        if (file_exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
 UiFonts load_ui_fonts(ImGuiIO& io,
                         const std::filesystem::path& ini_path,
                         float ui_scale)
@@ -333,6 +353,40 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     if (!selected_font_path.empty()) {
         const std::string font_path = selected_font_path.string();
         fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize * ui_scale, glyph_ranges);
+        const auto medium_path = resolve_font_weight(
+            selected_font_path,
+            {
+                "SourceHanSansSC-Medium.otf",
+                "NotoSansCJKsc-Medium.otf",
+                "NotoSansSC-Medium.otf"
+            }
+        );
+        const auto bold_path = resolve_font_weight(
+            selected_font_path,
+            {
+                "SourceHanSansSC-Bold.otf",
+                "NotoSansCJKsc-Bold.otf",
+                "NotoSansSC-Bold.otf"
+            }
+        );
+        if (!medium_path.empty()) {
+            const auto path = medium_path.string();
+            fonts.medium = load_font(
+                io,
+                path.c_str(),
+                kRegularFontSize * ui_scale,
+                glyph_ranges
+            );
+        }
+        if (!bold_path.empty()) {
+            const auto path = bold_path.string();
+            fonts.bold = load_font(
+                io,
+                path.c_str(),
+                kRegularFontSize * ui_scale,
+                glyph_ranges
+            );
+        }
         fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
         fonts.panel_title = load_font(
             io, font_path.c_str(), kPanelTitleFontSize * ui_scale, glyph_ranges);
@@ -342,12 +396,20 @@ UiFonts load_ui_fonts(ImGuiIO& io,
 
     if (fonts.regular == nullptr) {
         fonts.regular = load_default_font(io, kRegularFontSize * ui_scale);
+        fonts.medium = fonts.regular;
+        fonts.bold = fonts.regular;
         fonts.small = load_default_font(io, kSmallFontSize * ui_scale);
         fonts.panel_title = load_default_font(io, kPanelTitleFontSize * ui_scale);
         fonts.axis = load_default_font(io, kAxisFontSize * ui_scale);
         fonts.status = load_default_font(io, kStatusFontSize * ui_scale);
     }
 
+    if (fonts.medium == nullptr) {
+        fonts.medium = fonts.regular;
+    }
+    if (fonts.bold == nullptr) {
+        fonts.bold = fonts.medium;
+    }
     if (fonts.small == nullptr) {
         fonts.small = fonts.regular;
     }
@@ -643,12 +705,16 @@ void ImGuiLayer::shutdown()
 
 gs3d::app::UiActions ImGuiLayer::new_frame(gs3d::app::AppState& state)
 {
+    begin_frame();
+    return ui_root_instance().draw(state);
+}
+
+void ImGuiLayer::begin_frame()
+{
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     frame_open_ = true;
-
-    return ui_root_instance().draw(state);
 }
 
 void ImGuiLayer::discard_frame()

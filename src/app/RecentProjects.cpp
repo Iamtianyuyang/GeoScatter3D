@@ -189,4 +189,10 @@ void remember_recent_project(
     }
 }
 
+void clear_recent_projects()
+{
+    std::error_code ec;
+    std::filesystem::remove(recent_projects_storage_path(), ec);
+}
+
 } // namespace gs3d::app

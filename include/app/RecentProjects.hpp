@@ -24,4 +24,6 @@ void remember_recent_project(
     std::size_t max_entries = 8
 );
 
+void clear_recent_projects();
+
 } // namespace gs3d::app

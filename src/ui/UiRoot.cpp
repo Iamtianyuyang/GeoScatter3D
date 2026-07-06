@@ -5,7 +5,6 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
-#include "ui/WelcomePage.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -1517,7 +1516,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImVec2(0.0f, 0.0f)
     );
 
-    bool render_workspace = false;
+    constexpr bool render_workspace = true;
     if (ImGui::Begin(kHostWindowName, nullptr, host_flags)) {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("文件")) {
@@ -1612,7 +1611,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             }
             if (ImGui::BeginMenu("帮助")) {
                 if (ImGui::MenuItem("欢迎页")) {
-                    welcome_page_visible_ = true;
+                    actions.show_welcome_requested = true;
                 }
                 ImGui::Separator();
                 ImGui::TextUnformatted(
@@ -1626,22 +1625,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::EndMenuBar();
         }
 
-        const bool render_welcome_page =
-            state.show_welcome_page_on_startup &&
-            welcome_page_visible_;
-        render_workspace = !render_welcome_page;
-        if (render_welcome_page) {
-            ImGui::BeginChild(
-                "##WelcomePageHost",
-                ImVec2(0.0f, 0.0f),
-                false,
-                ImGuiWindowFlags_None
-            );
-            if (draw_welcome_page(state, actions, ui_scale)) {
-                welcome_page_visible_ = false;
-            }
-            ImGui::EndChild();
-        } else {
+        {
             ImGui::PushStyleVar(
                 ImGuiStyleVar_FramePadding,
                 ImVec2(5.0f, 3.0f)

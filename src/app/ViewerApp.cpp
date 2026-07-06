@@ -3076,9 +3076,6 @@ int ViewerApp::run() {
         scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])
         scene_state.active_height_index    = 1;  // 高度=高程 (attr_list[1])
         gs3d::app::AppState app_state;
-        app_state.show_welcome_page_on_startup =
-            config_.show_welcome_page_on_startup;
-        app_state.recent_projects = config_.recent_projects;
         app_state.dataset.active_dataset = dataset_descriptor.display_name;
         app_state.dataset.path = dataset_descriptor.path;
         app_state.dataset.format = dataset_descriptor.format;
@@ -3109,7 +3106,6 @@ int ViewerApp::run() {
             view.camera_linked = false;
         }
         if (config_.benchmark_mode) {
-            app_state.show_welcome_page_on_startup = false;
             app_state.panels.dataset = false;
             app_state.panels.render_settings = false;
             app_state.panels.debug_log = false;

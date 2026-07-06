@@ -10,6 +10,7 @@ GpuFrameTimer::GpuFrameTimer(
 )
     : context_(context)
     , frames_in_flight_(frames_in_flight)
+    , frame_has_queries_(frames_in_flight, false)
 {
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(context_.physical_device(), &properties);
@@ -74,10 +75,15 @@ void GpuFrameTimer::end_frame(
         query_pool_,
         frame_index * 2 + 1
     );
+    if (frame_index < frame_has_queries_.size()) {
+        frame_has_queries_[frame_index] = true;
+    }
 }
 
 void GpuFrameTimer::collect_frame(std::uint32_t frame_index) noexcept {
-    if (!supported()) {
+    if (!supported() ||
+        frame_index >= frame_has_queries_.size() ||
+        !frame_has_queries_[frame_index]) {
         return;
     }
 

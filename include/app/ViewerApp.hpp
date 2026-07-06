@@ -37,7 +37,8 @@ enum class InteractiveDisplayMode {
 
 enum class ViewerOpenRequestKind {
     Project,
-    RawData
+    RawData,
+    Welcome
 };
 
 struct ViewerOpenRequest {
@@ -237,8 +238,6 @@ struct ViewerAppConfig {
     std::filesystem::path pick_debug_dump_dir = "bench/.pick_debug";
     bool pick_debug_dump_once_on_hover = true;
 
-    bool show_welcome_page_on_startup = true;
-    std::vector<RecentProjectEntry> recent_projects;
 };
 
 class ViewerApp {

@@ -2,6 +2,7 @@
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
 #include "app/ViewerApp.hpp"
+#include "app/WelcomeWindow.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -306,8 +308,59 @@ int main(int argc, char** argv) {
                 argv
             );
 
-        bool show_welcome_page = true;
+        bool show_welcome_window =
+            !app_config.viewer.benchmark_mode;
         for (;;) {
+            if (show_welcome_window) {
+                std::filesystem::path current_path;
+                if (!app_config.bundle_dir.empty()) {
+                    current_path = app_config.bundle_dir;
+                } else if (!app_config.csv_input_path.empty()) {
+                    current_path = app_config.csv_input_path;
+                } else {
+                    current_path = app_config.viewer.gs3d_path;
+                }
+
+                gs3d::app::WelcomeWindow welcome({
+                    .enable_validation_layers =
+                        app_config.viewer.enable_validation_layers,
+                    .ui_scale_multiplier =
+                        app_config.viewer.ui_scale_multiplier,
+                    .current_path = std::move(current_path),
+                    .recent_projects =
+                        gs3d::app::load_recent_projects()
+                });
+                const auto welcome_result = welcome.run();
+                if (welcome_result.kind ==
+                    gs3d::app::WelcomeWindowResultKind::Cancelled) {
+                    return 0;
+                }
+                if (welcome_result.kind ==
+                    gs3d::app::WelcomeWindowResultKind::OpenProject) {
+                    apply_open_request(
+                        app_config,
+                        {
+                            .kind =
+                                gs3d::app::ViewerOpenRequestKind::Project,
+                            .path = welcome_result.path
+                        }
+                    );
+                } else if (
+                    welcome_result.kind ==
+                    gs3d::app::WelcomeWindowResultKind::OpenRawData
+                ) {
+                    apply_open_request(
+                        app_config,
+                        {
+                            .kind =
+                                gs3d::app::ViewerOpenRequestKind::RawData,
+                            .path = welcome_result.path
+                        }
+                    );
+                }
+                show_welcome_window = false;
+            }
+
             preprocess_csv_input(app_config);
             load_bundle_input(app_config);
 
@@ -321,10 +374,6 @@ int main(int argc, char** argv) {
 
             auto viewer_config =
                 make_viewer_config(app_config);
-            viewer_config.show_welcome_page_on_startup =
-                show_welcome_page;
-            viewer_config.recent_projects =
-                gs3d::app::load_recent_projects();
 
             gs3d::app::ViewerApp app(viewer_config);
             const int result = app.run();
@@ -332,8 +381,12 @@ int main(int argc, char** argv) {
                 return result;
             }
 
+            if (app.open_request()->kind ==
+                gs3d::app::ViewerOpenRequestKind::Welcome) {
+                show_welcome_window = true;
+                continue;
+            }
             apply_open_request(app_config, *app.open_request());
-            show_welcome_page = false;
         }
     } catch (const std::exception& e) {
         std::cerr << "[FAIL] " << e.what() << '\n';

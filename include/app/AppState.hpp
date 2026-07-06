@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "app/MeasurementManager.hpp"
-#include "app/RecentProjects.hpp"
 
 namespace gs3d::app {
 
@@ -346,8 +345,6 @@ struct RegionStatsResult {
 };
 
 struct AppState {
-    bool show_welcome_page_on_startup = true;
-    std::vector<RecentProjectEntry> recent_projects;
     PanelVisibilityState panels;
     DatasetSummaryState dataset;
     RenderSettingsState render_settings;
