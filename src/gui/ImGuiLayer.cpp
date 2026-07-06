@@ -15,6 +15,7 @@
 #include <vector>
 #include <stdexcept>
 #include <system_error>
+#include <cmath>
 
 namespace gs3d::gui {
 
@@ -28,12 +29,197 @@ constexpr float kPanelTitleFontSize = 13.0f;
 constexpr float kAxisFontSize = 12.0f;
 constexpr float kStatusFontSize = 12.0f;
 
+// 1920x1080 on a 23.4" panel is the visual baseline: the UI already looks
+// right there, so ui_scale == 1.0 at that PPI. Higher-PPI panels get a
+// proportionally larger (but clamped) UI. This is independent of the Vulkan
+// render-size chain, which keeps using the GLFW backend's
+// io.DisplayFramebufferScale.
+constexpr float kBaselineMonitorWidth = 1920.0f;
+constexpr float kBaselineMonitorHeight = 1080.0f;
+constexpr float kBaselineMonitorDiagonalInches = 23.4f;
+constexpr float kMinUiScale = 1.0f;
+// Conservative upper bound: ~4K at 14" would naively be ~3.16, but capping at
+// 2.25 keeps the CJK font atlas compact (together with oversample==1) so the
+// ImTextureData font texture uploads cleanly instead of tripping the
+// "ImTextureData wasn't uploaded to graphics system" assert.
+constexpr float kMaxUiScale = 2.25f;
+
+// Plausibility guards for glfwGetMonitorPhysicalSize(), which on Linux/X11
+// and some virtual/remote displays returns 0x0 or nonsensical values.
+constexpr int kMinPlausiblePhysicalSizeMm = 50;   // < 5 cm => bogus
+constexpr int kMaxPlausiblePhysicalSizeMm = 2000;  // > 200 cm => bogus
+constexpr float kMinPlausiblePpi = 30.0f;   // ~ a huge projection wall
+constexpr float kMaxPlausiblePpi = 600.0f;  // ~ beyond phone-class panels
+
+float compute_baseline_ppi()
+{
+    const float diag_px =
+        std::sqrt(kBaselineMonitorWidth * kBaselineMonitorWidth +
+                  kBaselineMonitorHeight * kBaselineMonitorHeight);
+    return diag_px / kBaselineMonitorDiagonalInches;
+}
+
+struct MonitorResolution {
+    int width = 0;
+    int height = 0;
+};
+
+struct MonitorPhysicalSizeMm {
+    int width_mm = 0;
+    int height_mm = 0;
+};
+
+struct MonitorInfo {
+    MonitorResolution resolution;
+    MonitorPhysicalSizeMm physical_mm;
+    GLFWmonitor* monitor = nullptr;
+};
+
+MonitorInfo get_window_monitor_info(GLFWwindow* window)
+{
+    MonitorInfo info{};
+
+    GLFWmonitor* monitor = nullptr;
+
+    // Fullscreen windows report their monitor directly.
+    if (window != nullptr) {
+        monitor = glfwGetWindowMonitor(window);
+    }
+
+    // Windowed mode: locate the monitor that contains the window's center.
+    if (monitor == nullptr && window != nullptr) {
+        int win_x = 0;
+        int win_y = 0;
+        int win_w = 0;
+        int win_h = 0;
+        glfwGetWindowPos(window, &win_x, &win_y);
+        glfwGetWindowSize(window, &win_w, &win_h);
+        const int center_x = win_x + (win_w > 0 ? win_w / 2 : 0);
+        const int center_y = win_y + (win_h > 0 ? win_h / 2 : 0);
+
+        int count = 0;
+        GLFWmonitor** monitors = glfwGetMonitors(&count);
+        for (int i = 0; i < count && monitor == nullptr; ++i) {
+            int mx = 0;
+            int my = 0;
+            glfwGetMonitorPos(monitors[i], &mx, &my);
+            const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+            if (mode == nullptr) {
+                continue;
+            }
+            if (center_x >= mx && center_x < mx + mode->width &&
+                center_y >= my && center_y < my + mode->height) {
+                monitor = monitors[i];
+            }
+        }
+    }
+
+    // Last resort: primary monitor.
+    if (monitor == nullptr) {
+        monitor = glfwGetPrimaryMonitor();
+    }
+
+    info.monitor = monitor;
+
+    if (monitor != nullptr) {
+        if (const GLFWvidmode* mode = glfwGetVideoMode(monitor)) {
+            info.resolution.width = mode->width;
+            info.resolution.height = mode->height;
+        }
+        glfwGetMonitorPhysicalSize(
+            monitor, &info.physical_mm.width_mm, &info.physical_mm.height_mm);
+    }
+
+    return info;
+}
+
+float clamp_ui_scale(float scale)
+{
+    if (scale < kMinUiScale) {
+        scale = kMinUiScale;
+    }
+    if (scale > kMaxUiScale) {
+        scale = kMaxUiScale;
+    }
+    return scale;
+}
+
+bool physical_size_is_plausible(const MonitorPhysicalSizeMm& sz)
+{
+    return sz.width_mm >= kMinPlausiblePhysicalSizeMm &&
+           sz.height_mm >= kMinPlausiblePhysicalSizeMm &&
+           sz.width_mm <= kMaxPlausiblePhysicalSizeMm &&
+           sz.height_mm <= kMaxPlausiblePhysicalSizeMm;
+}
+
+struct UiScaleResult {
+    float ui_scale = 1.0f;
+    bool fallback_used = false;
+    float diagonal_inches = 0.0f;
+    float ppi = 0.0f;
+};
+
+UiScaleResult compute_ui_scale(GLFWwindow* window)
+{
+    UiScaleResult result{};
+
+    const MonitorInfo info = get_window_monitor_info(window);
+    const float baseline_ppi = compute_baseline_ppi();
+
+    const int res_w = info.resolution.width;
+    const int res_h = info.resolution.height;
+
+    // Need a valid resolution to compute anything meaningful.
+    if (res_w <= 0 || res_h <= 0) {
+        result.ui_scale = kMinUiScale;
+        result.fallback_used = true;
+        return result;
+    }
+
+    const float diag_px =
+        std::sqrt(static_cast<float>(res_w) * static_cast<float>(res_w) +
+                  static_cast<float>(res_h) * static_cast<float>(res_h));
+
+    // Try the PPI-based path: physical size -> diagonal inches -> PPI.
+    if (physical_size_is_plausible(info.physical_mm)) {
+        const float w_in = static_cast<float>(info.physical_mm.width_mm) / 25.4f;
+        const float h_in = static_cast<float>(info.physical_mm.height_mm) / 25.4f;
+        const float diag_in = std::sqrt(w_in * w_in + h_in * h_in);
+        if (diag_in > 0.0f) {
+            const float ppi = diag_px / diag_in;
+            result.diagonal_inches = diag_in;
+            result.ppi = ppi;
+            if (ppi >= kMinPlausiblePpi && ppi <= kMaxPlausiblePpi) {
+                result.ui_scale = clamp_ui_scale(ppi / baseline_ppi);
+                result.fallback_used = false;
+                return result;
+            }
+            // PPI outside plausibility band — fall through to fallback.
+        }
+    }
+
+    // Fallback: resolution-only ratio vs the 1080p baseline. Used when the
+    // physical size is missing/zero/bogus (common on Linux/X11) or when the
+    // derived PPI is implausible. This still scales up on higher-resolution
+    // panels, just without accounting for physical size.
+    result.fallback_used = true;
+    result.ppi = 0.0f;
+    result.diagonal_inches = 0.0f;
+    const float scale = static_cast<float>(res_h) / kBaselineMonitorHeight;
+    result.ui_scale = clamp_ui_scale(scale);
+    return result;
+}
+
 ImFontConfig make_font_config(float size_pixels)
 {
     ImFontConfig cfg;
     cfg.SizePixels = size_pixels;
-    cfg.OversampleH = 2;
-    cfg.OversampleV = 2;
+    // Oversample lowered to 1 to keep the CJK font atlas small: the Vulkan
+    // ImGui backend lazily uploads ImTextureData on first render, and an
+    // oversized atlas (large fonts * oversample 2 * ~2500 common glyphs) can
+    // fail to upload, leaving TexID invalid and asserting in GetTexID().
+    cfg.OversampleH = 1;
+    cfg.OversampleV = 1;
     cfg.PixelSnapH = true;
     cfg.RasterizerMultiply = 1.0f;
     return cfg;
@@ -127,11 +313,14 @@ std::filesystem::path resolve_system_font_path()
     return {};
 }
 
-UiFonts load_ui_fonts(ImGuiIO& io, const std::filesystem::path& ini_path)
+UiFonts load_ui_fonts(ImGuiIO& io,
+                        const std::filesystem::path& ini_path,
+                        float ui_scale)
 {
     UiFonts fonts{};
+    fonts.ui_scale = ui_scale;
     io.Fonts->Clear();
-    const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesChineseFull();
+    const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesChineseSimplifiedCommon();
 
     const auto bundled_font_path = resolve_bundled_font_path(ini_path);
     const auto system_font_path = bundled_font_path.empty()
@@ -142,20 +331,20 @@ UiFonts load_ui_fonts(ImGuiIO& io, const std::filesystem::path& ini_path)
 
     if (!selected_font_path.empty()) {
         const std::string font_path = selected_font_path.string();
-        fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize, glyph_ranges);
-        fonts.small = load_font(io, font_path.c_str(), kSmallFontSize, glyph_ranges);
+        fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize * ui_scale, glyph_ranges);
+        fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
         fonts.panel_title = load_font(
-            io, font_path.c_str(), kPanelTitleFontSize, glyph_ranges);
-        fonts.axis = load_font(io, font_path.c_str(), kAxisFontSize, glyph_ranges);
-        fonts.status = load_font(io, font_path.c_str(), kStatusFontSize, glyph_ranges);
+            io, font_path.c_str(), kPanelTitleFontSize * ui_scale, glyph_ranges);
+        fonts.axis = load_font(io, font_path.c_str(), kAxisFontSize * ui_scale, glyph_ranges);
+        fonts.status = load_font(io, font_path.c_str(), kStatusFontSize * ui_scale, glyph_ranges);
     }
 
     if (fonts.regular == nullptr) {
-        fonts.regular = load_default_font(io, kRegularFontSize);
-        fonts.small = load_default_font(io, kSmallFontSize);
-        fonts.panel_title = load_default_font(io, kPanelTitleFontSize);
-        fonts.axis = load_default_font(io, kAxisFontSize);
-        fonts.status = load_default_font(io, kStatusFontSize);
+        fonts.regular = load_default_font(io, kRegularFontSize * ui_scale);
+        fonts.small = load_default_font(io, kSmallFontSize * ui_scale);
+        fonts.panel_title = load_default_font(io, kPanelTitleFontSize * ui_scale);
+        fonts.axis = load_default_font(io, kAxisFontSize * ui_scale);
+        fonts.status = load_default_font(io, kStatusFontSize * ui_scale);
     }
 
     if (fonts.small == nullptr) {
@@ -229,26 +418,37 @@ void ImGuiLayer::init(
         io.IniFilename = ini_path_storage_.c_str();
     }
 
-    g_ui_fonts = load_ui_fonts(io, ini_path);
+    // ui_scale is derived from the monitor's PPI (resolution / physical
+    // size), NOT from glfwGetWindowContentScale. The latter can be misleading
+    // on some Linux setups (e.g. reporting a large scale on a 1080p panel)
+    // and led to oversized font atlases. When the physical size is missing or
+    // bogus (common on Linux/X11), compute_ui_scale falls back to a
+    // resolution-only ratio. glfw content_scale is only read below for the
+    // diagnostic log.
+    const UiScaleResult scale_result = compute_ui_scale(window);
+    const float ui_scale = scale_result.ui_scale;
+
+    g_ui_fonts = load_ui_fonts(io, ini_path, ui_scale);
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 3.0f;
+    style.ScaleAllSizes(ui_scale);
+    style.WindowRounding = 3.0f * ui_scale;
     style.ChildRounding = 0.0f;
-    style.FrameRounding = 3.0f;
-    style.PopupRounding = 3.0f;
-    style.ScrollbarRounding = 3.0f;
-    style.GrabRounding = 3.0f;
-    style.TabRounding = 3.0f;
-    style.WindowBorderSize = 0.8f;
+    style.FrameRounding = 3.0f * ui_scale;
+    style.PopupRounding = 3.0f * ui_scale;
+    style.ScrollbarRounding = 3.0f * ui_scale;
+    style.GrabRounding = 3.0f * ui_scale;
+    style.TabRounding = 3.0f * ui_scale;
+    style.WindowBorderSize = 0.8f * ui_scale;
     style.ChildBorderSize = 0.0f;
     style.FrameBorderSize = 0.0f;
-    style.FramePadding = ImVec2(6.0f, 3.0f);
-    style.ItemSpacing = ImVec2(6.0f, 5.0f);
-    style.ItemInnerSpacing = ImVec2(5.0f, 4.0f);
-    style.WindowPadding = ImVec2(10.0f, 8.0f);
-    style.CellPadding = ImVec2(6.0f, 4.0f);
-    style.ScrollbarSize = 11.0f;
+    style.FramePadding = ImVec2(6.0f * ui_scale, 3.0f * ui_scale);
+    style.ItemSpacing = ImVec2(6.0f * ui_scale, 5.0f * ui_scale);
+    style.ItemInnerSpacing = ImVec2(5.0f * ui_scale, 4.0f * ui_scale);
+    style.WindowPadding = ImVec2(10.0f * ui_scale, 8.0f * ui_scale);
+    style.CellPadding = ImVec2(6.0f * ui_scale, 4.0f * ui_scale);
+    style.ScrollbarSize = 11.0f * ui_scale;
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
     auto& colors = style.Colors;
@@ -339,6 +539,53 @@ void ImGuiLayer::init(
         device_ = VK_NULL_HANDLE;
         throw std::runtime_error("ImGuiLayer: failed to init ImGui Vulkan backend");
     }
+
+    // Gather diagnostics. Note: io.DisplayFramebufferScale is the ImGui
+    // default (1,1) here because the GLFW backend only updates it during
+    // ImGui_ImplGlfw_NewFrame(); we also compute the live framebuffer/window
+    // ratio so the real (upcoming) value is visible at startup.
+    const MonitorInfo monitor_info = get_window_monitor_info(window);
+    int win_w = 0;
+    int win_h = 0;
+    int fb_w = 0;
+    int fb_h = 0;
+    glfwGetWindowSize(window, &win_w, &win_h);
+    glfwGetFramebufferSize(window, &fb_w, &fb_h);
+    float glfw_content_scale = 1.0f;
+    glfwGetWindowContentScale(window, &glfw_content_scale, nullptr);
+    if (glfw_content_scale <= 0.0f) {
+        glfw_content_scale = 1.0f;
+    }
+    const float fb_ratio_x = (win_w > 0) ? static_cast<float>(fb_w) / static_cast<float>(win_w) : 1.0f;
+    const float fb_ratio_y = (win_h > 0) ? static_cast<float>(fb_h) / static_cast<float>(win_h) : 1.0f;
+    const float baseline_ppi = compute_baseline_ppi();
+
+    std::fprintf(stderr,
+        "[UI] monitor_res=%dx%d  monitor_physical=%dx%dmm  "
+        "diagonal=%.2fin  ppi=%.1f  base_ppi=%.1f  fallback=%s  "
+        "window=%dx%d  framebuffer=%dx%d  glfw_content_scale=%.2f  "
+        "ui_scale=%.3f (clamp %.2f..%.2f)  regular_font=%.1f  "
+        "oversample=1/1  glyph_range=ChineseSimplifiedCommon  "
+        "DisplayFramebufferScale=io(%.2f,%.2f) live_ratio(%.2f,%.2f)  "
+        "build_called=false  descriptor_pool_size=%u\n",
+        monitor_info.resolution.width, monitor_info.resolution.height,
+        monitor_info.physical_mm.width_mm, monitor_info.physical_mm.height_mm,
+        static_cast<double>(scale_result.diagonal_inches),
+        static_cast<double>(scale_result.ppi),
+        static_cast<double>(baseline_ppi),
+        scale_result.fallback_used ? "yes(res-height)" : "no",
+        win_w, win_h,
+        fb_w, fb_h,
+        static_cast<double>(glfw_content_scale),
+        static_cast<double>(ui_scale),
+        static_cast<double>(kMinUiScale),
+        static_cast<double>(kMaxUiScale),
+        static_cast<double>(kRegularFontSize * ui_scale),
+        static_cast<double>(io.DisplayFramebufferScale.x),
+        static_cast<double>(io.DisplayFramebufferScale.y),
+        static_cast<double>(fb_ratio_x),
+        static_cast<double>(fb_ratio_y),
+        init_info.DescriptorPoolSize);
 
     initialized_ = true;
 }

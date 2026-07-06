@@ -83,10 +83,22 @@ bool show_first_hidden_view(gs3d::app::AppState& state)
 
 // ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
 namespace LayoutMetrics {
-    constexpr float kDockLeftWidth = 220.0f;
-    constexpr float kDockRightWidth = 240.0f;
-    constexpr float kTopToolbarHeight = 28.0f;
-    constexpr float kStatusBarHeight = 22.0f;
+    // Dock side-bar widths: ratio + min/max of work width, instead of a
+    // fixed pixel value. Derived from the previously hand-tuned baseline
+    // (kDockLeftWidth=220, kDockRightWidth=240 at a ~1280px work width, which
+    // read as ~0.17 / ~0.19). A ratio keeps the side bars proportional when
+    // the window is maximized, while the min/max band prevents them from
+    // collapsing on tiny windows or swallowing the center on huge ones.
+    constexpr float kDockLeftRatio  = 0.17f;
+    constexpr float kDockLeftMinPx  = 180.0f;
+    constexpr float kDockLeftMaxPx  = 360.0f;
+    constexpr float kDockRightRatio = 0.19f;
+    constexpr float kDockRightMinPx = 220.0f;
+    constexpr float kDockRightMaxPx = 400.0f;
+    // Top toolbar / status bar: base pixel sizes, scaled by ui_scale at the
+    // call site (pure UI chrome — does not touch render/pick/plot_rect).
+    constexpr float kTopToolbarHeightBase = 28.0f;
+    constexpr float kStatusBarHeightBase  = 22.0f;
     constexpr float kViewportToolbarGap = 6.0f;
     constexpr float kViewportToolbarFramePadX = 5.0f;
     constexpr float kViewportToolbarFramePadY = 2.0f;
@@ -806,7 +818,8 @@ void draw_viewport_window(
             const auto scr = framebuffer_to_plot_screen(
                 view.hover_screen_x, view.hover_screen_y,
                 canvas_rect, view.show_map_axis,
-                view.image_width, view.image_height);
+                view.image_width, view.image_height,
+                ui_scale);
             const float cx = plot_min.x + scr.x;
             const float cy = plot_min.y + scr.y;
 
@@ -941,7 +954,8 @@ void draw_viewport_window(
         const auto scr = framebuffer_to_plot_screen(
             view.hover_screen_x, view.hover_screen_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const float cx = plot_min.x + scr.x;
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -976,7 +990,8 @@ void draw_viewport_window(
         const auto scr = framebuffer_to_plot_screen(
             view.selected_screen_x, view.selected_screen_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const float cx = plot_min.x + scr.x;
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1002,11 +1017,13 @@ void draw_viewport_window(
             const auto sa = framebuffer_to_plot_screen(
                 overlay.a_screen_x, overlay.a_screen_y,
                 canvas_rect, view.show_map_axis,
-                view.image_width, view.image_height);
+                view.image_width, view.image_height,
+                ui_scale);
             const auto sb = framebuffer_to_plot_screen(
                 overlay.b_screen_x, overlay.b_screen_y,
                 canvas_rect, view.show_map_axis,
-                view.image_width, view.image_height);
+                view.image_width, view.image_height,
+                ui_scale);
 
             const ImVec2 pa{plot_min.x + sa.x, plot_min.y + sa.y};
             const ImVec2 pb{plot_min.x + sb.x, plot_min.y + sb.y};
@@ -1044,7 +1061,8 @@ void draw_viewport_window(
         const auto scr = framebuffer_to_plot_screen(
             view.pending_point_screen_x, view.pending_point_screen_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const float px = plot_min.x + scr.x;
         const float py = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1080,7 +1098,8 @@ void draw_viewport_window(
     const auto mouse_mapping = map_screen_mouse_to_framebuffer(
         io.MousePos.x, io.MousePos.y,
         canvas_rect, view.show_map_axis,
-        view.image_width, view.image_height);
+        view.image_width, view.image_height,
+        ui_scale);
 
     frame.hovered = hovered && mouse_mapping.mouse_on_image;
     frame.active =
@@ -1176,11 +1195,13 @@ void draw_viewport_window(
         const auto scr_start = framebuffer_to_plot_screen(
             view.box_select_start_x, view.box_select_start_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const auto scr_curr = framebuffer_to_plot_screen(
             frame.mouse_local_x, frame.mouse_local_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const ImVec2 rect_a(plot_min.x + scr_start.x,
                             plot_min.y + scr_start.y);
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
@@ -1224,11 +1245,13 @@ void draw_viewport_window(
         const auto scr_start = framebuffer_to_plot_screen(
             view.stats_select_start_x, view.stats_select_start_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const auto scr_curr = framebuffer_to_plot_screen(
             frame.mouse_local_x, frame.mouse_local_y,
             canvas_rect, view.show_map_axis,
-            view.image_width, view.image_height);
+            view.image_width, view.image_height,
+            ui_scale);
         const ImVec2 rect_a(plot_min.x + scr_start.x,
                             plot_min.y + scr_start.y);
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
@@ -1302,8 +1325,23 @@ void draw_panel_section_label(const char* label)
 void UiRoot::build_default_layout(const gs3d::app::AppState& state)
 {
     const std::uint32_t signature = visible_view_signature(state);
+    const ImVec2 work_size = ImGui::GetMainViewport()->WorkSize;
+
+    // Re-apply the ratio-based default layout on a large relative work-size
+    // change (maximize/restore), even if the visible-view signature is
+    // unchanged. Threshold: relative change in either dimension exceeds 25%
+    // vs the size at which we last built the layout. Small resizes leave
+    // any user-dragged dock splitters untouched.
+    const bool size_changed_significantly =
+        last_layout_work_w_ > 0.0f && last_layout_work_h_ > 0.0f &&
+        (std::abs(work_size.x - last_layout_work_w_) >
+             0.25f * last_layout_work_w_ ||
+         std::abs(work_size.y - last_layout_work_h_) >
+             0.25f * last_layout_work_h_);
+
     if (dock_layout_initialized_ &&
-        dock_layout_signature_ == signature) {
+        dock_layout_signature_ == signature &&
+        !size_changed_significantly) {
         return;
     }
 
@@ -1316,19 +1354,25 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     );
     ImGui::DockBuilderSetNodeSize(
         dockspace_id,
-        ImGui::GetMainViewport()->WorkSize
+        work_size
     );
-    const float work_width = std::max(1.0f, ImGui::GetMainViewport()->WorkSize.x);
-    const float left_ratio = std::clamp(
-        LayoutMetrics::kDockLeftWidth / work_width,
-        0.12f,
-        0.24f
+    const float work_width = std::max(1.0f, work_size.x);
+    // Side-bar widths: ratio of work width, clamped to [min,max] px.
+    // Ratio derived from the prior hand-tuned baseline (220px / 240px at a
+    // ~1280px work width → ~0.17 / ~0.19). The clamp keeps tiny windows
+    // readable and huge windows from letting the bars swallow the center.
+    const float default_left_width = std::clamp(
+        work_width * LayoutMetrics::kDockLeftRatio,
+        LayoutMetrics::kDockLeftMinPx,
+        LayoutMetrics::kDockLeftMaxPx
     );
-    const float right_ratio = std::clamp(
-        LayoutMetrics::kDockRightWidth / work_width,
-        0.14f,
-        0.27f
+    const float default_right_width = std::clamp(
+        work_width * LayoutMetrics::kDockRightRatio,
+        LayoutMetrics::kDockRightMinPx,
+        LayoutMetrics::kDockRightMaxPx
     );
+    const float left_ratio = default_left_width / work_width;
+    const float right_ratio = default_right_width / work_width;
 
     const bool has_left_panels =
         state.panels.dataset ||
@@ -1420,11 +1464,17 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     ImGui::DockBuilderFinish(dockspace_id);
     dock_layout_initialized_ = true;
     dock_layout_signature_ = signature;
+    last_layout_work_w_ = work_size.x;
+    last_layout_work_h_ = work_size.y;
 }
 
 gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 {
     gs3d::app::UiActions actions;
+    // UI scale for high-DPI chrome (toolbar / status bar heights). Same
+    // definition as the per-viewport scale in draw_render_view: font size
+    // relative to the 13px baseline. Does NOT feed the render-size chain.
+    const float ui_scale = ImGui::GetFontSize() / 13.0f;
     if (ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
@@ -1574,7 +1624,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         );
         ImGui::BeginChild(
             "##TopToolbar",
-            ImVec2(0.0f, LayoutMetrics::kTopToolbarHeight),
+            ImVec2(0.0f, LayoutMetrics::kTopToolbarHeightBase * ui_scale),
             false,
             ImGuiWindowFlags_NoScrollbar
         );
@@ -1636,7 +1686,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         build_default_layout(state);
         const float content_avail_y = ImGui::GetContentRegionAvail().y;
         const float status_h = std::min(
-            LayoutMetrics::kStatusBarHeight,
+            LayoutMetrics::kStatusBarHeightBase * ui_scale,
             std::max(0.0f, content_avail_y)
         );
         const float dock_h = std::max(0.0f, content_avail_y - status_h);

@@ -142,6 +142,14 @@ private:
 
     bool dock_layout_initialized_ = false;
     std::uint32_t dock_layout_signature_ = 0;
+    // Last work size (px) used when building the default dock layout. A large
+    // relative change (e.g. maximize/restore) forces a rebuild so the side
+    // bars re-apply their ratio-based widths; small resizes leave any
+    // user-dragged splitters untouched. Stored as plain floats (not ImVec2)
+    // so this header stays free of the imgui.h dependency — several test
+    // targets include it without linking ImGui.
+    float last_layout_work_w_ = -1.0f;
+    float last_layout_work_h_ = -1.0f;
 };
 
 } // namespace gs3d::ui
