@@ -35,6 +35,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 
     src/app/ViewerApp.cpp
+    src/app/ViewerAppViewport.cpp
     src/app/AppConfig.cpp
     src/app/PreprocessedBundle.cpp
     src/app/RecentProjects.cpp
@@ -103,6 +104,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp
+    include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
     include/app/PreprocessedBundle.hpp
     include/app/RecentProjects.hpp
