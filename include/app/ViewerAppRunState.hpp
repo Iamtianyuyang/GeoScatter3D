@@ -12,13 +12,18 @@ namespace gs3d::camera { class CameraController; }
 namespace gs3d::camera { class CameraHub; }
 namespace gs3d::data { class Gs3dDataset; }
 namespace gs3d::render { class PointCloudGpu; }
+namespace gs3d::render { class PointCloudLodGpu; }
+namespace gs3d::render { class PointCloudTileGpu; }
 namespace gs3d::render { class PointPipeline; }
+namespace gs3d::render { struct TileSelectionResult; }
 namespace gs3d::render { class ViewportManager; }
 namespace gs3d::render { struct PointPushConstants; }
 namespace gs3d::render { class VulkanSwapchain; }
 namespace gs3d::scene { struct SceneState; }
 
 namespace gs3d::app {
+
+struct ViewerAppTileStreamState;
 
 struct ViewerAppPickState {
     std::vector<GpuPickRequest> requests;
@@ -148,6 +153,38 @@ struct ViewerAppNavThumbnailContext {
     const gs3d::render::PointCloudGpu& nav_cloud;
     const gs3d::render::PointPushConstants& push;
     float dataset_bbox_max_z = 0.0f;
+};
+
+/*
+ * Inputs for ViewerApp::record_viewport_passes() — the per-frame
+ * offscreen render of every visible viewport (LOD safety net + active
+ * LOD level or full cloud + resident tile overlay) plus GPU pick
+ * request recording and the optional pick debug dump.
+ */
+struct ViewerAppViewportDrawContext {
+    const std::vector<int>& visible_viewports;
+    gs3d::render::ViewportManager& viewport_manager;
+    gs3d::render::PointPipeline& point_pipeline;
+    const gs3d::render::PointPushConstants& push;
+    // Exactly one of lod_gpu_cloud / full_gpu_cloud is non-null.
+    const gs3d::render::PointCloudLodGpu* lod_gpu_cloud = nullptr;
+    const gs3d::render::PointCloudGpu* full_gpu_cloud = nullptr;
+    // nullptr when tile mode is disabled.
+    const gs3d::render::PointCloudTileGpu* tile_gpu_cloud = nullptr;
+    const ViewerAppTileStreamState& tile_stream;
+    const gs3d::render::TileSelectionResult& tile_result;
+    const ViewerAppPickState& pick;
+    GpuPickReadback& gpu_pick_readback;
+    PickDebugFrameDumper& pick_debug_frame_dumper;
+    std::vector<bool>& pending_hover_miss_dump;
+    std::uint64_t& pick_debug_dump_count;
+    bool& pick_debug_dump_completed;
+    std::size_t lod_level_for_frame = 0;
+    bool interacting = false;
+    bool benchmark_pick_enabled = false;
+    std::uint64_t app_frame_index = 0;
+    std::vector<double>& benchmark_pick_issue_cpu_ms;
+    std::vector<BenchmarkPickIssuedMetadata>& benchmark_pick_issue_metadata;
 };
 
 struct RegionStatsCommandContext {

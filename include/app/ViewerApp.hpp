@@ -390,6 +390,11 @@ private:
         const ViewerAppTileStreamFrameContext& ctx
     );
 
+    void record_viewport_passes(
+        VkCommandBuffer cmd,
+        const ViewerAppViewportDrawContext& ctx
+    );
+
     ViewerAppConfig config_;
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
