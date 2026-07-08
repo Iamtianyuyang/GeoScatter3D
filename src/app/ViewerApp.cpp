@@ -28,7 +28,6 @@
 #include "data/TileDataAdapters.hpp"
 #include "data/Gs3dTileReader.hpp"
 
-#include "platform/NativeFileDialog.hpp"
 #include "platform/Window.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/LodSelector.hpp"
@@ -43,15 +42,11 @@
 #include "render/VulkanBuffer.hpp"
 
 #include "preprocess/Gs3dLodWriter.hpp"
-#include "util/PercentileStats.hpp"
 #include "util/Stopwatch.hpp"
 #include "scene/SceneState.hpp"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
 
 #include <algorithm>
 #include <chrono>
@@ -59,12 +54,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <future>
-#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -120,89 +112,6 @@ std::string format_bounds_label(
         std::to_string(bounds.max_x) + ", " +
         std::to_string(bounds.max_y) + ", " +
         std::to_string(bounds.max_z) + "]";
-}
-std::vector<BenchmarkPickScriptQuery> load_benchmark_pick_script(
-    const std::filesystem::path& script_path
-) {
-    std::ifstream in(script_path);
-    if (!in) {
-        throw std::runtime_error(
-            "ViewerApp: failed to open benchmark pick script: " +
-            script_path.string()
-        );
-    }
-
-    std::vector<BenchmarkPickScriptQuery> queries;
-    std::string line;
-    std::size_t line_number = 0;
-    while (std::getline(in, line)) {
-        ++line_number;
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        std::replace(line.begin(), line.end(), ',', ' ');
-        std::istringstream iss(line);
-        BenchmarkPickScriptQuery query;
-        query.query_index = queries.size();
-        if (!(iss >> query.mouse_x >> query.mouse_y)) {
-            throw std::runtime_error(
-                "ViewerApp: invalid benchmark pick script line " +
-                std::to_string(line_number)
-            );
-        }
-        queries.push_back(query);
-    }
-
-    if (queries.empty()) {
-        throw std::runtime_error(
-            "ViewerApp: benchmark pick script contains no queries"
-        );
-    }
-    return queries;
-}
-
-void write_benchmark_pick_results(
-    const std::filesystem::path& output_path,
-    const std::vector<BenchmarkPickObservedResult>& results
-) {
-    std::error_code ec;
-    std::filesystem::create_directories(output_path.parent_path(), ec);
-    std::ofstream out(output_path, std::ios::trunc);
-    if (!out) {
-        throw std::runtime_error(
-            "ViewerApp: failed to open benchmark pick result path: " +
-            output_path.string()
-        );
-    }
-
-    out << "query_index has_hit gpu_has_hit all_tiles_resident point_id depth x y z value issue_cpu_ms collect_cpu_ms resident_tile_ids\n";
-    for (const auto& result : results) {
-        std::ostringstream resident_tiles;
-        if (result.resident_tile_ids.empty()) {
-            resident_tiles << '-';
-        } else {
-            for (std::size_t i = 0; i < result.resident_tile_ids.size(); ++i) {
-                if (i > 0) {
-                    resident_tiles << ',';
-                }
-                resident_tiles << result.resident_tile_ids[i];
-            }
-        }
-        out << result.query_index << ' '
-            << (result.has_hit ? 1 : 0) << ' '
-            << (result.gpu_has_hit ? 1 : 0) << ' '
-            << (result.all_tiles_resident ? 1 : 0) << ' '
-            << result.point_id << ' '
-            << result.depth << ' '
-            << result.x << ' '
-            << result.y << ' '
-            << result.z << ' '
-            << result.value << ' '
-            << result.issue_cpu_ms << ' '
-            << result.collect_cpu_ms << ' '
-            << resident_tiles.str() << '\n';
-    }
 }
 
 gs3d::render::SwapchainPresentModeHint benchmark_present_mode_hint(
@@ -302,615 +211,8 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
     return read_result.dataset;
 }
 
-[[nodiscard]]
-std::vector<std::uint32_t> make_runtime_point_ids(
-    std::uint64_t point_count
-) {
-    if (point_count >
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max() - 1)) {
-        throw std::runtime_error(
-            "ViewerApp: point_count exceeds runtime point_id range"
-        );
-    }
 
-    std::vector<std::uint32_t> point_ids(
-        static_cast<std::size_t>(point_count)
-    );
-    for (std::uint64_t i = 0; i < point_count; ++i) {
-        point_ids[static_cast<std::size_t>(i)] =
-            static_cast<std::uint32_t>(i + 1);
-    }
-    return point_ids;
-}
 
-[[nodiscard]]
-bool same_point_exact(
-    const gs3d::data::Gs3dPoint& lhs,
-    const gs3d::data::Gs3dPoint& rhs
-) noexcept {
-    return lhs.x == rhs.x &&
-           lhs.y == rhs.y &&
-           lhs.z == rhs.z &&
-           lhs.value == rhs.value;
-}
-
-[[nodiscard]]
-std::vector<std::uint32_t> map_subsequence_point_ids(
-    const std::vector<gs3d::data::Gs3dPoint>& source_points,
-    const std::vector<std::uint32_t>& source_point_ids,
-    const std::vector<gs3d::data::Gs3dPoint>& subset_points,
-    const char* label
-) {
-    if (source_points.size() != source_point_ids.size()) {
-        throw std::runtime_error(
-            "ViewerApp: source point/id array size mismatch"
-        );
-    }
-
-    std::vector<std::uint32_t> subset_ids;
-    subset_ids.reserve(subset_points.size());
-
-    std::size_t source_index = 0;
-    for (const auto& point : subset_points) {
-        while (source_index < source_points.size() &&
-               !same_point_exact(source_points[source_index], point)) {
-            ++source_index;
-        }
-
-        if (source_index >= source_points.size()) {
-            throw std::runtime_error(
-                std::string("ViewerApp: failed to map runtime point_id for ") +
-                label
-            );
-        }
-
-        subset_ids.push_back(source_point_ids[source_index]);
-        ++source_index;
-    }
-
-    return subset_ids;
-}
-
-[[nodiscard]]
-std::uint32_t point_tile_coord_runtime(
-    float value,
-    float origin,
-    float tile_size,
-    std::uint32_t grid_count
-) {
-    if (grid_count == 0 || tile_size <= 0.0f) {
-        throw std::runtime_error(
-            "ViewerApp: invalid tile grid configuration for runtime ids"
-        );
-    }
-
-    const auto raw = static_cast<std::int64_t>(
-        std::floor((value - origin) / tile_size)
-    );
-    if (raw < 0) {
-        return 0;
-    }
-
-    const auto upper =
-        static_cast<std::int64_t>(grid_count - 1);
-    if (raw > upper) {
-        return grid_count - 1;
-    }
-
-    return static_cast<std::uint32_t>(raw);
-}
-
-[[nodiscard]]
-std::unordered_map<std::uint64_t, std::vector<std::uint32_t>>
-build_runtime_tile_point_ids(
-    const gs3d::data::Gs3dDataset& dataset,
-    const gs3d::data::Gs3dTileReader& tile_reader,
-    const std::vector<std::uint32_t>& source_point_ids
-) {
-    if (dataset.points().size() != source_point_ids.size()) {
-        throw std::runtime_error(
-            "ViewerApp: source point/id array size mismatch for tiles"
-        );
-    }
-
-    const auto& header = tile_reader.index_header();
-    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> tile_ids;
-    std::unordered_map<std::uint64_t, std::uint64_t> grid_to_tile_id;
-    tile_ids.reserve(tile_reader.records().size());
-    grid_to_tile_id.reserve(tile_reader.records().size());
-    for (const auto& record : tile_reader.records()) {
-        tile_ids.emplace(record.tile_id, std::vector<std::uint32_t>{});
-        tile_ids[record.tile_id].reserve(
-            static_cast<std::size_t>(record.point_count)
-        );
-        const auto grid_key =
-            static_cast<std::uint64_t>(record.tile_y) *
-                static_cast<std::uint64_t>(header.grid_count_x) +
-            static_cast<std::uint64_t>(record.tile_x);
-        grid_to_tile_id.emplace(grid_key, record.tile_id);
-    }
-
-    for (std::size_t i = 0; i < dataset.points().size(); ++i) {
-        const auto& point = dataset.points()[i];
-        const auto tile_x = point_tile_coord_runtime(
-            point.x,
-            header.grid_origin_x,
-            header.tile_size_x,
-            header.grid_count_x
-        );
-        const auto tile_y = point_tile_coord_runtime(
-            point.y,
-            header.grid_origin_y,
-            header.tile_size_y,
-            header.grid_count_y
-        );
-        const auto tile_id =
-            static_cast<std::uint64_t>(tile_y) *
-                static_cast<std::uint64_t>(header.grid_count_x) +
-            static_cast<std::uint64_t>(tile_x);
-        const auto grid_found = grid_to_tile_id.find(tile_id);
-        if (grid_found == grid_to_tile_id.end()) {
-            continue;
-        }
-        auto found = tile_ids.find(grid_found->second);
-        if (found == tile_ids.end()) {
-            continue;
-        }
-        found->second.push_back(source_point_ids[i]);
-    }
-
-    for (const auto& record : tile_reader.records()) {
-        const auto found = tile_ids.find(record.tile_id);
-        if (found == tile_ids.end() ||
-            found->second.size() !=
-                static_cast<std::size_t>(record.point_count)) {
-            throw std::runtime_error(
-                "ViewerApp: runtime tile point_id reconstruction failed"
-            );
-        }
-    }
-
-    return tile_ids;
-}
-
-[[nodiscard]]
-std::string join_uint64_list(const std::vector<std::uint64_t>& values)
-{
-    if (values.empty()) {
-        return "-";
-    }
-
-    std::ostringstream oss;
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        if (i > 0) {
-            oss << ',';
-        }
-        oss << values[i];
-    }
-    return oss.str();
-}
-
-[[nodiscard]]
-std::array<std::uint8_t, 3> bright_hash_color(std::uint32_t id) noexcept
-{
-    if (id == 0) {
-        return {0, 0, 0};
-    }
-
-    // Keep zero strictly black; every non-zero id gets a bright HSV color
-    // so "has value but too dark" cannot be mistaken for empty.
-    std::uint32_t hash = id;
-    hash ^= hash >> 16;
-    hash *= 0x7feb352dU;
-    hash ^= hash >> 15;
-    hash *= 0x846ca68bU;
-    hash ^= hash >> 16;
-
-    const float hue =
-        static_cast<float>(hash % 360u) / 60.0f;
-    const float saturation = 0.90f;
-    const float value = 0.98f;
-
-    const float chroma = value * saturation;
-    const float x = chroma * (1.0f - std::fabs(std::fmod(hue, 2.0f) - 1.0f));
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-
-    if (hue < 1.0f) {
-        r = chroma;
-        g = x;
-    } else if (hue < 2.0f) {
-        r = x;
-        g = chroma;
-    } else if (hue < 3.0f) {
-        g = chroma;
-        b = x;
-    } else if (hue < 4.0f) {
-        g = x;
-        b = chroma;
-    } else if (hue < 5.0f) {
-        r = x;
-        b = chroma;
-    } else {
-        r = chroma;
-        b = x;
-    }
-
-    const float match = value - chroma;
-    r += match;
-    g += match;
-    b += match;
-
-    return {
-        static_cast<std::uint8_t>(std::round(r * 255.0f)),
-        static_cast<std::uint8_t>(std::round(g * 255.0f)),
-        static_cast<std::uint8_t>(std::round(b * 255.0f))
-    };
-}
-
-[[nodiscard]]
-std::string dump_index_label(std::uint64_t dump_index)
-{
-    std::ostringstream oss;
-    oss << std::setw(4) << std::setfill('0') << dump_index;
-    return oss.str();
-}
-
-void set_rgb_pixel(
-    std::vector<std::uint8_t>& image,
-    std::uint32_t width,
-    std::uint32_t height,
-    int x,
-    int y,
-    const std::array<std::uint8_t, 3>& color
-)
-{
-    if (x < 0 || y < 0 ||
-        x >= static_cast<int>(width) ||
-        y >= static_cast<int>(height)) {
-        return;
-    }
-
-    const std::size_t index =
-        (static_cast<std::size_t>(y) * width +
-         static_cast<std::size_t>(x)) * 3u;
-    if (index + 2 >= image.size()) {
-        return;
-    }
-    image[index + 0] = color[0];
-    image[index + 1] = color[1];
-    image[index + 2] = color[2];
-}
-
-void draw_rect_rgb(
-    std::vector<std::uint8_t>& image,
-    std::uint32_t width,
-    std::uint32_t height,
-    std::uint32_t left,
-    std::uint32_t top,
-    std::uint32_t rect_width,
-    std::uint32_t rect_height,
-    const std::array<std::uint8_t, 3>& color
-)
-{
-    if (rect_width == 0 || rect_height == 0) {
-        return;
-    }
-
-    const int right =
-        static_cast<int>(left + rect_width - 1);
-    const int bottom =
-        static_cast<int>(top + rect_height - 1);
-    for (int x = static_cast<int>(left); x <= right; ++x) {
-        set_rgb_pixel(image, width, height, x, static_cast<int>(top), color);
-        set_rgb_pixel(image, width, height, x, bottom, color);
-    }
-    for (int y = static_cast<int>(top); y <= bottom; ++y) {
-        set_rgb_pixel(image, width, height, static_cast<int>(left), y, color);
-        set_rgb_pixel(image, width, height, right, y, color);
-    }
-}
-
-void draw_cross_rgb(
-    std::vector<std::uint8_t>& image,
-    std::uint32_t width,
-    std::uint32_t height,
-    int center_x,
-    int center_y,
-    int radius,
-    const std::array<std::uint8_t, 3>& color
-)
-{
-    for (int dx = -radius; dx <= radius; ++dx) {
-        set_rgb_pixel(
-            image,
-            width,
-            height,
-            center_x + dx,
-            center_y,
-            color
-        );
-    }
-    for (int dy = -radius; dy <= radius; ++dy) {
-        set_rgb_pixel(
-            image,
-            width,
-            height,
-            center_x,
-            center_y + dy,
-            color
-        );
-    }
-}
-
-void write_binary_ppm(
-    const std::filesystem::path& output_path,
-    std::uint32_t width,
-    std::uint32_t height,
-    const std::vector<std::uint8_t>& rgb_pixels
-)
-{
-    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        throw std::runtime_error(
-            "ViewerApp: failed to open debug ppm path: " +
-            output_path.string()
-        );
-    }
-    out << "P6\n" << width << ' ' << height << "\n255\n";
-    out.write(
-        reinterpret_cast<const char*>(rgb_pixels.data()),
-        static_cast<std::streamsize>(rgb_pixels.size())
-    );
-}
-
-[[nodiscard]]
-std::vector<std::uint8_t> convert_color_image_to_rgb(
-    const std::vector<std::uint8_t>& color_pixels,
-    std::uint32_t width,
-    std::uint32_t height,
-    VkFormat color_format
-)
-{
-    if (color_pixels.size() !=
-        static_cast<std::size_t>(width) * height * 4u) {
-        throw std::runtime_error(
-            "ViewerApp: debug color dump size mismatch"
-        );
-    }
-
-    const bool is_bgra =
-        color_format == VK_FORMAT_B8G8R8A8_UNORM ||
-        color_format == VK_FORMAT_B8G8R8A8_SRGB;
-    const bool is_rgba =
-        color_format == VK_FORMAT_R8G8B8A8_UNORM ||
-        color_format == VK_FORMAT_R8G8B8A8_SRGB;
-    if (!is_bgra && !is_rgba) {
-        throw std::runtime_error(
-            "ViewerApp: unsupported debug color format for dump"
-        );
-    }
-
-    std::vector<std::uint8_t> rgb(
-        static_cast<std::size_t>(width) * height * 3u
-    );
-    for (std::uint32_t out_y = 0; out_y < height; ++out_y) {
-        const std::uint32_t src_y = height - 1 - out_y;
-        for (std::uint32_t x = 0; x < width; ++x) {
-            const std::size_t src_index =
-                (static_cast<std::size_t>(src_y) * width + x) * 4u;
-            const std::size_t dst_index =
-                (static_cast<std::size_t>(out_y) * width + x) * 3u;
-            if (is_bgra) {
-                rgb[dst_index + 0] = color_pixels[src_index + 2];
-                rgb[dst_index + 1] = color_pixels[src_index + 1];
-                rgb[dst_index + 2] = color_pixels[src_index + 0];
-            } else {
-                rgb[dst_index + 0] = color_pixels[src_index + 0];
-                rgb[dst_index + 1] = color_pixels[src_index + 1];
-                rgb[dst_index + 2] = color_pixels[src_index + 2];
-            }
-        }
-    }
-    return rgb;
-}
-
-[[nodiscard]]
-std::vector<std::uint8_t> visualize_pick_ids_to_rgb(
-    const std::vector<std::uint32_t>& pick_ids,
-    std::uint32_t width,
-    std::uint32_t height
-)
-{
-    if (pick_ids.size() != static_cast<std::size_t>(width) * height) {
-        throw std::runtime_error(
-            "ViewerApp: debug pick-id dump size mismatch"
-        );
-    }
-
-    std::vector<std::uint8_t> rgb(
-        static_cast<std::size_t>(width) * height * 3u
-    );
-    for (std::uint32_t out_y = 0; out_y < height; ++out_y) {
-        const std::uint32_t src_y = height - 1 - out_y;
-        for (std::uint32_t x = 0; x < width; ++x) {
-            const std::size_t src_index =
-                static_cast<std::size_t>(src_y) * width + x;
-            const std::size_t dst_index =
-                (static_cast<std::size_t>(out_y) * width + x) * 3u;
-            const auto color = bright_hash_color(pick_ids[src_index]);
-            rgb[dst_index + 0] = color[0];
-            rgb[dst_index + 1] = color[1];
-            rgb[dst_index + 2] = color[2];
-        }
-    }
-    return rgb;
-}
-
-void annotate_pick_debug_image(
-    std::vector<std::uint8_t>& rgb_pixels,
-    const PickDebugDumpMetadata& metadata,
-    std::uint32_t width,
-    std::uint32_t height
-)
-{
-    static constexpr std::array<std::uint8_t, 3> kRectColor{
-        255u, 255u, 255u
-    };
-    static constexpr std::array<std::uint8_t, 3> kCrossColor{
-        255u, 32u, 255u
-    };
-
-    draw_rect_rgb(
-        rgb_pixels,
-        width,
-        height,
-        metadata.sample_left,
-        metadata.sample_top,
-        metadata.sample_width,
-        metadata.sample_height,
-        kRectColor
-    );
-    draw_cross_rgb(
-        rgb_pixels,
-        width,
-        height,
-        static_cast<int>(std::floor(metadata.mouse_x)),
-        static_cast<int>(std::floor(metadata.mouse_y)),
-        8,
-        kCrossColor
-    );
-}
-
-} // namespace
-void write_pick_debug_dump(
-    const std::filesystem::path& output_dir,
-    const PickDebugDumpFrame& dump
-)
-{
-    std::error_code ec;
-    std::filesystem::create_directories(output_dir, ec);
-
-    const std::string label = dump_index_label(dump.metadata.dump_index);
-    const auto color_path =
-        output_dir / ("frame_" + label + "_color.ppm");
-    const auto pick_path =
-        output_dir / ("frame_" + label + "_pick_id.ppm");
-    const auto meta_path =
-        output_dir / ("frame_" + label + "_meta.txt");
-
-    auto color_rgb = convert_color_image_to_rgb(
-        dump.color_pixels,
-        dump.width,
-        dump.height,
-        dump.color_format
-    );
-    auto pick_rgb = visualize_pick_ids_to_rgb(
-        dump.pick_ids,
-        dump.width,
-        dump.height
-    );
-    annotate_pick_debug_image(
-        color_rgb,
-        dump.metadata,
-        dump.width,
-        dump.height
-    );
-    annotate_pick_debug_image(
-        pick_rgb,
-        dump.metadata,
-        dump.width,
-        dump.height
-    );
-
-    write_binary_ppm(color_path, dump.width, dump.height, color_rgb);
-    write_binary_ppm(pick_path, dump.width, dump.height, pick_rgb);
-
-    std::ofstream meta(meta_path, std::ios::trunc);
-    if (!meta) {
-        throw std::runtime_error(
-            "ViewerApp: failed to open pick debug metadata path: " +
-            meta_path.string()
-        );
-    }
-    meta << "dump_index=" << dump.metadata.dump_index << '\n';
-    meta << "frame_index=" << dump.metadata.frame_index << '\n';
-    meta << "viewport_index=" << dump.metadata.viewport_index << '\n';
-    meta << "viewport_width=" << dump.metadata.viewport_width << '\n';
-    meta << "viewport_height=" << dump.metadata.viewport_height << '\n';
-    meta << "mouse_x=" << dump.metadata.mouse_x << '\n';
-    meta << "mouse_y=" << dump.metadata.mouse_y << '\n';
-    meta << "sample_left=" << dump.metadata.sample_left << '\n';
-    meta << "sample_top=" << dump.metadata.sample_top << '\n';
-    meta << "sample_width=" << dump.metadata.sample_width << '\n';
-    meta << "sample_height=" << dump.metadata.sample_height << '\n';
-    meta << "active_lod_level=" << dump.metadata.active_lod_level << '\n';
-    meta << "tile_overlay_rendered="
-         << (dump.metadata.tile_overlay_rendered ? "true" : "false") << '\n';
-    meta << "all_tiles_resident="
-         << (dump.metadata.all_tiles_resident ? "true" : "false") << '\n';
-    meta << "render_source=" << dump.metadata.render_source << '\n';
-    meta << "trigger_reason=" << dump.metadata.trigger_reason << '\n';
-    meta << "selected_tile_ids="
-         << join_uint64_list(dump.metadata.selected_tile_ids) << '\n';
-    meta << "resident_tile_ids="
-         << join_uint64_list(dump.metadata.resident_tile_ids) << '\n';
-
-    std::cout << "[PICK_DEBUG] wrote color dump: "
-              << color_path.string() << '\n';
-    std::cout << "[PICK_DEBUG] wrote pick-id dump: "
-              << pick_path.string() << '\n';
-    std::cout << "[PICK_DEBUG] wrote metadata: "
-              << meta_path.string() << '\n';
-}
-
-namespace {
-void register_runtime_point_lookup(
-    const std::vector<gs3d::data::Gs3dPoint>& points,
-    const std::vector<std::uint32_t>& point_ids,
-    std::vector<gs3d::data::Gs3dPoint>& points_by_id,
-    std::vector<std::uint8_t>& points_valid_by_id
-) {
-    if (points.size() != point_ids.size()) {
-        throw std::runtime_error(
-            "ViewerApp: runtime point lookup size mismatch"
-        );
-    }
-
-    for (std::size_t i = 0; i < points.size(); ++i) {
-        const auto point_id = point_ids[i];
-        if (point_id == 0 ||
-            point_id >= points_by_id.size() ||
-            point_id >= points_valid_by_id.size()) {
-            throw std::runtime_error(
-                "ViewerApp: runtime point lookup id out of range"
-            );
-        }
-
-        points_by_id[point_id] = points[i];
-        points_valid_by_id[point_id] = 1;
-    }
-}
-
-void register_runtime_tile_point_lookup(
-    const std::vector<std::pair<std::uint64_t, SharedTilePoints>>& tiles,
-    std::vector<gs3d::data::Gs3dPoint>& points_by_id,
-    std::vector<std::uint8_t>& points_valid_by_id
-) {
-    for (const auto& [tile_id, points] : tiles) {
-        static_cast<void>(tile_id);
-        if (!points) {
-            continue;
-        }
-        register_runtime_point_lookup(
-            points->points,
-            points->point_ids,
-            points_by_id,
-            points_valid_by_id
-        );
-    }
-}
 
 gs3d::render::PointCloudLodSource build_lod_source(
     const gs3d::data::Gs3dLodDataset& lod_dataset,
@@ -936,42 +238,6 @@ gs3d::render::PointCloudLodSource build_lod_source(
     return source;
 }
 
-[[nodiscard]]
-gs3d::data::Gs3dPoint to_gs3d_point(
-    const gs3d::core::PointRecord& point
-) noexcept {
-    return {
-        point.x,
-        point.y,
-        point.z,
-        point.value
-    };
-}
-
-[[nodiscard]]
-std::optional<gs3d::data::Gs3dPoint> find_point_by_id_in_views(
-    const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
-    std::uint32_t point_id
-) noexcept {
-    if (point_id == 0) {
-        return std::nullopt;
-    }
-
-    for (const auto& points : candidate_point_sets) {
-        if (!points.valid() || points.empty() || !points.has_point_ids()) {
-            continue;
-        }
-
-        for (std::uint64_t i = 0; i < points.point_count; ++i) {
-            if (points.point_id_at(i) != point_id) {
-                continue;
-            }
-            return to_gs3d_point(points.point_at(i));
-        }
-    }
-
-    return std::nullopt;
-}
 
 void fill_push_constants(
     gs3d::render::PointPushConstants& push,
@@ -1860,30 +1126,9 @@ int ViewerApp::run() {
         // Benchmark-mode instrumentation (no-ops when benchmark_mode is false).
         std::uint64_t app_frame_index = 0;
         std::uint32_t benchmark_frame_index = 0;
-        std::vector<double> benchmark_wall_frame_times_ms;
-        std::vector<double> benchmark_cpu_frame_times_ms;
-        std::vector<double> benchmark_gpu_frame_times_ms;
-        std::vector<double> benchmark_camera_update_ms;
-        std::vector<double> benchmark_lod_tile_select_ms;
-        std::vector<double> benchmark_cpu_cull_ms;
-        std::vector<double> benchmark_upload_record_ms;
-        std::vector<double> benchmark_draw_record_ms;
-        std::vector<double> benchmark_acquire_wait_ms;
-        std::vector<double> benchmark_frame_fence_wait_ms;
-        std::vector<double> benchmark_upload_fence_wait_ms;
-        std::vector<double> benchmark_reload_seconds;
+        ViewerAppBenchmarkFrameSamples benchmark_samples;
         if (config_.benchmark_mode) {
-            benchmark_wall_frame_times_ms.reserve(config_.benchmark_frame_count);
-            benchmark_cpu_frame_times_ms.reserve(config_.benchmark_frame_count);
-            benchmark_gpu_frame_times_ms.reserve(config_.benchmark_frame_count);
-            benchmark_camera_update_ms.reserve(config_.benchmark_frame_count);
-            benchmark_lod_tile_select_ms.reserve(config_.benchmark_frame_count);
-            benchmark_cpu_cull_ms.reserve(config_.benchmark_frame_count);
-            benchmark_upload_record_ms.reserve(config_.benchmark_frame_count);
-            benchmark_draw_record_ms.reserve(config_.benchmark_frame_count);
-            benchmark_acquire_wait_ms.reserve(config_.benchmark_frame_count);
-            benchmark_frame_fence_wait_ms.reserve(config_.benchmark_frame_count);
-            benchmark_upload_fence_wait_ms.reserve(config_.benchmark_frame_count);
+            benchmark_samples.reserve_frames(config_.benchmark_frame_count);
         }
         // Orbit for the first 2/3 of the run (measures interaction frame
         // time), then hold still for the last 1/3 (measures tile/LOD
@@ -2057,25 +1302,6 @@ int ViewerApp::run() {
                           << total_seconds << '\n';
             };
 
-        const auto print_benchmark_percentiles =
-            [](const char* name, const std::vector<double>& samples) {
-                if (samples.empty()) {
-                    std::cout << "[BENCH] " << name
-                              << ": no samples\n";
-                    return;
-                }
-
-                std::cout << "[BENCH] " << name << "_p50 = "
-                          << gs3d::util::percentile(samples, 50.0)
-                          << '\n';
-                std::cout << "[BENCH] " << name << "_p95 = "
-                          << gs3d::util::percentile(samples, 95.0)
-                          << '\n';
-                std::cout << "[BENCH] " << name << "_p99 = "
-                          << gs3d::util::percentile(samples, 99.0)
-                          << '\n';
-            };
-
         auto previous_time =
             std::chrono::steady_clock::now();
 
@@ -2170,138 +1396,29 @@ int ViewerApp::run() {
         };
 
         // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
-        // bbox 宽高比决定纹理尺寸，保证纹理像素全部有效，无 letterbox。
-        const float nav_bbox_w =
-            dataset.bbox_max_x() - dataset.bbox_min_x();
-        const float nav_bbox_h_ =
-            dataset.bbox_max_y() - dataset.bbox_min_y();
-        const float nav_aspect =
-            nav_bbox_h_ > 0.0f ? nav_bbox_w / nav_bbox_h_ : 1.0f;
-        constexpr float kNavBaseSize = 256.0f;
-        std::uint32_t nav_tex_w = kNavBaseSize;
-        std::uint32_t nav_tex_h = kNavBaseSize;
-        if (nav_aspect >= 1.0f) {
-            nav_tex_h = std::max(
-                64u,
-                static_cast<std::uint32_t>(kNavBaseSize / nav_aspect)
-            );
-        } else {
-            nav_tex_w = std::max(
-                64u,
-                static_cast<std::uint32_t>(kNavBaseSize * nav_aspect)
-            );
-        }
-
+        // 尺寸/坐标映射与首帧渲染都在 init_navigation_map 里完成；
+        // 着色属性变更后由 pre_pass 里的 record_navigation_thumbnail 重渲。
         gs3d::render::OffscreenFramebuffer nav_thumbnail_fb;
-        nav_thumbnail_fb.create(
-            context,
-            VkExtent2D{nav_tex_w, nav_tex_h},
-            swapchain.image_format()
-        );
-
-        // 坐标系映射：纹理像素 ↔ 数据集 XY 包围盒，只在这里写一次。
-        // 缩略图渲染相机和视野框绘制共用这组参数。
         auto& nm = app_state.navigation_map;
-        nm.tex_w = static_cast<float>(nav_tex_w);
-        nm.tex_h = static_cast<float>(nav_tex_h);
-        nm.bbox_min_x = dataset.bbox_min_x();
-        nm.bbox_min_y = dataset.bbox_min_y();
-        nm.bbox_max_x = dataset.bbox_max_x();
-        nm.bbox_max_y = dataset.bbox_max_y();
-
-        // 单次命令缓冲区：渲染缩略图
-        {
-            VkCommandBufferAllocateInfo alloc_info{};
-            alloc_info.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            alloc_info.commandPool = renderer.command_pool();
-            alloc_info.commandBufferCount = 1;
-
-            VkCommandBuffer cmd = VK_NULL_HANDLE;
-            vkAllocateCommandBuffers(
-                context.device(),
-                &alloc_info,
-                &cmd
-            );
-
-            VkCommandBufferBeginInfo begin_info{};
-            begin_info.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            begin_info.flags =
-                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            vkBeginCommandBuffer(cmd, &begin_info);
-
-            // 正交俯视相机：从上往下看，覆盖整个 bbox 的 XY 范围
-            gs3d::camera::Camera nav_cam;
-            nav_cam.set_viewport(nav_tex_w, nav_tex_h);
-            nav_cam.set_orthographic(
-                nav_bbox_h_,
-                0.001f,
-                std::max(1.0f, nav_bbox_h_ * 10.0f)
-            );
-            const float nav_cx =
-                (nm.bbox_min_x + nm.bbox_max_x) * 0.5f;
-            const float nav_cy =
-                (nm.bbox_min_y + nm.bbox_max_y) * 0.5f;
-            nav_cam.look_at(
-                {nav_cx, nav_cy, dataset.bbox_max_z() + nav_bbox_h_},
-                {nav_cx, nav_cy, 0.0f},
-                {0.0f, 1.0f, 0.0f}
-            );
-
-            const auto nav_mvp = nav_cam.view_projection_matrix();
-            gs3d::render::PointPushConstants nav_push = push;
-            std::memcpy(nav_push.mvp, nav_mvp.data(), sizeof(nav_push.mvp));
-
-            const auto& nav_cloud =
-                lod_gpu_cloud
-                    ? lod_gpu_cloud->lowest_detail().gpu_cloud
-                    : *full_gpu_cloud;
-
-            nav_thumbnail_fb.render(
-                cmd,
-                [&](VkCommandBuffer cb) {
-                    point_pipeline.draw(
-                        cb,
-                        nav_cloud,
-                        VkExtent2D{nav_tex_w, nav_tex_h},
-                        nav_push
-                    );
-                }
-            );
-
-            vkEndCommandBuffer(cmd);
-
-            VkFence fence = VK_NULL_HANDLE;
-            VkFenceCreateInfo fence_info{};
-            fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            vkCreateFence(context.device(), &fence_info, nullptr, &fence);
-
-            VkSubmitInfo submit_info{};
-            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = &cmd;
-            vkQueueSubmit(
-                context.graphics_queue(),
-                1,
-                &submit_info,
-                fence
-            );
-
-            vkWaitForFences(context.device(), 1, &fence, VK_TRUE, UINT64_MAX);
-            vkDestroyFence(context.device(), fence, nullptr);
-            vkFreeCommandBuffers(
-                context.device(),
-                renderer.command_pool(),
-                1,
-                &cmd
-            );
-        }
-
-        nm.texture_descriptor = nav_thumbnail_fb.imgui_descriptor();
-        nm.valid = true;
-        nm.dirty = false;
+        const auto& nav_cloud =
+            lod_gpu_cloud
+                ? lod_gpu_cloud->lowest_detail().gpu_cloud
+                : *full_gpu_cloud;
+        const ViewerAppNavThumbnailContext nav_thumbnail_ctx{
+            point_pipeline,
+            nav_cloud,
+            push,
+            dataset.bbox_max_z()
+        };
+        init_navigation_map(
+            context,
+            renderer.command_pool(),
+            swapchain.image_format(),
+            dataset,
+            nav_thumbnail_fb,
+            nm,
+            nav_thumbnail_ctx
+        );
 
         std::vector<int> visible_viewports;
         visible_viewports.reserve(
@@ -2355,11 +1472,7 @@ int ViewerApp::run() {
 
         // ponytail: screenshot staging — allocated on demand in post_pass, read
         // back after draw_frame. Only one screenshot at a time.
-        VkBuffer screenshot_staging_buf = VK_NULL_HANDLE;
-        VkDeviceMemory screenshot_staging_mem = VK_NULL_HANDLE;
-        VkExtent2D screenshot_offset{};
-        VkExtent2D screenshot_extent{};
-        bool screenshot_pending = false;
+        ViewerAppScreenshotCaptureState screenshot_capture;
 
         while (!window.should_close() &&
                (!config_.benchmark_mode ||
@@ -2701,9 +1814,9 @@ int ViewerApp::run() {
                 ViewerAppScreenshotContext ss_ctx{
                     .app_state = app_state,
                     .swapchain = swapchain,
-                    .screenshot_offset = screenshot_offset,
-                    .screenshot_extent = screenshot_extent,
-                    .screenshot_pending = screenshot_pending
+                    .screenshot_offset = screenshot_capture.offset,
+                    .screenshot_extent = screenshot_capture.extent,
+                    .screenshot_pending = screenshot_capture.pending
                 };
                 apply_screenshot_command(gui_cmds, ss_ctx);
             }
@@ -3254,7 +2367,7 @@ int ViewerApp::run() {
                                 reload_total_seconds
                             );
                             if (config_.benchmark_mode) {
-                                benchmark_reload_seconds.push_back(
+                                benchmark_samples.reload_seconds.push_back(
                                     reload_total_seconds
                                 );
                             }
@@ -3558,63 +2671,12 @@ int ViewerApp::run() {
                     .pre_pass = [&](VkCommandBuffer cmd) {
                         // ── 导航图缩略图重渲（着色属性变更时触发）──
                         if (nm.dirty && nav_thumbnail_fb.valid()) {
-                            gs3d::camera::Camera nav_cam;
-                            nav_cam.set_viewport(
-                                static_cast<std::uint32_t>(nm.tex_w),
-                                static_cast<std::uint32_t>(nm.tex_h)
-                            );
-                            const float nav_bbox_h =
-                                nm.bbox_max_y - nm.bbox_min_y;
-                            nav_cam.set_orthographic(
-                                nav_bbox_h,
-                                0.001f,
-                                std::max(1.0f, nav_bbox_h * 10.0f)
-                            );
-                            const float nav_cx =
-                                (nm.bbox_min_x + nm.bbox_max_x) * 0.5f;
-                            const float nav_cy =
-                                (nm.bbox_min_y + nm.bbox_max_y) * 0.5f;
-                            nav_cam.look_at(
-                                {nav_cx, nav_cy,
-                                 dataset.bbox_max_z() + nav_bbox_h},
-                                {nav_cx, nav_cy, 0.0f},
-                                {0.0f, 1.0f, 0.0f}
-                            );
-
-                            const auto nav_mvp =
-                                nav_cam.view_projection_matrix();
-                            gs3d::render::PointPushConstants nav_push =
-                                push;
-                            std::memcpy(
-                                nav_push.mvp,
-                                nav_mvp.data(),
-                                sizeof(nav_push.mvp)
-                            );
-
-                            const auto& nav_cloud =
-                                lod_gpu_cloud
-                                    ? lod_gpu_cloud->lowest_detail()
-                                          .gpu_cloud
-                                    : *full_gpu_cloud;
-
-                            nav_thumbnail_fb.render(
+                            record_navigation_thumbnail(
                                 cmd,
-                                [&](VkCommandBuffer cb) {
-                                    point_pipeline.draw(
-                                        cb,
-                                        nav_cloud,
-                                        VkExtent2D{static_cast<std::uint32_t>(
-                                             nm.tex_w),
-                                         static_cast<std::uint32_t>(
-                                             nm.tex_h)},
-                                        nav_push
-                                    );
-                                }
+                                nav_thumbnail_fb,
+                                nm,
+                                nav_thumbnail_ctx
                             );
-
-                            nm.texture_descriptor =
-                                nav_thumbnail_fb.imgui_descriptor();
-                            nm.dirty = false;
                         }
 
                         bool pick_debug_dump_recorded_this_frame = false;
@@ -3938,132 +3000,13 @@ int ViewerApp::run() {
                     // post_pass: after the swapchain render pass ends, copy
                     // the viewport region to a staging buffer for screenshots.
                     .post_pass = [&](VkCommandBuffer cmd, std::uint32_t image_index) {
-                        if (!screenshot_pending) return;
-
-                        const VkDeviceSize buf_size =
-                            static_cast<VkDeviceSize>(
-                                screenshot_extent.width) *
-                            static_cast<VkDeviceSize>(
-                                screenshot_extent.height) * 4;
-
-                        // Create staging buffer on first use (or re-create if
-                        // extent changed since last screenshot).
-                        if (screenshot_staging_buf == VK_NULL_HANDLE) {
-                            VkBufferCreateInfo buf_info{};
-                            buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-                            buf_info.size = buf_size;
-                            buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-                            buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-                            if (vkCreateBuffer(context.device(), &buf_info,
-                                               nullptr, &screenshot_staging_buf) != VK_SUCCESS) {
-                                std::cerr << "[SCREENSHOT] buffer create failed\n";
-                                screenshot_pending = false;
-                                return;
-                            }
-
-                            VkMemoryRequirements mem_req{};
-                            vkGetBufferMemoryRequirements(context.device(),
-                                                          screenshot_staging_buf,
-                                                          &mem_req);
-                            VkMemoryAllocateInfo alloc_info{};
-                            alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-                            alloc_info.allocationSize = mem_req.size;
-
-                            VkPhysicalDeviceMemoryProperties mem_props{};
-                            vkGetPhysicalDeviceMemoryProperties(
-                                context.physical_device(), &mem_props);
-                            std::uint32_t mem_type_idx = 0;
-                            for (; mem_type_idx < mem_props.memoryTypeCount; ++mem_type_idx) {
-                                if ((mem_req.memoryTypeBits & (1u << mem_type_idx)) &&
-                                    (mem_props.memoryTypes[mem_type_idx].propertyFlags &
-                                     (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
-                                        (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-                                    break;
-                                }
-                            }
-                            alloc_info.memoryTypeIndex = mem_type_idx;
-                            if (vkAllocateMemory(context.device(), &alloc_info,
-                                                 nullptr, &screenshot_staging_mem) != VK_SUCCESS) {
-                                std::cerr << "[SCREENSHOT] memory alloc failed\n";
-                                vkDestroyBuffer(context.device(), screenshot_staging_buf, nullptr);
-                                screenshot_staging_buf = VK_NULL_HANDLE;
-                                screenshot_pending = false;
-                                return;
-                            }
-                            if (vkBindBufferMemory(context.device(),
-                                                   screenshot_staging_buf,
-                                                   screenshot_staging_mem, 0) != VK_SUCCESS) {
-                                std::cerr << "[SCREENSHOT] bind memory failed\n";
-                                vkFreeMemory(context.device(), screenshot_staging_mem, nullptr);
-                                vkDestroyBuffer(context.device(), screenshot_staging_buf, nullptr);
-                                screenshot_staging_buf = VK_NULL_HANDLE;
-                                screenshot_staging_mem = VK_NULL_HANDLE;
-                                screenshot_pending = false;
-                                return;
-                            }
-                        }
-
-                        const VkImage src_img = swapchain.images()[image_index];
-
-                        // PRESENT_SRC_KHR → TRANSFER_SRC_OPTIMAL
-                        {
-                            VkImageMemoryBarrier barrier{};
-                            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                            barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                            barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                            barrier.image = src_img;
-                            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                            vkCmdPipelineBarrier(cmd,
-                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                0, 0, nullptr, 0, nullptr, 1, &barrier);
-                        }
-
-                        // Copy viewport region
-                        {
-                            VkBufferImageCopy region{};
-                            region.bufferOffset = 0;
-                            region.bufferRowLength = 0;
-                            region.bufferImageHeight = 0;
-                            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                            region.imageOffset = {
-                                static_cast<std::int32_t>(screenshot_offset.width),
-                                static_cast<std::int32_t>(screenshot_offset.height),
-                                0
-                            };
-                            region.imageExtent = {
-                                screenshot_extent.width,
-                                screenshot_extent.height,
-                                1
-                            };
-                            vkCmdCopyImageToBuffer(cmd, src_img,
-                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                screenshot_staging_buf, 1, &region);
-                        }
-
-                        // TRANSFER_SRC_OPTIMAL → PRESENT_SRC_KHR
-                        {
-                            VkImageMemoryBarrier barrier{};
-                            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                            barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                            barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                            barrier.image = src_img;
-                            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                            vkCmdPipelineBarrier(cmd,
-                                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                0, 0, nullptr, 0, nullptr, 1, &barrier);
-                        }
+                        record_screenshot_copy(
+                            cmd,
+                            image_index,
+                            context,
+                            swapchain,
+                            screenshot_capture
+                        );
                     }
                 }
             );
@@ -4089,82 +3032,7 @@ int ViewerApp::run() {
             imgui_layer.discard_frame();
 
             // ── Screenshot PNG write ──────────────────────────────────
-            if (screenshot_pending &&
-                screenshot_staging_buf != VK_NULL_HANDLE) {
-                vkDeviceWaitIdle(context.device());
-
-                const auto w = static_cast<int>(screenshot_extent.width);
-                const auto h = static_cast<int>(screenshot_extent.height);
-                const VkDeviceSize buf_size =
-                    static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h) * 4;
-
-                void* mapped = nullptr;
-                vkMapMemory(context.device(), screenshot_staging_mem,
-                            0, buf_size, 0, &mapped);
-                auto* pixels = static_cast<std::uint8_t*>(mapped);
-
-                // BGR→RGB swizzle if swapchain uses B8G8R8A8 format
-                const VkFormat fmt = swapchain.image_format();
-                if (fmt == VK_FORMAT_B8G8R8A8_UNORM ||
-                    fmt == VK_FORMAT_B8G8R8A8_SRGB) {
-                    for (int i = 0; i < w * h; ++i) {
-                        std::swap(pixels[i * 4], pixels[i * 4 + 2]);
-                    }
-                }
-
-                // Resolve output path: native file dialog → fallback.
-                // Cross-platform: uses NativeFileDialog (zenity/kdialog on
-                // Linux, GetSaveFileNameW on Windows, osascript on macOS).
-                // If the user cancels, skip save.
-                // If no dialog tool is available, fall back to timestamped file.
-                std::string out_path;
-                bool user_cancelled = false;
-                {
-                    const auto save_result =
-                        gs3d::platform::choose_save_file(
-                            "screenshot.png",
-                            "保存截图",
-                            "PNG Images|*.png"
-                        );
-                    if (save_result.path.has_value()) {
-                        out_path = save_result.path->string();
-                    } else if (!save_result.error.empty()) {
-                        // Dialog tool unavailable — not a user cancel;
-                        // fall through to timestamped fallback below.
-                    } else {
-                        // Empty path + no error = user cancelled the dialog.
-                        user_cancelled = true;
-                    }
-                }
-                if (!user_cancelled && out_path.empty()) {
-                    std::filesystem::create_directories("screenshots");
-                    const auto now = std::chrono::system_clock::now();
-                    const auto tt = std::chrono::system_clock::to_time_t(now);
-                    char ts[64];
-                    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S",
-                                  std::localtime(&tt));
-                    out_path = std::string("screenshots/screenshot_") +
-                               ts + ".png";
-                }
-                if (user_cancelled || out_path.empty()) {
-                    std::cout << "[SCREENSHOT] cancelled.\n";
-                } else if (!stbi_write_png(out_path.c_str(), w, h, 4,
-                                           pixels, w * 4)) {
-                    std::cerr << "[SCREENSHOT] stbi_write_png failed: "
-                              << out_path << '\n';
-                } else {
-                    std::cout << "[SCREENSHOT] saved: " << out_path << '\n';
-                }
-
-                vkUnmapMemory(context.device(), screenshot_staging_mem);
-                vkDestroyBuffer(context.device(),
-                                screenshot_staging_buf, nullptr);
-                vkFreeMemory(context.device(),
-                             screenshot_staging_mem, nullptr);
-                screenshot_staging_buf = VK_NULL_HANDLE;
-                screenshot_staging_mem = VK_NULL_HANDLE;
-                screenshot_pending = false;
-            }
+            write_pending_screenshot(context, swapchain, screenshot_capture);
 
             // Rebuild framebuffer resources only after the user stops resizing.
             // All ready viewports share one device-idle synchronization point.
@@ -4185,38 +3053,38 @@ int ViewerApp::run() {
             viewport_manager.resize_many(resize_requests);
 
             if (config_.benchmark_mode) {
-                benchmark_wall_frame_times_ms.push_back(
+                benchmark_samples.wall_frame_times_ms.push_back(
                     benchmark_frame_timer.elapsed_milliseconds()
                 );
-                benchmark_cpu_frame_times_ms.push_back(
+                benchmark_samples.cpu_frame_times_ms.push_back(
                     benchmark_cpu_frame_ms
                 );
-                benchmark_camera_update_ms.push_back(
+                benchmark_samples.camera_update_ms.push_back(
                     benchmark_camera_update_ms_frame
                 );
-                benchmark_lod_tile_select_ms.push_back(
+                benchmark_samples.lod_tile_select_ms.push_back(
                     benchmark_lod_tile_select_ms_frame
                 );
-                benchmark_cpu_cull_ms.push_back(
+                benchmark_samples.cpu_cull_ms.push_back(
                     benchmark_cpu_cull_ms_frame
                 );
-                benchmark_upload_record_ms.push_back(
+                benchmark_samples.upload_record_ms.push_back(
                     benchmark_upload_record_ms_frame
                 );
-                benchmark_draw_record_ms.push_back(
+                benchmark_samples.draw_record_ms.push_back(
                     benchmark_draw_record_ms_frame
                 );
-                benchmark_acquire_wait_ms.push_back(
+                benchmark_samples.acquire_wait_ms.push_back(
                     benchmark_acquire_wait_ms_frame
                 );
-                benchmark_frame_fence_wait_ms.push_back(
+                benchmark_samples.frame_fence_wait_ms.push_back(
                     benchmark_frame_fence_wait_ms_frame
                 );
-                benchmark_upload_fence_wait_ms.push_back(
+                benchmark_samples.upload_fence_wait_ms.push_back(
                     benchmark_upload_fence_wait_ms_frame
                 );
                 if (renderer.has_last_gpu_frame_ms()) {
-                    benchmark_gpu_frame_times_ms.push_back(
+                    benchmark_samples.gpu_frame_times_ms.push_back(
                         renderer.last_gpu_frame_ms()
                     );
                 }
@@ -4228,84 +3096,10 @@ int ViewerApp::run() {
         vkDeviceWaitIdle(context.device());
 
         if (config_.benchmark_mode) {
-            const auto present_mode_label =
-                [](VkPresentModeKHR present_mode) -> const char* {
-                    switch (present_mode) {
-                    case VK_PRESENT_MODE_IMMEDIATE_KHR:
-                        return "IMMEDIATE";
-                    case VK_PRESENT_MODE_MAILBOX_KHR:
-                        return "MAILBOX";
-                    case VK_PRESENT_MODE_FIFO_KHR:
-                        return "FIFO";
-                    default:
-                        return "OTHER";
-                    }
-                };
-            std::cout << "[BENCH] frame_count = "
-                      << benchmark_wall_frame_times_ms.size() << '\n';
-            std::cout << "[BENCH] present_mode = "
-                      << present_mode_label(swapchain.present_mode())
-                      << '\n';
-            print_benchmark_percentiles(
-                "wall_frame_ms",
-                benchmark_wall_frame_times_ms
+            print_benchmark_report(
+                benchmark_samples,
+                swapchain.present_mode()
             );
-            print_benchmark_percentiles(
-                "cpu_frame_ms",
-                benchmark_cpu_frame_times_ms
-            );
-            print_benchmark_percentiles(
-                "gpu_frame_ms",
-                benchmark_gpu_frame_times_ms
-            );
-            print_benchmark_percentiles(
-                "camera_update_ms",
-                benchmark_camera_update_ms
-            );
-            print_benchmark_percentiles(
-                "lod_tile_select_ms",
-                benchmark_lod_tile_select_ms
-            );
-            print_benchmark_percentiles(
-                "cpu_cull_ms",
-                benchmark_cpu_cull_ms
-            );
-            print_benchmark_percentiles(
-                "upload_record_ms",
-                benchmark_upload_record_ms
-            );
-            print_benchmark_percentiles(
-                "draw_record_ms",
-                benchmark_draw_record_ms
-            );
-            print_benchmark_percentiles(
-                "acquire_wait_ms",
-                benchmark_acquire_wait_ms
-            );
-            print_benchmark_percentiles(
-                "frame_fence_wait_ms",
-                benchmark_frame_fence_wait_ms
-            );
-            print_benchmark_percentiles(
-                "upload_fence_wait_ms",
-                benchmark_upload_fence_wait_ms
-            );
-            std::cout << "[BENCH] hover_pick = skipped "
-                      << "(cursor-dependent, not part of fixed benchmark path)\n";
-            if (!benchmark_reload_seconds.empty()) {
-                std::cout << "[BENCH] reload_latency_seconds_p50 = "
-                          << gs3d::util::percentile(
-                                 benchmark_reload_seconds, 50.0)
-                          << '\n';
-                std::cout << "[BENCH] reload_latency_seconds_p95 = "
-                          << gs3d::util::percentile(
-                                 benchmark_reload_seconds, 95.0)
-                          << '\n';
-            } else {
-                std::cout
-                    << "[BENCH] reload_latency: "
-                    << "no completed tile uploads captured.\n";
-            }
         }
 
         if (benchmark_pick_enabled &&

@@ -3,6 +3,7 @@
 #include "app/ViewerAppInternal.hpp"
 #include "data/Gs3dFormat.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -10,6 +11,8 @@
 namespace gs3d::camera { class CameraController; }
 namespace gs3d::camera { class CameraHub; }
 namespace gs3d::data { class Gs3dDataset; }
+namespace gs3d::render { class PointCloudGpu; }
+namespace gs3d::render { class PointPipeline; }
 namespace gs3d::render { class ViewportManager; }
 namespace gs3d::render { struct PointPushConstants; }
 namespace gs3d::render { class VulkanSwapchain; }
@@ -40,6 +43,39 @@ struct ViewerAppPickCameraContext {
     gs3d::render::PointPushConstants& push;
     int& streaming_viewport_index;
     bool& tile_selection_dirty;
+};
+
+/*
+ * Per-frame benchmark timing samples collected across the run and
+ * summarized as percentiles by ViewerApp::print_benchmark_report().
+ */
+struct ViewerAppBenchmarkFrameSamples {
+    std::vector<double> wall_frame_times_ms;
+    std::vector<double> cpu_frame_times_ms;
+    std::vector<double> gpu_frame_times_ms;
+    std::vector<double> camera_update_ms;
+    std::vector<double> lod_tile_select_ms;
+    std::vector<double> cpu_cull_ms;
+    std::vector<double> upload_record_ms;
+    std::vector<double> draw_record_ms;
+    std::vector<double> acquire_wait_ms;
+    std::vector<double> frame_fence_wait_ms;
+    std::vector<double> upload_fence_wait_ms;
+    std::vector<double> reload_seconds;
+
+    void reserve_frames(std::size_t frame_count) {
+        wall_frame_times_ms.reserve(frame_count);
+        cpu_frame_times_ms.reserve(frame_count);
+        gpu_frame_times_ms.reserve(frame_count);
+        camera_update_ms.reserve(frame_count);
+        lod_tile_select_ms.reserve(frame_count);
+        cpu_cull_ms.reserve(frame_count);
+        upload_record_ms.reserve(frame_count);
+        draw_record_ms.reserve(frame_count);
+        acquire_wait_ms.reserve(frame_count);
+        frame_fence_wait_ms.reserve(frame_count);
+        upload_fence_wait_ms.reserve(frame_count);
+    }
 };
 
 struct ViewerAppBenchmarkPickContext {
@@ -85,6 +121,33 @@ struct ViewerAppScreenshotContext {
     VkExtent2D& screenshot_offset;
     VkExtent2D& screenshot_extent;
     bool& screenshot_pending;
+};
+
+/*
+ * Screenshot capture round-trip state: staging buffer allocated on
+ * demand in the post-pass copy, read back and freed after draw_frame.
+ * Only one screenshot is in flight at a time.
+ */
+struct ViewerAppScreenshotCaptureState {
+    VkBuffer staging_buf = VK_NULL_HANDLE;
+    VkDeviceMemory staging_mem = VK_NULL_HANDLE;
+    VkExtent2D offset{};
+    VkExtent2D extent{};
+    bool pending = false;
+};
+
+/*
+ * Fixed inputs for rendering the navigation-map thumbnail: the point
+ * pipeline, the cloud drawn into the thumbnail (lowest LOD level, or
+ * the full cloud when LOD is disabled), the live push-constant
+ * template (colormap / clip flags follow the main view), and the
+ * dataset's max Z for placing the top-down ortho camera.
+ */
+struct ViewerAppNavThumbnailContext {
+    gs3d::render::PointPipeline& point_pipeline;
+    const gs3d::render::PointCloudGpu& nav_cloud;
+    const gs3d::render::PointPushConstants& push;
+    float dataset_bbox_max_z = 0.0f;
 };
 
 struct RegionStatsCommandContext {

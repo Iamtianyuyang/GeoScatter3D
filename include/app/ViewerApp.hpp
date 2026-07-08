@@ -12,7 +12,11 @@
 #include <string>
 #include <vector>
 
+namespace gs3d::data { class Gs3dDataset; }
+namespace gs3d::render { class OffscreenFramebuffer; }
 namespace gs3d::render { class ViewportManager; }
+namespace gs3d::render { class VulkanContext; }
+namespace gs3d::render { class VulkanSwapchain; }
 namespace gs3d::app { struct UiActions; }
 namespace gs3d::app { class ViewportResizeScheduler; }
 namespace gs3d::platform { class Window; }
@@ -339,6 +343,42 @@ private:
         const UiActions& gui_cmds,
         AppState& app_state,
         const RegionStatsCommandContext& ctx
+    );
+
+    void print_benchmark_report(
+        const ViewerAppBenchmarkFrameSamples& samples,
+        VkPresentModeKHR present_mode
+    ) const;
+
+    void record_screenshot_copy(
+        VkCommandBuffer cmd,
+        std::uint32_t image_index,
+        gs3d::render::VulkanContext& context,
+        const gs3d::render::VulkanSwapchain& swapchain,
+        ViewerAppScreenshotCaptureState& capture
+    );
+
+    void write_pending_screenshot(
+        gs3d::render::VulkanContext& context,
+        const gs3d::render::VulkanSwapchain& swapchain,
+        ViewerAppScreenshotCaptureState& capture
+    );
+
+    void init_navigation_map(
+        gs3d::render::VulkanContext& context,
+        VkCommandPool command_pool,
+        VkFormat color_format,
+        const gs3d::data::Gs3dDataset& dataset,
+        gs3d::render::OffscreenFramebuffer& nav_fb,
+        NavigationMapState& nav,
+        const ViewerAppNavThumbnailContext& ctx
+    );
+
+    void record_navigation_thumbnail(
+        VkCommandBuffer cmd,
+        gs3d::render::OffscreenFramebuffer& nav_fb,
+        NavigationMapState& nav,
+        const ViewerAppNavThumbnailContext& ctx
     );
 
     ViewerAppConfig config_;

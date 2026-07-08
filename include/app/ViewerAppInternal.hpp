@@ -6,14 +6,22 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
+
+namespace gs3d::core { struct PointDataView; }
+namespace gs3d::data { class Gs3dDataset; }
+namespace gs3d::data { class Gs3dTileReader; }
 
 namespace gs3d::app {
 
 class GpuPickReadback;
 class PickDebugFrameDumper;
+struct TilePoints;
 
 constexpr int kMaxViewportCount = 4;
 
@@ -125,6 +133,63 @@ void write_pick_debug_dump(
     const std::filesystem::path& output_dir,
     const PickDebugDumpFrame& dump
 );
+
+// ── Benchmark pick script IO (ViewerAppBenchmark.cpp) ──────────────
+
+[[nodiscard]]
+std::vector<BenchmarkPickScriptQuery> load_benchmark_pick_script(
+    const std::filesystem::path& script_path
+);
+
+void write_benchmark_pick_results(
+    const std::filesystem::path& output_path,
+    const std::vector<BenchmarkPickObservedResult>& results
+);
+
+// ── Runtime point-id mapping / lookup (ViewerAppPointIds.cpp) ──────
+
+[[nodiscard]]
+std::vector<std::uint32_t> make_runtime_point_ids(
+    std::uint64_t point_count
+);
+
+[[nodiscard]]
+std::vector<std::uint32_t> map_subsequence_point_ids(
+    const std::vector<gs3d::data::Gs3dPoint>& source_points,
+    const std::vector<std::uint32_t>& source_point_ids,
+    const std::vector<gs3d::data::Gs3dPoint>& subset_points,
+    const char* label
+);
+
+[[nodiscard]]
+std::unordered_map<std::uint64_t, std::vector<std::uint32_t>>
+build_runtime_tile_point_ids(
+    const gs3d::data::Gs3dDataset& dataset,
+    const gs3d::data::Gs3dTileReader& tile_reader,
+    const std::vector<std::uint32_t>& source_point_ids
+);
+
+void register_runtime_point_lookup(
+    const std::vector<gs3d::data::Gs3dPoint>& points,
+    const std::vector<std::uint32_t>& point_ids,
+    std::vector<gs3d::data::Gs3dPoint>& points_by_id,
+    std::vector<std::uint8_t>& points_valid_by_id
+);
+
+void register_runtime_tile_point_lookup(
+    const std::vector<std::pair<
+        std::uint64_t,
+        std::shared_ptr<const TilePoints>
+    >>& tiles,
+    std::vector<gs3d::data::Gs3dPoint>& points_by_id,
+    std::vector<std::uint8_t>& points_valid_by_id
+);
+
+[[nodiscard]]
+std::optional<gs3d::data::Gs3dPoint> find_point_by_id_in_views(
+    const std::vector<gs3d::core::PointDataView>& candidate_point_sets,
+    std::uint32_t point_id
+) noexcept;
 
 using VisibleTilePickResolver = std::function<
     std::optional<gs3d::data::Gs3dPoint>(std::size_t, std::uint32_t, float, float)
