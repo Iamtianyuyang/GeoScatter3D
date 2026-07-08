@@ -25,6 +25,21 @@ std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept {
     );
 }
 
+ResolvedPickPoint resolve_pick_point(
+    const GpuPickResult& result,
+    const std::vector<gs3d::data::Gs3dPoint>& points_by_id,
+    const std::vector<std::uint8_t>& valid_by_id
+) {
+    ResolvedPickPoint out;
+    if (result.has_hit &&
+        result.point_id < points_by_id.size() &&
+        valid_by_id[result.point_id] != 0) {
+        out.point = points_by_id[result.point_id];
+        out.via_runtime_lookup = true;
+    }
+    return out;
+}
+
 void ViewerApp::prepare_gpu_pick_requests(
     ViewerAppPickState& pick,
     const gs3d::render::ViewportManager& viewport_manager,

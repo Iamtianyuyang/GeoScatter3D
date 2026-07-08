@@ -2,8 +2,10 @@
 
 #include "app/AppState.hpp"
 #include "camera/Camera.hpp"
+#include "data/Gs3dFormat.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace gs3d::app {
 
@@ -50,6 +52,11 @@ struct GpuPickResult {
     bool has_hit = false;
 };
 
+struct ResolvedPickPoint {
+    std::optional<gs3d::data::Gs3dPoint> point;
+    bool via_runtime_lookup = false;
+};
+
 struct BenchmarkPickScriptQuery {
     std::size_t query_index = 0;
     float mouse_x = 0.0f;
@@ -58,6 +65,13 @@ struct BenchmarkPickScriptQuery {
 
 [[nodiscard]]
 std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept;
+
+[[nodiscard]]
+ResolvedPickPoint resolve_pick_point(
+    const GpuPickResult& result,
+    const std::vector<gs3d::data::Gs3dPoint>& points_by_id,
+    const std::vector<std::uint8_t>& valid_by_id
+);
 
 void compute_gizmo_axes(
     gs3d::app::RenderViewState& view,

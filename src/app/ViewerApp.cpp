@@ -2921,15 +2921,10 @@ int ViewerApp::run() {
                         continue;
                     }
 
-                    std::optional<gs3d::data::Gs3dPoint> hit_point;
-                    bool lookup_ok = false;
-                    if (result.has_hit &&
-                        result.point_id < runtime_points_by_id.size() &&
-                        runtime_points_valid_by_id[result.point_id] != 0) {
-                        hit_point =
-                            runtime_points_by_id[result.point_id];
-                        lookup_ok = true;
-                    }
+                    const auto resolved = resolve_pick_point(
+                        result, runtime_points_by_id, runtime_points_valid_by_id);
+                    std::optional<gs3d::data::Gs3dPoint> hit_point = resolved.point;
+                    bool lookup_ok = resolved.via_runtime_lookup;
 
                     const auto view_index =
                         static_cast<std::size_t>(
