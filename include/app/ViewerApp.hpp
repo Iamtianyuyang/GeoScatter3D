@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+namespace gs3d::app { struct ViewerAppTileStreamState; }
+namespace gs3d::app { struct ViewerAppTileStreamFrameContext; }
 namespace gs3d::data { class Gs3dDataset; }
 namespace gs3d::render { class OffscreenFramebuffer; }
 namespace gs3d::render { class ViewportManager; }
@@ -379,6 +381,13 @@ private:
         gs3d::render::OffscreenFramebuffer& nav_fb,
         NavigationMapState& nav,
         const ViewerAppNavThumbnailContext& ctx
+    );
+
+    void clear_tile_cpu_cache(ViewerAppTileStreamState& tiles);
+
+    void update_tile_streaming(
+        ViewerAppTileStreamState& tiles,
+        const ViewerAppTileStreamFrameContext& ctx
     );
 
     ViewerAppConfig config_;
