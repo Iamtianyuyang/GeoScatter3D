@@ -590,6 +590,12 @@ AppConfig AppConfigLoader::load_from_file(
             "ui_scale_multiplier",
             config.viewer.ui_scale_multiplier
         );
+
+        config.viewer.enable_multi_viewports = bool_or_default(
+            *window,
+            "multi_viewports",
+            config.viewer.enable_multi_viewports
+        );
     }
 
     if (const auto* vulkan = root["vulkan"].as_table()) {
@@ -1130,6 +1136,10 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] window.ui_scale_multiplier = "
               << config.viewer.ui_scale_multiplier << '\n';
+
+    std::cout << "[CONFIG] window.multi_viewports = "
+              << (config.viewer.enable_multi_viewports ? "true" : "false")
+              << '\n';
 
     std::cout << "[CONFIG] debug.pick_debug_dump_enabled = "
               << (config.viewer.pick_debug_dump_enabled ? "true" : "false")

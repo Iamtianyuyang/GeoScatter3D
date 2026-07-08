@@ -8,6 +8,7 @@ namespace gs3d::app {
 
 struct ViewportFrameCmd {
     int           index = 0;
+    int           workspace_id = 0;
     bool          hovered = false;
     bool          active = false;
     std::uint32_t width = 0;
@@ -61,6 +62,33 @@ struct ViewportFrameCmd {
     }
 };
 
+struct RenderSettingsCommand {
+    bool has_viewport_scope = false;
+    std::vector<int> viewport_indices;
+
+    bool  point_size_changed = false;
+    float point_size = 1.0f;
+
+    bool height_by_changed = false;
+    int  height_by_index = 0;
+    bool height_exag_changed = false;
+    float height_exag = 1.0f;
+
+    bool color_by_changed = false;
+    int  color_by_index = 0;
+
+    bool colormap_changed = false;
+    int  colormap_index = 8;
+
+    bool  value_clip_changed = false;
+    bool  value_clip_enabled = false;
+    float value_clip_min = 0.0f;
+    float value_clip_max = 1.0f;
+
+    bool point_shape_changed = false;
+    int  point_shape = 0;
+};
+
 struct UiActions {
     bool open_requested = false;
     bool show_welcome_requested = false;
@@ -97,6 +125,7 @@ struct UiActions {
     bool point_shape_changed = false;
     int  point_shape = 0;
 
+    std::vector<RenderSettingsCommand> render_settings_commands;
     std::vector<ViewportFrameCmd> viewport_frames;
 };
 

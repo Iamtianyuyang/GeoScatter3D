@@ -20,6 +20,40 @@
 
 namespace gs3d::app {
 
+namespace {
+
+MeasurementManager& measurement_for_workspace_id(
+    AppState& app_state,
+    int workspace_id
+) {
+    if (workspace_id > 0) {
+        const auto found = std::find_if(
+            app_state.workspace_windows.begin(),
+            app_state.workspace_windows.end(),
+            [workspace_id](const auto& workspace) {
+                return workspace.id == workspace_id;
+            }
+        );
+        if (found != app_state.workspace_windows.end()) {
+            return found->components.measurement;
+        }
+    }
+    return app_state.measurement;
+}
+
+float point_size_for_viewport(
+    const std::vector<float>& viewport_point_sizes,
+    int viewport_index
+) noexcept {
+    if (viewport_index >= 0 &&
+        viewport_index < static_cast<int>(viewport_point_sizes.size())) {
+        return viewport_point_sizes[static_cast<std::size_t>(viewport_index)];
+    }
+    return 1.0f;
+}
+
+} // namespace
+
 [[nodiscard]]
 std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept {
     const float clamped_point_size =
@@ -55,7 +89,7 @@ void ViewerApp::prepare_gpu_pick_requests(
     const gs3d::render::ViewportManager& viewport_manager,
     gs3d::app::AppState& app_state,
     const gs3d::app::UiActions& gui_cmds,
-    float point_size,
+    const std::vector<float>& viewport_point_sizes,
     std::size_t& benchmark_pick_issue_index,
     const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
 ) {
@@ -95,7 +129,12 @@ void ViewerApp::prepare_gpu_pick_requests(
             request.mouse_y =
                 0.5f * (frame.box_select_min_y + frame.box_select_max_y);
             request.pick_radius_px =
-                compute_hover_pick_radius_px(point_size);
+                compute_hover_pick_radius_px(
+                    point_size_for_viewport(
+                        viewport_point_sizes,
+                        frame.index
+                    )
+                );
             request.box_select_min_x = frame.box_select_min_x;
             request.box_select_min_y = frame.box_select_min_y;
             request.box_select_max_x = frame.box_select_max_x;
@@ -111,20 +150,26 @@ void ViewerApp::prepare_gpu_pick_requests(
             request.mouse_x = frame.mouse_local_x;
             request.mouse_y = frame.mouse_local_y;
             request.pick_radius_px =
-                compute_hover_pick_radius_px(point_size);
+                compute_hover_pick_radius_px(
+                    point_size_for_viewport(
+                        viewport_point_sizes,
+                        frame.index
+                    )
+                );
             continue;
         }
 
         // Measurement pick: middle-click uses the latest hover
         // pick result (zero-latency, same strategy as orbit pivot).
+        auto& measurement =
+            measurement_for_workspace_id(app_state, frame.workspace_id);
         if (frame.measure_pick_requested &&
-            app_state.measurement.measure_mode_active()) {
+            measurement.measure_mode_active()) {
             const auto idx =
                 static_cast<std::size_t>(frame.index);
             if (idx < pick.latest_hover_points.size() &&
                 pick.latest_hover_points[idx].has_value()) {
-                app_state.measurement.add_point(
-                    *pick.latest_hover_points[idx]);
+                measurement.add_point(*pick.latest_hover_points[idx]);
             }
         }
 
@@ -153,7 +198,12 @@ void ViewerApp::prepare_gpu_pick_requests(
 
         request.kind = GpuPickRequestKind::Hover;
         request.pick_radius_px =
-            compute_hover_pick_radius_px(point_size);
+            compute_hover_pick_radius_px(
+                point_size_for_viewport(
+                    viewport_point_sizes,
+                    frame.index
+                )
+            );
         if (benchmark_pick_enabled &&
             frame.index == 0 &&
             benchmark_pick_issue_index < benchmark_pick_queries.size()) {
@@ -325,14 +375,18 @@ void ViewerApp::consume_ready_pick_frame_slot(
                             continue;
                         }
 
+                        const auto& push =
+                            view_index < pick_camera.viewport_pushes.size()
+                                ? pick_camera.viewport_pushes[view_index]
+                                : pick_camera.viewport_pushes.front();
                         float raw = hit_point->z;
-                        if (pick_camera.push.height_source ==
+                        if (push.height_source ==
                             static_cast<std::uint32_t>(
                                 gs3d::app::AttrPhysicalSource::Value)) {
                             raw = hit_point->value;
                         }
                         float mapped_z =
-                            pick_camera.push.height_offset + raw * pick_camera.push.height_mult;
+                            push.height_offset + raw * push.height_mult;
 
                         const gs3d::camera::Vec3 selected_point{
                             hit_point->x,

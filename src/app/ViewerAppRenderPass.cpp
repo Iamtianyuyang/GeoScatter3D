@@ -93,9 +93,12 @@ void ViewerApp::record_viewport_passes(
         framebuffer.render(
             cmd,
             [&](VkCommandBuffer c) {
-        // Per-viewport push: copy non-MVP fields from push,
+        // Per-viewport push: copy non-MVP fields from the view's own state,
         // then fill in the per-viewport MVP matrix.
-        gs3d::render::PointPushConstants vp_push = ctx.push;
+        gs3d::render::PointPushConstants vp_push =
+            request_index < ctx.viewport_pushes.size()
+                ? ctx.viewport_pushes[request_index]
+                : gs3d::render::PointPushConstants{};
         fill_push_constants(
             vp_push,
             viewport_camera

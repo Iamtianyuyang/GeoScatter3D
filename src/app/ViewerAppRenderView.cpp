@@ -7,10 +7,34 @@
 #include "render/PointPipeline.hpp"
 #include "render/ViewportManager.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
 namespace gs3d::app {
+
+namespace {
+
+const MeasurementManager& measurement_for_view(
+    const AppState& app_state,
+    int viewport_index
+) {
+    for (const auto& workspace : app_state.workspace_windows) {
+        if (!workspace.visible) {
+            continue;
+        }
+        if (std::find(
+                workspace.viewport_indices.begin(),
+                workspace.viewport_indices.end(),
+                viewport_index
+            ) != workspace.viewport_indices.end()) {
+            return workspace.components.measurement;
+        }
+    }
+    return app_state.measurement;
+}
+
+} // namespace
 
 void ViewerApp::fill_render_views(
     gs3d::app::AppState& app_state,
@@ -34,8 +58,14 @@ void ViewerApp::fill_render_views(
                 view.camera_mode = "轨道";
                 view.position = format_vec3_text(camera.position());
                 view.fov = camera.fov_y_degrees();
+                const auto& view_push =
+                    static_cast<std::size_t>(i) < ctx.viewport_pushes.size()
+                        ? ctx.viewport_pushes[static_cast<std::size_t>(i)]
+                        : ctx.viewport_pushes.front();
+                const auto& measurement =
+                    measurement_for_view(app_state, i);
                 view.measure_mode_active =
-                    app_state.measurement.measure_mode_active();
+                    measurement.measure_mode_active();
 
                 const float vp_h =
                     static_cast<float>(camera.viewport_height());
@@ -63,14 +93,14 @@ void ViewerApp::fill_render_views(
                 //   - Z source: 参考面 = 世界 Z=0 (= -origin_z * exag 渲染坐标)
                 //   - Value source: 参考面 = 属性值 0 (= height_offset 渲染坐标)
                 auto axis_bounds = ctx.bounds;
-                const float z_label_mult   = ctx.push.height_mult;
-                float       z_label_offset = ctx.push.height_offset;
-                if (ctx.push.height_source == static_cast<std::uint32_t>(gs3d::app::AttrPhysicalSource::Z)) {
-                    axis_bounds.min.z = ctx.push.height_offset + ctx.dataset.bbox_min_z() * ctx.push.height_mult;
-                    axis_bounds.max.z = ctx.push.height_offset + ctx.dataset.bbox_max_z() * ctx.push.height_mult;
+                const float z_label_mult   = view_push.height_mult;
+                float       z_label_offset = view_push.height_offset;
+                if (view_push.height_source == static_cast<std::uint32_t>(gs3d::app::AttrPhysicalSource::Z)) {
+                    axis_bounds.min.z = view_push.height_offset + ctx.dataset.bbox_min_z() * view_push.height_mult;
+                    axis_bounds.max.z = view_push.height_offset + ctx.dataset.bbox_max_z() * view_push.height_mult;
                 } else {
-                    axis_bounds.min.z = ctx.push.height_offset + ctx.dataset.value_min() * ctx.push.height_mult;
-                    axis_bounds.max.z = ctx.push.height_offset + ctx.dataset.value_max() * ctx.push.height_mult;
+                    axis_bounds.min.z = view_push.height_offset + ctx.dataset.value_min() * view_push.height_mult;
+                    axis_bounds.max.z = view_push.height_offset + ctx.dataset.value_max() * view_push.height_mult;
                 }
 
                 compute_axis_overlay(
@@ -82,7 +112,7 @@ void ViewerApp::fill_render_views(
                     ctx.dataset.origin_z(),
                     z_label_mult,
                     z_label_offset,
-                    ctx.push.height_source ==
+                    view_push.height_source ==
                         static_cast<std::uint32_t>(
                             gs3d::app::AttrPhysicalSource::Z)
                 );
@@ -95,6 +125,24 @@ void ViewerApp::fill_render_views(
                 );
 
                 compute_gizmo_axes(view, camera);
+
+                const auto point_to_render_position =
+                    [&](const gs3d::data::Gs3dPoint& point)
+                        -> gs3d::camera::Vec3
+                    {
+                        float raw_height = point.z;
+                        if (view_push.height_source ==
+                            static_cast<std::uint32_t>(
+                                gs3d::app::AttrPhysicalSource::Value)) {
+                            raw_height = point.value;
+                        }
+                        return {
+                            point.x,
+                            point.y,
+                            view_push.height_offset +
+                                raw_height * view_push.height_mult
+                        };
+                    };
 
                 const auto& hover_point =
                     pick.latest_hover_points[static_cast<std::size_t>(i)];
@@ -132,19 +180,10 @@ void ViewerApp::fill_render_views(
                     // Z 映射：与 vertex shader 的 height = offset + raw * mult
                     // 完全一致，对所有 height_source 统一应用，否则高度缩放后
                     // 准星投影会与渲染点错位。
-                    float raw_height = hover_point->z;
-                    if (ctx.push.height_source ==
-                        static_cast<std::uint32_t>(
-                            gs3d::app::AttrPhysicalSource::Value)) {
-                        raw_height = hover_point->value;
-                    }
-                    float mapped_z = ctx.push.height_offset +
-                                     raw_height * ctx.push.height_mult;
-
                     // Marker screen position via to_screen projection.
                     const auto screen_pt =
                         gs3d::camera::MouseRay::to_screen(
-                            {hover_point->x, hover_point->y, mapped_z},
+                            point_to_render_position(*hover_point),
                             {camera.viewport_width(),
                              camera.viewport_height()},
                             camera);
@@ -164,7 +203,8 @@ void ViewerApp::fill_render_views(
                                 camera.viewport_width(), camera.viewport_height(),
                                 static_cast<double>(hover_point->x),
                                 static_cast<double>(hover_point->y),
-                                static_cast<double>(mapped_z),
+                                static_cast<double>(
+                                    point_to_render_position(*hover_point).z),
                                 static_cast<double>(screen_pt->x),
                                 static_cast<double>(screen_pt->y));
                         }
@@ -193,22 +233,22 @@ void ViewerApp::fill_render_views(
 
                 // ── 测量线投影：每条全局测量线的两端点 → 本视口屏幕坐标 ──
                 {
-                    const auto& lines = app_state.measurement.lines();
+                    const auto& lines = measurement.lines();
                     view.measurement_overlays.clear();
                     view.measurement_overlays.reserve(lines.size());
                     for (const auto& line : lines) {
                         RenderViewState::MeasurementLineOverlay overlay;
                         overlay.color = line.color;
                         overlay.label = line.distance_label(
-                            app_state.measurement.display_mode());
+                            measurement.display_mode());
 
                         const auto sa = gs3d::camera::MouseRay::to_screen(
-                            {line.point_a.x, line.point_a.y, line.point_a.z},
+                            point_to_render_position(line.point_a),
                             {camera.viewport_width(),
                              camera.viewport_height()},
                             camera);
                         const auto sb = gs3d::camera::MouseRay::to_screen(
-                            {line.point_b.x, line.point_b.y, line.point_b.z},
+                            point_to_render_position(line.point_b),
                             {camera.viewport_width(),
                              camera.viewport_height()},
                             camera);
@@ -228,10 +268,10 @@ void ViewerApp::fill_render_views(
                 view.pending_point_visible = false;
                 view.pending_point_screen_x = -1.0f;
                 view.pending_point_screen_y = -1.0f;
-                if (app_state.measurement.has_pending()) {
-                    const auto& pending = *app_state.measurement.pending_point();
+                if (measurement.has_pending()) {
+                    const auto& pending = *measurement.pending_point();
                     const auto sp = gs3d::camera::MouseRay::to_screen(
-                        {pending.x, pending.y, pending.z},
+                        point_to_render_position(pending),
                         {camera.viewport_width(),
                          camera.viewport_height()},
                         camera);

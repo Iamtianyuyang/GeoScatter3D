@@ -20,6 +20,7 @@ namespace gs3d::render { class ViewportManager; }
 namespace gs3d::render { class VulkanContext; }
 namespace gs3d::render { class VulkanSwapchain; }
 namespace gs3d::app { struct UiActions; }
+namespace gs3d::app { struct RenderSettingsCommand; }
 namespace gs3d::app { class ViewportResizeScheduler; }
 namespace gs3d::platform { class Window; }
 
@@ -91,12 +92,17 @@ struct ViewerAppConfig {
      */
     float ui_scale_multiplier = 1.15f;
 
+    // Enable Dear ImGui multi-viewports: docked windows may be detached into
+    // native OS windows. The backend may disable this at runtime on platforms
+    // without viewport support, such as Wayland.
+    bool enable_multi_viewports = true;
+
     bool enable_validation_layers = true;
 
     std::array<float, 4> clear_color{
-        0.015f,
-        0.018f,
-        0.025f,
+        0.118f,
+        0.133f,
+        0.165f,
         1.0f
     };
 
@@ -276,7 +282,7 @@ private:
         const gs3d::render::ViewportManager& viewport_manager,
         gs3d::app::AppState& app_state,
         const gs3d::app::UiActions& gui_cmds,
-        float point_size,
+        const std::vector<float>& viewport_point_sizes,
         std::size_t& benchmark_pick_issue_index,
         const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
     );
@@ -311,7 +317,7 @@ private:
     );
 
     void apply_render_setting_commands(
-        const UiActions& gui_cmds,
+        const RenderSettingsCommand& command,
         ViewerAppRenderSettingsContext& ctx
     );
 

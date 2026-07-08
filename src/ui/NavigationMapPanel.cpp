@@ -8,22 +8,31 @@ namespace {
 constexpr const char* kNavigationMapWindowName = "导航图###NavigationMap";
 } // namespace
 
-void draw_navigation_map(gs3d::app::AppState& state)
+void draw_navigation_map(
+    gs3d::app::AppState& state,
+    const char* window_name,
+    bool* open,
+    gs3d::app::NavigationMapState* navigation_map
+)
 {
-    if (!state.panels.navigation_map) {
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.navigation_map) {
         return;
+    }
+    if (window_name == nullptr) {
+        window_name = kNavigationMapWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.navigation_map;
     }
 
     ImGui::SetNextWindowSize(ImVec2(240.0f, 260.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(
-            kNavigationMapWindowName,
-            &state.panels.navigation_map
-        )) {
+    if (!ImGui::Begin(window_name, open)) {
         ImGui::End();
         return;
     }
 
-    auto& nm = state.navigation_map;
+    auto& nm = navigation_map != nullptr ? *navigation_map : state.navigation_map;
 
     // 缩略图区域：尽量撑满内容区，保持正方形
     const float avail_w = ImGui::GetContentRegionAvail().x;

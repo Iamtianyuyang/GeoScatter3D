@@ -4,6 +4,11 @@
 
 namespace gs3d::ui {
 
-void draw_dataset_panel(gs3d::app::AppState& state);
+void draw_dataset_panel(
+    gs3d::app::AppState& state,
+    const char* window_name = nullptr,
+    bool* open = nullptr,
+    gs3d::app::DatasetSummaryState* dataset = nullptr
+);
 
 } // namespace gs3d::ui

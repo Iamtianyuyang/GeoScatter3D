@@ -8,14 +8,30 @@ namespace {
 constexpr const char* kMeasurementWindowName = "测量###Measurement";
 } // namespace
 
-void draw_measurement_panel(gs3d::app::AppState& state)
+void draw_measurement_panel(
+    gs3d::app::AppState& state,
+    const char* window_name,
+    bool* open,
+    gs3d::app::MeasurementManager* measurement
+)
 {
-    if (!ImGui::Begin(kMeasurementWindowName, &state.panels.measurement)) {
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.measurement) {
+        return;
+    }
+    if (window_name == nullptr) {
+        window_name = kMeasurementWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.measurement;
+    }
+
+    if (!ImGui::Begin(window_name, open)) {
         ImGui::End();
         return;
     }
 
-    auto& mgr = state.measurement;
+    auto& mgr = measurement != nullptr ? *measurement : state.measurement;
 
     // ── 测量模式开关 ──
     bool measure_active = mgr.measure_mode_active();

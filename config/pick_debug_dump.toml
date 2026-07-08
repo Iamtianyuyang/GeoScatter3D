@@ -20,12 +20,13 @@ height = 720
 title = "GeoScatter3D 三维散点查看器"
 resizable = true
 ui_layout_ini_path = "config/imgui_layout.ini"
+multi_viewports = false
 
 [vulkan]
 validation_layers = true
 
 [render]
-clear_color = [0.015, 0.018, 0.025, 1.0]
+clear_color = [0.118, 0.133, 0.165, 1.0]
 initial_point_size = 1.0
 
 [camera]

@@ -14,7 +14,7 @@
 namespace gs3d::app {
 
 void ViewerApp::apply_render_setting_commands(
-    const UiActions& gui_cmds,
+    const RenderSettingsCommand& command,
     ViewerAppRenderSettingsContext& ctx
 ) {
     const float elev_min   = static_cast<float>(ctx.dataset.bbox_min_z());
@@ -37,12 +37,12 @@ void ViewerApp::apply_render_setting_commands(
         }
     };
 
-    if (gui_cmds.point_size_changed) {
-        ctx.push.point_size = std::clamp(gui_cmds.point_size, 1.0f, 10.0f);
+    if (command.point_size_changed) {
+        ctx.push.point_size = std::clamp(command.point_size, 1.0f, 10.0f);
     }
-    if (gui_cmds.color_by_changed) {
+    if (command.color_by_changed) {
         const int new_idx = std::clamp(
-            gui_cmds.color_by_index, 0,
+            command.color_by_index, 0,
             static_cast<int>(ctx.attr_list.size()) - 1
         );
         ctx.scene_state.active_attribute_index = new_idx;
@@ -54,9 +54,9 @@ void ViewerApp::apply_render_setting_commands(
         std::cout << "[COLOR] switched to: " << a.name << '\n';
         ctx.navigation_map.dirty = true;
     }
-    if (gui_cmds.height_by_changed) {
+    if (command.height_by_changed) {
         const int new_idx = std::clamp(
-            gui_cmds.height_by_index, 0,
+            command.height_by_index, 0,
             static_cast<int>(ctx.attr_list.size()) - 1
         );
         ctx.scene_state.active_height_index = new_idx;
@@ -64,30 +64,30 @@ void ViewerApp::apply_render_setting_commands(
         std::cout << "[HEIGHT] switched to: "
                   << ctx.attr_list[static_cast<std::size_t>(new_idx)].name << '\n';
     }
-    if (gui_cmds.height_exag_changed) {
-        ctx.height_exag = gui_cmds.height_exag;
+    if (command.height_exag_changed) {
+        ctx.height_exag = command.height_exag;
         apply_height_attr(
             ctx.attr_list[static_cast<std::size_t>(ctx.scene_state.active_height_index)],
             ctx.height_exag
         );
     }
-    if (gui_cmds.colormap_changed) {
+    if (command.colormap_changed) {
         // 清零 colormap bits 再写入新索引
         ctx.push.flags &= ~gs3d::render::PointFlags::kColormapMask;
-        ctx.push.flags |= (static_cast<std::uint32_t>(gui_cmds.colormap_index) << 1)
+        ctx.push.flags |= (static_cast<std::uint32_t>(command.colormap_index) << 1)
             & gs3d::render::PointFlags::kColormapMask;
         ctx.navigation_map.dirty = true;
     }
-    if (gui_cmds.value_clip_changed) {
-        if (gui_cmds.value_clip_enabled) {
+    if (command.value_clip_changed) {
+        if (command.value_clip_enabled) {
             ctx.push.flags |= gs3d::render::PointFlags::kValueClip;
             // 将原始数据值转换为归一化 [0,1] 传给 shader。
             // UI 输入的是绝对属性值（与 data_value 同体系），
             // 对着色器需要转回 push.color_min 所在的空间。
             const float cr = ctx.push.color_range > 0.0f
                 ? ctx.push.color_range : 1.0f;
-            float clip_lo = gui_cmds.value_clip_min;
-            float clip_hi = gui_cmds.value_clip_max;
+            float clip_lo = command.value_clip_min;
+            float clip_hi = command.value_clip_max;
             float ref_min = ctx.push.color_min;
             if (ctx.push.color_source ==
                 static_cast<std::uint32_t>(
@@ -109,10 +109,10 @@ void ViewerApp::apply_render_setting_commands(
         }
         ctx.navigation_map.dirty = true;
     }
-    if (gui_cmds.point_shape_changed) {
+    if (command.point_shape_changed) {
         // 清零 point_shape bits 再写入新索引
         ctx.push.flags &= ~gs3d::render::PointFlags::kPointShapeMask;
-        ctx.push.flags |= (static_cast<std::uint32_t>(gui_cmds.point_shape)
+        ctx.push.flags |= (static_cast<std::uint32_t>(command.point_shape)
             << gs3d::render::PointFlags::kPointShapeShift)
             & gs3d::render::PointFlags::kPointShapeMask;
     }

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gs3d::ui {
@@ -23,6 +24,8 @@ namespace {
 
 constexpr const char* kHostWindowName =
     "GeoScatter3D 工作台###GeoScatter3DWorkspace";
+constexpr const char* kToolsWindowName =
+    "工具###ToolsPanel";
 constexpr const char* kDatasetWindowName =
     "项目###DatasetPanel";
 constexpr const char* kRenderSettingsWindowName =
@@ -48,12 +51,106 @@ std::string render_view_window_name(int index)
         "###RenderView" + std::to_string(index);
 }
 
+std::string workspace_window_name(int id)
+{
+    return "工作窗口 " + std::to_string(id) +
+        "###WorkspaceWindow" + std::to_string(id);
+}
+
+std::string workspace_tools_window_name(int id)
+{
+    return "工具###WorkspaceTools" + std::to_string(id);
+}
+
+std::string workspace_dataset_window_name(int id)
+{
+    return "项目###WorkspaceDataset" + std::to_string(id);
+}
+
+std::string workspace_measurement_window_name(int id)
+{
+    return "测量###WorkspaceMeasurement" + std::to_string(id);
+}
+
+std::string workspace_navigation_window_name(int id)
+{
+    return "导航图###WorkspaceNavigation" + std::to_string(id);
+}
+
+std::string workspace_render_settings_window_name(int id)
+{
+    return "属性###WorkspaceRenderSettings" + std::to_string(id);
+}
+
+std::string workspace_dockspace_id_name(int id)
+{
+    return "GeoScatter3D.WorkspaceDockSpace." + std::to_string(id);
+}
+
+bool workspace_contains_view(
+    const gs3d::app::WorkspaceWindowState& workspace,
+    int viewport_index
+) {
+    return std::find(
+        workspace.viewport_indices.begin(),
+        workspace.viewport_indices.end(),
+        viewport_index
+    ) != workspace.viewport_indices.end();
+}
+
+bool view_is_owned_by_workspace(
+    const gs3d::app::AppState& state,
+    int viewport_index
+) {
+    return std::any_of(
+        state.workspace_windows.begin(),
+        state.workspace_windows.end(),
+        [viewport_index](const auto& workspace) {
+            return workspace.visible &&
+                   workspace_contains_view(workspace, viewport_index);
+        }
+    );
+}
+
+gs3d::app::MeasurementManager& measurement_for_workspace_id(
+    gs3d::app::AppState& state,
+    int workspace_id
+) {
+    if (workspace_id > 0) {
+        const auto found = std::find_if(
+            state.workspace_windows.begin(),
+            state.workspace_windows.end(),
+            [workspace_id](const auto& workspace) {
+                return workspace.id == workspace_id;
+            }
+        );
+        if (found != state.workspace_windows.end()) {
+            return found->components.measurement;
+        }
+    }
+    return state.measurement;
+}
+
+std::vector<int> main_workspace_viewports(
+    const gs3d::app::AppState& state
+) {
+    std::vector<int> indices;
+    for (const auto& view : state.render_views) {
+        if (view.visible &&
+            !view_is_owned_by_workspace(state, view.viewport_index)) {
+            indices.push_back(view.viewport_index);
+        }
+    }
+    return indices;
+}
+
 std::uint32_t visible_view_signature(
     const gs3d::app::AppState& state
 ) {
     std::uint32_t signature = 0;
     for (const auto& view : state.render_views) {
         if (view.visible &&
+            !view_is_owned_by_workspace(state, view.viewport_index) &&
             view.viewport_index >= 0 &&
             view.viewport_index < 24) {
             signature |=
@@ -63,7 +160,21 @@ std::uint32_t visible_view_signature(
     return signature;
 }
 
-bool show_first_hidden_view(gs3d::app::AppState& state)
+bool has_hidden_view(const gs3d::app::AppState& state)
+{
+    return std::any_of(
+        state.render_views.begin(),
+        state.render_views.end(),
+        [](const auto& view) {
+            return !view.visible;
+        }
+    );
+}
+
+int show_first_hidden_view(
+    gs3d::app::AppState& state,
+    bool force_undock = false
+)
 {
     const auto hidden = std::find_if(
         state.render_views.begin(),
@@ -73,12 +184,107 @@ bool show_first_hidden_view(gs3d::app::AppState& state)
         }
     );
     if (hidden == state.render_views.end()) {
-        return false;
+        return -1;
     }
 
     hidden->visible = true;
+    hidden->force_undock_next_frame = force_undock;
     hidden->render_requested = false;
+    return hidden->viewport_index;
+}
+
+int next_workspace_id(const gs3d::app::AppState& state)
+{
+    int next_id = 1;
+    for (const auto& workspace : state.workspace_windows) {
+        next_id = std::max(next_id, workspace.id + 1);
+    }
+    return next_id;
+}
+
+bool add_view_to_workspace(
+    gs3d::app::AppState& state,
+    gs3d::app::WorkspaceWindowState& workspace
+) {
+    const int view_index = show_first_hidden_view(state);
+    if (view_index < 0) {
+        return false;
+    }
+    auto& view = state.render_views[static_cast<std::size_t>(view_index)];
+    view.detached = false;
+    view.force_undock_next_frame = false;
+    workspace.viewport_indices.push_back(view_index);
+    workspace.dock_layout_initialized = false;
     return true;
+}
+
+bool create_workspace_window(gs3d::app::AppState& state)
+{
+    gs3d::app::WorkspaceWindowState workspace;
+    workspace.id = next_workspace_id(state);
+    workspace.components.dataset = state.dataset;
+    workspace.components.render_settings = state.render_settings;
+    workspace.components.navigation_map = state.navigation_map;
+    workspace.components.navigation_map.view_rect_valid = false;
+    if (!add_view_to_workspace(state, workspace)) {
+        return false;
+    }
+    workspace.visible = true;
+    workspace.dock_layout_initialized = false;
+    state.workspace_windows.push_back(std::move(workspace));
+    return true;
+}
+
+void prune_workspace_windows(gs3d::app::AppState& state)
+{
+    for (auto& workspace : state.workspace_windows) {
+        if (!workspace.visible) {
+            for (const int view_index : workspace.viewport_indices) {
+                if (view_index >= 0 &&
+                    view_index < static_cast<int>(state.render_views.size())) {
+                    auto& view =
+                        state.render_views[static_cast<std::size_t>(view_index)];
+                    view.visible = false;
+                    view.detached = false;
+                    view.force_undock_next_frame = false;
+                    view.render_requested = false;
+                }
+            }
+            workspace.viewport_indices.clear();
+            continue;
+        }
+
+        workspace.viewport_indices.erase(
+            std::remove_if(
+                workspace.viewport_indices.begin(),
+                workspace.viewport_indices.end(),
+                [&](int view_index) {
+                    return view_index < 0 ||
+                           view_index >=
+                               static_cast<int>(state.render_views.size()) ||
+                           !state.render_views[
+                                static_cast<std::size_t>(view_index)
+                            ].visible;
+                }
+            ),
+            workspace.viewport_indices.end()
+        );
+        if (workspace.viewport_indices.empty()) {
+            workspace.visible = false;
+        }
+    }
+
+    state.workspace_windows.erase(
+        std::remove_if(
+            state.workspace_windows.begin(),
+            state.workspace_windows.end(),
+            [](const auto& workspace) {
+                return !workspace.visible ||
+                       workspace.viewport_indices.empty();
+            }
+        ),
+        state.workspace_windows.end()
+    );
 }
 
 // ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
@@ -95,9 +301,7 @@ namespace LayoutMetrics {
     constexpr float kDockRightRatio = 0.19f;
     constexpr float kDockRightMinPx = 220.0f;
     constexpr float kDockRightMaxPx = 400.0f;
-    // Top toolbar / status bar: base pixel sizes, scaled by ui_scale at the
-    // call site (pure UI chrome — does not touch render/pick/plot_rect).
-    constexpr float kTopToolbarHeightBase = 28.0f;
+    // Status bar: base pixel size, scaled by ui_scale at the call site.
     constexpr float kStatusBarHeightBase  = 22.0f;
     constexpr float kViewportToolbarGap = 6.0f;
     constexpr float kViewportToolbarFramePadX = 5.0f;
@@ -352,9 +556,115 @@ void draw_viewport_overlay(
     draw_orientation_gizmo(view, plot_max, ui_scale);
 }
 
+void draw_tools_window(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    float ui_scale,
+    const char* window_name = kToolsWindowName,
+    gs3d::app::WorkspaceWindowState* workspace = nullptr
+) {
+    const bool use_default_window = workspace == nullptr;
+    if (use_default_window && !state.panels.tools) {
+        return;
+    }
+
+    ImGui::SetNextWindowSize(
+        ImVec2(420.0f, 68.0f * ui_scale),
+        ImGuiCond_FirstUseEver
+    );
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
+    bool* open = use_default_window ? &state.panels.tools : nullptr;
+    if (ImGui::Begin(window_name, open, flags)) {
+        auto& measurement =
+            workspace != nullptr
+                ? workspace->components.measurement
+                : state.measurement;
+        auto& dataset =
+            workspace != nullptr
+                ? workspace->components.dataset
+                : state.dataset;
+
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_FramePadding,
+            ImVec2(5.0f, 3.0f)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_ItemSpacing,
+            ImVec2(6.0f, 4.0f)
+        );
+
+        const bool can_add_view = has_hidden_view(state);
+        ImGui::BeginDisabled(!can_add_view);
+        if (ImGui::SmallButton("+ 视图")) {
+            if (workspace != nullptr) {
+                add_view_to_workspace(state, *workspace);
+            } else {
+                show_first_hidden_view(state);
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("截图")) {
+            actions.screenshot_requested = true;
+        }
+        ImGui::SameLine();
+        {
+            bool measure_active =
+                measurement.measure_mode_active();
+            if (measure_active) {
+                ImGui::PushStyleColor(
+                    ImGuiCol_Button,
+                    IM_COL32(220, 150, 30, 230)
+                );
+                ImGui::PushStyleColor(
+                    ImGuiCol_ButtonHovered,
+                    IM_COL32(240, 170, 40, 240)
+                );
+                ImGui::PushStyleColor(
+                    ImGuiCol_ButtonActive,
+                    IM_COL32(200, 130, 20, 230)
+                );
+                ImGui::PushStyleColor(
+                    ImGuiCol_Text,
+                    IM_COL32(20, 20, 20, 255)
+                );
+            }
+            if (ImGui::SmallButton("测量")) {
+                measurement.toggle_measure_mode();
+                if (!measurement.measure_mode_active()) {
+                    measurement.clear_pending();
+                }
+            }
+            if (measure_active) {
+                ImGui::PopStyleColor(4);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x >
+            200.0f * ui_scale) {
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                IM_COL32(176, 182, 192, 150)
+            );
+            ImGui::TextUnformatted(
+                dataset.active_dataset.empty()
+                    ? "未加载数据"
+                    : dataset.active_dataset.c_str()
+            );
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::PopStyleVar(2);
+    }
+    ImGui::End();
+}
+
 void draw_viewport_window(
     gs3d::app::RenderViewState& view,
-    gs3d::app::UiActions& actions
+    gs3d::app::UiActions& actions,
+    int workspace_id = 0
 ) {
     view.render_requested = false;
     const auto window_name =
@@ -363,12 +673,31 @@ void draw_viewport_window(
         ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse;
 
-    ImGui::SetNextWindowSize(
-        ImVec2(760.0f, 520.0f),
-        ImGuiCond_FirstUseEver
-    );
+    if (view.force_undock_next_frame) {
+        const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+        const float offset =
+            28.0f * static_cast<float>(view.viewport_index % 4);
+        ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(
+            ImVec2(
+                main_viewport->WorkPos.x + 72.0f + offset,
+                main_viewport->WorkPos.y + 64.0f + offset
+            ),
+            ImGuiCond_Always
+        );
+        ImGui::SetNextWindowSize(
+            ImVec2(900.0f, 620.0f),
+            ImGuiCond_Always
+        );
+    } else {
+        ImGui::SetNextWindowSize(
+            ImVec2(760.0f, 520.0f),
+            ImGuiCond_FirstUseEver
+        );
+    }
     const bool content_visible =
         ImGui::Begin(window_name.c_str(), &view.visible, flags);
+    view.force_undock_next_frame = false;
     if (!content_visible) {
         ImGui::End();
         return;
@@ -470,6 +799,17 @@ void draw_viewport_window(
     );
     ImVec2 plot_min{plot_rect.min_x, plot_rect.min_y};
     ImVec2 plot_max{plot_rect.max_x, plot_rect.max_y};
+    ImDrawList* canvas_dl = ImGui::GetWindowDrawList();
+    canvas_dl->AddRectFilled(
+        canvas_min,
+        canvas_max,
+        ImGui::GetColorU32(ImGuiCol_WindowBg)
+    );
+    canvas_dl->AddRectFilled(
+        plot_min,
+        plot_max,
+        IM_COL32(30, 34, 42, 255)
+    );
 
     // ── 测量模式视口边框提示 ──
     if (view.measure_mode_active) {
@@ -1010,7 +1350,7 @@ void draw_viewport_window(
     if (!view.measurement_overlays.empty() &&
         view.image_width > 0 && view.image_height > 0) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->PushClipRect(canvas_min, canvas_max, true);
+        dl->PushClipRect(plot_min, plot_max, true);
         constexpr float kMeasureLineWidth = 2.0f;
         constexpr float kMeasureLabelPad = 3.0f;
         constexpr ImU32 kMeasureLabelBg = IM_COL32(14, 15, 18, 200);
@@ -1070,7 +1410,7 @@ void draw_viewport_window(
         const float px = plot_min.x + scr.x;
         const float py = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->PushClipRect(canvas_min, canvas_max, true);
+        dl->PushClipRect(plot_min, plot_max, true);
 
         // Filled circle + outer ring in bright measurement-amber.
         const float kMarkerR = 7.0f * ui_scale;
@@ -1095,6 +1435,7 @@ void draw_viewport_window(
     const ImGuiIO& io = ImGui::GetIO();
     gs3d::app::ViewportFrameCmd frame;
     frame.index = view.viewport_index;
+    frame.workspace_id = workspace_id;
     frame.width = static_cast<std::uint32_t>(available.x);
     frame.height = static_cast<std::uint32_t>(available.y);
     // Use camera viewport (= GPU framebuffer) dimensions, not ImGui
@@ -1302,6 +1643,225 @@ void draw_viewport_window(
     ImGui::End();
 }
 
+void build_workspace_layout(
+    const gs3d::app::AppState& state,
+    gs3d::app::WorkspaceWindowState& workspace,
+    ImGuiID dockspace_id,
+    ImVec2 dock_size
+) {
+    if (workspace.dock_layout_initialized) {
+        return;
+    }
+
+    dock_size.x = std::max(1.0f, dock_size.x);
+    dock_size.y = std::max(1.0f, dock_size.y);
+
+    ImGui::DockBuilderRemoveNode(dockspace_id);
+    ImGui::DockBuilderAddNode(
+        dockspace_id,
+        ImGuiDockNodeFlags_DockSpace
+    );
+    ImGui::DockBuilderSetNodeSize(dockspace_id, dock_size);
+
+    const float work_width = std::max(1.0f, dock_size.x);
+    const float left_width = std::clamp(
+        work_width * LayoutMetrics::kDockLeftRatio,
+        LayoutMetrics::kDockLeftMinPx,
+        LayoutMetrics::kDockLeftMaxPx
+    );
+    const float right_width = std::clamp(
+        work_width * LayoutMetrics::kDockRightRatio,
+        LayoutMetrics::kDockRightMinPx,
+        LayoutMetrics::kDockRightMaxPx
+    );
+
+    ImGuiID center_id = dockspace_id;
+    const ImGuiID left_id = ImGui::DockBuilderSplitNode(
+        center_id,
+        ImGuiDir_Left,
+        left_width / work_width,
+        nullptr,
+        &center_id
+    );
+    const ImGuiID right_id = ImGui::DockBuilderSplitNode(
+        center_id,
+        ImGuiDir_Right,
+        right_width / work_width,
+        nullptr,
+        &center_id
+    );
+
+    ImGuiID left_top_id = left_id;
+    const ImGuiID left_bottom_id = ImGui::DockBuilderSplitNode(
+        left_id,
+        ImGuiDir_Down,
+        0.34f,
+        nullptr,
+        &left_top_id
+    );
+
+    ImGuiID view_area_id = center_id;
+    const float tools_ratio = std::clamp(
+        58.0f / std::max(1.0f, dock_size.y),
+        0.045f,
+        0.12f
+    );
+    const ImGuiID tools_id = ImGui::DockBuilderSplitNode(
+        center_id,
+        ImGuiDir_Up,
+        tools_ratio,
+        nullptr,
+        &view_area_id
+    );
+
+    ImGui::DockBuilderDockWindow(
+        workspace_tools_window_name(workspace.id).c_str(),
+        tools_id
+    );
+    ImGui::DockBuilderDockWindow(
+        workspace_dataset_window_name(workspace.id).c_str(),
+        left_top_id
+    );
+    ImGui::DockBuilderDockWindow(
+        workspace_measurement_window_name(workspace.id).c_str(),
+        left_top_id
+    );
+    ImGui::DockBuilderDockWindow(
+        workspace_navigation_window_name(workspace.id).c_str(),
+        left_bottom_id
+    );
+    ImGui::DockBuilderDockWindow(
+        workspace_render_settings_window_name(workspace.id).c_str(),
+        right_id
+    );
+    for (const int view_index : workspace.viewport_indices) {
+        if (view_index < 0 ||
+            view_index >= static_cast<int>(state.render_views.size())) {
+            continue;
+        }
+        const auto& view =
+            state.render_views[static_cast<std::size_t>(view_index)];
+        if (view.visible && !view.detached) {
+            ImGui::DockBuilderDockWindow(
+                render_view_window_name(view.viewport_index).c_str(),
+                view_area_id
+            );
+        }
+    }
+
+    ImGui::DockBuilderFinish(dockspace_id);
+    workspace.dock_layout_initialized = true;
+}
+
+void draw_workspace_window(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    gs3d::app::WorkspaceWindowState& workspace,
+    float ui_scale
+) {
+    if (!workspace.visible || workspace.viewport_indices.empty()) {
+        return;
+    }
+
+    const auto host_name = workspace_window_name(workspace.id);
+    const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+    const float offset =
+        26.0f * static_cast<float>((workspace.id - 1) % 6);
+    ImGui::SetNextWindowPos(
+        ImVec2(
+            main_viewport->WorkPos.x + 88.0f + offset,
+            main_viewport->WorkPos.y + 72.0f + offset
+        ),
+        ImGuiCond_FirstUseEver
+    );
+    ImGui::SetNextWindowSize(
+        ImVec2(1180.0f, 720.0f),
+        ImGuiCond_FirstUseEver
+    );
+
+    const ImGuiWindowFlags host_flags =
+        ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_MenuBar;
+    if (ImGui::Begin(host_name.c_str(), &workspace.visible, host_flags)) {
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu("视图")) {
+                const bool can_add_view = has_hidden_view(state);
+                if (ImGui::MenuItem("+ 视图", nullptr, false, can_add_view)) {
+                    add_view_to_workspace(state, workspace);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+
+        const auto dockspace_name = workspace_dockspace_id_name(workspace.id);
+        const ImGuiID dockspace_id = ImGui::GetID(dockspace_name.c_str());
+        const ImVec2 dock_size = ImGui::GetContentRegionAvail();
+        build_workspace_layout(state, workspace, dockspace_id, dock_size);
+        ImGui::DockSpace(
+            dockspace_id,
+            ImVec2(0.0f, 0.0f),
+            ImGuiDockNodeFlags_None
+        );
+    }
+    ImGui::End();
+
+    if (!workspace.visible) {
+        return;
+    }
+
+    const auto tools_name = workspace_tools_window_name(workspace.id);
+    draw_tools_window(state, actions, ui_scale, tools_name.c_str(), &workspace);
+
+    const auto dataset_name = workspace_dataset_window_name(workspace.id);
+    draw_dataset_panel(
+        state,
+        dataset_name.c_str(),
+        nullptr,
+        &workspace.components.dataset
+    );
+
+    const auto measurement_name =
+        workspace_measurement_window_name(workspace.id);
+    draw_measurement_panel(
+        state,
+        measurement_name.c_str(),
+        nullptr,
+        &workspace.components.measurement
+    );
+
+    const auto navigation_name =
+        workspace_navigation_window_name(workspace.id);
+    draw_navigation_map(
+        state,
+        navigation_name.c_str(),
+        nullptr,
+        &workspace.components.navigation_map
+    );
+
+    const auto render_settings_name =
+        workspace_render_settings_window_name(workspace.id);
+    draw_render_settings(
+        state,
+        actions,
+        render_settings_name.c_str(),
+        nullptr,
+        &workspace.components.render_settings,
+        &workspace.viewport_indices
+    );
+
+    for (const int view_index : workspace.viewport_indices) {
+        if (view_index < 0 ||
+            view_index >= static_cast<int>(state.render_views.size())) {
+            continue;
+        }
+        auto& view = state.render_views[static_cast<std::size_t>(view_index)];
+        if (view.visible) {
+            draw_viewport_window(view, actions, workspace.id);
+        }
+    }
+}
+
 } // namespace
 
 ImFont* panel_title_font()
@@ -1458,11 +2018,30 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         }
     }
 
+    ImGuiID view_area_id = center_id;
+    if (state.panels.tools) {
+        const float tools_ratio = std::clamp(
+            58.0f / std::max(1.0f, work_size.y),
+            0.045f,
+            0.12f
+        );
+        const ImGuiID tools_id = ImGui::DockBuilderSplitNode(
+            center_id,
+            ImGuiDir_Up,
+            tools_ratio,
+            nullptr,
+            &view_area_id
+        );
+        ImGui::DockBuilderDockWindow(kToolsWindowName, tools_id);
+    }
+
     for (const auto& view : state.render_views) {
-        if (view.visible) {
+        if (view.visible &&
+            !view.detached &&
+            !view_is_owned_by_workspace(state, view.viewport_index)) {
             ImGui::DockBuilderDockWindow(
                 render_view_window_name(view.viewport_index).c_str(),
-                center_id
+                view_area_id
             );
         }
     }
@@ -1481,17 +2060,10 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     // definition as the per-viewport scale in draw_render_view: font size
     // relative to the 13px baseline. Does NOT feed the render-size chain.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;
+    prune_workspace_windows(state);
     if (ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
-    }
-    if (!ImGui::GetIO().WantTextInput &&
-        !ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_M, false)) {
-        state.measurement.toggle_measure_mode();
-        if (!state.measurement.measure_mode_active()) {
-            state.measurement.clear_pending();
-        }
     }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiWindowFlags host_flags =
@@ -1529,19 +2101,13 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("视图")) {
-                const bool has_hidden = std::any_of(
-                    state.render_views.begin(),
-                    state.render_views.end(),
-                    [](const auto& view) {
-                        return !view.visible;
-                    }
-                );
+                const bool has_hidden = has_hidden_view(state);
                 if (ImGui::MenuItem(
                         "新建视图",
                         "Ctrl+N",
                         false,
                         has_hidden
-                    )) {
+                )) {
                     show_first_hidden_view(state);
                 }
                 ImGui::Separator();
@@ -1557,11 +2123,31 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("恢复默认工作区")) {
+                    for (auto& view : state.render_views) {
+                        view.detached = false;
+                        view.force_undock_next_frame = false;
+                    }
+                    state.workspace_windows.clear();
                     dock_layout_initialized_ = false;
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("窗口")) {
+                const bool can_create_workspace = has_hidden_view(state);
+                if (ImGui::MenuItem(
+                        "新建工作窗口",
+                        nullptr,
+                        false,
+                        can_create_workspace
+                    )) {
+                    create_workspace_window(state);
+                }
+                ImGui::Separator();
+                ImGui::MenuItem(
+                    "工具",
+                    nullptr,
+                    &state.panels.tools
+                );
                 ImGui::MenuItem(
                     "项目",
                     nullptr,
@@ -1626,93 +2212,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
 
         {
-            ImGui::PushStyleVar(
-                ImGuiStyleVar_FramePadding,
-                ImVec2(5.0f, 3.0f)
-            );
-            ImGui::PushStyleVar(
-                ImGuiStyleVar_ItemSpacing,
-                ImVec2(6.0f, 4.0f)
-            );
-            ImGui::BeginChild(
-                "##TopToolbar",
-                ImVec2(
-                    0.0f,
-                    LayoutMetrics::kTopToolbarHeightBase * ui_scale
-                ),
-                false,
-                ImGuiWindowFlags_NoScrollbar
-            );
-            if (ImGui::SmallButton("打开")) {
-                actions.open_requested = true;
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("+ 视图")) {
-                show_first_hidden_view(state);
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("截图")) {
-                actions.screenshot_requested = true;
-            }
-            ImGui::SameLine();
-            {
-                bool measure_active =
-                    state.measurement.measure_mode_active();
-                if (measure_active) {
-                    ImGui::PushStyleColor(
-                        ImGuiCol_Button,
-                        IM_COL32(220, 150, 30, 230)
-                    );
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonHovered,
-                        IM_COL32(240, 170, 40, 240)
-                    );
-                    ImGui::PushStyleColor(
-                        ImGuiCol_ButtonActive,
-                        IM_COL32(200, 130, 20, 230)
-                    );
-                    ImGui::PushStyleColor(
-                        ImGuiCol_Text,
-                        IM_COL32(20, 20, 20, 255)
-                    );
-                }
-                if (ImGui::SmallButton("测量")) {
-                    state.measurement.toggle_measure_mode();
-                    if (!state.measurement.measure_mode_active()) {
-                        state.measurement.clear_pending();
-                    }
-                }
-                if (measure_active) {
-                    ImGui::PopStyleColor(4);
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::GetContentRegionAvail().x >
-                200.0f * ui_scale) {
-                ImGui::PushStyleColor(
-                    ImGuiCol_Text,
-                    IM_COL32(176, 182, 192, 150)
-                );
-                ImGui::TextUnformatted(
-                    state.dataset.active_dataset.empty()
-                        ? "未加载数据"
-                        : state.dataset.active_dataset.c_str()
-                );
-                ImGui::PopStyleColor();
-            }
-            ImGui::EndChild();
-            ImGui::PopStyleVar(2);
-
             ImDrawList* host_dl = ImGui::GetWindowDrawList();
-            const ImVec2 toolbar_min = ImGui::GetItemRectMin();
-            const ImVec2 toolbar_max = ImGui::GetItemRectMax();
-            host_dl->AddLine(
-                ImVec2(toolbar_min.x, toolbar_max.y),
-                ImVec2(toolbar_max.x, toolbar_max.y),
-                IM_COL32(92, 98, 108, 64),
-                1.0f
-            );
-
             const float content_avail_y =
                 ImGui::GetContentRegionAvail().y;
             const float status_h = std::min(
@@ -1775,23 +2275,62 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     ImGui::PopStyleVar(3);
 
     if (render_workspace) {
+        draw_tools_window(state, actions, ui_scale);
         draw_dataset_panel(state);
-        draw_render_settings(state, actions);
+        const auto main_viewports = main_workspace_viewports(state);
+        draw_render_settings(
+            state,
+            actions,
+            nullptr,
+            nullptr,
+            nullptr,
+            &main_viewports
+        );
         draw_navigation_map(state);
 
         for (auto& view : state.render_views) {
-            if (view.visible) {
+            if (view.visible &&
+                !view_is_owned_by_workspace(state, view.viewport_index)) {
                 draw_viewport_window(view, actions);
             } else {
-                view.detached = false;
-                view.render_requested = false;
+                if (!view.visible) {
+                    view.detached = false;
+                }
+                if (!view.visible ||
+                    !view_is_owned_by_workspace(
+                        state,
+                        view.viewport_index
+                    )) {
+                    view.render_requested = false;
+                }
             }
         }
+
+        for (auto& workspace : state.workspace_windows) {
+            draw_workspace_window(state, actions, workspace, ui_scale);
+        }
+        prune_workspace_windows(state);
 
         draw_auxiliary_panels(state);
     } else {
         for (auto& view : state.render_views) {
             view.render_requested = false;
+        }
+    }
+    if (!ImGui::GetIO().WantTextInput &&
+        !ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_M, false)) {
+        int target_workspace_id = 0;
+        for (const auto& frame : actions.viewport_frames) {
+            if (frame.active || frame.hovered) {
+                target_workspace_id = frame.workspace_id;
+            }
+        }
+        auto& measurement =
+            measurement_for_workspace_id(state, target_workspace_id);
+        measurement.toggle_measure_mode();
+        if (!measurement.measure_mode_active()) {
+            measurement.clear_pending();
         }
     }
     return actions;

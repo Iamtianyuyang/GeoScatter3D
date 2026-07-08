@@ -586,7 +586,8 @@ int ViewerApp::run() {
             renderer,
             swapchain.image_count(),
             config_.ui_layout_ini_path,
-            config_.ui_scale_multiplier
+            config_.ui_scale_multiplier,
+            config_.enable_multi_viewports
         );
 
         // Size the window adaptively to the monitor, mirroring the welcome
@@ -1018,18 +1019,22 @@ int ViewerApp::run() {
         float height_exag = 1.0f;
 
         // 根据属性描述 + 夸张系数计算 height_offset / height_mult。
-        auto apply_height_attr = [&](const gs3d::app::AttrDescriptor& a, float exag) {
-            push.height_source = static_cast<std::uint32_t>(a.source);
+        auto apply_height_attr_to = [&](
+            gs3d::render::PointPushConstants& target_push,
+            const gs3d::app::AttrDescriptor& a,
+            float exag
+        ) {
+            target_push.height_source = static_cast<std::uint32_t>(a.source);
             if (a.source == gs3d::app::AttrPhysicalSource::Z) {
                 // 高程值已在空间尺度，stretch around origin
-                push.height_mult   = exag;
-                push.height_offset = 0.0f;
+                target_push.height_mult   = exag;
+                target_push.height_offset = 0.0f;
             } else {
                 // 非空间属性 → 线性映射到 [elev_min, elev_min + elev_range * exag]
                 const float r = a.range();
                 const float m = (r > 0.0f) ? (elev_range / r * exag) : exag;
-                push.height_mult   = m;
-                push.height_offset = elev_min - a.min_val * m;
+                target_push.height_mult   = m;
+                target_push.height_offset = elev_min - a.min_val * m;
             }
         };
 
@@ -1041,7 +1046,7 @@ int ViewerApp::run() {
             push.color_range  = c.range();
             if (push.color_range <= 0.0f) push.color_range = 1.0f;
         }
-        apply_height_attr(attr_list[1], height_exag);
+        apply_height_attr_to(push, attr_list[1], height_exag);
 
         // 初始化默认色标 Rainbow256 (索引 8)
         push.flags &= ~gs3d::render::PointFlags::kColormapMask;
@@ -1129,6 +1134,18 @@ int ViewerApp::run() {
         scene_state.active_dataset = &dataset_descriptor;
         scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])
         scene_state.active_height_index    = 1;  // 高度=高程 (attr_list[1])
+        std::vector<gs3d::render::PointPushConstants> viewport_pushes(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            push
+        );
+        std::vector<gs3d::scene::SceneState> viewport_scene_states(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            scene_state
+        );
+        std::vector<float> viewport_height_exags(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            height_exag
+        );
         gs3d::app::AppState app_state;
         app_state.dataset.active_dataset = dataset_descriptor.display_name;
         app_state.dataset.path = dataset_descriptor.path;
@@ -1158,6 +1175,19 @@ int ViewerApp::run() {
             view.viewport_index = i;
             view.visible = i < startup_view_count;
             view.camera_linked = false;
+        }
+        std::vector<bool> previous_view_visible(
+            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            false
+        );
+        for (const auto& view : app_state.render_views) {
+            if (view.viewport_index >= 0 &&
+                view.viewport_index <
+                    static_cast<int>(previous_view_visible.size())) {
+                previous_view_visible[
+                    static_cast<std::size_t>(view.viewport_index)
+                ] = view.visible;
+            }
         }
         if (config_.benchmark_mode) {
             app_state.panels.dataset = false;
@@ -1189,7 +1219,7 @@ int ViewerApp::run() {
         const ViewerAppNavThumbnailContext nav_thumbnail_ctx{
             point_pipeline,
             nav_cloud,
-            push,
+            viewport_pushes.front(),
             dataset.bbox_max_z()
         };
         init_navigation_map(
@@ -1218,7 +1248,7 @@ int ViewerApp::run() {
              &selected_focus_points,
              &viewport_manager,
              &bounds,
-             &push,
+             &viewport_pushes,
              &streaming_viewport_index,
              &tile_selection_dirty,
              &benchmark_pick_enabled,
@@ -1236,7 +1266,7 @@ int ViewerApp::run() {
                     selected_focus_points,
                     viewport_manager,
                     bounds,
-                    push,
+                    viewport_pushes,
                     streaming_viewport_index,
                     tile_selection_dirty
                 };
@@ -1385,49 +1415,108 @@ int ViewerApp::run() {
 
             app_state.dataset.point_count = dataset.point_count();
             app_state.dataset.loaded_points = gpu_resident_points;
-            app_state.render_settings.point_size = push.point_size;
-            app_state.render_settings.color_attr_index = scene_state.active_attribute_index;
-            app_state.render_settings.height_attr_index = scene_state.active_height_index;
-            app_state.render_settings.height_exaggeration = height_exag;
-            // 色标数据范围：绝对属性值，与 pick tooltip 同体系。
-            // 高程(Z源)在 Gs3dPoint 中存的是相对值(z - origin_z)，
-            // 需要加回 origin_z 还原为绝对高程显示。
-            {
-                float display_min = push.color_min;
-                if (push.color_source ==
-                    static_cast<std::uint32_t>(
-                        gs3d::app::AttrPhysicalSource::Z)) {
-                    display_min +=
-                        static_cast<float>(dataset.origin_z());
-                }
-                app_state.render_settings.data_value_min = display_min;
-                app_state.render_settings.data_value_max =
-                    display_min + push.color_range;
-            }
-            app_state.render_settings.loaded_tiles = loaded_tiles;
-            app_state.render_settings.pending_tiles = pending_tiles;
-            app_state.render_settings.cache_usage =
-                std::to_string(loaded_tiles) + " / " +
-                std::to_string(config_.tile_gpu_cache_max_tiles);
             const auto tile_cache_stats = tile_stream.point_cache.stats();
-            app_state.render_settings.cpu_cache_usage =
-                std::to_string(
-                    tile_cache_stats.resident_bytes /
-                    (1024ull * 1024ull)
-                ) + " / " +
-                std::to_string(
-                    tile_cache_stats.max_bytes /
-                    (1024ull * 1024ull)
-                ) + " MB";
             const auto tile_cache_requests =
                 tile_cache_stats.hits + tile_cache_stats.misses;
-            app_state.render_settings.cache_hit_rate =
-                tile_cache_requests > 0
-                    ? 100.0f * static_cast<float>(
-                        tile_cache_stats.hits
-                    ) /
-                        static_cast<float>(tile_cache_requests)
-                    : 0.0f;
+            const auto sync_render_settings_state =
+                [&](gs3d::app::RenderSettingsState& settings,
+                    int viewport_index) {
+                    if (viewport_index < 0 ||
+                        viewport_index >=
+                            static_cast<int>(viewport_pushes.size())) {
+                        viewport_index = 0;
+                    }
+                    const auto idx =
+                        static_cast<std::size_t>(viewport_index);
+                    const auto& view_push = viewport_pushes[idx];
+                    const auto& view_scene = viewport_scene_states[idx];
+                    settings.point_size = view_push.point_size;
+                    settings.color_attr_index =
+                        view_scene.active_attribute_index;
+                    settings.height_attr_index =
+                        view_scene.active_height_index;
+                    settings.height_exaggeration =
+                        viewport_height_exags[idx];
+                    settings.colormap_index = static_cast<int>(
+                        (view_push.flags &
+                         gs3d::render::PointFlags::kColormapMask) >> 1
+                    );
+                    settings.point_shape = static_cast<int>(
+                        (view_push.flags &
+                         gs3d::render::PointFlags::kPointShapeMask) >>
+                            gs3d::render::PointFlags::kPointShapeShift
+                    );
+                    settings.value_clip_enabled =
+                        (view_push.flags &
+                         gs3d::render::PointFlags::kValueClip) != 0;
+
+                    float display_min = view_push.color_min;
+                    if (view_push.color_source ==
+                        static_cast<std::uint32_t>(
+                            gs3d::app::AttrPhysicalSource::Z)) {
+                        display_min +=
+                            static_cast<float>(dataset.origin_z());
+                    }
+                    settings.data_value_min = display_min;
+                    settings.data_value_max =
+                        display_min + view_push.color_range;
+                    settings.loaded_tiles = loaded_tiles;
+                    settings.pending_tiles = pending_tiles;
+                    settings.cache_usage =
+                        std::to_string(loaded_tiles) + " / " +
+                        std::to_string(config_.tile_gpu_cache_max_tiles);
+                    settings.cpu_cache_usage =
+                        std::to_string(
+                            tile_cache_stats.resident_bytes /
+                            (1024ull * 1024ull)
+                        ) + " / " +
+                        std::to_string(
+                            tile_cache_stats.max_bytes /
+                            (1024ull * 1024ull)
+                        ) + " MB";
+                    settings.cache_hit_rate =
+                        tile_cache_requests > 0
+                            ? 100.0f * static_cast<float>(
+                                tile_cache_stats.hits
+                            ) /
+                                static_cast<float>(tile_cache_requests)
+                            : 0.0f;
+                };
+            const auto view_owned_by_workspace = [&](int viewport_index) {
+                for (const auto& workspace : app_state.workspace_windows) {
+                    if (!workspace.visible) {
+                        continue;
+                    }
+                    if (std::find(
+                            workspace.viewport_indices.begin(),
+                            workspace.viewport_indices.end(),
+                            viewport_index
+                        ) != workspace.viewport_indices.end()) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            auto first_main_view = 0;
+            for (const auto& view : app_state.render_views) {
+                if (view.visible &&
+                    !view_owned_by_workspace(view.viewport_index)) {
+                    first_main_view = view.viewport_index;
+                    break;
+                }
+            }
+            sync_render_settings_state(
+                app_state.render_settings,
+                first_main_view
+            );
+            for (auto& workspace : app_state.workspace_windows) {
+                if (!workspace.viewport_indices.empty()) {
+                    sync_render_settings_state(
+                        workspace.components.render_settings,
+                        workspace.viewport_indices.front()
+                    );
+                }
+            }
 
             app_state.performance.fps = fps_smooth;
             app_state.performance.frame_time_ms =
@@ -1456,7 +1545,7 @@ int ViewerApp::run() {
                     viewport_manager,
                     dataset,
                     bounds,
-                    push,
+                    viewport_pushes,
                     primary_value_name,
                     z_field_name,
                     visible_points,
@@ -1465,21 +1554,132 @@ int ViewerApp::run() {
                 fill_render_views(app_state, render_ctx, pick, selected_focus_points);
             }
 
+            auto navigation_view_index = streaming_viewport_index;
+            if (view_owned_by_workspace(navigation_view_index)) {
+                navigation_view_index = first_main_view;
+            }
             update_navigation_map_view_rect(
                 nm,
                 app_state.render_views,
-                streaming_viewport_index
+                navigation_view_index
             );
-
-            // Enforce configured viewport count — ghost viewport windows
-            // restored by ImGui layout persistence must not render or
-            // consume hover hit-tests (they steal the tooltip).
-            for (auto& view : app_state.render_views) {
-                view.visible =
-                    view.viewport_index < config_.viewport_count;
+            for (auto& workspace : app_state.workspace_windows) {
+                if (workspace.viewport_indices.empty()) {
+                    continue;
+                }
+                int workspace_view_index = workspace.viewport_indices.front();
+                if (std::find(
+                        workspace.viewport_indices.begin(),
+                        workspace.viewport_indices.end(),
+                        streaming_viewport_index
+                    ) != workspace.viewport_indices.end()) {
+                    workspace_view_index = streaming_viewport_index;
+                }
+                update_navigation_map_view_rect(
+                    workspace.components.navigation_map,
+                    app_state.render_views,
+                    workspace_view_index
+                );
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
+            for (const auto& view : app_state.render_views) {
+                if (view.viewport_index < 0 ||
+                    view.viewport_index >=
+                        static_cast<int>(previous_view_visible.size()) ||
+                    !view.visible ||
+                    previous_view_visible[
+                        static_cast<std::size_t>(view.viewport_index)
+                    ]) {
+                    continue;
+                }
+
+                int source_view = first_main_view;
+                for (const auto& workspace : app_state.workspace_windows) {
+                    if (std::find(
+                            workspace.viewport_indices.begin(),
+                            workspace.viewport_indices.end(),
+                            view.viewport_index
+                        ) == workspace.viewport_indices.end()) {
+                        continue;
+                    }
+                    for (const int workspace_view :
+                         workspace.viewport_indices) {
+                        if (workspace_view != view.viewport_index &&
+                            workspace_view >= 0 &&
+                            workspace_view <
+                                static_cast<int>(
+                                    previous_view_visible.size()
+                                ) &&
+                            previous_view_visible[
+                                static_cast<std::size_t>(workspace_view)
+                            ]) {
+                            source_view = workspace_view;
+                            break;
+                        }
+                    }
+                    break;
+                }
+
+                if (source_view >= 0 &&
+                    source_view <
+                        static_cast<int>(viewport_pushes.size())) {
+                    const auto src =
+                        static_cast<std::size_t>(source_view);
+                    const auto dst =
+                        static_cast<std::size_t>(view.viewport_index);
+                    viewport_pushes[dst] = viewport_pushes[src];
+                    viewport_scene_states[dst] =
+                        viewport_scene_states[src];
+                    viewport_height_exags[dst] =
+                        viewport_height_exags[src];
+                }
+            }
+            int runtime_active_count = 1;
+            for (const auto& view : app_state.render_views) {
+                if (view.visible) {
+                    runtime_active_count = std::max(
+                        runtime_active_count,
+                        view.viewport_index + 1
+                    );
+                }
+            }
+            runtime_active_count = std::clamp(
+                runtime_active_count,
+                1,
+                viewport_manager.viewport_count()
+            );
+            viewport_manager.set_active_count(runtime_active_count);
+            for (const auto& view : app_state.render_views) {
+                if (view.viewport_index >= 0 &&
+                    view.viewport_index <
+                        static_cast<int>(previous_view_visible.size())) {
+                    previous_view_visible[
+                        static_cast<std::size_t>(view.viewport_index)
+                    ] = view.visible;
+                }
+            }
+            if (streaming_viewport_index < 0 ||
+                streaming_viewport_index >=
+                    static_cast<int>(app_state.render_views.size()) ||
+                !app_state
+                     .render_views[
+                         static_cast<std::size_t>(streaming_viewport_index)
+                     ]
+                     .visible) {
+                const auto first_visible = std::find_if(
+                    app_state.render_views.begin(),
+                    app_state.render_views.end(),
+                    [](const auto& view) {
+                        return view.visible;
+                    }
+                );
+                streaming_viewport_index =
+                    first_visible != app_state.render_views.end()
+                        ? first_visible->viewport_index
+                        : 0;
+                tile_selection_dirty = true;
+            }
             apply_project_open_commands(gui_cmds, window);
             const double now_seconds =
                 std::chrono::duration<double>(
@@ -1568,15 +1768,61 @@ int ViewerApp::run() {
                 apply_reset_camera_command(gui_cmds, cam_ctx);
             }
             {
-                ViewerAppRenderSettingsContext render_ctx{
-                    .push = push,
-                    .scene_state = scene_state,
-                    .navigation_map = nm,
-                    .attr_list = attr_list,
-                    .dataset = dataset,
-                    .height_exag = height_exag
+                const auto navigation_map_for_view =
+                    [&](int viewport_index) -> NavigationMapState& {
+                        for (auto& workspace : app_state.workspace_windows) {
+                            if (!workspace.visible) {
+                                continue;
+                            }
+                            if (std::find(
+                                    workspace.viewport_indices.begin(),
+                                    workspace.viewport_indices.end(),
+                                    viewport_index
+                                ) != workspace.viewport_indices.end()) {
+                                return workspace.components.navigation_map;
+                            }
+                        }
+                        return nm;
+                    };
+                const auto main_targets = [&]() {
+                    std::vector<int> targets;
+                    for (const auto& view : app_state.render_views) {
+                        if (view.visible &&
+                            !view_owned_by_workspace(view.viewport_index)) {
+                            targets.push_back(view.viewport_index);
+                        }
+                    }
+                    if (targets.empty()) {
+                        targets.push_back(first_main_view);
+                    }
+                    return targets;
                 };
-                apply_render_setting_commands(gui_cmds, render_ctx);
+                for (const auto& command :
+                     gui_cmds.render_settings_commands) {
+                    const auto targets =
+                        !command.has_viewport_scope
+                        ? main_targets()
+                        : command.viewport_indices;
+                    for (const int viewport_index : targets) {
+                        if (viewport_index < 0 ||
+                            viewport_index >=
+                                static_cast<int>(viewport_pushes.size())) {
+                            continue;
+                        }
+                        const auto idx =
+                            static_cast<std::size_t>(viewport_index);
+                        ViewerAppRenderSettingsContext render_ctx{
+                            .push = viewport_pushes[idx],
+                            .scene_state = viewport_scene_states[idx],
+                            .navigation_map =
+                                navigation_map_for_view(viewport_index),
+                            .attr_list = attr_list,
+                            .dataset = dataset,
+                            .height_exag = viewport_height_exags[idx]
+                        };
+                        apply_render_setting_commands(command, render_ctx);
+                    }
+                }
             }
             if (gui_cmds.clear_cache_requested) {
                 clear_tile_cpu_cache(tile_stream);
@@ -1608,18 +1854,27 @@ int ViewerApp::run() {
             }
 
             if (!imgui_wants_keyboard) {
+                const auto active_render_index =
+                    static_cast<std::size_t>(
+                        std::clamp(
+                            streaming_viewport_index,
+                            0,
+                            static_cast<int>(viewport_pushes.size()) - 1
+                        )
+                    );
+                auto& active_push = viewport_pushes[active_render_index];
                 if (window.key_pressed(GLFW_KEY_EQUAL) ||
                     window.key_pressed(GLFW_KEY_KP_ADD)) {
-                    push.point_size = std::min(
-                        push.point_size + 0.05f,
+                    active_push.point_size = std::min(
+                        active_push.point_size + 0.05f,
                         10.0f
                     );
                 }
 
                 if (window.key_pressed(GLFW_KEY_MINUS) ||
                     window.key_pressed(GLFW_KEY_KP_SUBTRACT)) {
-                    push.point_size = std::max(
-                        push.point_size - 0.05f,
+                    active_push.point_size = std::max(
+                        active_push.point_size - 0.05f,
                         1.0f
                     );
                 }
@@ -1689,23 +1944,55 @@ int ViewerApp::run() {
             } else if (shift_mod && !shift_tab_was_pressed) {
                 shift_tab_was_pressed = true;
                 tab_was_pressed = true;
+                const auto active_render_index =
+                    static_cast<std::size_t>(
+                        std::clamp(
+                            streaming_viewport_index,
+                            0,
+                            static_cast<int>(viewport_pushes.size()) - 1
+                        )
+                    );
+                auto& active_scene =
+                    viewport_scene_states[active_render_index];
+                auto& active_push = viewport_pushes[active_render_index];
+                auto& active_height_exag =
+                    viewport_height_exags[active_render_index];
                 const auto n = static_cast<std::uint32_t>(attr_list.size());
                 const std::uint32_t new_idx =
-                    (static_cast<std::uint32_t>(scene_state.active_height_index) + 1u) % n;
-                scene_state.active_height_index = static_cast<int>(new_idx);
-                apply_height_attr(attr_list[new_idx], height_exag);
+                    (static_cast<std::uint32_t>(
+                        active_scene.active_height_index) + 1u) % n;
+                active_scene.active_height_index = static_cast<int>(new_idx);
+                apply_height_attr_to(
+                    active_push,
+                    attr_list[new_idx],
+                    active_height_exag
+                );
                 std::cout << "[HEIGHT] switched to: " << attr_list[new_idx].name << '\n';
             } else if (!tab_was_pressed) {
                 tab_was_pressed = true;
+                const auto active_render_index =
+                    static_cast<std::size_t>(
+                        std::clamp(
+                            streaming_viewport_index,
+                            0,
+                            static_cast<int>(viewport_pushes.size()) - 1
+                        )
+                    );
+                auto& active_scene =
+                    viewport_scene_states[active_render_index];
+                auto& active_push = viewport_pushes[active_render_index];
                 const auto n = static_cast<std::uint32_t>(attr_list.size());
                 const std::uint32_t new_idx =
-                    (static_cast<std::uint32_t>(scene_state.active_attribute_index) + 1u) % n;
-                scene_state.active_attribute_index = static_cast<int>(new_idx);
+                    (static_cast<std::uint32_t>(
+                        active_scene.active_attribute_index) + 1u) % n;
+                active_scene.active_attribute_index = static_cast<int>(new_idx);
                 const auto& a = attr_list[new_idx];
-                push.color_source = static_cast<std::uint32_t>(a.source);
-                push.color_min    = a.min_val;
-                push.color_range  = a.range();
-                if (push.color_range <= 0.0f) push.color_range = 1.0f;
+                active_push.color_source = static_cast<std::uint32_t>(a.source);
+                active_push.color_min    = a.min_val;
+                active_push.color_range  = a.range();
+                if (active_push.color_range <= 0.0f) {
+                    active_push.color_range = 1.0f;
+                }
                 std::cout << "[COLOR] switched to: " << a.name << '\n';
             }
 
@@ -1856,9 +2143,18 @@ int ViewerApp::run() {
             if (config_.tile_enabled && tile_reader.has_value()) {
                 auto tile_config =
                     make_tile_selection_config(config_);
-                tile_config.height_offset = push.height_offset;
-                tile_config.height_mult = push.height_mult;
-                tile_config.height_source = push.height_source;
+                const auto stream_index =
+                    static_cast<std::size_t>(
+                        std::clamp(
+                            streaming_viewport_index,
+                            0,
+                            static_cast<int>(viewport_pushes.size()) - 1
+                        )
+                    );
+                const auto& stream_push = viewport_pushes[stream_index];
+                tile_config.height_offset = stream_push.height_offset;
+                tile_config.height_mult = stream_push.height_mult;
+                tile_config.height_source = stream_push.height_source;
                 tile_selection.set_config(tile_config);
             }
 
@@ -2029,12 +2325,17 @@ int ViewerApp::run() {
             }
 
             flush_benchmark_lod_tile_stage();
+            std::vector<float> viewport_point_sizes;
+            viewport_point_sizes.reserve(viewport_pushes.size());
+            for (const auto& view_push : viewport_pushes) {
+                viewport_point_sizes.push_back(view_push.point_size);
+            }
             prepare_gpu_pick_requests(
                 pick,
                 viewport_manager,
                 app_state,
                 gui_cmds,
-                push.point_size,
+                viewport_point_sizes,
                 benchmark_pick_issue_index,
                 benchmark_pick_queries
             );
@@ -2064,7 +2365,7 @@ int ViewerApp::run() {
                             .visible_viewports = visible_viewports,
                             .viewport_manager = viewport_manager,
                             .point_pipeline = point_pipeline,
-                            .push = push,
+                            .viewport_pushes = viewport_pushes,
                             .lod_gpu_cloud = lod_gpu_cloud.get(),
                             .full_gpu_cloud = full_gpu_cloud.get(),
                             .tile_gpu_cloud = tile_gpu_cloud.get(),

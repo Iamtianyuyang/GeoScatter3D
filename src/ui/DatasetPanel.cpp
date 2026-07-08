@@ -14,14 +14,27 @@ namespace LayoutMetrics {
 constexpr float kPanelInsetX = 10.0f;
 } // namespace LayoutMetrics
 
-void draw_dataset_panel(gs3d::app::AppState& state)
+void draw_dataset_panel(
+    gs3d::app::AppState& state,
+    const char* window_name,
+    bool* open,
+    gs3d::app::DatasetSummaryState* dataset
+)
 {
-    if (!state.panels.dataset) {
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.dataset) {
         return;
     }
+    if (window_name == nullptr) {
+        window_name = kDatasetWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.dataset;
+    }
+    auto& dataset_state = dataset != nullptr ? *dataset : state.dataset;
 
     ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(kDatasetWindowName, &state.panels.dataset)) {
+    if (ImGui::Begin(window_name, open)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 5.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
@@ -29,16 +42,16 @@ void draw_dataset_panel(gs3d::app::AppState& state)
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PushFont(font);
         }
-        ImGui::TextUnformatted(state.dataset.active_dataset.c_str());
+        ImGui::TextUnformatted(dataset_state.active_dataset.c_str());
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PopFont();
         }
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(178, 184, 194, 150));
-        ImGui::Text("%llu 点", static_cast<unsigned long long>(state.dataset.point_count));
+        ImGui::Text("%llu 点", static_cast<unsigned long long>(dataset_state.point_count));
         ImGui::SameLine();
         ImGui::TextDisabled("|");
         ImGui::SameLine();
-        ImGui::TextUnformatted(state.dataset.file_size.c_str());
+        ImGui::TextUnformatted(dataset_state.file_size.c_str());
         ImGui::PopStyleColor();
         ImGui::Spacing();
 
@@ -46,8 +59,8 @@ void draw_dataset_panel(gs3d::app::AppState& state)
         ImGui::InputTextWithHint(
             "##DatasetSearch",
             "筛选项目",
-            state.dataset.search_text.data(),
-            state.dataset.search_text.size()
+            dataset_state.search_text.data(),
+            dataset_state.search_text.size()
         );
         ImGui::Spacing();
 
@@ -56,25 +69,25 @@ void draw_dataset_panel(gs3d::app::AppState& state)
             if (ImGui::TreeNodeEx("当前数据集",
                                   ImGuiTreeNodeFlags_DefaultOpen |
                                       ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                for (const auto& item : state.dataset.dataset_tree) {
+                for (const auto& item : dataset_state.dataset_tree) {
                     ImGui::Selectable(item.c_str(), false);
                 }
                 ImGui::TreePop();
             }
             ImGui::Spacing();
             draw_panel_section_label("属性");
-            for (const auto& attribute : state.dataset.attributes) {
+            for (const auto& attribute : dataset_state.attributes) {
                 ImGui::Bullet();
                 ImGui::SameLine(0.0f, 6.0f);
                 ImGui::TextUnformatted(attribute.c_str());
             }
             ImGui::Spacing();
             draw_panel_section_label("文件信息");
-            ImGui::TextWrapped("路径：%s", state.dataset.path.c_str());
-            ImGui::Text("格式：%s", state.dataset.format.c_str());
+            ImGui::TextWrapped("路径：%s", dataset_state.path.c_str());
+            ImGui::Text("格式：%s", dataset_state.format.c_str());
             ImGui::TextWrapped(
                 "包围盒：%s",
-                state.dataset.bounding_box.c_str()
+                dataset_state.bounding_box.c_str()
             );
             ImGui::EndChild();
         }

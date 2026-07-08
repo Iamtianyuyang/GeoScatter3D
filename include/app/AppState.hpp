@@ -38,6 +38,7 @@ struct AttrDescriptor {
 };
 
 struct PanelVisibilityState {
+    bool tools = true;
     bool dataset = true;
     bool render_settings = true;
     bool debug_log = false;
@@ -160,6 +161,7 @@ struct RenderViewState {
     int viewport_index = 0;
     bool visible = true;
     bool detached = false;
+    bool force_undock_next_frame = false;
     bool camera_linked = false;
     bool render_requested = false;
     VkDescriptorSet descriptor = VK_NULL_HANDLE;
@@ -327,6 +329,21 @@ struct NavigationMapState {
     bool  view_rect_valid = false;
 };
 
+struct WorkspaceComponentState {
+    DatasetSummaryState dataset;
+    RenderSettingsState render_settings;
+    NavigationMapState navigation_map;
+    MeasurementManager measurement;
+};
+
+struct WorkspaceWindowState {
+    int id = 0;
+    bool visible = true;
+    bool dock_layout_initialized = false;
+    WorkspaceComponentState components;
+    std::vector<int> viewport_indices;
+};
+
 struct RegionStatsResult {
     bool valid = false;
     bool computing = false;
@@ -357,6 +374,7 @@ struct AppState {
     MeasurementManager measurement;
     RegionStatsResult region_stats;
     std::vector<RenderViewState> render_views;
+    std::vector<WorkspaceWindowState> workspace_windows;
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
 };
 

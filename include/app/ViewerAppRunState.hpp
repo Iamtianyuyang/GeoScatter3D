@@ -45,7 +45,7 @@ struct ViewerAppPickCameraContext {
     std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points;
     gs3d::render::ViewportManager& viewport_manager;
     const gs3d::camera::CameraBounds& bounds;
-    gs3d::render::PointPushConstants& push;
+    const std::vector<gs3d::render::PointPushConstants>& viewport_pushes;
     int& streaming_viewport_index;
     bool& tile_selection_dirty;
 };
@@ -94,7 +94,7 @@ struct ViewerAppRenderViewContext {
     const gs3d::render::ViewportManager& viewport_manager;
     const gs3d::data::Gs3dDataset& dataset;
     const gs3d::camera::CameraBounds& bounds;
-    const gs3d::render::PointPushConstants& push;
+    const std::vector<gs3d::render::PointPushConstants>& viewport_pushes;
     const std::string& primary_value_name;
     const std::string& z_field_name;
     std::uint64_t visible_points = 0;
@@ -165,7 +165,7 @@ struct ViewerAppViewportDrawContext {
     const std::vector<int>& visible_viewports;
     gs3d::render::ViewportManager& viewport_manager;
     gs3d::render::PointPipeline& point_pipeline;
-    const gs3d::render::PointPushConstants& push;
+    const std::vector<gs3d::render::PointPushConstants>& viewport_pushes;
     // Exactly one of lod_gpu_cloud / full_gpu_cloud is non-null.
     const gs3d::render::PointCloudLodGpu* lod_gpu_cloud = nullptr;
     const gs3d::render::PointCloudGpu* full_gpu_cloud = nullptr;

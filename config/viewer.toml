@@ -31,12 +31,15 @@ ui_layout_ini_path = "config/imgui_layout.ini"
 # Default 1.15 gives a modest comfort bump. Increase if UI feels too small,
 # decrease if it feels too large.
 ui_scale_multiplier = 1.15
+# Enable Dear ImGui Multi-Viewports: docked panels can be dragged into native
+# OS windows. On unsupported platforms, such as Wayland, ImGui may disable it.
+multi_viewports = true
 
 [vulkan]
 validation_layers = true
 
 [render]
-clear_color = [0.015, 0.018, 0.025, 1.0]
+clear_color = [0.118, 0.133, 0.165, 1.0]
 initial_point_size = 1.5
 
 [camera]

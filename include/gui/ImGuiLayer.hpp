@@ -30,7 +30,8 @@ public:
         const gs3d::render::VulkanRenderer& renderer,
         std::uint32_t min_image_count,
         std::filesystem::path ini_path = {},
-        float ui_scale_multiplier = 1.0f
+        float ui_scale_multiplier = 1.0f,
+        bool enable_multi_viewports = false
     );
 
     void shutdown();

@@ -500,7 +500,8 @@ void ImGuiLayer::init(
     const gs3d::render::VulkanRenderer& renderer,
     std::uint32_t min_image_count,
     std::filesystem::path ini_path,
-    float ui_scale_multiplier
+    float ui_scale_multiplier,
+    bool enable_multi_viewports
 ) {
     device_ = context.device();
 
@@ -510,11 +511,9 @@ void ImGuiLayer::init(
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    // ImGuiConfigFlags_ViewportsEnable is intentionally not set:
-    // offscreen-framebuffer textures cannot be shared across independent
-    // OS windows (platform viewports) without per-viewport render targets.
-    // Disabling viewports keeps all 3D viewport windows docked inside the
-    // main window, where the single offscreen texture works correctly.
+    if (enable_multi_viewports) {
+        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    }
 
     if (ini_path.empty()) {
         io.IniFilename = nullptr;
@@ -690,7 +689,7 @@ void ImGuiLayer::init(
     init_info.Device = context.device();
     init_info.QueueFamily = context.queue_family_indices().graphics_family.value();
     init_info.Queue = context.graphics_queue();
-    init_info.DescriptorPoolSize = 8;
+    init_info.DescriptorPoolSize = 64;
     init_info.MinImageCount = min_image_count;
     init_info.ImageCount = min_image_count;
     init_info.PipelineInfoMain.RenderPass = renderer.render_pass();
