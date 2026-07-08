@@ -1,5 +1,6 @@
 #include "app/ViewerApp.hpp"
 #include "app/ViewerAppInternal.hpp"
+#include "app/ViewerAppRunState.hpp"
 
 #include "app/AppState.hpp"
 #include "app/PreprocessedBundle.hpp"
@@ -130,12 +131,6 @@ std::string format_bounds_label(
         std::to_string(bounds.max_z) + "]";
 }
 
-struct BenchmarkPickScriptQuery {
-    std::size_t query_index = 0;
-    float mouse_x = 0.0f;
-    float mouse_y = 0.0f;
-};
-
 struct BenchmarkPickObservedResult {
     std::size_t query_index = 0;
     bool has_hit = false;
@@ -156,24 +151,6 @@ struct BenchmarkPickIssuedMetadata {
     bool all_tiles_resident = false;
     std::vector<std::uint64_t> resident_tile_ids{};
 };
-
-constexpr std::uint32_t kMaxGpuPickRadiusPx = 5;
-constexpr std::uint32_t kDefaultGpuPickRadiusPx = 3;
-
-[[nodiscard]]
-std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept {
-    const float clamped_point_size =
-        std::clamp(point_size, 1.0f, 10.0f);
-    const int sprite_half_extent =
-        static_cast<int>(std::ceil(clamped_point_size * 0.5f));
-    return static_cast<std::uint32_t>(
-        std::clamp(
-            sprite_half_extent + 1,
-            static_cast<int>(kDefaultGpuPickRadiusPx),
-            static_cast<int>(kMaxGpuPickRadiusPx)
-        )
-    );
-}
 
 std::vector<BenchmarkPickScriptQuery> load_benchmark_pick_script(
     const std::filesystem::path& script_path
@@ -526,13 +503,6 @@ build_runtime_tile_point_ids(
 
     return tile_ids;
 }
-
-enum class GpuPickRequestKind {
-    None,
-    Hover,
-    SetOrbitPivot,
-    BoxSelectAnchor
-};
 
 struct PickDebugDumpMetadata {
     std::uint64_t dump_index = 0;
@@ -954,37 +924,6 @@ void write_pick_debug_dump(
     std::cout << "[PICK_DEBUG] wrote metadata: "
               << meta_path.string() << '\n';
 }
-
-struct GpuPickRequest {
-    int viewport_index = -1;
-    GpuPickRequestKind kind = GpuPickRequestKind::None;
-    int benchmark_query_index = -1;
-    float mouse_x = 0.0f;
-    float mouse_y = 0.0f;
-    std::uint32_t pick_radius_px = kDefaultGpuPickRadiusPx;
-    std::uint32_t viewport_width = 0;
-    std::uint32_t viewport_height = 0;
-    float box_select_min_x = 0.0f;
-    float box_select_min_y = 0.0f;
-    float box_select_max_x = 0.0f;
-    float box_select_max_y = 0.0f;
-    gs3d::camera::Camera anchor_camera{};
-
-    [[nodiscard]]
-    bool valid() const noexcept {
-        return kind != GpuPickRequestKind::None &&
-               viewport_index >= 0 &&
-               viewport_width > 0 &&
-               viewport_height > 0;
-    }
-};
-
-struct GpuPickResult {
-    GpuPickRequest request{};
-    std::uint32_t point_id = 0;
-    float depth = 1.0f;
-    bool has_hit = false;
-};
 
 void register_runtime_point_lookup(
     const std::vector<gs3d::data::Gs3dPoint>& points,
@@ -2142,35 +2081,21 @@ int ViewerApp::run() {
             static_cast<std::size_t>(viewport_manager.viewport_count()),
             false
         );
-        std::vector<std::optional<gs3d::data::Gs3dPoint>>
-            latest_gpu_hover_points(
-                static_cast<std::size_t>(viewport_manager.viewport_count())
-            );
-        std::vector<float> latest_gpu_capture_x(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0.0f
-        );
-        std::vector<float> latest_gpu_capture_y(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0.0f
-        );
-        // Frames since last successful pick hit — clears stale hover
-        // data after ~0.5 s of no hits.
-        std::vector<int> hover_timeout(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0
-        );
-        // Consecutive GPU pick misses (has_hit=false) — clears hover
-        // after a short debounce so moving between points doesn't flicker.
-        std::vector<int> consecutive_no_hit(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0
-        );
+        ViewerAppPickState pick;
+        {
+            const auto n = static_cast<std::size_t>(viewport_manager.viewport_count());
+            pick.latest_hover_points.resize(n);
+            pick.latest_capture_x.resize(n, 0.0f);
+            pick.latest_capture_y.resize(n, 0.0f);
+            // Frames since last successful pick hit — clears stale hover
+            // data after ~0.5 s of no hits.
+            pick.hover_timeout.resize(n, 0);
+            // Consecutive GPU pick misses (has_hit=false) — clears hover
+            // after a short debounce so moving between points doesn't flicker.
+            pick.consecutive_no_hit.resize(n, 0);
+            pick.requests.resize(n);
+        }
         constexpr int kNoHitClearThreshold = 3;
-        std::vector<GpuPickRequest> gpu_pick_requests(
-            static_cast<std::size_t>(viewport_manager.viewport_count())
-        );
-        std::uint32_t gpu_pick_frame_slot = 0;
         const bool benchmark_pick_enabled =
             config_.benchmark_mode &&
             !config_.benchmark_pick_script_path.empty();
@@ -2970,7 +2895,7 @@ int ViewerApp::run() {
 
         const auto consume_ready_pick_frame_slot =
             [&](std::uint32_t frame_slot) {
-                gpu_pick_frame_slot = frame_slot;
+                pick.frame_slot = frame_slot;
                 if (config_.pick_debug_dump_enabled) {
                     const auto debug_dump =
                         pick_debug_frame_dumper.collect_ready_frame(frame_slot);
@@ -2991,7 +2916,7 @@ int ViewerApp::run() {
                     if (result.request.viewport_index < 0 ||
                         result.request.viewport_index >=
                             static_cast<int>(
-                                latest_gpu_hover_points.size()
+                                pick.latest_hover_points.size()
                             )) {
                         continue;
                     }
@@ -3042,9 +2967,9 @@ int ViewerApp::run() {
                         // flickers or disappears when hovering over
                         // points whose IDs are not in the lookup table.
                         if (hit_point.has_value()) {
-                            latest_gpu_hover_points[view_index] = hit_point;
-                            hover_timeout[view_index] = 0;
-                            consecutive_no_hit[view_index] = 0;
+                            pick.latest_hover_points[view_index] = hit_point;
+                            pick.hover_timeout[view_index] = 0;
+                            pick.consecutive_no_hit[view_index] = 0;
                         }
                         // has_hit=false means GPU found no point at the
                         // cursor — the mouse is over empty space.
@@ -3052,22 +2977,22 @@ int ViewerApp::run() {
                         // between nearby points (where the GPU pick lags
                         // behind the cursor) doesn't flicker the tooltip.
                         if (!result.has_hit &&
-                            view_index < consecutive_no_hit.size()) {
-                            ++consecutive_no_hit[view_index];
-                            if (consecutive_no_hit[view_index] >=
+                            view_index < pick.consecutive_no_hit.size()) {
+                            ++pick.consecutive_no_hit[view_index];
+                            if (pick.consecutive_no_hit[view_index] >=
                                     kNoHitClearThreshold &&
                                 view_index <
-                                    latest_gpu_hover_points.size()) {
-                                latest_gpu_hover_points[view_index].reset();
+                                    pick.latest_hover_points.size()) {
+                                pick.latest_hover_points[view_index].reset();
                             }
                         }
                         if (result.has_hit &&
-                            view_index < consecutive_no_hit.size()) {
-                            consecutive_no_hit[view_index] = 0;
+                            view_index < pick.consecutive_no_hit.size()) {
+                            pick.consecutive_no_hit[view_index] = 0;
                         }
-                        latest_gpu_capture_x[view_index] =
+                        pick.latest_capture_x[view_index] =
                             result.request.mouse_x;
-                        latest_gpu_capture_y[view_index] =
+                        pick.latest_capture_y[view_index] =
                             result.request.mouse_y;
                         if (benchmark_pick_enabled &&
                             result.request.benchmark_query_index >= 0) {
@@ -3651,13 +3576,13 @@ int ViewerApp::run() {
                 compute_gizmo_axes(view, camera);
 
                 const auto& hover_point =
-                    latest_gpu_hover_points[static_cast<std::size_t>(i)];
+                    pick.latest_hover_points[static_cast<std::size_t>(i)];
 
                 // Timeout only increments when no pick request is issued
                 // (cursor outside image).  While the cursor is on the
                 // image and picks are in flight, existing data stays live.
                 constexpr int kHoverTimeoutFrames = 30;
-                auto& ht = hover_timeout[static_cast<std::size_t>(i)];
+                auto& ht = pick.hover_timeout[static_cast<std::size_t>(i)];
                 view.hover_tooltip_visible =
                     hover_point.has_value() && ht <= kHoverTimeoutFrames;
                 view.hover_x = 0.0f;
@@ -3713,8 +3638,8 @@ int ViewerApp::run() {
                                 "[PICK] mouse=(%.0f,%.0f) fb=%ux%u "
                                 "hit3d=(%.3f,%.3f,%.3f) "
                                 "proj_screen=(%.1f,%.1f)\n",
-                                static_cast<double>(idx < latest_gpu_capture_x.size() ? latest_gpu_capture_x[idx] : -1.0f),
-                                static_cast<double>(idx < latest_gpu_capture_y.size() ? latest_gpu_capture_y[idx] : -1.0f),
+                                static_cast<double>(idx < pick.latest_capture_x.size() ? pick.latest_capture_x[idx] : -1.0f),
+                                static_cast<double>(idx < pick.latest_capture_y.size() ? pick.latest_capture_y[idx] : -1.0f),
                                 camera.viewport_width(), camera.viewport_height(),
                                 static_cast<double>(hover_point->x),
                                 static_cast<double>(hover_point->y),
@@ -5098,109 +5023,15 @@ int ViewerApp::run() {
             }
 
             flush_benchmark_lod_tile_stage();
-            for (auto& request : gpu_pick_requests) {
-                request = {};
-            }
-            // Clear hover data only for views that did not render this
-            // frame — not based on ImGui hover state (which can be wrong
-            // when ghost viewports consume the hover hit-test).
-            for (int i = 0; i < viewport_manager.active_count(); ++i) {
-                if (!app_state.render_views[static_cast<std::size_t>(i)]
-                         .render_requested) {
-                    latest_gpu_hover_points[static_cast<std::size_t>(i)]
-                        .reset();
-                }
-            }
-            for (const auto& frame : gui_cmds.viewport_frames) {
-                if (frame.index < 0 ||
-                    frame.index >= static_cast<int>(gpu_pick_requests.size())) {
-                    continue;
-                }
-
-                auto& request =
-                    gpu_pick_requests[static_cast<std::size_t>(frame.index)];
-                request.viewport_index = frame.index;
-                request.viewport_width = frame.width;
-                request.viewport_height = frame.height;
-
-                if (frame.box_select_completed && frame.mouse_on_image) {
-                    request.kind = GpuPickRequestKind::BoxSelectAnchor;
-                    request.mouse_x =
-                        0.5f * (frame.box_select_min_x + frame.box_select_max_x);
-                    request.mouse_y =
-                        0.5f * (frame.box_select_min_y + frame.box_select_max_y);
-                    request.pick_radius_px =
-                        compute_hover_pick_radius_px(push.point_size);
-                    request.box_select_min_x = frame.box_select_min_x;
-                    request.box_select_min_y = frame.box_select_min_y;
-                    request.box_select_max_x = frame.box_select_max_x;
-                    request.box_select_max_y = frame.box_select_max_y;
-                    request.anchor_camera =
-                        viewport_manager.camera(frame.index);
-                    continue;
-                }
-
-                if (frame.point_double_clicked &&
-                    frame.mouse_on_image) {
-                    request.kind = GpuPickRequestKind::SetOrbitPivot;
-                    request.mouse_x = frame.mouse_local_x;
-                    request.mouse_y = frame.mouse_local_y;
-                    request.pick_radius_px =
-                        compute_hover_pick_radius_px(push.point_size);
-                    continue;
-                }
-
-                // Measurement pick: middle-click uses the latest hover
-                // pick result (zero-latency, same strategy as orbit pivot).
-                if (frame.measure_pick_requested &&
-                    app_state.measurement.measure_mode_active()) {
-                    const auto idx =
-                        static_cast<std::size_t>(frame.index);
-                    if (idx < latest_gpu_hover_points.size() &&
-                        latest_gpu_hover_points[idx].has_value()) {
-                        app_state.measurement.add_point(
-                            *latest_gpu_hover_points[idx]);
-                    }
-                }
-
-                // Issue hover pick whenever the cursor is on the image,
-                // regardless of ImGui hover state.  Ghost viewports can
-                // consume the ImGui hit-test even though the cursor is
-                // visually over the rendered data; the pick result's
-                // has_hit is the ground truth for "cursor on data".
-                // Reset hover timeout when a pick can be issued (cursor
-                // on image, not dragging).  Increment when we skip.
-                {
-                    const auto idx =
-                        static_cast<std::size_t>(frame.index);
-                    if (idx < hover_timeout.size()) {
-                        if (frame.active || !frame.mouse_on_image) {
-                            ++hover_timeout[idx];
-                        } else {
-                            hover_timeout[idx] = 0;
-                        }
-                    }
-                }
-
-                if (frame.active || !frame.mouse_on_image) {
-                    continue;
-                }
-
-                request.kind = GpuPickRequestKind::Hover;
-                request.pick_radius_px =
-                    compute_hover_pick_radius_px(push.point_size);
-                if (benchmark_pick_enabled &&
-                    frame.index == 0 &&
-                    benchmark_pick_issue_index < benchmark_pick_queries.size()) {
-                    request.benchmark_query_index = static_cast<int>(
-                        benchmark_pick_queries[benchmark_pick_issue_index]
-                            .query_index
-                    );
-                    ++benchmark_pick_issue_index;
-                }
-                request.mouse_x = frame.mouse_local_x;
-                request.mouse_y = frame.mouse_local_y;
-            }
+            prepare_gpu_pick_requests(
+                pick,
+                viewport_manager,
+                app_state,
+                gui_cmds,
+                push.point_size,
+                benchmark_pick_issue_index,
+                benchmark_pick_queries
+            );
 
             renderer.draw_frame(
                 window,
@@ -5288,7 +5119,7 @@ int ViewerApp::run() {
                             const auto request_index =
                                 static_cast<std::size_t>(viewport_index);
                             const auto& pick_request =
-                                gpu_pick_requests[request_index];
+                                pick.requests[request_index];
                             const auto& selected_tile_ids =
                                 viewport_tile_ids[request_index];
                             bool any_tile_resident = false;
@@ -5432,7 +5263,7 @@ int ViewerApp::run() {
                                 gs3d::util::Stopwatch issue_timer;
                                 gpu_pick_readback.record_request(
                                     cmd,
-                                    gpu_pick_frame_slot,
+                                    pick.frame_slot,
                                     framebuffer,
                                     pick_request
                                 );
@@ -5570,7 +5401,7 @@ int ViewerApp::run() {
                                         resident_tile_ids;
                                     if (pick_debug_frame_dumper.record_request(
                                             cmd,
-                                            gpu_pick_frame_slot,
+                                            pick.frame_slot,
                                             framebuffer,
                                             debug_metadata
                                         )) {

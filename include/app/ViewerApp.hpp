@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppState.hpp"
+#include "app/ViewerAppRunState.hpp"
 
 #include <array>
 #include <atomic>
@@ -10,6 +11,9 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace gs3d::render { class ViewportManager; }
+namespace gs3d::app { struct UiActions; }
 
 namespace gs3d::app {
 
@@ -259,6 +263,16 @@ public:
     }
 
 private:
+    void prepare_gpu_pick_requests(
+        ViewerAppPickState& pick,
+        const gs3d::render::ViewportManager& viewport_manager,
+        gs3d::app::AppState& app_state,
+        const gs3d::app::UiActions& gui_cmds,
+        float point_size,
+        std::size_t& benchmark_pick_issue_index,
+        const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
+    );
+
     ViewerAppConfig config_;
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
