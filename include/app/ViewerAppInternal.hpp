@@ -130,6 +130,12 @@ using VisibleTilePickResolver = std::function<
     std::optional<gs3d::data::Gs3dPoint>(std::size_t, std::uint32_t, float, float)
 >;
 
+float nice_scale_distance(float raw);
+
+std::string format_scale_distance(float d);
+
+std::string format_vec3_text(const gs3d::camera::Vec3& value);
+
 [[nodiscard]]
 std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept;
 
@@ -162,6 +168,14 @@ void compute_map_axis_overlay(
     const gs3d::camera::Camera& camera,
     double origin_x,
     double origin_y
+);
+
+struct ViewerAppConfig;
+
+void initialize_camera_from_config(
+    gs3d::camera::Camera& camera,
+    const ViewerAppConfig& config,
+    const gs3d::camera::CameraBounds& bounds
 );
 
 } // namespace gs3d::app

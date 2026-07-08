@@ -37,6 +37,11 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/ViewerApp.cpp
     src/app/ViewerAppViewport.cpp
     src/app/ViewerAppPicking.cpp
+    src/app/ViewerAppRenderView.cpp
+    src/app/ViewerAppGuiCommands.cpp
+    src/app/ViewerAppCameraCommands.cpp
+    src/app/ViewerAppScreenshot.cpp
+    src/app/ViewerAppRegionStats.cpp
     src/app/AppConfig.cpp
     src/app/PreprocessedBundle.cpp
     src/app/RecentProjects.cpp

@@ -77,16 +77,6 @@ namespace gs3d::app {
 
 namespace {
 
-gs3d::camera::Vec3 to_vec3(
-    const std::array<float, 3>& value
-) {
-    return {
-        value[0],
-        value[1],
-        value[2]
-    };
-}
-
 gs3d::camera::CameraBounds make_camera_bounds(
     const gs3d::data::Gs3dDataset& dataset
 ) {
@@ -983,34 +973,6 @@ std::optional<gs3d::data::Gs3dPoint> find_point_by_id_in_views(
     return std::nullopt;
 }
 
-void initialize_camera_from_config(
-    gs3d::camera::Camera& camera,
-    const ViewerAppConfig& config,
-    const gs3d::camera::CameraBounds& bounds
-) {
-    // Default: orthographic projection, fit to data bounds.
-    // fit_bounds() sets ortho_height, near/far, position, target, up.
-    camera.set_orthographic(10.0f, 0.01f, 10000.0f);
-
-    if (config.camera_mode == "fit") {
-        camera.fit_bounds(bounds);
-        return;
-    }
-
-    // Explicit camera overrides: still use ortho by default.
-    camera.look_at(
-        to_vec3(config.camera_position),
-        to_vec3(config.camera_target),
-        to_vec3(config.camera_up)
-    );
-    // Derive ortho_height from distance and FOV for backwards compat.
-    const float fov_rad = config.camera_fov_y * 3.14159265f / 180.0f;
-    const float view_h =
-        2.0f * camera.distance() * std::tan(fov_rad * 0.5f);
-    // Ortho near/far: small near, huge far — covers any practical depth.
-    camera.set_orthographic(view_h, 0.01f, 1.0e7f);
-}
-
 void fill_push_constants(
     gs3d::render::PointPushConstants& push,
     const gs3d::camera::Camera& camera
@@ -1071,6 +1033,7 @@ void print_controls(
               << (tile_enabled ? "启用" : "关闭")
               << '\n';
 }
+} // namespace
 
 // Round a world-space distance to a human-readable "nice" value:
 //   1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 …
@@ -1127,6 +1090,7 @@ std::string format_vec3_text(const gs3d::camera::Vec3& value)
     );
     return buf;
 }
+namespace {
 
 constexpr double kTileSelectionDebounceSeconds = 0.12;
 constexpr double kInteractingDebounceSeconds = 0.15;
@@ -2592,258 +2556,25 @@ int ViewerApp::run() {
             app_state.status_bar.crs = "本地坐标 / 未知";
             app_state.status_bar.ready_state = "就绪";
 
-            for (int i = 0; i < n_viewports; ++i) {
-                const auto& camera = viewport_manager.camera(i);
-                auto& view =
-                    app_state.render_views[static_cast<std::size_t>(i)];
-                view.viewport_index = i;
-                view.descriptor =
-                    viewport_manager.framebuffer(i).imgui_descriptor();
-                view.show_live_image = view.descriptor != VK_NULL_HANDLE;
-                view.image_width = camera.viewport_width();
-                view.image_height = camera.viewport_height();
-                view.points_visible = visible_points;
-                view.points_total = dataset.point_count();
-                view.frame_time_ms = app_state.performance.frame_time_ms;
-                view.camera_mode = "轨道";
-                view.position = format_vec3_text(camera.position());
-                view.fov = camera.fov_y_degrees();
-                view.measure_mode_active =
-                    app_state.measurement.measure_mode_active();
-
-                const float vp_h =
-                    static_cast<float>(camera.viewport_height());
-                float scale_world = 500.0f;
-                if (vp_h > 1.0f) {
-                    float pixel_world = 0.0f;
-                    if (camera.projection_mode() ==
-                        gs3d::camera::ProjectionMode::Orthographic) {
-                        pixel_world = camera.ortho_height() / vp_h;
-                    } else {
-                        const float d = camera.distance();
-                        const float fov_rad =
-                            camera.fov_y_degrees() * (3.14159265f / 180.0f);
-                        pixel_world = 2.0f * d * std::tan(fov_rad * 0.5f) / vp_h;
-                    }
-                    if (pixel_world > 0.0f) {
-                        scale_world = nice_scale_distance(pixel_world * 96.0f);
-                    }
-                }
-                view.scale = format_scale_distance(scale_world);
-
-                // Z 轴范围 + 刻度标签同步当前高度属性 & 夸张系数。
-                // 几何：包围盒 Z 用 world-space 范围（含 exag）。
-                // 标签：逆映射回属性原始值。
-                //   - Z source: 参考面 = 世界 Z=0 (= -origin_z * exag 渲染坐标)
-                //   - Value source: 参考面 = 属性值 0 (= height_offset 渲染坐标)
-                auto axis_bounds = bounds;
-                const float z_label_mult   = push.height_mult;
-                float       z_label_offset = push.height_offset;
-                if (push.height_source == static_cast<std::uint32_t>(gs3d::app::AttrPhysicalSource::Z)) {
-                    axis_bounds.min.z = push.height_offset + dataset.bbox_min_z() * push.height_mult;
-                    axis_bounds.max.z = push.height_offset + dataset.bbox_max_z() * push.height_mult;
-                } else {
-                    axis_bounds.min.z = push.height_offset + dataset.value_min() * push.height_mult;
-                    axis_bounds.max.z = push.height_offset + dataset.value_max() * push.height_mult;
-                }
-
-                compute_axis_overlay(
-                    view,
-                    axis_bounds,
-                    camera,
-                    dataset.origin_x(),
-                    dataset.origin_y(),
-                    dataset.origin_z(),
-                    z_label_mult,
-                    z_label_offset,
-                    push.height_source ==
-                        static_cast<std::uint32_t>(
-                            gs3d::app::AttrPhysicalSource::Z)
-                );
-
-                compute_map_axis_overlay(
-                    view,
-                    camera,
-                    dataset.origin_x(),
-                    dataset.origin_y()
-                );
-
-                compute_gizmo_axes(view, camera);
-
-                const auto& hover_point =
-                    pick.latest_hover_points[static_cast<std::size_t>(i)];
-
-                // Timeout only increments when no pick request is issued
-                // (cursor outside image).  While the cursor is on the
-                // image and picks are in flight, existing data stays live.
-                constexpr int kHoverTimeoutFrames = 30;
-                auto& ht = pick.hover_timeout[static_cast<std::size_t>(i)];
-                view.hover_tooltip_visible =
-                    hover_point.has_value() && ht <= kHoverTimeoutFrames;
-                view.hover_x = 0.0f;
-                view.hover_y = 0.0f;
-                view.hover_fold = 0.0f;
-                view.hover_elevation = 0.0f;
-                view.hover_primary_value_label = primary_value_name;
-                view.hover_z_label = z_field_name;
-                view.hover_screen_x = -1.0f;
-                view.hover_screen_y = -1.0f;
-                if (hover_point) {
-                    view.hover_x =
-                        static_cast<float>(
-                            static_cast<double>(hover_point->x) +
-                            dataset.origin_x());
-                    view.hover_y =
-                        static_cast<float>(
-                            static_cast<double>(hover_point->y) +
-                            dataset.origin_y());
-                    view.hover_fold = hover_point->value;
-                    view.hover_elevation =
-                        static_cast<float>(
-                            static_cast<double>(hover_point->z) +
-                            dataset.origin_z());
-
-                    // Z 映射：与 vertex shader 的 height = offset + raw * mult
-                    // 完全一致，对所有 height_source 统一应用，否则高度缩放后
-                    // 准星投影会与渲染点错位。
-                    float raw_height = hover_point->z;
-                    if (push.height_source ==
-                        static_cast<std::uint32_t>(
-                            gs3d::app::AttrPhysicalSource::Value)) {
-                        raw_height = hover_point->value;
-                    }
-                    float mapped_z = push.height_offset +
-                                     raw_height * push.height_mult;
-
-                    // Marker screen position via to_screen projection.
-                    const auto screen_pt =
-                        gs3d::camera::MouseRay::to_screen(
-                            {hover_point->x, hover_point->y, mapped_z},
-                            {camera.viewport_width(),
-                             camera.viewport_height()},
-                            camera);
-                    if (screen_pt) {
-                        view.hover_screen_x = screen_pt->x;
-                        view.hover_screen_y = screen_pt->y;
-                        static int diag_count = 0;
-                        if (diag_count < 5) {
-                            ++diag_count;
-                            const auto idx = static_cast<std::size_t>(i);
-                            std::fprintf(stderr,
-                                "[PICK] mouse=(%.0f,%.0f) fb=%ux%u "
-                                "hit3d=(%.3f,%.3f,%.3f) "
-                                "proj_screen=(%.1f,%.1f)\n",
-                                static_cast<double>(idx < pick.latest_capture_x.size() ? pick.latest_capture_x[idx] : -1.0f),
-                                static_cast<double>(idx < pick.latest_capture_y.size() ? pick.latest_capture_y[idx] : -1.0f),
-                                camera.viewport_width(), camera.viewport_height(),
-                                static_cast<double>(hover_point->x),
-                                static_cast<double>(hover_point->y),
-                                static_cast<double>(mapped_z),
-                                static_cast<double>(screen_pt->x),
-                                static_cast<double>(screen_pt->y));
-                        }
-                    }
-                }
-
-                const auto view_index = static_cast<std::size_t>(i);
-                view.selected_point_visible = false;
-                view.selected_screen_x = -1.0f;
-                view.selected_screen_y = -1.0f;
-                if (view_index < selected_focus_points.size() &&
-                    selected_focus_points[view_index].has_value()) {
-                    const auto selected_screen =
-                        gs3d::camera::MouseRay::to_screen(
-                            *selected_focus_points[view_index],
-                            {camera.viewport_width(),
-                             camera.viewport_height()},
-                            camera
-                        );
-                    if (selected_screen.has_value()) {
-                        view.selected_point_visible = true;
-                        view.selected_screen_x = selected_screen->x;
-                        view.selected_screen_y = selected_screen->y;
-                    }
-                }
-
-                // ── 测量线投影：每条全局测量线的两端点 → 本视口屏幕坐标 ──
-                {
-                    const auto& lines = app_state.measurement.lines();
-                    view.measurement_overlays.clear();
-                    view.measurement_overlays.reserve(lines.size());
-                    for (const auto& line : lines) {
-                        RenderViewState::MeasurementLineOverlay overlay;
-                        overlay.color = line.color;
-                        overlay.label = line.distance_label(
-                            app_state.measurement.display_mode());
-
-                        const auto sa = gs3d::camera::MouseRay::to_screen(
-                            {line.point_a.x, line.point_a.y, line.point_a.z},
-                            {camera.viewport_width(),
-                             camera.viewport_height()},
-                            camera);
-                        const auto sb = gs3d::camera::MouseRay::to_screen(
-                            {line.point_b.x, line.point_b.y, line.point_b.z},
-                            {camera.viewport_width(),
-                             camera.viewport_height()},
-                            camera);
-
-                        if (sa && sb) {
-                            overlay.a_screen_x = sa->x;
-                            overlay.a_screen_y = sa->y;
-                            overlay.b_screen_x = sb->x;
-                            overlay.b_screen_y = sb->y;
-                            overlay.visible = true;
-                        }
-                        view.measurement_overlays.push_back(overlay);
-                    }
-                }
-
-                // ── 待定测量点投影（选了第一个点，等第二个点）──
-                view.pending_point_visible = false;
-                view.pending_point_screen_x = -1.0f;
-                view.pending_point_screen_y = -1.0f;
-                if (app_state.measurement.has_pending()) {
-                    const auto& pending = *app_state.measurement.pending_point();
-                    const auto sp = gs3d::camera::MouseRay::to_screen(
-                        {pending.x, pending.y, pending.z},
-                        {camera.viewport_width(),
-                         camera.viewport_height()},
-                        camera);
-                    if (sp) {
-                        view.pending_point_visible = true;
-                        view.pending_point_screen_x = sp->x;
-                        view.pending_point_screen_y = sp->y;
-                    }
-                }
+            {
+                ViewerAppRenderViewContext render_ctx{
+                    viewport_manager,
+                    dataset,
+                    bounds,
+                    push,
+                    primary_value_name,
+                    z_field_name,
+                    visible_points,
+                    n_viewports
+                };
+                fill_render_views(app_state, render_ctx, pick, selected_focus_points);
             }
 
-            // ── 导航图视野框：复用 compute_map_axis_overlay 的可见 XY 范围 ──
-            if (nm.valid) {
-                const auto& sv =
-                    app_state.render_views[static_cast<std::size_t>(
-                        streaming_viewport_index)];
-                const float wx_min = sv.map_axis_x_min;
-                const float wx_max = sv.map_axis_x_max;
-                const float wy_min = sv.map_axis_y_min;
-                const float wy_max = sv.map_axis_y_max;
-
-                const float bbox_w = nm.bbox_max_x - nm.bbox_min_x;
-                const float bbox_h = nm.bbox_max_y - nm.bbox_min_y;
-                if (bbox_w > 0.0f && bbox_h > 0.0f) {
-                    nm.view_rect_min_x =
-                        (wx_min - nm.bbox_min_x) / bbox_w * nm.tex_w;
-                    nm.view_rect_max_x =
-                        (wx_max - nm.bbox_min_x) / bbox_w * nm.tex_w;
-                    // 纹理北在上(tex_y=0)，世界 Y↑ 映射到 tex_y↓
-                    nm.view_rect_min_y =
-                        (1.0f - (wy_max - nm.bbox_min_y) / bbox_h) *
-                        nm.tex_h;
-                    nm.view_rect_max_y =
-                        (1.0f - (wy_min - nm.bbox_min_y) / bbox_h) *
-                        nm.tex_h;
-                    nm.view_rect_valid = true;
-                }
-            }
+            update_navigation_map_view_rect(
+                nm,
+                app_state.render_views,
+                streaming_viewport_index
+            );
 
             // Enforce configured viewport count — ghost viewport windows
             // restored by ImGui layout persistence must not render or
@@ -2854,19 +2585,7 @@ int ViewerApp::run() {
             }
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
-            if (!gui_cmds.open_project_path.empty()) {
-                open_request_ = ViewerOpenRequest{
-                    .kind = ViewerOpenRequestKind::Project,
-                    .path = gui_cmds.open_project_path
-                };
-                window.request_close();
-            } else if (!gui_cmds.open_raw_data_path.empty()) {
-                open_request_ = ViewerOpenRequest{
-                    .kind = ViewerOpenRequestKind::RawData,
-                    .path = gui_cmds.open_raw_data_path
-                };
-                window.request_close();
-            }
+            apply_project_open_commands(gui_cmds, window);
             const double now_seconds =
                 std::chrono::duration<double>(
                     current_time.time_since_epoch()
@@ -2930,21 +2649,10 @@ int ViewerApp::run() {
                     });
                 }
             }
-            for (const auto& frame : gui_cmds.viewport_frames) {
-                viewport_resize_scheduler.observe(
-                    frame.index,
-                    frame.width,
-                    frame.height,
-                    now_seconds
-                );
-            }
+            observe_viewport_resize_requests(
+                gui_cmds, viewport_resize_scheduler, now_seconds);
 
-            visible_viewports.clear();
-            for (const auto& view : app_state.render_views) {
-                if (view.render_requested) {
-                    visible_viewports.push_back(view.viewport_index);
-                }
-            }
+            build_visible_viewports(visible_viewports, app_state.render_views);
 
             const bool imgui_wants_keyboard =
                 ImGui::GetIO().WantCaptureKeyboard;
@@ -2952,103 +2660,28 @@ int ViewerApp::run() {
                 !ImGui::GetIO().WantTextInput;
             gs3d::util::Stopwatch benchmark_camera_timer;
 
-            // Apply GUI panel commands (Polyscope pattern: UI produces commands,
-            // main loop applies them — keeps UI and app logic decoupled).
-            if (gui_cmds.reset_camera_index >= 0 &&
-                gui_cmds.reset_camera_index < n_viewports) {
-                controllers[
-                    static_cast<std::size_t>(
-                        gui_cmds.reset_camera_index
-                    )
-                ].clear_orbit_pivot();
-                initialize_camera_from_config(
-                    viewport_manager.camera(gui_cmds.reset_camera_index),
-                    config_,
-                    bounds
-                );
-                camera_hub.propagate(gui_cmds.reset_camera_index);
-                streaming_viewport_index =
-                    gui_cmds.reset_camera_index;
-                tile_selection_dirty = true;
+            {
+                ViewerAppCameraCommandContext cam_ctx{
+                    .n_viewports = n_viewports,
+                    .controllers = controllers,
+                    .viewport_manager = viewport_manager,
+                    .camera_hub = camera_hub,
+                    .bounds = bounds,
+                    .streaming_viewport_index = streaming_viewport_index,
+                    .tile_selection_dirty = tile_selection_dirty
+                };
+                apply_reset_camera_command(gui_cmds, cam_ctx);
             }
-            if (gui_cmds.point_size_changed) {
-                push.point_size = std::clamp(gui_cmds.point_size, 1.0f, 10.0f);
-            }
-            if (gui_cmds.color_by_changed) {
-                const int new_idx = std::clamp(
-                    gui_cmds.color_by_index, 0,
-                    static_cast<int>(attr_list.size()) - 1
-                );
-                scene_state.active_attribute_index = new_idx;
-                const auto& a = attr_list[static_cast<std::size_t>(new_idx)];
-                push.color_source = static_cast<std::uint32_t>(a.source);
-                push.color_min    = a.min_val;
-                push.color_range  = a.range();
-                if (push.color_range <= 0.0f) push.color_range = 1.0f;
-                std::cout << "[COLOR] switched to: " << a.name << '\n';
-                nm.dirty = true;
-            }
-            if (gui_cmds.height_by_changed) {
-                const int new_idx = std::clamp(
-                    gui_cmds.height_by_index, 0,
-                    static_cast<int>(attr_list.size()) - 1
-                );
-                scene_state.active_height_index = new_idx;
-                apply_height_attr(attr_list[static_cast<std::size_t>(new_idx)], height_exag);
-                std::cout << "[HEIGHT] switched to: "
-                          << attr_list[static_cast<std::size_t>(new_idx)].name << '\n';
-            }
-            if (gui_cmds.height_exag_changed) {
-                height_exag = gui_cmds.height_exag;
-                apply_height_attr(
-                    attr_list[static_cast<std::size_t>(scene_state.active_height_index)],
-                    height_exag
-                );
-            }
-            if (gui_cmds.colormap_changed) {
-                // 清零 colormap bits 再写入新索引
-                push.flags &= ~gs3d::render::PointFlags::kColormapMask;
-                push.flags |= (static_cast<std::uint32_t>(gui_cmds.colormap_index) << 1)
-                    & gs3d::render::PointFlags::kColormapMask;
-                nm.dirty = true;
-            }
-            if (gui_cmds.value_clip_changed) {
-                if (gui_cmds.value_clip_enabled) {
-                    push.flags |= gs3d::render::PointFlags::kValueClip;
-                    // 将原始数据值转换为归一化 [0,1] 传给 shader。
-                    // UI 输入的是绝对属性值（与 data_value 同体系），
-                    // 对着色器需要转回 push.color_min 所在的空间。
-                    const float cr = push.color_range > 0.0f
-                        ? push.color_range : 1.0f;
-                    float clip_lo = gui_cmds.value_clip_min;
-                    float clip_hi = gui_cmds.value_clip_max;
-                    float ref_min = push.color_min;
-                    if (push.color_source ==
-                        static_cast<std::uint32_t>(
-                            gs3d::app::AttrPhysicalSource::Z)) {
-                        const float oz =
-                            static_cast<float>(dataset.origin_z());
-                        clip_lo -= oz;
-                        clip_hi -= oz;
-                        // ref_min (push.color_min) 已经是相对值，不调整
-                    }
-                    const float norm_lo =
-                        (clip_lo - ref_min) / cr;
-                    const float norm_hi =
-                        (clip_hi - ref_min) / cr;
-                    push.clip_min[3] = std::clamp(norm_lo, 0.0f, 1.0f);
-                    push.clip_max[3] = std::clamp(norm_hi, 0.0f, 1.0f);
-                } else {
-                    push.flags &= ~gs3d::render::PointFlags::kValueClip;
-                }
-                nm.dirty = true;
-            }
-            if (gui_cmds.point_shape_changed) {
-                // 清零 point_shape bits 再写入新索引
-                push.flags &= ~gs3d::render::PointFlags::kPointShapeMask;
-                push.flags |= (static_cast<std::uint32_t>(gui_cmds.point_shape)
-                    << gs3d::render::PointFlags::kPointShapeShift)
-                    & gs3d::render::PointFlags::kPointShapeMask;
+            {
+                ViewerAppRenderSettingsContext render_ctx{
+                    .push = push,
+                    .scene_state = scene_state,
+                    .navigation_map = nm,
+                    .attr_list = attr_list,
+                    .dataset = dataset,
+                    .height_exag = height_exag
+                };
+                apply_render_setting_commands(gui_cmds, render_ctx);
             }
             if (gui_cmds.clear_cache_requested) {
                 if (tile_preload_enabled && !tiles_fully_resident &&
@@ -3064,235 +2697,26 @@ int ViewerApp::run() {
                 tile_point_cache.clear();
                 std::cout << "[TILE] CPU cache cleared.\n";
             }
-            if (gui_cmds.screenshot_requested) {
-                // Map viewport 0's canvas_rect (ImGui screen coords) →
-                // swapchain physical pixels.
-                for (const auto& view : app_state.render_views) {
-                    if (view.viewport_index != 0) continue;
-                    if (view.canvas_rect_max_x <= view.canvas_rect_min_x ||
-                        view.canvas_rect_max_y <= view.canvas_rect_min_y) break;
-                    const auto& io = ImGui::GetIO();
-                    const ImVec2 vp_pos = ImGui::GetMainViewport()->Pos;
-                    const float sx = io.DisplayFramebufferScale.x;
-                    const float sy = io.DisplayFramebufferScale.y;
-                    int x = static_cast<int>((view.canvas_rect_min_x - vp_pos.x) * sx);
-                    int y = static_cast<int>((view.canvas_rect_min_y - vp_pos.y) * sy);
-                    int w = static_cast<int>((view.canvas_rect_max_x - view.canvas_rect_min_x) * sx);
-                    int h = static_cast<int>((view.canvas_rect_max_y - view.canvas_rect_min_y) * sy);
-                    // Clamp to swapchain extent
-                    const auto& sc_ext = swapchain.extent();
-                    if (x < 0) { w += x; x = 0; }
-                    if (y < 0) { h += y; y = 0; }
-                    if (x + w > static_cast<int>(sc_ext.width))  w = static_cast<int>(sc_ext.width)  - x;
-                    if (y + h > static_cast<int>(sc_ext.height)) h = static_cast<int>(sc_ext.height) - y;
-                    if (w > 0 && h > 0) {
-                        screenshot_offset = {static_cast<std::uint32_t>(x),
-                                             static_cast<std::uint32_t>(y)};
-                        screenshot_extent = {static_cast<std::uint32_t>(w),
-                                             static_cast<std::uint32_t>(h)};
-                        screenshot_pending = true;
-                    }
-                    break;
-                }
+            {
+                ViewerAppScreenshotContext ss_ctx{
+                    .app_state = app_state,
+                    .swapchain = swapchain,
+                    .screenshot_offset = screenshot_offset,
+                    .screenshot_extent = screenshot_extent,
+                    .screenshot_pending = screenshot_pending
+                };
+                apply_screenshot_command(gui_cmds, ss_ctx);
             }
 
-            // ── 区域统计：测量模式下 Shift+左键框选（异步计算）──
-            // 屏幕空间判断：逐点 world→screen 投影，检查是否落在框选矩形内。
-            // 斜视/俯视均正确，不依赖平面反投影近似。
-            //
-            // 计算在后台线程执行，主线程立即返回继续渲染。
-            // generation counter 实现取消：新框选使旧任务的 gen 失配，旧任务
-            // 每 64K 点检查一次并提前退出，结果被丢弃。
-            for (const auto& frame : gui_cmds.viewport_frames) {
-                if (!frame.stats_select_completed || !frame.mouse_on_image) {
-                    continue;
-                }
-                if (frame.index < 0 ||
-                    frame.index >= viewport_manager.viewport_count()) {
-                    continue;
-                }
-
-                // Cancel any in-flight computation by bumping the generation.
-                const auto gen = ++region_stats_gen_;
-
-                const auto& cam = viewport_manager.camera(frame.index);
-                const gs3d::camera::Mat4 vp =
-                    cam.view_projection_matrix();
-                const float vp_w =
-                    static_cast<float>(cam.viewport_width());
-                const float vp_h =
-                    static_cast<float>(cam.viewport_height());
-
-                const float sx_min = frame.stats_select_min_x;
-                const float sx_max = frame.stats_select_max_x;
-                const float sy_min = frame.stats_select_min_y;
-                const float sy_max = frame.stats_select_max_y;
-
-                // Snapshot point-data access: raw pointer when in-memory
-                // (dataset lives for the entire run() scope, safe to
-                // reference from the short-lived worker), or copy the path
-                // and let the worker read from disk.
-                const bool has_points = dataset.has_point_data();
-                const gs3d::data::Gs3dPoint* points_data =
-                    has_points ? dataset.points().data() : nullptr;
-                const std::uint64_t point_count =
-                    has_points ? dataset.point_count() : 0;
-                const std::filesystem::path gs3d_path =
-                    has_points ? std::filesystem::path{} : config_.gs3d_path;
-
-                app_state.region_stats = RegionStatsResult{};
-                app_state.region_stats.computing = true;
-                app_state.region_stats.primary_label = primary_value_name;
-                app_state.region_stats.secondary_label = z_field_name;
-
-                // Compute world-space XY bounds of the selection rectangle
-                // so the panel can display the approximate coordinate range.
-                // box_select_world_bounds returns local-space coords (matching
-                // the camera space); add origin to get absolute coords that
-                // match the hover tooltip / map axis display.
-                double world_x_min = 0.0;
-                double world_x_max = 0.0;
-                double world_y_min = 0.0;
-                double world_y_max = 0.0;
-                {
-                    const gs3d::camera::Viewport stats_viewport{
-                        static_cast<std::uint32_t>(vp_w),
-                        static_cast<std::uint32_t>(vp_h)
-                    };
-                    const float plane_z = cam.target().z;
-                    const auto selection_bounds =
-                        gs3d::camera::box_select_world_bounds(
-                            sx_min, sy_min, sx_max, sy_max,
-                            stats_viewport, cam, bounds, plane_z);
-                    if (selection_bounds) {
-                        const double ox = dataset.origin_x();
-                        const double oy = dataset.origin_y();
-                        world_x_min = static_cast<double>(selection_bounds->min.x) + ox;
-                        world_x_max = static_cast<double>(selection_bounds->max.x) + ox;
-                        world_y_min = static_cast<double>(selection_bounds->min.y) + oy;
-                        world_y_max = static_cast<double>(selection_bounds->max.y) + oy;
-                    }
-                }
-
-                region_stats_future_ = std::async(
-                    std::launch::async,
-                    [gen,
-                     vp, vp_w, vp_h,
-                     sx_min, sx_max, sy_min, sy_max,
-                     has_points, points_data, point_count,
-                     gs3d_path,
-                     world_x_min, world_x_max, world_y_min, world_y_max,
-                     primary_label = primary_value_name,
-                     secondary_label = z_field_name,
-                     &gen_counter = region_stats_gen_]() -> RegionStatsResult
-                    {
-                        double fold_sum = 0.0;
-                        double elev_sum = 0.0;
-                        float fold_min =
-                            std::numeric_limits<float>::max();
-                        float fold_max =
-                            std::numeric_limits<float>::lowest();
-                        float elev_min =
-                            std::numeric_limits<float>::max();
-                        float elev_max =
-                            std::numeric_limits<float>::lowest();
-                        std::uint64_t count = 0;
-
-                        const auto process =
-                            [&](const gs3d::data::Gs3dPoint& p) {
-                                const auto sp =
-                                    gs3d::camera::MouseRay::world_to_screen(
-                                        vp, p.x, p.y, p.z, vp_w, vp_h);
-                                if (!sp) return;
-                                if (sp->x < sx_min || sp->x > sx_max ||
-                                    sp->y < sy_min || sp->y > sy_max) {
-                                    return;
-                                }
-                                ++count;
-                                const float f = p.value;
-                                const float e = p.z;
-                                fold_sum += static_cast<double>(f);
-                                elev_sum += static_cast<double>(e);
-                                if (f < fold_min) fold_min = f;
-                                if (f > fold_max) fold_max = f;
-                                if (e < elev_min) elev_min = e;
-                                if (e > elev_max) elev_max = e;
-                            };
-
-                        constexpr std::uint64_t kCancelCheckInterval =
-                            65536;
-
-                        if (has_points) {
-                            for (std::uint64_t i = 0; i < point_count;
-                                 ++i) {
-                                if ((i & (kCancelCheckInterval - 1)) == 0) {
-                                    if (gen_counter.load(
-                                            std::memory_order_relaxed) !=
-                                        gen) {
-                                        return RegionStatsResult{};
-                                    }
-                                }
-                                process(points_data[i]);
-                            }
-                        } else {
-                            auto read_result =
-                                gs3d::data::Gs3dReader::read_all(
-                                    gs3d_path);
-                            std::uint64_t i = 0;
-                            for (const auto& p : read_result.points) {
-                                if ((i & (kCancelCheckInterval - 1)) == 0) {
-                                    if (gen_counter.load(
-                                            std::memory_order_relaxed) !=
-                                        gen) {
-                                        return RegionStatsResult{};
-                                    }
-                                }
-                                process(p);
-                                ++i;
-                            }
-                        }
-
-                        RegionStatsResult out;
-                        out.valid = true;
-                        out.point_count = count;
-                        out.world_x_min = world_x_min;
-                        out.world_x_max = world_x_max;
-                        out.world_y_min = world_y_min;
-                        out.world_y_max = world_y_max;
-                        out.primary_label = primary_label;
-                        out.secondary_label = secondary_label;
-                        if (count > 0) {
-                            const double inv =
-                                1.0 / static_cast<double>(count);
-                            out.fold_min = fold_min;
-                            out.fold_max = fold_max;
-                            out.fold_avg =
-                                static_cast<float>(fold_sum * inv);
-                            out.elev_min = elev_min;
-                            out.elev_max = elev_max;
-                            out.elev_avg =
-                                static_cast<float>(elev_sum * inv);
-                        }
-                        return out;
-                    });
-
-                break; // one launch per frame
-            }
-
-            // Poll completion: when the worker finishes, swap its result
-            // into app_state.  If the result is invalid (cancelled),
-            // just clear the computing flag so the panel goes back to idle.
-            if (region_stats_future_.valid()) {
-                if (region_stats_future_.wait_for(
-                        std::chrono::seconds(0)) ==
-                    std::future_status::ready) {
-                    auto result = region_stats_future_.get();
-                    if (result.valid) {
-                        app_state.region_stats = std::move(result);
-                    } else {
-                        app_state.region_stats.computing = false;
-                    }
-                }
+            {
+                RegionStatsCommandContext rs_ctx{
+                    .viewport_manager = viewport_manager,
+                    .dataset = dataset,
+                    .bounds = bounds,
+                    .primary_value_name = primary_value_name,
+                    .z_field_name = z_field_name
+                };
+                handle_region_stats_commands(gui_cmds, app_state, rs_ctx);
             }
 
             if (!imgui_wants_keyboard && window.key_pressed(GLFW_KEY_ESCAPE)) {
@@ -3401,14 +2825,7 @@ int ViewerApp::run() {
                 std::cout << "[COLOR] switched to: " << a.name << '\n';
             }
 
-            for (const auto& view : app_state.render_views) {
-                camera_hub.set_group(
-                    view.viewport_index,
-                    view.camera_linked
-                        ? 0
-                        : gs3d::camera::CameraHub::kIndependent
-                );
-            }
+            sync_camera_link_groups(app_state, camera_hub);
 
             bool interacting = false;
             bool camera_changed = false;

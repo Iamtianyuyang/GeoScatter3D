@@ -14,6 +14,8 @@
 
 namespace gs3d::render { class ViewportManager; }
 namespace gs3d::app { struct UiActions; }
+namespace gs3d::app { class ViewportResizeScheduler; }
+namespace gs3d::platform { class Window; }
 
 namespace gs3d::app {
 
@@ -282,6 +284,61 @@ private:
         ViewerAppPickCameraContext& pick_camera,
         ViewerAppBenchmarkPickContext& pick_benchmark,
         const VisibleTilePickResolver& resolve_hover_point_from_visible_tiles
+    );
+
+    void fill_render_views(
+        gs3d::app::AppState& app_state,
+        const ViewerAppRenderViewContext& ctx,
+        const ViewerAppPickState& pick,
+        const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
+    );
+
+    void update_navigation_map_view_rect(
+        NavigationMapState& nav,
+        const std::vector<RenderViewState>& render_views,
+        int streaming_viewport_index
+    );
+
+    void build_visible_viewports(
+        std::vector<int>& visible_viewports,
+        const std::vector<RenderViewState>& render_views
+    );
+
+    void apply_render_setting_commands(
+        const UiActions& gui_cmds,
+        ViewerAppRenderSettingsContext& ctx
+    );
+
+    void apply_reset_camera_command(
+        const UiActions& gui_cmds,
+        ViewerAppCameraCommandContext& ctx
+    );
+
+    void sync_camera_link_groups(
+        const AppState& app_state,
+        gs3d::camera::CameraHub& camera_hub
+    );
+
+    void apply_project_open_commands(
+        const UiActions& gui_cmds,
+        gs3d::platform::Window& window
+    );
+
+    void apply_screenshot_command(
+        const UiActions& gui_cmds,
+        ViewerAppScreenshotContext& ctx
+    );
+
+    void observe_viewport_resize_requests(
+        const UiActions& gui_cmds,
+        ViewportResizeScheduler& scheduler,
+        double now_seconds
+    );
+
+    void handle_region_stats_commands(
+        const UiActions& gui_cmds,
+        AppState& app_state,
+        const RegionStatsCommandContext& ctx
     );
 
     ViewerAppConfig config_;

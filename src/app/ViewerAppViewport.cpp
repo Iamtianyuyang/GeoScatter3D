@@ -1,5 +1,8 @@
+#include "app/ViewerApp.hpp"
 #include "app/ViewerAppInternal.hpp"
 
+#include "app/UiActions.hpp"
+#include "app/ViewportResizeScheduler.hpp"
 #include "camera/MouseRay.hpp"
 #include "render/AxisGrid.hpp"
 
@@ -377,6 +380,21 @@ void compute_map_axis_overlay(
             static_cast<double>(view.map_axis_x_max),
             static_cast<double>(view.map_axis_y_min),
             static_cast<double>(view.map_axis_y_max));
+    }
+}
+
+void ViewerApp::observe_viewport_resize_requests(
+    const UiActions& gui_cmds,
+    ViewportResizeScheduler& scheduler,
+    double now_seconds
+) {
+    for (const auto& frame : gui_cmds.viewport_frames) {
+        scheduler.observe(
+            frame.index,
+            frame.width,
+            frame.height,
+            now_seconds
+        );
     }
 }
 
