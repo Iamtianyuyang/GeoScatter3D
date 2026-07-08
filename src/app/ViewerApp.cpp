@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
 
@@ -130,28 +131,6 @@ std::string format_bounds_label(
         std::to_string(bounds.max_y) + ", " +
         std::to_string(bounds.max_z) + "]";
 }
-
-struct BenchmarkPickObservedResult {
-    std::size_t query_index = 0;
-    bool has_hit = false;
-    bool gpu_has_hit = false;
-    bool all_tiles_resident = false;
-    std::uint32_t point_id = 0;
-    float depth = 1.0f;
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-    float value = 0.0f;
-    double issue_cpu_ms = 0.0;
-    double collect_cpu_ms = 0.0;
-    std::vector<std::uint64_t> resident_tile_ids{};
-};
-
-struct BenchmarkPickIssuedMetadata {
-    bool all_tiles_resident = false;
-    std::vector<std::uint64_t> resident_tile_ids{};
-};
-
 std::vector<BenchmarkPickScriptQuery> load_benchmark_pick_script(
     const std::filesystem::path& script_path
 ) {
@@ -504,36 +483,6 @@ build_runtime_tile_point_ids(
     return tile_ids;
 }
 
-struct PickDebugDumpMetadata {
-    std::uint64_t dump_index = 0;
-    std::uint64_t frame_index = 0;
-    int viewport_index = -1;
-    std::uint32_t viewport_width = 0;
-    std::uint32_t viewport_height = 0;
-    float mouse_x = 0.0f;
-    float mouse_y = 0.0f;
-    std::uint32_t sample_left = 0;
-    std::uint32_t sample_top = 0;
-    std::uint32_t sample_width = 0;
-    std::uint32_t sample_height = 0;
-    std::size_t active_lod_level = 0;
-    bool tile_overlay_rendered = false;
-    bool all_tiles_resident = false;
-    std::string render_source{};
-    std::string trigger_reason{};
-    std::vector<std::uint64_t> selected_tile_ids{};
-    std::vector<std::uint64_t> resident_tile_ids{};
-};
-
-struct PickDebugDumpFrame {
-    PickDebugDumpMetadata metadata{};
-    VkFormat color_format = VK_FORMAT_UNDEFINED;
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
-    std::vector<std::uint8_t> color_pixels{};
-    std::vector<std::uint32_t> pick_ids{};
-};
-
 [[nodiscard]]
 std::string join_uint64_list(const std::vector<std::uint64_t>& values)
 {
@@ -844,6 +793,7 @@ void annotate_pick_debug_image(
     );
 }
 
+} // namespace
 void write_pick_debug_dump(
     const std::filesystem::path& output_dir,
     const PickDebugDumpFrame& dump
@@ -925,6 +875,7 @@ void write_pick_debug_dump(
               << meta_path.string() << '\n';
 }
 
+namespace {
 void register_runtime_point_lookup(
     const std::vector<gs3d::data::Gs3dPoint>& points,
     const std::vector<std::uint32_t>& point_ids,
@@ -970,506 +921,6 @@ void register_runtime_tile_point_lookup(
         );
     }
 }
-
-class GpuPickReadback {
-public:
-    GpuPickReadback(
-        const gs3d::render::VulkanContext& context,
-        std::uint32_t frames_in_flight,
-        std::size_t viewport_count
-    )
-        : context_(&context)
-    {
-        slots_.resize(frames_in_flight);
-        for (auto& frame_slots : slots_) {
-            frame_slots.resize(viewport_count);
-        }
-        for (auto& frame_slots : slots_) {
-            for (auto& slot : frame_slots) {
-                slot.id_buffer.create(
-                    context,
-                    sizeof(std::uint32_t) * kMaxPickPixels,
-                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                );
-                slot.depth_buffer.create(
-                    context,
-                    sizeof(float) * kMaxPickPixels,
-                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                );
-            }
-        }
-    }
-
-    void record_request(
-        VkCommandBuffer command_buffer,
-        std::uint32_t frame_slot,
-        const gs3d::render::OffscreenFramebuffer& framebuffer,
-        const GpuPickRequest& request
-    ) {
-        if (frame_slot >= slots_.size() ||
-            request.viewport_index < 0 ||
-            static_cast<std::size_t>(request.viewport_index) >=
-                slots_[frame_slot].size()) {
-            return;
-        }
-
-        auto& slot =
-            slots_[frame_slot][static_cast<std::size_t>(request.viewport_index)];
-        slot.pending = {};
-
-        if (!request.valid()) {
-            return;
-        }
-
-        const auto extent = framebuffer.extent();
-        if (extent.width == 0 || extent.height == 0) {
-            return;
-        }
-
-        const int center_x = std::clamp(
-            static_cast<int>(std::floor(request.mouse_x)),
-            0,
-            static_cast<int>(extent.width) - 1
-        );
-        // mouse_y is already in Vulkan framebuffer coordinates (top-left
-        // origin, y down), matching both the viewport transform and
-        // vkCmdCopyImageToBuffer's image layout. No Y-flip needed.
-        const int center_y = std::clamp(
-            static_cast<int>(std::floor(request.mouse_y)),
-            0,
-            static_cast<int>(extent.height) - 1
-        );
-
-        const int pick_radius_px = std::clamp(
-            static_cast<int>(request.pick_radius_px),
-            0,
-            kPickRadiusPx
-        );
-        const std::uint32_t left =
-            static_cast<std::uint32_t>(std::max(0, center_x - pick_radius_px));
-        const std::uint32_t top =
-            static_cast<std::uint32_t>(std::max(0, center_y - pick_radius_px));
-        const std::uint32_t right =
-            static_cast<std::uint32_t>(
-                std::min(
-                    static_cast<int>(extent.width) - 1,
-                    center_x + pick_radius_px
-                )
-            );
-        const std::uint32_t bottom =
-            static_cast<std::uint32_t>(
-                std::min(
-                    static_cast<int>(extent.height) - 1,
-                    center_y + pick_radius_px
-                )
-            );
-
-        slot.pending.request = request;
-        slot.pending.x = left;
-        slot.pending.y = top;
-        slot.pending.width = right - left + 1;
-        slot.pending.height = bottom - top + 1;
-        slot.pending.center_local_x =
-            static_cast<std::uint32_t>(center_x) - left;
-        slot.pending.center_local_y =
-            static_cast<std::uint32_t>(center_y) - top;
-        slot.pending.pending = true;
-
-        VkBufferImageCopy copy_region{};
-        copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copy_region.imageSubresource.mipLevel = 0;
-        copy_region.imageSubresource.baseArrayLayer = 0;
-        copy_region.imageSubresource.layerCount = 1;
-        copy_region.imageOffset = {
-            static_cast<std::int32_t>(slot.pending.x),
-            static_cast<std::int32_t>(slot.pending.y),
-            0
-        };
-        copy_region.imageExtent = {
-            slot.pending.width,
-            slot.pending.height,
-            1
-        };
-
-        vkCmdCopyImageToBuffer(
-            command_buffer,
-            framebuffer.pick_image(),
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            slot.id_buffer.handle(),
-            1,
-            &copy_region
-        );
-
-        vkCmdCopyImageToBuffer(
-            command_buffer,
-            framebuffer.pick_depth_image(),
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            slot.depth_buffer.handle(),
-            1,
-            &copy_region
-        );
-    }
-
-    [[nodiscard]]
-    std::vector<GpuPickResult> collect_ready_frame(std::uint32_t frame_slot) {
-        std::vector<GpuPickResult> results;
-        if (context_ == nullptr || frame_slot >= slots_.size()) {
-            return results;
-        }
-
-        for (auto& slot : slots_[frame_slot]) {
-            if (!slot.pending.pending) {
-                continue;
-            }
-
-            const auto pixel_count =
-                slot.pending.width * slot.pending.height;
-            if (pixel_count == 0 || pixel_count > kMaxPickPixels) {
-                slot.pending = {};
-                continue;
-            }
-
-            void* id_memory = nullptr;
-            void* depth_memory = nullptr;
-            vkMapMemory(
-                context_->device(),
-                slot.id_buffer.memory(),
-                0,
-                sizeof(std::uint32_t) * pixel_count,
-                0,
-                &id_memory
-            );
-            vkMapMemory(
-                context_->device(),
-                slot.depth_buffer.memory(),
-                0,
-                sizeof(float) * pixel_count,
-                0,
-                &depth_memory
-            );
-
-            const auto* point_ids =
-                static_cast<const std::uint32_t*>(id_memory);
-            const auto* depths =
-                static_cast<const float*>(depth_memory);
-
-            GpuPickResult result;
-            result.request = slot.pending.request;
-            result.depth = 1.0f;
-            std::uint32_t best_distance_sq =
-                std::numeric_limits<std::uint32_t>::max();
-            for (std::uint32_t y = 0; y < slot.pending.height; ++y) {
-                for (std::uint32_t x = 0; x < slot.pending.width; ++x) {
-                    const std::uint32_t i =
-                        y * slot.pending.width + x;
-                    const auto point_id = point_ids[i];
-                    if (point_id == 0) {
-                        continue;
-                    }
-
-                    const float depth = depths[i];
-                    const int dx =
-                        static_cast<int>(x) -
-                        static_cast<int>(slot.pending.center_local_x);
-                    const int dy =
-                        static_cast<int>(y) -
-                        static_cast<int>(slot.pending.center_local_y);
-                    const auto distance_sq =
-                        static_cast<std::uint32_t>(dx * dx + dy * dy);
-
-                    if (!result.has_hit ||
-                        distance_sq < best_distance_sq ||
-                        (distance_sq == best_distance_sq &&
-                         depth < result.depth)) {
-                        result.has_hit = true;
-                        result.point_id = point_id;
-                        result.depth = depth;
-                        best_distance_sq = distance_sq;
-                    }
-                }
-            }
-
-            vkUnmapMemory(context_->device(), slot.depth_buffer.memory());
-            vkUnmapMemory(context_->device(), slot.id_buffer.memory());
-            slot.pending = {};
-            results.push_back(result);
-        }
-
-        return results;
-    }
-
-private:
-    // Buffers are sized for the largest hover aperture we allow.
-    // Each request can choose a smaller point-size-aware radius.
-    static constexpr int kPickRadiusPx =
-        static_cast<int>(kMaxGpuPickRadiusPx);
-    // Must hold (2 * kPickRadiusPx + 1)^2 = 121 pixels; 144 leaves
-    // headroom for any future 12x12 bump without re-touching this.
-    static constexpr std::uint32_t kMaxPickPixels = 144;
-
-    struct PendingState {
-        GpuPickRequest request{};
-        std::uint32_t x = 0;
-        std::uint32_t y = 0;
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-        std::uint32_t center_local_x = 0;
-        std::uint32_t center_local_y = 0;
-        bool pending = false;
-    };
-
-    struct SlotState {
-        gs3d::render::VulkanBuffer id_buffer{};
-        gs3d::render::VulkanBuffer depth_buffer{};
-        PendingState pending{};
-    };
-
-    const gs3d::render::VulkanContext* context_ = nullptr;
-    std::vector<std::vector<SlotState>> slots_{};
-};
-
-class PickDebugFrameDumper {
-public:
-    PickDebugFrameDumper(
-        const gs3d::render::VulkanContext& context,
-        std::uint32_t frames_in_flight
-    )
-        : context_(&context)
-    {
-        slots_.resize(frames_in_flight);
-    }
-
-    [[nodiscard]]
-    bool record_request(
-        VkCommandBuffer command_buffer,
-        std::uint32_t frame_slot,
-        const gs3d::render::OffscreenFramebuffer& framebuffer,
-        const PickDebugDumpMetadata& metadata
-    ) {
-        if (context_ == nullptr || frame_slot >= slots_.size()) {
-            return false;
-        }
-
-        const auto extent = framebuffer.extent();
-        if (extent.width == 0 || extent.height == 0) {
-            return false;
-        }
-
-        auto& slot = slots_[frame_slot];
-        const VkDeviceSize color_bytes =
-            static_cast<VkDeviceSize>(extent.width) *
-            extent.height *
-            4u;
-        const VkDeviceSize id_bytes =
-            static_cast<VkDeviceSize>(extent.width) *
-            extent.height *
-            sizeof(std::uint32_t);
-        ensure_buffer_size(slot.color_buffer, color_bytes);
-        ensure_buffer_size(slot.id_buffer, id_bytes);
-
-        transition_color_image_for_dump(
-            command_buffer,
-            framebuffer.color_image(),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_ACCESS_SHADER_READ_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT
-        );
-
-        VkBufferImageCopy copy_region{};
-        copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copy_region.imageSubresource.mipLevel = 0;
-        copy_region.imageSubresource.baseArrayLayer = 0;
-        copy_region.imageSubresource.layerCount = 1;
-        copy_region.imageOffset = {0, 0, 0};
-        copy_region.imageExtent = {
-            extent.width,
-            extent.height,
-            1
-        };
-
-        vkCmdCopyImageToBuffer(
-            command_buffer,
-            framebuffer.color_image(),
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            slot.color_buffer.handle(),
-            1,
-            &copy_region
-        );
-        vkCmdCopyImageToBuffer(
-            command_buffer,
-            framebuffer.pick_image(),
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            slot.id_buffer.handle(),
-            1,
-            &copy_region
-        );
-
-        transition_color_image_for_dump(
-            command_buffer,
-            framebuffer.color_image(),
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_ACCESS_TRANSFER_READ_BIT,
-            VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-        );
-
-        slot.pending = true;
-        slot.metadata = metadata;
-        slot.width = extent.width;
-        slot.height = extent.height;
-        slot.color_format = framebuffer.color_format();
-        return true;
-    }
-
-    [[nodiscard]]
-    std::optional<PickDebugDumpFrame> collect_ready_frame(
-        std::uint32_t frame_slot
-    ) {
-        if (context_ == nullptr || frame_slot >= slots_.size()) {
-            return std::nullopt;
-        }
-
-        auto& slot = slots_[frame_slot];
-        if (!slot.pending ||
-            slot.width == 0 ||
-            slot.height == 0 ||
-            !slot.color_buffer.valid() ||
-            !slot.id_buffer.valid()) {
-            return std::nullopt;
-        }
-
-        void* color_memory = nullptr;
-        void* id_memory = nullptr;
-        const VkDeviceSize color_bytes =
-            static_cast<VkDeviceSize>(slot.width) *
-            slot.height *
-            4u;
-        const VkDeviceSize id_bytes =
-            static_cast<VkDeviceSize>(slot.width) *
-            slot.height *
-            sizeof(std::uint32_t);
-
-        vkMapMemory(
-            context_->device(),
-            slot.color_buffer.memory(),
-            0,
-            color_bytes,
-            0,
-            &color_memory
-        );
-        vkMapMemory(
-            context_->device(),
-            slot.id_buffer.memory(),
-            0,
-            id_bytes,
-            0,
-            &id_memory
-        );
-
-        PickDebugDumpFrame dump;
-        dump.metadata = slot.metadata;
-        dump.color_format = slot.color_format;
-        dump.width = slot.width;
-        dump.height = slot.height;
-        dump.color_pixels.resize(static_cast<std::size_t>(color_bytes));
-        dump.pick_ids.resize(
-            static_cast<std::size_t>(slot.width) * slot.height
-        );
-        std::memcpy(
-            dump.color_pixels.data(),
-            color_memory,
-            static_cast<std::size_t>(color_bytes)
-        );
-        std::memcpy(
-            dump.pick_ids.data(),
-            id_memory,
-            static_cast<std::size_t>(id_bytes)
-        );
-
-        vkUnmapMemory(context_->device(), slot.id_buffer.memory());
-        vkUnmapMemory(context_->device(), slot.color_buffer.memory());
-        slot.pending = false;
-        return dump;
-    }
-
-private:
-    struct SlotState {
-        gs3d::render::VulkanBuffer color_buffer{};
-        gs3d::render::VulkanBuffer id_buffer{};
-        PickDebugDumpMetadata metadata{};
-        VkFormat color_format = VK_FORMAT_UNDEFINED;
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-        bool pending = false;
-    };
-
-    void ensure_buffer_size(
-        gs3d::render::VulkanBuffer& buffer,
-        VkDeviceSize size
-    ) {
-        if (buffer.valid() && buffer.size() == size) {
-            return;
-        }
-        buffer.destroy();
-        buffer.create(
-            *context_,
-            size,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-        );
-    }
-
-    static void transition_color_image_for_dump(
-        VkCommandBuffer command_buffer,
-        VkImage image,
-        VkImageLayout old_layout,
-        VkImageLayout new_layout,
-        VkAccessFlags src_access_mask,
-        VkAccessFlags dst_access_mask,
-        VkPipelineStageFlags src_stage_mask,
-        VkPipelineStageFlags dst_stage_mask
-    ) {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcAccessMask = src_access_mask;
-        barrier.dstAccessMask = dst_access_mask;
-        barrier.oldLayout = old_layout;
-        barrier.newLayout = new_layout;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        vkCmdPipelineBarrier(
-            command_buffer,
-            src_stage_mask,
-            dst_stage_mask,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr,
-            1,
-            &barrier
-        );
-    }
-
-    const gs3d::render::VulkanContext* context_ = nullptr;
-    std::vector<SlotState> slots_{};
-};
 
 gs3d::render::PointCloudLodSource build_lod_source(
     const gs3d::data::Gs3dLodDataset& lod_dataset,
@@ -1681,6 +1132,7 @@ constexpr double kTileSelectionDebounceSeconds = 0.12;
 constexpr double kInteractingDebounceSeconds = 0.15;
 
 } // namespace
+
 
 ViewerApp::ViewerApp(ViewerAppConfig config)
     : config_(std::move(config))
@@ -2095,7 +1547,6 @@ int ViewerApp::run() {
             pick.consecutive_no_hit.resize(n, 0);
             pick.requests.resize(n);
         }
-        constexpr int kNoHitClearThreshold = 3;
         const bool benchmark_pick_enabled =
             config_.benchmark_mode &&
             !config_.benchmark_pick_script_path.empty();
@@ -2894,399 +2345,48 @@ int ViewerApp::run() {
         );
 
         const auto consume_ready_pick_frame_slot =
-            [&](std::uint32_t frame_slot) {
-                pick.frame_slot = frame_slot;
-                if (config_.pick_debug_dump_enabled) {
-                    const auto debug_dump =
-                        pick_debug_frame_dumper.collect_ready_frame(frame_slot);
-                    if (debug_dump) {
-                        write_pick_debug_dump(
-                            config_.pick_debug_dump_dir,
-                            *debug_dump
-                        );
-                    }
-                }
-
-                gs3d::util::Stopwatch collect_timer;
-                const auto pick_results =
-                    gpu_pick_readback.collect_ready_frame(frame_slot);
-                const double collect_cpu_ms =
-                    collect_timer.elapsed_milliseconds();
-                for (const auto& result : pick_results) {
-                    if (result.request.viewport_index < 0 ||
-                        result.request.viewport_index >=
-                            static_cast<int>(
-                                pick.latest_hover_points.size()
-                            )) {
-                        continue;
-                    }
-
-                    const auto resolved = resolve_pick_point(
-                        result, runtime_points_by_id, runtime_points_valid_by_id);
-                    std::optional<gs3d::data::Gs3dPoint> hit_point = resolved.point;
-                    bool lookup_ok = resolved.via_runtime_lookup;
-
-                    const auto view_index =
-                        static_cast<std::size_t>(
-                            result.request.viewport_index
-                        );
-                    const char* hover_resolve_path =
-                        lookup_ok ? "runtime_lookup" : "miss";
-                    if ((result.request.kind ==
-                             GpuPickRequestKind::Hover ||
-                         result.request.kind ==
-                             GpuPickRequestKind::SetOrbitPivot) &&
-                        result.has_hit &&
-                        !lookup_ok) {
-                        if (const auto resolved =
-                                resolve_hover_point_from_visible_tiles(
-                                    view_index,
-                                    result.point_id,
-                                    result.request.mouse_x,
-                                    result.request.mouse_y
-                                )) {
-                            hit_point = *resolved;
-                            lookup_ok = true;
-                            hover_resolve_path = "resident_tile_fallback";
-                        } else {
-                            hover_resolve_path =
-                                "resident_tile_fallback_miss";
-                        }
-                    }
-                    if (result.request.kind ==
-                        GpuPickRequestKind::Hover) {
-                        // Only overwrite when we actually resolved a
-                        // point.  A GPU hit whose runtime lookup failed
-                        // must NOT null out valid data from a previous
-                        // successful hit — otherwise the tooltip
-                        // flickers or disappears when hovering over
-                        // points whose IDs are not in the lookup table.
-                        if (hit_point.has_value()) {
-                            pick.latest_hover_points[view_index] = hit_point;
-                            pick.hover_timeout[view_index] = 0;
-                            pick.consecutive_no_hit[view_index] = 0;
-                        }
-                        // has_hit=false means GPU found no point at the
-                        // cursor — the mouse is over empty space.
-                        // Debounce across a few frames so that moving
-                        // between nearby points (where the GPU pick lags
-                        // behind the cursor) doesn't flicker the tooltip.
-                        if (!result.has_hit &&
-                            view_index < pick.consecutive_no_hit.size()) {
-                            ++pick.consecutive_no_hit[view_index];
-                            if (pick.consecutive_no_hit[view_index] >=
-                                    kNoHitClearThreshold &&
-                                view_index <
-                                    pick.latest_hover_points.size()) {
-                                pick.latest_hover_points[view_index].reset();
-                            }
-                        }
-                        if (result.has_hit &&
-                            view_index < pick.consecutive_no_hit.size()) {
-                            pick.consecutive_no_hit[view_index] = 0;
-                        }
-                        pick.latest_capture_x[view_index] =
-                            result.request.mouse_x;
-                        pick.latest_capture_y[view_index] =
-                            result.request.mouse_y;
-                        if (benchmark_pick_enabled &&
-                            result.request.benchmark_query_index >= 0) {
-                            const auto query_index =
-                                static_cast<std::size_t>(
-                                    result.request.benchmark_query_index
-                                );
-                            BenchmarkPickObservedResult observed;
-                            observed.query_index = query_index;
-                            observed.has_hit = hit_point.has_value();
-                            observed.gpu_has_hit = result.has_hit;
-                            observed.point_id = result.point_id;
-                            observed.depth = result.depth;
-                            observed.issue_cpu_ms =
-                                query_index <
-                                        benchmark_pick_issue_cpu_ms.size()
-                                    ? benchmark_pick_issue_cpu_ms[
-                                          query_index
-                                      ]
-                                    : 0.0;
-                            observed.collect_cpu_ms = collect_cpu_ms;
-                            if (query_index <
-                                benchmark_pick_issue_metadata.size()) {
-                                observed.all_tiles_resident =
-                                    benchmark_pick_issue_metadata[
-                                        query_index
-                                    ].all_tiles_resident;
-                                observed.resident_tile_ids =
-                                    benchmark_pick_issue_metadata[
-                                        query_index
-                                    ].resident_tile_ids;
-                            }
-                            if (hit_point) {
-                                observed.x = hit_point->x;
-                                observed.y = hit_point->y;
-                                observed.z = hit_point->z;
-                                observed.value = hit_point->value;
-                            }
-                            benchmark_pick_results.push_back(observed);
-                        }
-                        continue;
-                    }
-
-                    if (result.request.kind ==
-                        GpuPickRequestKind::SetOrbitPivot) {
-                        if (!hit_point.has_value()) {
-                            controllers[view_index].clear_orbit_pivot();
-                            selected_focus_points[view_index].reset();
-                            std::cout
-                                << "[CAMERA] orbit pivot cleared"
-                                << " (double-clicked empty space)\n";
-                            continue;
-                        }
-
-                        float raw = hit_point->z;
-                        if (push.height_source ==
-                            static_cast<std::uint32_t>(
-                                gs3d::app::AttrPhysicalSource::Value)) {
-                            raw = hit_point->value;
-                        }
-                        float mapped_z =
-                            push.height_offset + raw * push.height_mult;
-
-                        const gs3d::camera::Vec3 selected_point{
-                            hit_point->x,
-                            hit_point->y,
-                            mapped_z
-                        };
-                        controllers[view_index].set_orbit_pivot(
-                            selected_point
-                        );
-                        selected_focus_points[view_index] = selected_point;
-                        streaming_viewport_index =
-                            result.request.viewport_index;
-                        std::cout
-                            << "[CAMERA] orbit pivot selected at ["
-                            << selected_point.x << ", "
-                            << selected_point.y << ", "
-                            << selected_point.z << "]\n";
-                        continue;
-                    }
-
-                    if (result.request.kind !=
-                        GpuPickRequestKind::BoxSelectAnchor) {
-                        continue;
-                    }
-
-                    // Use the camera's own viewport so NDC conversion
-                    // and the projection matrix use the same dimensions.
-                    const gs3d::camera::Viewport mouse_viewport{
-                        result.request.anchor_camera.viewport_width(),
-                        result.request.anchor_camera.viewport_height()
-                    };
-                    const float plane_z =
-                        hit_point
-                            ? hit_point->z
-                            : result.request.anchor_camera.target().z;
-                    const auto selection_bounds =
-                        gs3d::camera::box_select_world_bounds(
-                            result.request.box_select_min_x,
-                            result.request.box_select_min_y,
-                            result.request.box_select_max_x,
-                            result.request.box_select_max_y,
-                            mouse_viewport,
-                            result.request.anchor_camera,
-                            bounds,
-                            plane_z
-                        );
-                    if (!selection_bounds) {
-                        continue;
-                    }
-
-                    // --- diagnostic: box-select full trace ---
-                    constexpr bool kBoxFitDiag = false;  // set true to enable
-                    const auto& ac = result.request.anchor_camera;
-                    const float fb_min_x = result.request.box_select_min_x;
-                    const float fb_min_y = result.request.box_select_min_y;
-                    const float fb_max_x = result.request.box_select_max_x;
-                    const float fb_max_y = result.request.box_select_max_y;
-
-                    if (kBoxFitDiag) {
-                        const auto& bc = ac;
-                        std::fprintf(stderr,
-                            "[BOXFIT] ========================================\n");
-                        std::fprintf(stderr,
-                            "[BOXFIT] fb_rect=(%.1f,%.1f)-(%.1f,%.1f) "
-                            "fb_size=(%.1f,%.1f) fb_center=(%.1f,%.1f)\n",
-                            static_cast<double>(fb_min_x),
-                            static_cast<double>(fb_min_y),
-                            static_cast<double>(fb_max_x),
-                            static_cast<double>(fb_max_y),
-                            static_cast<double>(fb_max_x - fb_min_x),
-                            static_cast<double>(fb_max_y - fb_min_y),
-                            static_cast<double>(0.5*(fb_min_x + fb_max_x)),
-                            static_cast<double>(0.5*(fb_min_y + fb_max_y)));
-                        std::fprintf(stderr,
-                            "[BOXFIT] mouse_vp=%ux%u cam_vp=%ux%u "
-                            "plane_z=%.2f vp_idx=%d\n",
-                            mouse_viewport.width, mouse_viewport.height,
-                            ac.viewport_width(), ac.viewport_height(),
-                            static_cast<double>(plane_z),
-                            result.request.viewport_index);
-                        std::fprintf(stderr,
-                            "[BOXFIT] cam_BEFORE: pos=(%.2f,%.2f,%.2f) "
-                            "tgt=(%.2f,%.2f,%.2f) ortho_h=%.2f aspect=%.4f "
-                            "near=%.4f far=%.2f\n",
-                            static_cast<double>(bc.position().x),
-                            static_cast<double>(bc.position().y),
-                            static_cast<double>(bc.position().z),
-                            static_cast<double>(bc.target().x),
-                            static_cast<double>(bc.target().y),
-                            static_cast<double>(bc.target().z),
-                            static_cast<double>(bc.ortho_height()),
-                            static_cast<double>(bc.aspect_ratio()),
-                            static_cast<double>(bc.near_plane()),
-                            static_cast<double>(bc.far_plane()));
-
-                        // Print each corner's from_screen result
-                        const std::array<std::pair<double,double>, 4> dbg_corners{{
-                            {static_cast<double>(fb_min_x), static_cast<double>(fb_min_y)},
-                            {static_cast<double>(fb_max_x), static_cast<double>(fb_min_y)},
-                            {static_cast<double>(fb_min_x), static_cast<double>(fb_max_y)},
-                            {static_cast<double>(fb_max_x), static_cast<double>(fb_max_y)},
-                        }};
-                        const char* dbg_names[] = {"TL","TR","BL","BR"};
-                        for (int ci = 0; ci < 4; ++ci) {
-                            auto dbg_ray = gs3d::camera::MouseRay::from_screen(
-                                dbg_corners[ci].first, dbg_corners[ci].second,
-                                mouse_viewport, ac);
-                            auto dbg_hit = gs3d::camera::MouseRay::intersect_plane(
-                                dbg_ray, {0,0,ac.target().z}, {0,0,1});
-                            std::fprintf(stderr,
-                                "[BOXFIT] corner[%s] scr=(%.1f,%.1f) "
-                                "ray_org=(%.2f,%.2f,%.2f) ray_dir=(%.4f,%.4f,%.4f) "
-                                "hit_z=%.2f %s",
-                                dbg_names[ci],
-                                dbg_corners[ci].first, dbg_corners[ci].second,
-                                static_cast<double>(dbg_ray.origin.x),
-                                static_cast<double>(dbg_ray.origin.y),
-                                static_cast<double>(dbg_ray.origin.z),
-                                static_cast<double>(dbg_ray.direction.x),
-                                static_cast<double>(dbg_ray.direction.y),
-                                static_cast<double>(dbg_ray.direction.z),
-                                static_cast<double>(ac.target().z),
-                                dbg_hit ? "hit" : "miss");
-                            if (dbg_hit) std::fprintf(stderr,
-                                "=(%.2f,%.2f,%.2f)",
-                                static_cast<double>(dbg_hit->x),
-                                static_cast<double>(dbg_hit->y),
-                                static_cast<double>(dbg_hit->z));
-                            std::fprintf(stderr, "\n");
-                        }
-                    }
-
-                    auto& box_camera =
-                        viewport_manager.camera(
-                            result.request.viewport_index
-                        );
-
-                    // Save current state, run fit_screen_rect on the
-                    // real camera (so the ray uses the correct viewport
-                    // and old projection — see fit_screen_rect fix),
-                    // then restore and animate toward the desired state.
-                    const auto saved_pos = box_camera.position();
-                    const auto saved_target = box_camera.target();
-                    const float saved_ortho_h = box_camera.ortho_height();
-
-                    box_camera.fit_screen_rect(
-                        fb_min_x, fb_min_y,
-                        fb_max_x, fb_max_y,
-                        mouse_viewport.width, mouse_viewport.height,
-                        1.05f);
-
-                    const auto desired_target = box_camera.target();
-                    const float desired_ortho_h = box_camera.ortho_height();
-                    const auto desired_pos = box_camera.position();
-                    const float desired_near = box_camera.near_plane();
-                    const float desired_far = box_camera.far_plane();
-                    const auto desired_up = box_camera.up();
-
-                    // Restore and animate.
-                    box_camera.look_at(
-                        saved_pos, saved_target, box_camera.up());
-                    box_camera.set_orthographic(
-                        saved_ortho_h,
-                        box_camera.near_plane(),
-                        box_camera.far_plane());
-
-                    controllers[
-                        static_cast<std::size_t>(
-                            result.request.viewport_index
-                        )
-                    ].animate_to(
-                        box_camera,
-                        desired_target,
-                        desired_ortho_h
-                    );
-
-                    // --- expected box-zoom (screen-space formula) ---
-                    if (kBoxFitDiag) {
-                        const float old_ortho_h = ac.ortho_height();
-                        const float vp_w = static_cast<float>(mouse_viewport.width);
-                        const float vp_h = static_cast<float>(mouse_viewport.height);
-                        const float rect_w = fb_max_x - fb_min_x;
-                        const float rect_h = fb_max_y - fb_min_y;
-                        const float scale_x = rect_w / std::max(vp_w, 1.0f);
-                        const float scale_y = rect_h / std::max(vp_h, 1.0f);
-                        const float expected_ortho_h =
-                            old_ortho_h * std::max(scale_x, scale_y) * 1.05f;
-
-                        const float ctr_x = 0.5f*(fb_min_x + fb_max_x);
-                        const float ctr_y = 0.5f*(fb_min_y + fb_max_y);
-                        auto ctr_ray = gs3d::camera::MouseRay::from_screen(
-                            static_cast<double>(ctr_x),
-                            static_cast<double>(ctr_y),
-                            mouse_viewport, ac);
-                        auto ctr_hit = gs3d::camera::MouseRay::intersect_plane(
-                            ctr_ray, {0,0,ac.target().z}, {0,0,1});
-                        float exp_tgt_x = ac.target().x;
-                        float exp_tgt_y = ac.target().y;
-                        if (ctr_hit) {
-                            exp_tgt_x = ctr_hit->x;
-                            exp_tgt_y = ctr_hit->y;
-                        }
-
-                        std::fprintf(stderr,
-                            "[BOXFIT] EXPECTED: scale_x=%.4f scale_y=%.4f "
-                            "ortho_h=%.2f target=(%.2f,%.2f,%.2f)\n",
-                            static_cast<double>(scale_x),
-                            static_cast<double>(scale_y),
-                            static_cast<double>(expected_ortho_h),
-                            static_cast<double>(exp_tgt_x),
-                            static_cast<double>(exp_tgt_y),
-                            static_cast<double>(ac.target().z));
-                    }
-
-                    if (kBoxFitDiag) {
-                        std::fprintf(stderr,
-                            "[BOXFIT] ACTUAL:   ortho_h=%.2f "
-                            "target=(%.2f,%.2f,%.2f) "
-                            "pos=(%.2f,%.2f,%.2f) "
-                            "near=%.4f far=%.2f up=(%.2f,%.2f,%.2f)\n",
-                            static_cast<double>(desired_ortho_h),
-                            static_cast<double>(desired_target.x),
-                            static_cast<double>(desired_target.y),
-                            static_cast<double>(desired_target.z),
-                            static_cast<double>(desired_pos.x),
-                            static_cast<double>(desired_pos.y),
-                            static_cast<double>(desired_pos.z),
-                            static_cast<double>(desired_near),
-                            static_cast<double>(desired_far),
-                            static_cast<double>(desired_up.x),
-                            static_cast<double>(desired_up.y),
-                            static_cast<double>(desired_up.z));
-                    }
-                    streaming_viewport_index =
-                        result.request.viewport_index;
-                    tile_selection_dirty = true;
-                }
+            [this,
+             &pick,
+             &pick_debug_frame_dumper,
+             &gpu_pick_readback,
+             &runtime_points_by_id,
+             &runtime_points_valid_by_id,
+             &controllers,
+             &selected_focus_points,
+             &viewport_manager,
+             &bounds,
+             &push,
+             &streaming_viewport_index,
+             &tile_selection_dirty,
+             &benchmark_pick_enabled,
+             &benchmark_pick_issue_cpu_ms,
+             &benchmark_pick_issue_metadata,
+             &benchmark_pick_results,
+             &resolve_hover_point_from_visible_tiles]
+            (std::uint32_t frame_slot) {
+                ViewerAppPickLookupContext pick_lookup{
+                    runtime_points_by_id,
+                    runtime_points_valid_by_id
+                };
+                ViewerAppPickCameraContext pick_camera{
+                    controllers,
+                    selected_focus_points,
+                    viewport_manager,
+                    bounds,
+                    push,
+                    streaming_viewport_index,
+                    tile_selection_dirty
+                };
+                ViewerAppBenchmarkPickContext pick_benchmark{
+                    benchmark_pick_enabled,
+                    benchmark_pick_issue_cpu_ms,
+                    benchmark_pick_issue_metadata,
+                    benchmark_pick_results
+                };
+                this->consume_ready_pick_frame_slot(
+                    frame_slot, pick, pick_debug_frame_dumper,
+                    gpu_pick_readback, pick_lookup, pick_camera,
+                    pick_benchmark, resolve_hover_point_from_visible_tiles);
             };
 
         // ponytail: screenshot staging — allocated on demand in post_pass, read

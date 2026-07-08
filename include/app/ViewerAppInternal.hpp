@@ -5,14 +5,21 @@
 #include "data/Gs3dFormat.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace gs3d::app {
+
+class GpuPickReadback;
+class PickDebugFrameDumper;
 
 constexpr int kMaxViewportCount = 4;
 
 constexpr std::uint32_t kDefaultGpuPickRadiusPx = 3;
 constexpr std::uint32_t kMaxGpuPickRadiusPx = 5;
+constexpr int kNoHitClearThreshold = 3;
 
 enum class GpuPickRequestKind {
     None,
@@ -62,6 +69,66 @@ struct BenchmarkPickScriptQuery {
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
 };
+
+struct BenchmarkPickObservedResult {
+    std::size_t query_index = 0;
+    bool has_hit = false;
+    bool gpu_has_hit = false;
+    bool all_tiles_resident = false;
+    std::uint32_t point_id = 0;
+    float depth = 1.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float value = 0.0f;
+    double issue_cpu_ms = 0.0;
+    double collect_cpu_ms = 0.0;
+    std::vector<std::uint64_t> resident_tile_ids{};
+};
+
+struct BenchmarkPickIssuedMetadata {
+    bool all_tiles_resident = false;
+    std::vector<std::uint64_t> resident_tile_ids{};
+};
+
+struct PickDebugDumpMetadata {
+    std::uint64_t dump_index = 0;
+    std::uint64_t frame_index = 0;
+    int viewport_index = -1;
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
+    float mouse_x = 0.0f;
+    float mouse_y = 0.0f;
+    std::uint32_t sample_left = 0;
+    std::uint32_t sample_top = 0;
+    std::uint32_t sample_width = 0;
+    std::uint32_t sample_height = 0;
+    std::size_t active_lod_level = 0;
+    bool tile_overlay_rendered = false;
+    bool all_tiles_resident = false;
+    std::string render_source{};
+    std::string trigger_reason{};
+    std::vector<std::uint64_t> selected_tile_ids{};
+    std::vector<std::uint64_t> resident_tile_ids{};
+};
+
+struct PickDebugDumpFrame {
+    PickDebugDumpMetadata metadata{};
+    VkFormat color_format = VK_FORMAT_UNDEFINED;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<std::uint8_t> color_pixels{};
+    std::vector<std::uint32_t> pick_ids{};
+};
+
+void write_pick_debug_dump(
+    const std::filesystem::path& output_dir,
+    const PickDebugDumpFrame& dump
+);
+
+using VisibleTilePickResolver = std::function<
+    std::optional<gs3d::data::Gs3dPoint>(std::size_t, std::uint32_t, float, float)
+>;
 
 [[nodiscard]]
 std::uint32_t compute_hover_pick_radius_px(float point_size) noexcept;

@@ -273,6 +273,17 @@ private:
         const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
     );
 
+    void consume_ready_pick_frame_slot(
+        std::uint32_t frame_slot,
+        ViewerAppPickState& pick,
+        PickDebugFrameDumper& pick_debug_frame_dumper,
+        GpuPickReadback& gpu_pick_readback,
+        const ViewerAppPickLookupContext& pick_lookup,
+        ViewerAppPickCameraContext& pick_camera,
+        ViewerAppBenchmarkPickContext& pick_benchmark,
+        const VisibleTilePickResolver& resolve_hover_point_from_visible_tiles
+    );
+
     ViewerAppConfig config_;
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
