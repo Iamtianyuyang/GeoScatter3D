@@ -217,6 +217,9 @@ WelcomeWindowResult WelcomeWindow::run()
         switch (action.kind) {
         case gs3d::ui::WelcomePageActionKind::ContinueCurrent:
             result.kind = WelcomeWindowResultKind::ContinueCurrent;
+            // 带上卡片实际显示的路径，调用方按它打开项目——否则会
+            // 回落到 viewer.toml 里可能过期/相对的 bundle_dir。
+            result.path = config_.current_path;
             window.request_close();
             break;
         case gs3d::ui::WelcomePageActionKind::OpenProject:

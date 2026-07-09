@@ -345,8 +345,17 @@ int main(int argc, char** argv) {
                     gs3d::app::WelcomeWindowResultKind::Cancelled) {
                     return 0;
                 }
+                // 继续编辑 = 打开卡片上显示的项目路径（通常来自最近
+                // 项目的绝对路径）。不能落回 viewer.toml 的 bundle_dir：
+                // 它可能是相对路径或已过期，和界面显示不一致。路径不是
+                // .gs3d.bundle 时（如 csv 输入）保持原有配置驱动流程。
+                const bool continue_as_project =
+                    welcome_result.kind ==
+                        gs3d::app::WelcomeWindowResultKind::ContinueCurrent &&
+                    welcome_result.path.extension() == ".bundle";
                 if (welcome_result.kind ==
-                    gs3d::app::WelcomeWindowResultKind::OpenProject) {
+                        gs3d::app::WelcomeWindowResultKind::OpenProject ||
+                    continue_as_project) {
                     apply_open_request(
                         app_config,
                         {
