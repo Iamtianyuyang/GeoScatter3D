@@ -8,6 +8,7 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #include <GLFW/glfw3.h>
 
@@ -514,6 +515,10 @@ void ImGuiLayer::init(
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     if (enable_multi_viewports) {
         io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        // Use native OS decorations for detached viewports so moving a
+        // torn-out window does not depend on ImGui's self-drawn title-bar
+        // hit testing.
+        io.ConfigViewportsNoDecoration = false;
     }
 
     if (ini_path.empty()) {
@@ -819,6 +824,22 @@ void ImGuiLayer::begin_frame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    // TODO(debug): 临时诊断多视口点击路由，定位副窗口输入失效
+    {
+        ImGuiContext& g = *ImGui::GetCurrentContext();
+        if (g.IO.MouseClicked[0] || g.IO.MouseReleased[0]) {
+            std::fprintf(stderr,
+                "[VPDBG] %s pos=(%.0f,%.0f) hovered_vp=%08X mouse_vp=%08X "
+                "hovered_win=%s moving_win=%s nav_win=%s\n",
+                g.IO.MouseClicked[0] ? "CLICK" : "RELEASE",
+                g.IO.MousePos.x, g.IO.MousePos.y,
+                g.IO.MouseHoveredViewport,
+                g.MouseViewport ? g.MouseViewport->ID : 0,
+                g.HoveredWindow ? g.HoveredWindow->Name : "<none>",
+                g.MovingWindow ? g.MovingWindow->Name : "<none>",
+                g.NavWindow ? g.NavWindow->Name : "<none>");
+        }
+    }
     frame_open_ = true;
 }
 
