@@ -1,4 +1,5 @@
 #include "ui/UiRoot.hpp"
+#include "ui/UiPalette.hpp"
 #include "ui/RegionStatsPanel.hpp"
 #include "ui/DatasetPanel.hpp"
 #include "ui/NavigationMapPanel.hpp"
@@ -329,20 +330,21 @@ namespace LayoutMetrics {
 } // namespace LayoutMetrics
 
 namespace AxisStyle {
-    // 轻量坐标尺风格 — 简洁、克制、低对比
-    constexpr ImU32 kAxisLine    = IM_COL32(170, 170, 170, 190);
-    constexpr ImU32 kMajorTick   = IM_COL32(185, 185, 185, 210);
-    constexpr ImU32 kMinorTick   = IM_COL32(145, 145, 145, 160);
-    constexpr ImU32 kLabel       = IM_COL32(190, 190, 190, 220);
-    constexpr ImU32 kGrid        = IM_COL32(120, 120, 120, 35);
-    constexpr ImU32 kFrame       = IM_COL32(70,  72,  78,  80);
-    constexpr ImU32 kScaleLine   = IM_COL32(180, 185, 195, 200);
-    constexpr ImU32 kScaleLabel  = IM_COL32(190, 195, 205, 215);
+    // 轻量坐标尺风格 — 简洁、克制、低对比。
+    // 统一取自 UiPalette（运算符灰/弱文字），已做 sRGB→linear 预转换。
+    inline const ImU32 kAxisLine    = to_u32(palette::kGray, 190);
+    inline const ImU32 kMajorTick   = to_u32(palette::kGray, 210);
+    inline const ImU32 kMinorTick   = to_u32(palette::kTextDim, 160);
+    inline const ImU32 kLabel       = to_u32(palette::kGray, 220);
+    inline const ImU32 kGrid        = to_u32(palette::kTextDim, 35);
+    inline const ImU32 kFrame       = to_u32(palette::kBorder, 80);
+    inline const ImU32 kScaleLine   = to_u32(palette::kGray, 200);
+    inline const ImU32 kScaleLabel  = to_u32(palette::kGray, 215);
     // 信息 badge
-    constexpr ImU32 kBadgeBg     = IM_COL32(14,  15,  18,  185);
-    constexpr ImU32 kBadgeText   = IM_COL32(210, 215, 225, 245);
+    inline const ImU32 kBadgeBg     = to_u32(palette::kMenuBg, 185);
+    inline const ImU32 kBadgeText   = to_u32(palette::kText, 245);
     // 方向指示器
-    constexpr ImU32 kGizmoBg     = IM_COL32(16,  18,  22,  200);
+    inline const ImU32 kGizmoBg     = to_u32(palette::kMenuBg, 200);
 
     // 线宽
     constexpr float kAxisLineWidth   = 1.0f;
@@ -431,7 +433,7 @@ void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
     draw_list->AddRectFilled(
         min,
         max,
-        IM_COL32(20, 22, 25, 255)
+        to_u32(palette::kMenuBg, 255)
     );
 
     const float width = max.x - min.x;
@@ -491,9 +493,9 @@ void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
                                origin.y + end.dy * s),
                         color, 1.5f * ui_scale);
         };
-        draw_axis(view.gizmo_x_axis, IM_COL32(225, 92, 92, 220));
-        draw_axis(view.gizmo_y_axis, IM_COL32(91, 204, 122, 220));
-        draw_axis(view.gizmo_z_axis, IM_COL32(81, 141, 230, 220));
+        draw_axis(view.gizmo_x_axis, to_u32(palette::kRed, 220));
+        draw_axis(view.gizmo_y_axis, to_u32(palette::kGreen, 220));
+        draw_axis(view.gizmo_z_axis, to_u32(palette::kBlue, 220));
     }
 }
 
@@ -614,21 +616,22 @@ void draw_tools_window(
             bool measure_active =
                 measurement.measure_mode_active();
             if (measure_active) {
+                // 测量语义色：函数黄，激活时按钮反白（深底色文字）
                 ImGui::PushStyleColor(
                     ImGuiCol_Button,
-                    IM_COL32(220, 150, 30, 230)
+                    to_u32(palette::kYellow, 230)
                 );
                 ImGui::PushStyleColor(
                     ImGuiCol_ButtonHovered,
-                    IM_COL32(240, 170, 40, 240)
+                    to_u32(palette::kYellow, 255)
                 );
                 ImGui::PushStyleColor(
                     ImGuiCol_ButtonActive,
-                    IM_COL32(200, 130, 20, 230)
+                    to_u32(palette::kYellow, 200)
                 );
                 ImGui::PushStyleColor(
                     ImGuiCol_Text,
-                    IM_COL32(20, 20, 20, 255)
+                    to_u32(palette::kBg, 255)
                 );
             }
             if (ImGui::SmallButton("测量")) {
@@ -646,7 +649,7 @@ void draw_tools_window(
             200.0f * ui_scale) {
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
-                IM_COL32(176, 182, 192, 150)
+                to_u32(palette::kTextDim, 150)
             );
             ImGui::TextUnformatted(
                 dataset.active_dataset.empty()
@@ -759,7 +762,7 @@ void draw_viewport_window(
     }
     if (hint != nullptr) {
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 176, 188, 125));
+        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 125));
         ImGui::TextUnformatted(hint);
         ImGui::PopStyleColor();
     }
@@ -808,20 +811,20 @@ void draw_viewport_window(
     canvas_dl->AddRectFilled(
         plot_min,
         plot_max,
-        IM_COL32(30, 34, 42, 255)
+        to_u32(palette::kMenuBg, 255)
     );
 
     // ── 测量模式视口边框提示 ──
     if (view.measure_mode_active) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        constexpr ImU32 kMeasureBorder = IM_COL32(255, 200, 40, 180);
+        const ImU32 kMeasureBorder = to_u32(palette::kYellow, 180);
         const float kBorderWidth = 3.5f * ui_scale;
         dl->AddRect(plot_min, plot_max, kMeasureBorder, 0.0f, 0, kBorderWidth);
 
         const float kBadgePadX = 8.0f * ui_scale;
         const float kBadgePadY = 5.0f * ui_scale;
-        constexpr ImU32 kBadgeBg = IM_COL32(255, 180, 30, 220);
-        constexpr ImU32 kBadgeText = IM_COL32(20, 20, 20, 255);
+        const ImU32 kBadgeBg = to_u32(palette::kYellow, 230);
+        const ImU32 kBadgeText = to_u32(palette::kBg, 255);
         const char* badge_label = "测量模式  中键量距  Shift框选统计";
         const ImVec2 ts = ImGui::CalcTextSize(badge_label);
         const ImVec2 badge_min{
@@ -1165,9 +1168,9 @@ void draw_viewport_window(
             const float cx = plot_min.x + scr.x;
             const float cy = plot_min.y + scr.y;
 
-            constexpr ImU32 kCrosshairLine  = IM_COL32(255, 220, 60, 80);
-            constexpr ImU32 kCrosshairBg    = IM_COL32(14,  15,  18, 200);
-            constexpr ImU32 kCrosshairText  = IM_COL32(255, 220, 60, 240);
+            const ImU32 kCrosshairLine  = to_u32(palette::kYellow, 80);
+            const ImU32 kCrosshairBg    = to_u32(palette::kMenuBg, 200);
+            const ImU32 kCrosshairText  = to_u32(palette::kYellow, 240);
             const float kCrosshairWidth = 1.0f * ui_scale;
             const float kLabelPad = 3.0f * ui_scale;
             const float kLabelAxisGap = 3.0f * ui_scale;
@@ -1255,9 +1258,9 @@ void draw_viewport_window(
     // ── 三维世界坐标轴（QGIS 包围盒，随相机旋转）──
     if (view.show_world_axis) {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        constexpr ImU32 kFrameColor  = IM_COL32(220, 220, 220, 180);
-        constexpr ImU32 kTickColor   = IM_COL32(200, 200, 200, 140);
-        constexpr ImU32 kLabelColor  = IM_COL32(230, 230, 230, 200);
+        const ImU32 kFrameColor  = to_u32(palette::kGray, 180);
+        const ImU32 kTickColor   = to_u32(palette::kGray, 140);
+        const ImU32 kLabelColor  = to_u32(palette::kText, 200);
 
         draw_list->PushClipRect(canvas_min, canvas_max, true);
 
@@ -1304,7 +1307,7 @@ void draw_viewport_window(
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float kR = 8.0f * ui_scale;
-        constexpr ImU32 kColor = IM_COL32(255, 220, 60, 220);
+        const ImU32 kColor = to_u32(palette::kYellow, 220);
         const float kThick = 2.0f * ui_scale;
         dl->AddLine({cx - kR, cy}, {cx + kR, cy}, kColor, kThick);
         dl->AddLine({cx, cy - kR}, {cx, cy + kR}, kColor, kThick);
@@ -1313,8 +1316,8 @@ void draw_viewport_window(
         // "已复制" feedback overlay
         if (view.copy_feedback_frames > 0) {
             const float kFeedbackPad = 4.0f * ui_scale;
-            constexpr ImU32 kFeedbackBg = IM_COL32(40, 180, 80, 210);
-            constexpr ImU32 kFeedbackText = IM_COL32(255, 255, 255, 240);
+            const ImU32 kFeedbackBg = to_u32(palette::kGreen, 220);
+            const ImU32 kFeedbackText = to_u32(palette::kBg, 255);
             const char* feedback = "已复制";
             const ImVec2 fs = ImGui::CalcTextSize(feedback);
             const float fb_x = cx - fs.x * 0.5f;
@@ -1339,7 +1342,7 @@ void draw_viewport_window(
         const float cx = plot_min.x + scr.x;
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        constexpr ImU32 kSelectedColor = IM_COL32(70, 220, 255, 240);
+        const ImU32 kSelectedColor = to_u32(palette::kVarBlue, 240);
         dl->AddCircle({cx, cy}, 12.0f * ui_scale, kSelectedColor, 0, 2.5f * ui_scale);
         dl->AddCircleFilled({cx, cy}, 3.0f * ui_scale, kSelectedColor);
     }
@@ -1353,7 +1356,7 @@ void draw_viewport_window(
         dl->PushClipRect(plot_min, plot_max, true);
         constexpr float kMeasureLineWidth = 2.0f;
         constexpr float kMeasureLabelPad = 3.0f;
-        constexpr ImU32 kMeasureLabelBg = IM_COL32(14, 15, 18, 200);
+        const ImU32 kMeasureLabelBg = to_u32(palette::kMenuBg, 200);
 
         for (const auto& overlay : view.measurement_overlays) {
             if (!overlay.visible) continue;
@@ -1372,7 +1375,9 @@ void draw_viewport_window(
             const ImVec2 pa{plot_min.x + sa.x, plot_min.y + sa.y};
             const ImVec2 pb{plot_min.x + sb.x, plot_min.y + sb.y};
 
-            dl->AddLine(pa, pb, overlay.color, kMeasureLineWidth * ui_scale);
+            // overlay.color 按 sRGB 值存储（颜色选择器所见），绘制前线性化
+            dl->AddLine(pa, pb, srgb_u32_to_linear(overlay.color),
+                        kMeasureLineWidth * ui_scale);
 
             // Distance label at midpoint.
             if (!overlay.label.empty()) {
@@ -1390,7 +1395,7 @@ void draw_viewport_window(
                 dl->AddText(
                     ImVec2(pmid.x - ts.x * 0.5f,
                            pmid.y - ts.y * 0.5f),
-                    IM_COL32(255, 255, 255, 240),
+                    to_u32(palette::kText, 240),
                     overlay.label.c_str());
             }
         }
@@ -1412,10 +1417,10 @@ void draw_viewport_window(
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->PushClipRect(plot_min, plot_max, true);
 
-        // Filled circle + outer ring in bright measurement-amber.
+        // Filled circle + outer ring in measurement-yellow.
         const float kMarkerR = 7.0f * ui_scale;
-        constexpr ImU32 kMarkerFill = IM_COL32(255, 200, 40, 200);
-        constexpr ImU32 kMarkerRing = IM_COL32(255, 220, 60, 255);
+        const ImU32 kMarkerFill = to_u32(palette::kYellow, 200);
+        const ImU32 kMarkerRing = to_u32(palette::kYellow, 255);
         dl->AddCircleFilled({px, py}, kMarkerR, kMarkerFill);
         dl->AddCircle({px, py}, kMarkerR + 2.0f * ui_scale, kMarkerRing, 0, 2.5f * ui_scale);
 
@@ -1425,7 +1430,7 @@ void draw_viewport_window(
         const float my = io.MousePos.y;
         if (mx >= plot_min.x && mx < plot_max.x &&
             my >= plot_min.y && my < plot_max.y) {
-            constexpr ImU32 kPreviewLine = IM_COL32(255, 220, 60, 100);
+            const ImU32 kPreviewLine = to_u32(palette::kYellow, 100);
             dl->AddLine({px, py}, {mx, my}, kPreviewLine, 1.5f * ui_scale);
         }
 
@@ -1552,11 +1557,11 @@ void draw_viewport_window(
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
                             plot_min.y + scr_curr.y);
         ImGui::GetWindowDrawList()->AddRect(
-            rect_a, rect_b, IM_COL32(255, 220, 0, 255),
+            rect_a, rect_b, to_u32(palette::kAccent, 255),
             0.0f, 0, 1.5f * ui_scale
         );
         ImGui::GetWindowDrawList()->AddRectFilled(
-            rect_a, rect_b, IM_COL32(255, 220, 0, 32)
+            rect_a, rect_b, to_u32(palette::kAccent, 40)
         );
 
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -1603,11 +1608,11 @@ void draw_viewport_window(
         const ImVec2 rect_b(plot_min.x + scr_curr.x,
                             plot_min.y + scr_curr.y);
         ImGui::GetWindowDrawList()->AddRect(
-            rect_a, rect_b, IM_COL32(100, 255, 100, 255),
+            rect_a, rect_b, to_u32(palette::kTeal, 255),
             0.0f, 0, 1.5f * ui_scale
         );
         ImGui::GetWindowDrawList()->AddRectFilled(
-            rect_a, rect_b, IM_COL32(100, 255, 100, 32)
+            rect_a, rect_b, to_u32(palette::kTeal, 40)
         );
 
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -1779,6 +1784,15 @@ void draw_workspace_window(
         ImGuiCond_FirstUseEver
     );
 
+    const ImVec4 host_bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, host_bg);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, host_bg);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, host_bg);
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
     const ImGuiWindowFlags host_flags =
         ImGuiWindowFlags_NoDocking |
         ImGuiWindowFlags_MenuBar;
@@ -1805,6 +1819,8 @@ void draw_workspace_window(
         );
     }
     ImGui::End();
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar(3);
 
     if (!workspace.visible) {
         return;
@@ -2243,13 +2259,13 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             host_dl->AddLine(
                 ImVec2(status_min.x, status_min.y),
                 ImVec2(status_max.x, status_min.y),
-                IM_COL32(92, 98, 108, 56),
+                to_u32(palette::kBorder, 56),
                 1.0f
             );
             ImGui::SetCursorPosX(LayoutMetrics::kStatusInsetX);
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
-                IM_COL32(178, 184, 194, 158)
+                to_u32(palette::kTextDim, 158)
             );
             if (status_font() != nullptr) {
                 ImGui::PushFont(status_font());

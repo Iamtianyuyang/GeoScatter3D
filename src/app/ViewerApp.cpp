@@ -11,6 +11,7 @@
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
 #include "ui/SvgLogoTexture.hpp"
+#include "ui/UiPalette.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
@@ -642,10 +643,12 @@ int ViewerApp::run() {
             }
         }
 
+        // 配置里的 clear_color 按 sRGB 语义书写；离屏目标和交换链都是
+        // sRGB 格式，写入前线性化，屏幕上才显示为配置的原值。
         gs3d::render::ClearColor clear_color;
-        clear_color.r = config_.clear_color[0];
-        clear_color.g = config_.clear_color[1];
-        clear_color.b = config_.clear_color[2];
+        clear_color.r = gs3d::ui::srgb_to_linear(config_.clear_color[0]);
+        clear_color.g = gs3d::ui::srgb_to_linear(config_.clear_color[1]);
+        clear_color.b = gs3d::ui::srgb_to_linear(config_.clear_color[2]);
         clear_color.a = config_.clear_color[3];
         renderer.set_clear_color(clear_color);
 

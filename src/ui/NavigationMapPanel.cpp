@@ -1,4 +1,5 @@
 #include "ui/NavigationMapPanel.hpp"
+#include "ui/UiPalette.hpp"
 
 #include "imgui.h"
 
@@ -67,7 +68,7 @@ void draw_navigation_map(
         dl->AddRectFilled(
             img_min,
             img_max,
-            IM_COL32(32, 34, 40, 255)
+            to_u32(palette::kMenuBg, 255)
         );
     }
 
@@ -89,7 +90,7 @@ void draw_navigation_map(
         dl->AddRect(
             rect_min,
             rect_max,
-            IM_COL32(255, 80, 80, 220),
+            to_u32(palette::kRed, 220),
             0.0f,
             0,
             2.0f

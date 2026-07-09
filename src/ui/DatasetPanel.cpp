@@ -1,4 +1,5 @@
 #include "ui/DatasetPanel.hpp"
+#include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 
 #include "gui/UiFonts.hpp"
@@ -46,7 +47,7 @@ void draw_dataset_panel(
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PopFont();
         }
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(178, 184, 194, 150));
+        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 150));
         ImGui::Text("%llu 点", static_cast<unsigned long long>(dataset_state.point_count));
         ImGui::SameLine();
         ImGui::TextDisabled("|");

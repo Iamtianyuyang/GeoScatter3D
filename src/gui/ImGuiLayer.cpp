@@ -2,6 +2,7 @@
 #include "gui/UiFonts.hpp"
 
 #include "app/ResourcePath.hpp"
+#include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 
 #include "backends/imgui_impl_glfw.h"
@@ -674,6 +675,16 @@ void ImGuiLayer::init(
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         style.WindowRounding = 0.0f;
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    // 交换链是 B8G8R8A8_SRGB：硬件把 shader 输出当线性值再编码，上面的
+    // 主题颜色是按 sRGB 十六进制值书写的，必须整体预转换到线性空间，
+    // 屏幕上才显示为书写的原值（否则整个 UI 被提亮冲淡）。alpha 不转换。
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        ImVec4& c = style.Colors[i];
+        c.x = gs3d::ui::srgb_to_linear(c.x);
+        c.y = gs3d::ui::srgb_to_linear(c.y);
+        c.z = gs3d::ui::srgb_to_linear(c.z);
     }
 
     if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {

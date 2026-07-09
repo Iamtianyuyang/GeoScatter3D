@@ -147,7 +147,9 @@ SvgLogoTexture::SvgLogoTexture(
     };
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
-    image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    // SRGB 格式：采样时解码到线性，写入 sRGB 交换链时再编码，
+    // logo 颜色显示为素材原值（UNORM 会被双重编码提亮）。
+    image_info.format = VK_FORMAT_R8G8B8A8_SRGB;
     image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
@@ -308,7 +310,7 @@ SvgLogoTexture::SvgLogoTexture(
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = image_;
     view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    view_info.format = VK_FORMAT_R8G8B8A8_SRGB;
     view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;

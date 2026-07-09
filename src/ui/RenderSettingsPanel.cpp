@@ -1,4 +1,5 @@
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 
 #include "imgui.h"
@@ -311,7 +312,7 @@ void draw_render_settings(
                 static_cast<double>(settings.data_value_max));
             ImGui::TextUnformatted("数据范围:");
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(176, 182, 192, 180));
+            ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 180));
             ImGui::TextUnformatted(range_buf);
             ImGui::PopStyleColor();
         }

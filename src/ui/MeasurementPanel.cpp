@@ -1,4 +1,5 @@
 #include "ui/MeasurementPanel.hpp"
+#include "ui/UiPalette.hpp"
 
 #include "imgui.h"
 
@@ -44,7 +45,7 @@ void draw_measurement_panel(
     if (mgr.has_pending()) {
         ImGui::SameLine();
         ImGui::TextColored(
-            ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
+            palette::kYellow,
             "等待第二个点..."
         );
     }
