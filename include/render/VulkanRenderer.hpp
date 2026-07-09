@@ -4,7 +4,6 @@
 #include "render/GpuFrameTimer.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
-#include "render/VulkanDepthBuffer.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -27,10 +26,13 @@ public:
     using DrawCallback = std::function<void(VkCommandBuffer command_buffer)>;
     using FrameReadyCallback = std::function<void(std::uint32_t frame_slot)>;
 
-    // pre_pass:  recorded before vkCmdBeginRenderPass (use for offscreen render passes)
-    // in_pass:   recorded inside the main swapchain render pass (ImGui, overlays)
-    // post_pass: recorded after vkCmdEndRenderPass, still inside the command buffer
-    //            (use for swapchain readback, layout transitions to PRESENT_SRC, etc.)
+    // pre_pass:  recorded before the swapchain rendering scope begins
+    //            (use for offscreen render passes)
+    // in_pass:   recorded inside the swapchain dynamic rendering scope
+    //            (ImGui, overlays)
+    // post_pass: recorded after the rendering scope ends, still inside the
+    //            command buffer; the swapchain image is in PRESENT_SRC_KHR
+    //            (use for swapchain readback, layout transitions, etc.)
     //            Receives (VkCommandBuffer, swapchain_image_index).
     struct FrameDrawCallbacks {
         FrameReadyCallback frame_ready{};
@@ -100,7 +102,7 @@ public:
     double last_gpu_frame_ms() const noexcept;
 
     [[nodiscard]]
-    VkRenderPass render_pass() const noexcept;
+    VkFormat swapchain_image_format() const noexcept;
 
     [[nodiscard]]
     VkCommandPool command_pool() const noexcept;
@@ -121,9 +123,10 @@ private:
     const VulkanContext& context_;
     VulkanSwapchain& swapchain_;
 
-    VkRenderPass render_pass_ = VK_NULL_HANDLE;
-    VulkanDepthBuffer depth_buffer_{};
-    std::vector<VkFramebuffer> framebuffers_;
+    // 交换链 pass 使用 VK_KHR_dynamic_rendering（instance 为 Vulkan 1.2，
+    // 入口函数须经 vkGetDeviceProcAddr 以 KHR 后缀加载）。
+    PFN_vkCmdBeginRenderingKHR cmd_begin_rendering_ = nullptr;
+    PFN_vkCmdEndRenderingKHR cmd_end_rendering_ = nullptr;
 
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> command_buffers_;
@@ -145,8 +148,7 @@ private:
     ClearColor clear_color_{};
 
 private:
-    void create_render_pass();
-    void create_framebuffers();
+    void load_dynamic_rendering_functions();
     void create_command_pool();
     void create_command_buffers();
     void create_sync_objects();
@@ -159,8 +161,6 @@ private:
         const FrameDrawCallbacks& callbacks
     );
 
-    void cleanup_swapchain_resources();
-    void cleanup_framebuffers_and_depth();
     void cleanup_sync_objects();
 
     [[nodiscard]]

@@ -683,7 +683,7 @@ void ImGuiLayer::init(
     }
 
     ImGui_ImplVulkan_InitInfo init_info{};
-    init_info.ApiVersion = VK_API_VERSION_1_0;
+    init_info.ApiVersion = VK_API_VERSION_1_2;
     init_info.Instance = context.instance();
     init_info.PhysicalDevice = context.physical_device();
     init_info.Device = context.device();
@@ -692,9 +692,25 @@ void ImGuiLayer::init(
     init_info.DescriptorPoolSize = 64;
     init_info.MinImageCount = min_image_count;
     init_info.ImageCount = min_image_count;
-    init_info.PipelineInfoMain.RenderPass = renderer.render_pass();
-    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.MinAllocationSize = 1024 * 1024;
+
+    // Dynamic rendering：主窗口与副窗口共用同一格式声明。副窗口的交换链
+    // 会按 PipelineInfoForViewports 请求的格式优先选择，从而继承主交换链
+    // 的 sRGB 格式——否则后端默认只请求 UNORM，副窗口整体偏暗。
+    color_attachment_format_ = renderer.swapchain_image_format();
+
+    VkPipelineRenderingCreateInfoKHR rendering_create_info{};
+    rendering_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    rendering_create_info.colorAttachmentCount = 1;
+    rendering_create_info.pColorAttachmentFormats = &color_attachment_format_;
+
+    init_info.UseDynamicRendering = true;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo =
+        rendering_create_info;
+    init_info.PipelineInfoForViewports.PipelineRenderingCreateInfo =
+        rendering_create_info;
 
     if (!ImGui_ImplVulkan_Init(&init_info)) {
         ImGui_ImplGlfw_Shutdown();

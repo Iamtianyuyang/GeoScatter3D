@@ -207,6 +207,13 @@ void VulkanContext::create_logical_device() {
 
     VkPhysicalDeviceFeatures device_features{};
 
+    // ImGui 多视口副窗口与主窗口共用 dynamic rendering 管线，
+    // 由此副窗口交换链能继承主交换链的 sRGB 格式（配色一致）。
+    VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{};
+    dynamic_rendering_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
+    dynamic_rendering_features.dynamicRendering = VK_TRUE;
+
     const auto device_extensions = required_device_extensions();
 
     std::vector<const char*> layers;
@@ -216,6 +223,7 @@ void VulkanContext::create_logical_device() {
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.pNext = &dynamic_rendering_features;
 
     create_info.queueCreateInfoCount =
         static_cast<std::uint32_t>(queue_create_infos.size());
@@ -357,7 +365,8 @@ QueueFamilyIndices VulkanContext::find_queue_families(
 
 std::vector<const char*> VulkanContext::required_device_extensions() {
     return {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
     };
 }
 

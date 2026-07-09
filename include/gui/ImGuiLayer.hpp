@@ -60,6 +60,10 @@ private:
     // valid for the IO object's lifetime, so the path string must outlive
     // the ImGui context rather than being a temporary.
     std::string ini_path_storage_;
+
+    // PipelineInfoForViewports.PipelineRenderingCreateInfo 持有指向该格式的
+    // 裸指针，副窗口创建时（init 之后任意时刻）才会读取，必须常驻。
+    VkFormat color_attachment_format_ = VK_FORMAT_UNDEFINED;
 };
 
 } // namespace gs3d::gui

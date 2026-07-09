@@ -24,9 +24,7 @@ VulkanRenderer::VulkanRenderer(
     , swapchain_(swapchain)
     , gpu_frame_timer_(context, MAX_FRAMES_IN_FLIGHT)
 {
-    create_render_pass();
-    depth_buffer_.create(context_, swapchain_.extent());
-    create_framebuffers();
+    load_dynamic_rendering_functions();
     create_command_pool();
     create_command_buffers();
     create_sync_objects();
@@ -43,8 +41,6 @@ VulkanRenderer::~VulkanRenderer() {
         vkDestroyCommandPool(context_.device(), command_pool_, nullptr);
         command_pool_ = VK_NULL_HANDLE;
     }
-
-    cleanup_swapchain_resources();
 }
 
 void VulkanRenderer::draw_frame(gs3d::platform::Window& window) {
@@ -257,8 +253,8 @@ double VulkanRenderer::last_gpu_frame_ms() const noexcept {
     return gpu_frame_timer_.last_frame_time_ms();
 }
 
-VkRenderPass VulkanRenderer::render_pass() const noexcept {
-    return render_pass_;
+VkFormat VulkanRenderer::swapchain_image_format() const noexcept {
+    return swapchain_.image_format();
 }
 
 VkCommandPool VulkanRenderer::command_pool() const noexcept {
@@ -295,129 +291,26 @@ bool VulkanRenderer::is_frame_slot_ready(std::uint32_t frame_slot) const {
     );
 }
 
-void VulkanRenderer::create_render_pass() {
-    VkAttachmentDescription color_attachment{};
-    color_attachment.format = swapchain_.image_format();
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentDescription depth_attachment{};
-    depth_attachment.format =
-        VulkanDepthBuffer::find_depth_format(context_);
-    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference color_attachment_ref{};
-    color_attachment_ref.attachment = 0;
-    color_attachment_ref.layout =
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depth_attachment_ref{};
-    depth_attachment_ref.attachment = 1;
-    depth_attachment_ref.layout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_attachment_ref;
-    subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-
-    dependency.srcStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-
-    dependency.srcAccessMask = 0;
-
-    dependency.dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-
-    dependency.dstAccessMask =
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    const VkAttachmentDescription attachments[] = {
-        color_attachment,
-        depth_attachment
-    };
-
-    VkRenderPassCreateInfo render_pass_info{};
-    render_pass_info.sType =
-        VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-
-    render_pass_info.attachmentCount = 2;
-    render_pass_info.pAttachments = attachments;
-
-    render_pass_info.subpassCount = 1;
-    render_pass_info.pSubpasses = &subpass;
-
-    render_pass_info.dependencyCount = 1;
-    render_pass_info.pDependencies = &dependency;
-
-    check_vk(
-        vkCreateRenderPass(
-            context_.device(),
-            &render_pass_info,
-            nullptr,
-            &render_pass_
-        ),
-        "VulkanRenderer: failed to create render pass"
-    );
-}
-
-void VulkanRenderer::create_framebuffers() {
-    const auto& image_views = swapchain_.image_views();
-
-    if (!depth_buffer_.valid()) {
-        throw std::runtime_error(
-            "VulkanRenderer: depth buffer is invalid"
-        );
-    }
-
-    framebuffers_.resize(image_views.size());
-
-    for (std::size_t i = 0; i < image_views.size(); ++i) {
-        VkImageView attachments[] = {
-            image_views[i],
-            depth_buffer_.image_view()
-        };
-
-        VkFramebufferCreateInfo framebuffer_info{};
-        framebuffer_info.sType =
-            VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-
-        framebuffer_info.renderPass = render_pass_;
-        framebuffer_info.attachmentCount = 2;
-        framebuffer_info.pAttachments = attachments;
-
-        framebuffer_info.width = swapchain_.extent().width;
-        framebuffer_info.height = swapchain_.extent().height;
-        framebuffer_info.layers = 1;
-
-        check_vk(
-            vkCreateFramebuffer(
+void VulkanRenderer::load_dynamic_rendering_functions() {
+    cmd_begin_rendering_ =
+        reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
+            vkGetDeviceProcAddr(
                 context_.device(),
-                &framebuffer_info,
-                nullptr,
-                &framebuffers_[i]
-            ),
-            "VulkanRenderer: failed to create framebuffer"
+                "vkCmdBeginRenderingKHR"
+            )
+        );
+
+    cmd_end_rendering_ =
+        reinterpret_cast<PFN_vkCmdEndRenderingKHR>(
+            vkGetDeviceProcAddr(
+                context_.device(),
+                "vkCmdEndRenderingKHR"
+            )
+        );
+
+    if (cmd_begin_rendering_ == nullptr || cmd_end_rendering_ == nullptr) {
+        throw std::runtime_error(
+            "VulkanRenderer: VK_KHR_dynamic_rendering entry points unavailable"
         );
     }
 }
@@ -513,12 +406,7 @@ void VulkanRenderer::recreate_swapchain_resources(
 
     vkDeviceWaitIdle(context_.device());
 
-    cleanup_framebuffers_and_depth();
-
     swapchain_.recreate(window);
-
-    depth_buffer_.create(context_, swapchain_.extent());
-    create_framebuffers();
 }
 
 void VulkanRenderer::record_command_buffer(
@@ -537,14 +425,51 @@ void VulkanRenderer::record_command_buffer(
 
     gpu_frame_timer_.begin_frame(current_frame_, command_buffer);
 
-    // pre_pass: offscreen render passes go here, outside the swapchain render pass.
+    // pre_pass: offscreen render passes go here, outside the swapchain
+    // rendering scope.
     if (callbacks.pre_pass) {
         callbacks.pre_pass(command_buffer);
     }
 
-    VkClearValue clear_values[2]{};
+    const VkImage swapchain_image = swapchain_.images()[image_index];
 
-    clear_values[0].color = {
+    VkImageMemoryBarrier to_color_attachment{};
+    to_color_attachment.sType =
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    to_color_attachment.srcAccessMask = 0;
+    to_color_attachment.dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    to_color_attachment.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    to_color_attachment.newLayout =
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    to_color_attachment.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_color_attachment.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_color_attachment.image = swapchain_image;
+    to_color_attachment.subresourceRange = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1
+    };
+
+    // srcStage 与 acquire 信号量的 waitDstStageMask 相同
+    // (COLOR_ATTACHMENT_OUTPUT)，保证接在图像获取之后。
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &to_color_attachment
+    );
+
+    VkRenderingAttachmentInfoKHR color_attachment{};
+    color_attachment.sType =
+        VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+    color_attachment.imageView = swapchain_.image_views()[image_index];
+    color_attachment.imageLayout =
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.clearValue.color = {
         {
             clear_color_.r,
             clear_color_.g,
@@ -553,38 +478,47 @@ void VulkanRenderer::record_command_buffer(
         }
     };
 
-    clear_values[1].depthStencil = {
-        1.0f,
-        0
-    };
+    VkRenderingInfoKHR rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+    rendering_info.renderArea.offset = {0, 0};
+    rendering_info.renderArea.extent = swapchain_.extent();
+    rendering_info.layerCount = 1;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachments = &color_attachment;
 
-    VkRenderPassBeginInfo render_pass_info{};
-    render_pass_info.sType =
-        VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-
-    render_pass_info.renderPass = render_pass_;
-    render_pass_info.framebuffer = framebuffers_[image_index];
-
-    render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = swapchain_.extent();
-
-    render_pass_info.clearValueCount = 2;
-    render_pass_info.pClearValues = clear_values;
-
-    vkCmdBeginRenderPass(
-        command_buffer,
-        &render_pass_info,
-        VK_SUBPASS_CONTENTS_INLINE
-    );
+    cmd_begin_rendering_(command_buffer, &rendering_info);
 
     if (callbacks.in_pass) {
         callbacks.in_pass(command_buffer);
     }
 
-    vkCmdEndRenderPass(command_buffer);
+    cmd_end_rendering_(command_buffer);
 
-    // post_pass: swapchain image is in the layout specified by the render pass
-    // finalLayout (PRESENT_SRC_KHR). Callbacks may transition from/to this layout.
+    VkImageMemoryBarrier to_present{};
+    to_present.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    to_present.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    to_present.dstAccessMask = 0;
+    to_present.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    to_present.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    to_present.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_present.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_present.image = swapchain_image;
+    to_present.subresourceRange = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1
+    };
+
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &to_present
+    );
+
+    // post_pass: swapchain image is in PRESENT_SRC_KHR here. Callbacks may
+    // transition from/to this layout.
     if (callbacks.post_pass) {
         callbacks.post_pass(command_buffer, image_index);
     }
@@ -595,36 +529,6 @@ void VulkanRenderer::record_command_buffer(
         vkEndCommandBuffer(command_buffer),
         "VulkanRenderer: failed to record command buffer"
     );
-}
-
-void VulkanRenderer::cleanup_swapchain_resources() {
-    cleanup_framebuffers_and_depth();
-
-    if (render_pass_ != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(
-            context_.device(),
-            render_pass_,
-            nullptr
-        );
-
-        render_pass_ = VK_NULL_HANDLE;
-    }
-}
-
-void VulkanRenderer::cleanup_framebuffers_and_depth() {
-    for (auto framebuffer : framebuffers_) {
-        if (framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(
-                context_.device(),
-                framebuffer,
-                nullptr
-            );
-        }
-    }
-
-    framebuffers_.clear();
-
-    depth_buffer_.destroy();
 }
 
 void VulkanRenderer::cleanup_sync_objects() {
