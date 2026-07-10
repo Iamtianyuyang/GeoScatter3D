@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <future>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -26,21 +27,42 @@ namespace gs3d::render { class VulkanRenderer; }
 namespace gs3d::app {
 
 /*
+ * 单 tile 磁盘加载结果：tile ID + 已加载的点数据（不携带缓存状态）。
+ * 后台 lambda 填充，主线程通过 commit_streaming_tile_load_result 验证后
+ * 提交到 point_cache。
+ */
+struct LoadedTilePoints {
+    std::uint64_t tile_id = 0;
+    SharedTilePoints points;
+};
+
+/*
  * 异步磁盘读取（Potree/Cesium 模式）：
- * 后台线程读取 tile 数据，主线程每帧非阻塞检查 future 是否完成。
- * GPU upload 仍在主线程，调用前用 in-flight fence 代替 vkDeviceWaitIdle。
+ * 后台线程只负责磁盘 I/O，不再直接写入 point_cache。
+ * 主线程每帧非阻塞检查 future，通过 commit_streaming_tile_load_result
+ * 验证每个 tile 是否仍属于当前 GPU 工作集后再提交到缓存。
  */
 struct TileLoadResult {
     std::vector<std::uint64_t>          tile_ids;
-    std::vector<std::pair<
-        std::uint64_t,
-        SharedTilePoints
-    >>                                  tiles;
+    // Per-tile disk-load results (populated by the background lambda).
+    std::vector<LoadedTilePoints>       loaded_tiles;
+    // Working-set revision captured at dispatch time.
+    std::uint64_t                       request_revision = 0;
     gs3d::data::Gs3dTileQueryBox        actual_bbox;
     double                              read_seconds = 0.0;
     std::size_t                         cache_hit_tiles = 0;
     std::size_t                         cache_miss_tiles = 0;
     std::size_t                         candidate_tiles = 0;
+};
+
+/*
+ * commit_streaming_tile_load_result 的返回统计。
+ */
+struct TileLoadCommitStats {
+    std::size_t accepted = 0;
+    std::size_t stale_discarded = 0;
+    std::size_t already_cached = 0;
+    std::size_t invalid = 0;
 };
 
 /*
@@ -86,6 +108,9 @@ struct ViewerAppTileStreamState {
      */
     std::vector<std::uint64_t> gpu_required_tile_ids;
     std::uint32_t last_working_set_limit = 0;
+    // Incremented every time gpu_required_tile_ids changes (members,
+    // order, or K).  Captured by async load tasks; used for diagnostics.
+    std::uint64_t gpu_required_revision = 0;
 
     /*
      * 全量预加载状态(tile_preload_all):后台一次性读取全部瓦片,主循环
@@ -179,5 +204,24 @@ inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
         sorted_candidates.begin() + K
     };
 }
+
+/*
+ * Commit disk-loaded tile points to the CPU cache after main-thread
+ * validation.  Only tiles that still belong to the current GPU working
+ * set (current_required_tile_ids) and are not already cached are
+ * inserted.  Stale or already-cached tiles are discarded without
+ * touching the LRU order.
+ *
+ * Single-writer invariant: Stage 3 calls this exclusively from the
+ * main thread.  No other path calls point_cache.put() while Stage 3
+ * is active, so the find() → put() check-then-insert is safe without
+ * additional synchronisation.
+ */
+[[nodiscard]]
+TileLoadCommitStats commit_streaming_tile_load_result(
+    TilePointCache& cache,
+    std::span<const LoadedTilePoints> loaded_tiles,
+    std::span<const std::uint64_t> current_required_tile_ids
+);
 
 } // namespace gs3d::app

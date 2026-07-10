@@ -49,6 +49,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/ViewerAppPickDebugDump.cpp
     src/app/ViewerAppPointIds.cpp
     src/app/ViewerAppTileStreaming.cpp
+    src/app/TileLoadCommit.cpp
     src/app/ViewerAppRenderPass.cpp
     src/app/AppConfig.cpp
     src/app/PreprocessedBundle.cpp
@@ -359,8 +360,11 @@ if(BUILD_TESTING)
 
     add_executable(GeoScatter3DTileStreamingTests
         tests/TileStreamingTests.cpp
+        src/app/TileLoadCommit.cpp
+        src/app/TilePointCache.cpp
         src/camera/Camera.cpp
         src/camera/MouseRay.cpp
+        src/data/Gs3dFormat.cpp
         src/render/TileSelection.cpp
     )
 

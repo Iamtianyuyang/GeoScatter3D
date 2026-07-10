@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -153,6 +154,7 @@ void log_tile_upload(
 }
 
 } // namespace
+
 
 std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
     const ViewerAppTileStreamState& tiles,
@@ -457,6 +459,7 @@ void ViewerApp::update_tile_streaming(
             if (next_required != tiles.gpu_required_tile_ids) {
                 tiles.gpu_required_tile_ids =
                     std::move(next_required);
+                ++tiles.gpu_required_revision;
                 if (tiles.debounced_tile_ids !=
                     tiles.gpu_required_tile_ids) {
                     tiles.debounced_tile_ids =
@@ -474,20 +477,33 @@ void ViewerApp::update_tile_streaming(
         tiles.load_future.wait_for(std::chrono::seconds(0))
             == std::future_status::ready) {
         auto loaded = tiles.load_future.get();
-        register_runtime_tile_point_lookup(
-            loaded.tiles,
-            ctx.runtime_points_by_id,
-            ctx.runtime_points_valid_by_id
-        );
+
+        // Commit disk-loaded tiles to CPU cache after validating
+        // each tile against the current GPU working set.
+        const auto commit_stats =
+            commit_streaming_tile_load_result(
+                tiles.point_cache,
+                loaded.loaded_tiles,
+                tiles.gpu_required_tile_ids);
+
         tiles.load_future = {};
         tiles.loading_ids.clear();
-        // Tiles are now in CPU cache; the per-frame upload
-        // loop below picks them up incrementally.
+        // Accepted tiles are now in CPU cache; the per-frame
+        // upload loop below picks them up incrementally.
         if (config_.tile_verbose) {
             std::cout
-                << "[TILE] async read complete, "
-                << loaded.cache_miss_tiles
-                << " tiles loaded into CPU cache.\n";
+                << "[TILE] async load completed: "
+                << "requested=" << loaded.loaded_tiles.size()
+                << ", accepted=" << commit_stats.accepted
+                << ", stale=" << commit_stats.stale_discarded
+                << ", already_cached="
+                << commit_stats.already_cached
+                << ", invalid=" << commit_stats.invalid
+                << ", request_revision="
+                << loaded.request_revision
+                << ", current_revision="
+                << tiles.gpu_required_revision
+                << '\n';
         }
     }
 
@@ -660,29 +676,20 @@ void ViewerApp::update_tile_streaming(
                     << "), uploading incrementally.\n";
             }
         } else {
+            const auto request_revision =
+                tiles.gpu_required_revision;
             tiles.load_future = std::async(
                 std::launch::async,
                 [&reader = *ctx.tile_reader,
-                 &cache = tiles.point_cache,
                  &ids_by_tile = ctx.tile_point_ids_by_tile,
                  ids,
                  missing_tile_ids =
                     std::move(missing_tile_ids),
                  cache_hit_tiles,
-                 candidate_tile_count]()
+                 candidate_tile_count,
+                 request_revision]()
                     -> TileLoadResult {
                     gs3d::util::Stopwatch read_timer;
-                    for (const auto tile_id :
-                         missing_tile_ids) {
-                        auto pts =
-                            load_tile_points_with_ids(
-                                reader,
-                                ids_by_tile,
-                                tile_id);
-                        cache.put(
-                            tile_id,
-                            std::move(pts));
-                    }
                     TileLoadResult loaded;
                     loaded.tile_ids = ids;
                     loaded.cache_hit_tiles =
@@ -691,6 +698,19 @@ void ViewerApp::update_tile_streaming(
                         missing_tile_ids.size();
                     loaded.candidate_tiles =
                         candidate_tile_count;
+                    loaded.request_revision =
+                        request_revision;
+
+                    for (const auto tile_id :
+                         missing_tile_ids) {
+                        auto pts =
+                            load_tile_points_with_ids(
+                                reader,
+                                ids_by_tile,
+                                tile_id);
+                        loaded.loaded_tiles.push_back(
+                            {tile_id, std::move(pts)});
+                    }
                     loaded.read_seconds =
                         read_timer.elapsed_seconds();
                     return loaded;
@@ -706,6 +726,8 @@ void ViewerApp::update_tile_streaming(
                     << cache_hit_tiles
                     << ", cache_miss="
                     << missing_tile_ids.size()
+                    << ", revision="
+                    << request_revision
                     << ").\n";
             }
         }

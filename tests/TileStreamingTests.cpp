@@ -1,9 +1,12 @@
+#include "app/TilePointCache.hpp"
 #include "app/ViewerAppTileStreaming.hpp"
+#include "data/Gs3dFormat.hpp"
 #include "render/TileSelection.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -268,6 +271,219 @@ void test_runtime_k_change()
     expect(r_unlimited.size() == 5, "K=0 unlimited");
 }
 
+// ── commit_streaming_tile_load_result tests ──────────────────────────
+
+// Helper: create a minimal valid LoadedTilePoints with one point.
+gs3d::app::LoadedTilePoints make_test_entry(
+    std::uint64_t tile_id)
+{
+    auto tp = std::make_shared<gs3d::app::TilePoints>();
+    tp->points.push_back({});
+    tp->point_ids.push_back(1);
+    return {tile_id, tp};
+}
+
+void test_commit_all_stale()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(1), make_test_entry(2)};
+    std::vector<std::uint64_t> required{3, 4};
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.accepted == 0,
+           "all stale: accepted=0");
+    expect(stats.stale_discarded == 2,
+           "all stale: stale_discarded=2");
+    expect(stats.invalid == 0,
+           "all stale: invalid=0");
+    expect(cache.find(1) == nullptr,
+           "all stale: tile 1 not in cache");
+    expect(cache.find(2) == nullptr,
+           "all stale: tile 2 not in cache");
+    auto s = cache.stats();
+    expect(s.resident_bytes == 0,
+           "all stale: resident_bytes unchanged");
+}
+
+void test_commit_partial_overlap()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(10),   // A — stale
+        make_test_entry(20),   // B — required
+        make_test_entry(30)};  // C — required
+    std::vector<std::uint64_t> required{20, 30, 40};
+    //                                          ^^ D not loaded
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.accepted == 2,
+           "partial overlap: accepted=2 (B,C)");
+    expect(stats.stale_discarded == 1,
+           "partial overlap: stale_discarded=1 (A)");
+    expect(cache.find(10) == nullptr,
+           "partial overlap: A stale, not cached");
+    expect(cache.find(20) != nullptr,
+           "partial overlap: B accepted into cache");
+    expect(cache.find(30) != nullptr,
+           "partial overlap: C accepted into cache");
+}
+
+void test_commit_revision_expired_but_tile_needed()
+{
+    // Revision is stale, but tiles are still in current required set.
+    // Commit must accept them — membership, not revision, is the gate.
+    gs3d::app::TilePointCache cache(1024 * 1024);
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(1), make_test_entry(2)};
+    std::vector<std::uint64_t> required{1, 2};
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.accepted == 2,
+           "revision expired but tile needed: accepted=2");
+    expect(stats.stale_discarded == 0,
+           "revision expired but tile needed: stale=0");
+    expect(cache.find(1) != nullptr,
+           "revision expired but tile needed: tile 1 in cache");
+    expect(cache.find(2) != nullptr,
+           "revision expired but tile needed: tile 2 in cache");
+}
+
+void test_commit_already_cached_no_reput()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+
+    // Pre-populate B in cache
+    {
+        auto tp = std::make_shared<gs3d::app::TilePoints>();
+        tp->points.push_back({});
+        tp->point_ids.push_back(1);
+        cache.put(20, std::move(tp));
+    }
+    auto stats_before = cache.stats();
+    auto tile_count_before = stats_before.tile_count;
+
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(20)};   // B — already cached
+    std::vector<std::uint64_t> required{20};
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.already_cached == 1,
+           "already cached: already_cached=1");
+    expect(stats.accepted == 0,
+           "already cached: accepted=0 (not re-put)");
+
+    auto s = cache.stats();
+    expect(s.tile_count == tile_count_before,
+           "already cached: tile_count unchanged");
+}
+
+void test_commit_normal_accept()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(1), make_test_entry(2)};
+    std::vector<std::uint64_t> required{1, 2};
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.accepted == 2,
+           "normal accept: accepted=2");
+    expect(stats.stale_discarded == 0,
+           "normal accept: stale=0");
+    expect(cache.find(1) != nullptr,
+           "normal accept: tile 1 in cache");
+    expect(cache.find(2) != nullptr,
+           "normal accept: tile 2 in cache");
+}
+
+void test_commit_empty_required()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        make_test_entry(1), make_test_entry(2)};
+    std::vector<std::uint64_t> required{};   // empty
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.stale_discarded == 2,
+           "empty required: all stale_discarded");
+    expect(stats.accepted == 0,
+           "empty required: accepted=0");
+    auto s = cache.stats();
+    expect(s.resident_bytes == 0,
+           "empty required: resident_bytes=0");
+}
+
+void test_commit_invalid_entry()
+{
+    gs3d::app::TilePointCache cache(1024 * 1024);
+
+    // null points
+    gs3d::app::LoadedTilePoints null_entry{1, nullptr};
+    // empty points
+    auto empty_tp = std::make_shared<gs3d::app::TilePoints>();
+    gs3d::app::LoadedTilePoints empty_entry{2, empty_tp};
+    // size mismatch
+    auto mismatch_tp = std::make_shared<gs3d::app::TilePoints>();
+    mismatch_tp->points.push_back({});
+    mismatch_tp->points.push_back({});
+    mismatch_tp->point_ids.push_back(1);  // 2 points, 1 id
+    gs3d::app::LoadedTilePoints mismatch_entry{3, mismatch_tp};
+
+    std::vector<gs3d::app::LoadedTilePoints> loaded{
+        null_entry, empty_entry, mismatch_entry};
+    std::vector<std::uint64_t> required{1, 2, 3};
+
+    auto stats = gs3d::app::commit_streaming_tile_load_result(
+        cache, loaded, required);
+
+    expect(stats.invalid == 3,
+           "invalid: 3 invalid entries");
+    expect(stats.accepted == 0,
+           "invalid: accepted=0");
+}
+
+void test_commit_stale_data_not_held_by_cache()
+{
+    // Stale-discarded entries must be released, not retained by cache.
+    gs3d::app::TilePointCache cache(1024 * 1024);
+
+    auto tp = std::make_shared<gs3d::app::TilePoints>();
+    tp->points.push_back({});
+    tp->point_ids.push_back(1);
+    // use_count: tp (1) + loaded vector copy (1) = 2 while loaded is alive
+    const long use_with_loaded = tp.use_count() + 1;  // +1 for loaded copy
+
+    std::vector<std::uint64_t> required{1};  // 99 not required
+    {
+        std::vector<gs3d::app::LoadedTilePoints> loaded{
+            {99, tp}};
+        auto stats = gs3d::app::commit_streaming_tile_load_result(
+            cache, loaded, required);
+
+        expect(stats.stale_discarded == 1,
+               "stale release: tile discarded");
+    }
+    // loaded vector destroyed — only |tp| remains
+
+    expect(cache.find(99) == nullptr,
+           "stale release: not in cache");
+    // After loaded vector is destroyed, use_count should be 1 (only |tp|).
+    expect(tp.use_count() == 1,
+           "stale release: no extra cache reference held");
+}
+
 } // namespace
 
 int main()
@@ -297,6 +513,16 @@ int main()
     // lifecycle
     test_disable_reenable_required_lifecycle();
     test_runtime_k_change();
+
+    // commit_streaming_tile_load_result
+    test_commit_all_stale();
+    test_commit_partial_overlap();
+    test_commit_revision_expired_but_tile_needed();
+    test_commit_already_cached_no_reput();
+    test_commit_normal_accept();
+    test_commit_empty_required();
+    test_commit_invalid_entry();
+    test_commit_stale_data_not_held_by_cache();
 
     if (failures) {
         std::cerr << failures << " test(s) FAILED.\n";
