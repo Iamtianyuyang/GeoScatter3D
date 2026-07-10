@@ -124,7 +124,7 @@ verbose = true
 # LRU 淘汰上限。设为可见 tile 数的 2-3× 让淘汰真正生效，
 # 避免长时间浏览后所有 tile 全量驻留 GPU（159 个=660MB）。
 # 72 ≈ 单帧可见 30-60 的 ~2×，留有相邻视野缓冲。
-gpu_cache_max_tiles = 144
+gpu_cache_max_tiles = 288
 # Upload at most 8 MiB of newly visible tile data per frame.
 gpu_upload_budget_bytes = 8388608
 # CPU tile cache memory budget. Cached tiles are evicted by LRU.

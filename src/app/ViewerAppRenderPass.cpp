@@ -128,10 +128,17 @@ void ViewerApp::record_viewport_passes(
          * During incremental upload the clip stays off
          * (LOD + tiles may overdraw, but no holes).
          */
+        // Stage 3 (streaming) uses the bounded GPU working set;
+        // Stages 1/2 (preload / fully-resident) use the full
+        // candidate set.
+        const auto& desired_for_clip =
+            ctx.tile_stream.gpu_required_tile_ids.empty()
+                ? ctx.tile_result.tile_ids
+                : ctx.tile_stream.gpu_required_tile_ids;
         bool all_desired_resident =
-            !ctx.tile_result.tile_ids.empty();
+            !desired_for_clip.empty();
         if (all_desired_resident) {
-            for (const auto tid : ctx.tile_result.tile_ids) {
+            for (const auto tid : desired_for_clip) {
                 if (!ctx.tile_gpu_cloud
                         ->has_resident_tile(tid)) {
                     all_desired_resident = false;

@@ -1382,11 +1382,16 @@ int ViewerApp::run() {
                 viewport_manager.camera(streaming_viewport_index);
 
             std::uint32_t loaded_tiles = 0;
-            // Pending = desired tiles not yet GPU-resident
+            // Pending = required GPU working-set tiles not yet resident.
+            // Stages 1/2 fall back to the full candidate set.
             std::size_t pending_tile_count = 0;
             if (config_.tile_enabled && tile_gpu_cloud &&
                 tile_result.enabled) {
-                for (const auto tile_id : tile_result.tile_ids) {
+                const auto& pending_source =
+                    tile_stream.gpu_required_tile_ids.empty()
+                        ? tile_result.tile_ids
+                        : tile_stream.gpu_required_tile_ids;
+                for (const auto tile_id : pending_source) {
                     if (!tile_gpu_cloud->has_resident_tile(tile_id)) {
                         ++pending_tile_count;
                     }

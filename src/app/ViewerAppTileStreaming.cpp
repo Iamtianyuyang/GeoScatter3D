@@ -305,6 +305,7 @@ void ViewerApp::update_tile_streaming(
                     ctx.renderer.command_pool(),
                     ctx.context.graphics_queue(),
                     preload_views,
+                    {},  // preload: no bounded working set
                     config_.tile_preload_upload_budget_bytes
                 );
             if (config_.tile_verbose && sync.uploaded_bytes > 0) {
@@ -404,7 +405,6 @@ void ViewerApp::update_tile_streaming(
         ctx.lod_tile_timer.reset();
         ctx.tile_selection_dirty = false;
         if (ctx.tile_result.changed) {
-            tiles.debounced_tile_ids = ctx.tile_result.tile_ids;
             tiles.selection_changed_at = ctx.current_time;
             /*
              * Anti-flicker (docs/benchmark/flicker-audit.md
@@ -422,6 +422,51 @@ void ViewerApp::update_tile_streaming(
              * incrementally below as each tile becomes resident,
              * not atomically at upload completion.
              */
+        }
+    }
+
+    /*
+     * (Re)build the Stage 3 bounded GPU working set from sorted
+     * candidates.  K = tile_gpu_cache_max_tiles (0 = unlimited).
+     *
+     * The working set is recomputed every frame so that priority-order
+     * changes (which TileSelection::same_tile_ids ignores — it uses a
+     * set-based comparison) and runtime budget edits are picked up
+     * without special-case flags.
+     */
+    {
+        const auto working_set_limit =
+            config_.tile_gpu_cache_max_tiles;
+
+        // Keep the GPU eviction budget synchronised with the
+        // working-set limit so that shrinking K also shrinks the
+        // resident set (via evict_to_budget inside the next
+        // sync_from_cached_tiles call).
+        if (working_set_limit != tiles.last_working_set_limit) {
+            tiles.last_working_set_limit = working_set_limit;
+            ctx.tile_gpu_cloud->set_resident_tile_budget(
+                working_set_limit);
+        }
+
+        if (ctx.tile_result.enabled &&
+            !ctx.tile_result.tile_ids.empty()) {
+            auto next_required = build_gpu_required_tile_ids(
+                ctx.tile_result.tile_ids,
+                working_set_limit);
+
+            if (next_required != tiles.gpu_required_tile_ids) {
+                tiles.gpu_required_tile_ids =
+                    std::move(next_required);
+                if (tiles.debounced_tile_ids !=
+                    tiles.gpu_required_tile_ids) {
+                    tiles.debounced_tile_ids =
+                        tiles.gpu_required_tile_ids;
+                    tiles.selection_changed_at =
+                        ctx.current_time;
+                }
+            }
+        } else {
+            tiles.gpu_required_tile_ids.clear();
         }
     }
 
@@ -448,6 +493,7 @@ void ViewerApp::update_tile_streaming(
 
     if (!ctx.tile_selection_dirty && !ctx.tile_result.enabled) {
         tiles.debounced_tile_ids.clear();
+        tiles.gpu_required_tile_ids.clear();
         const auto view_index =
             static_cast<std::size_t>(
                 ctx.streaming_viewport_index
@@ -468,11 +514,11 @@ void ViewerApp::update_tile_streaming(
         const auto view_index =
             static_cast<std::size_t>(ctx.streaming_viewport_index);
 
-        // Collect desired tiles already in CPU cache
+        // Collect GPU-required tiles already in CPU cache
         std::vector<std::pair<
             std::uint64_t, SharedTilePoints>> cached_desired;
-        cached_desired.reserve(ctx.tile_result.tile_ids.size());
-        for (const auto tile_id : ctx.tile_result.tile_ids) {
+        cached_desired.reserve(tiles.gpu_required_tile_ids.size());
+        for (const auto tile_id : tiles.gpu_required_tile_ids) {
             auto pts = tiles.point_cache.find(tile_id);
             if (pts) {
                 cached_desired.emplace_back(tile_id, pts);
@@ -490,6 +536,7 @@ void ViewerApp::update_tile_streaming(
                     ctx.renderer.command_pool(),
                     ctx.context.graphics_queue(),
                     upload_views,
+                    tiles.gpu_required_tile_ids,
                     config_.tile_gpu_upload_budget_bytes
                 );
             ctx.upload_record_ms_frame +=
@@ -504,7 +551,7 @@ void ViewerApp::update_tile_streaming(
                     << ", resident="
                     << sync.resident_tile_count
                     << ", desired="
-                    << ctx.tile_result.tile_ids.size()
+                    << tiles.gpu_required_tile_ids.size()
                     << ", complete="
                     << (sync.complete ? "true" : "false")
                     << '\n';
@@ -527,18 +574,19 @@ void ViewerApp::update_tile_streaming(
             }
         }
 
-        // Pin all desired resident tiles to prevent LRU
-        // eviction of tiles whose PointDataView wasn't passed
-        // to sync_from_cached_tiles (e.g. not in CPU cache yet).
-        for (const auto tile_id : ctx.tile_result.tile_ids) {
+        // Tick all required tiles so they remain fresh in the GPU
+        // LRU ordering (the pin-only loop in sync_from_cached_tiles
+        // already protects them against eviction this frame;
+        // touch_tile provides a secondary tick update).
+        for (const auto tile_id : tiles.gpu_required_tile_ids) {
             ctx.tile_gpu_cloud->touch_tile(tile_id);
         }
 
         // Incrementally update viewport: show whatever is
-        // resident right now (strict subset of desired set).
+        // resident right now (strict subset of required working set).
         auto& vp_ids = tiles.viewport_tile_ids[view_index];
         vp_ids.clear();
-        for (const auto tile_id : ctx.tile_result.tile_ids) {
+        for (const auto tile_id : tiles.gpu_required_tile_ids) {
             if (ctx.tile_gpu_cloud->has_resident_tile(tile_id)) {
                 vp_ids.push_back(tile_id);
             }

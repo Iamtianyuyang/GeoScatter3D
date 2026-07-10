@@ -357,6 +357,26 @@ if(BUILD_TESTING)
         COMMAND GeoScatter3DRuntimeTests
     )
 
+    add_executable(GeoScatter3DTileStreamingTests
+        tests/TileStreamingTests.cpp
+        src/camera/Camera.cpp
+        src/camera/MouseRay.cpp
+        src/render/TileSelection.cpp
+    )
+
+    target_include_directories(GeoScatter3DTileStreamingTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DTileStreamingTests PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME GeoScatter3D.TileStreaming
+        COMMAND GeoScatter3DTileStreamingTests
+    )
+
     add_test(
         NAME GeoScatter3D.IncludeDeps
         COMMAND ${Python3_EXECUTABLE}

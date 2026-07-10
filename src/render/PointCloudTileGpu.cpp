@@ -150,6 +150,7 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     VkQueue transfer_queue,
     const std::vector<std::pair<std::uint64_t, gs3d::core::PointDataView>>&
         tiles,
+    const std::vector<std::uint64_t>& required_tile_ids,
     std::uint64_t max_upload_bytes
 ) {
     if (tiles.empty()) {
@@ -231,6 +232,23 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
         active_tile_ids.insert(tile_id);
         active_point_count += points.point_count;
         active_point_bytes += point_bytes_for(points);
+    }
+
+    // Pin required+resident tiles that were absent from |tiles|
+    // (e.g. CPU cache miss).  These tiles are part of the current GPU
+    // working set and must not be evicted, but they have no point data
+    // in this call so they contribute nothing to loaded_tile_ids_ or
+    // point statistics.
+    for (const auto tile_id : required_tile_ids) {
+        if (active_tile_ids.contains(tile_id)) {
+            continue;
+        }
+        const auto resident = resident_tiles_.find(tile_id);
+        if (resident == resident_tiles_.end()) {
+            continue;
+        }
+        resident->second.last_used_tick = ++usage_tick_;
+        active_tile_ids.insert(tile_id);
     }
 
     evict_to_budget(active_tile_ids);

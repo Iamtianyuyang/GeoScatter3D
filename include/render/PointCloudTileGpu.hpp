@@ -58,6 +58,17 @@ public:
         std::uint32_t max_tiles
     ) noexcept;
 
+    /*
+     * Synchronise the GPU-resident tile set with the given inputs.
+     *
+     *  tiles            — CPU point data for tiles that need uploading
+     *                     (only tiles in this list are considered for upload).
+     *  required_tile_ids — current GPU working set (IDs only, no point data).
+     *                     Already-resident tiles in this set are pinned against
+     *                     eviction even when absent from |tiles| (e.g. CPU
+     *                     cache miss).  Non-resident tiles are ignored.
+     *  max_upload_bytes  — per-frame upload byte budget.
+     */
     [[nodiscard]]
     PointCloudTileGpuSyncResult sync_from_cached_tiles(
         const VulkanContext& context,
@@ -65,6 +76,7 @@ public:
         VkQueue transfer_queue,
         const std::vector<std::pair<std::uint64_t, gs3d::core::PointDataView>>&
             tiles,
+        const std::vector<std::uint64_t>& required_tile_ids,
         std::uint64_t max_upload_bytes =
             std::numeric_limits<std::uint64_t>::max()
     );
