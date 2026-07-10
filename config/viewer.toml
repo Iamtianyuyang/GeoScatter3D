@@ -131,8 +131,9 @@ verbose = true
 # 避免长时间浏览后所有 tile 全量驻留 GPU（159 个=660MB）。
 # 72 ≈ 单帧可见 30-60 的 ~2×，留有相邻视野缓冲。
 gpu_cache_max_tiles = 288
-# Upload at most 8 MiB of newly visible tile data per frame.
-gpu_upload_budget_bytes = 8388608
+# Upload at most 32 MiB of newly visible tile data per frame. The previous
+# 8 MiB cap dominated cold-load latency on large visible working sets.
+gpu_upload_budget_bytes = 33554432
 # CPU tile cache memory budget. Cached tiles are evicted by LRU.
 # Raised from 512MB -> 4GB so most/all tiles stay CPU-resident at larger
 # scale, cutting repeat disk reads (helps the reload-latency goal).

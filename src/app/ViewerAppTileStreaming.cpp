@@ -26,7 +26,43 @@ namespace gs3d::app {
 
 namespace {
 
-constexpr double kTileSelectionDebounceSeconds = 0.12;
+constexpr double kTileSelectionDebounceSeconds = 0.075;
+constexpr std::uint64_t kTileReadBatchMaxBytes =
+    64ull * 1024ull * 1024ull;
+
+[[nodiscard]]
+std::vector<std::uint64_t> take_tile_read_batch(
+    const gs3d::data::Gs3dTileReader& reader,
+    std::vector<std::uint64_t>& pending_ids
+) {
+    std::vector<std::uint64_t> batch;
+    std::uint64_t batch_bytes = 0;
+    std::size_t count = 0;
+
+    while (count < pending_ids.size()) {
+        const auto tile_id = pending_ids[count];
+        const auto tile_bytes =
+            reader.record(tile_id).point_data_bytes;
+        if (!batch.empty() &&
+            (batch_bytes >= kTileReadBatchMaxBytes ||
+             tile_bytes > kTileReadBatchMaxBytes - batch_bytes)) {
+            break;
+        }
+
+        batch.push_back(tile_id);
+        ++count;
+        if (tile_bytes >= kTileReadBatchMaxBytes - batch_bytes) {
+            batch_bytes = kTileReadBatchMaxBytes;
+        } else {
+            batch_bytes += tile_bytes;
+        }
+    }
+
+    pending_ids.erase(
+        pending_ids.begin(),
+        pending_ids.begin() + static_cast<std::ptrdiff_t>(count));
+    return batch;
+}
 
 [[nodiscard]]
 std::shared_ptr<TilePoints> load_tile_points_with_ids(
@@ -215,6 +251,23 @@ void ViewerApp::clear_tile_cpu_cache(ViewerAppTileStreamState& tiles) {
         }
         std::cout << "[TILE] preload cancelled for cache clear.\n";
     }
+    // A running Stage-3 read cannot be cancelled safely. Drain and discard it
+    // before clearing so its late result cannot immediately refill the cache.
+    if (tiles.load_future.valid()) {
+        tiles.load_future.wait();
+        try {
+            (void)tiles.load_future.get();
+        } catch (const std::exception& e) {
+            std::cerr
+                << "[TILE] pending load discarded after error: "
+                << e.what() << '\n';
+        }
+        tiles.load_future = {};
+    }
+    tiles.loading_ids.clear();
+    tiles.pending_load_ids.clear();
+    tiles.cache_requested_tile_ids.clear();
+    tiles.completed_gpu_required_revision.reset();
     tiles.point_cache.clear();
     std::cout << "[TILE] CPU cache cleared.\n";
 }
@@ -480,11 +533,14 @@ void ViewerApp::update_tile_streaming(
 
         // Commit disk-loaded tiles to CPU cache after validating
         // each tile against the current GPU working set.
+        gs3d::util::Stopwatch commit_timer;
         const auto commit_stats =
             commit_streaming_tile_load_result(
                 tiles.point_cache,
                 loaded.loaded_tiles,
                 tiles.gpu_required_tile_ids);
+        const double commit_seconds =
+            commit_timer.elapsed_seconds();
 
         tiles.load_future = {};
         tiles.loading_ids.clear();
@@ -495,10 +551,19 @@ void ViewerApp::update_tile_streaming(
                 << "[TILE] async load completed: "
                 << "requested=" << loaded.loaded_tiles.size()
                 << ", accepted=" << commit_stats.accepted
-                << ", stale=" << commit_stats.stale_discarded
+                << ", stale_retained="
+                << commit_stats.stale_retained
+                << ", stale_discarded="
+                << commit_stats.stale_discarded
                 << ", already_cached="
                 << commit_stats.already_cached
                 << ", invalid=" << commit_stats.invalid
+                << ", read_seconds="
+                << loaded.read_seconds
+                << ", commit_seconds="
+                << commit_seconds
+                << ", batches_remaining="
+                << tiles.pending_load_ids.size()
                 << ", request_revision="
                 << loaded.request_revision
                 << ", current_revision="
@@ -510,6 +575,9 @@ void ViewerApp::update_tile_streaming(
     if (!ctx.tile_selection_dirty && !ctx.tile_result.enabled) {
         tiles.debounced_tile_ids.clear();
         tiles.gpu_required_tile_ids.clear();
+        tiles.pending_load_ids.clear();
+        tiles.cache_requested_tile_ids.clear();
+        tiles.completed_gpu_required_revision.reset();
         const auto view_index =
             static_cast<std::size_t>(
                 ctx.streaming_viewport_index
@@ -518,7 +586,7 @@ void ViewerApp::update_tile_streaming(
         tiles.viewport_tile_query_boxes[view_index].reset();
     } else if (ctx.tile_result.enabled && !ctx.interacting) {
         /*
-         * Incremental upload (no batching):
+         * Incremental upload:
          * 1. Collect desired tiles that are in CPU cache
          * 2. Upload whatever fits in the per-frame GPU budget
          * 3. Update viewport_tile_ids incrementally —
@@ -559,6 +627,17 @@ void ViewerApp::update_tile_streaming(
                 upload_timer.elapsed_milliseconds();
             ctx.lod_tile_timer.reset();
 
+            const bool all_desired_resident =
+                std::all_of(
+                    tiles.gpu_required_tile_ids.begin(),
+                    tiles.gpu_required_tile_ids.end(),
+                    [&ctx](std::uint64_t tile_id) {
+                        return ctx.tile_gpu_cloud
+                            ->has_resident_tile(tile_id);
+                    }) &&
+                tiles.pending_load_ids.empty() &&
+                !tiles.load_future.valid();
+
             if (config_.tile_verbose &&
                 sync.uploaded_bytes > 0) {
                 std::cout
@@ -569,11 +648,13 @@ void ViewerApp::update_tile_streaming(
                     << ", desired="
                     << tiles.gpu_required_tile_ids.size()
                     << ", complete="
-                    << (sync.complete ? "true" : "false")
+                    << (all_desired_resident ? "true" : "false")
                     << '\n';
             }
 
-            if (sync.complete && config_.tile_verbose) {
+            if (all_desired_resident &&
+                tiles.completed_gpu_required_revision !=
+                    tiles.gpu_required_revision) {
                 const double reload_total_seconds =
                     tiles.async_cycle_timer.elapsed_seconds();
                 log_tile_upload(
@@ -587,6 +668,8 @@ void ViewerApp::update_tile_streaming(
                         reload_total_seconds
                     );
                 }
+                tiles.completed_gpu_required_revision =
+                    tiles.gpu_required_revision;
             }
         }
 
@@ -635,47 +718,78 @@ void ViewerApp::update_tile_streaming(
         selection_stable_seconds >=
         kTileSelectionDebounceSeconds;
 
-    const bool dispatch_needed =
+    const bool can_dispatch =
         selection_stable &&
         !load_in_progress &&
-        !tiles.debounced_tile_ids.empty() &&
-        tiles.loading_ids != tiles.debounced_tile_ids;
+        !tiles.debounced_tile_ids.empty();
 
-    if (dispatch_needed) {
-        // Only read tiles not already in CPU cache
-        std::vector<std::uint64_t> missing_tile_ids;
-        missing_tile_ids.reserve(
-            tiles.debounced_tile_ids.size());
+    if (can_dispatch) {
         std::size_t cache_hit_tiles = 0;
-        for (const auto tile_id : tiles.debounced_tile_ids) {
-            if (tiles.point_cache.find(tile_id)) {
-                ++cache_hit_tiles;
-            } else {
-                missing_tile_ids.push_back(tile_id);
+        std::size_t cache_miss_tiles = 0;
+        const bool new_cache_request =
+            tiles.cache_requested_tile_ids !=
+            tiles.debounced_tile_ids;
+
+        if (new_cache_request) {
+            tiles.cache_requested_tile_ids =
+                tiles.debounced_tile_ids;
+            tiles.pending_load_ids.clear();
+            tiles.pending_load_ids.reserve(
+                tiles.debounced_tile_ids.size());
+            tiles.async_cycle_timer.reset();
+
+            for (const auto tile_id :
+                 tiles.debounced_tile_ids) {
+                // Account once per semantic working-set request. Internal
+                // disk batches must not inflate hit/miss statistics.
+                if (tiles.point_cache.get(tile_id)) {
+                    ++cache_hit_tiles;
+                } else {
+                    ++cache_miss_tiles;
+                    // A CPU miss needs disk I/O only if the tile is not
+                    // already resident on the GPU from a previous view.
+                    if (!ctx.tile_gpu_cloud
+                             ->has_resident_tile(tile_id)) {
+                        tiles.pending_load_ids.push_back(tile_id);
+                    }
+                }
+            }
+
+            if (tiles.pending_load_ids.empty() &&
+                config_.tile_verbose) {
+                std::cout
+                    << "[TILE] no disk reads needed for "
+                    << tiles.debounced_tile_ids.size()
+                    << " desired tiles (CPU-cached or GPU-resident)"
+                    << " (candidates="
+                    << ctx.tile_result.total_candidate_tiles
+                    << "), uploading incrementally.\n";
+            }
+        } else if (tiles.pending_load_ids.empty()) {
+            // A bounded CPU cache may evict a freshly-loaded tile before the
+            // GPU upload reaches it. Reconcile without counting a second
+            // semantic cache miss so the pipeline cannot stall permanently.
+            for (const auto tile_id :
+                 tiles.debounced_tile_ids) {
+                if (!tiles.point_cache.find(tile_id) &&
+                    !ctx.tile_gpu_cloud
+                         ->has_resident_tile(tile_id)) {
+                    tiles.pending_load_ids.push_back(tile_id);
+                }
             }
         }
 
-        tiles.loading_ids = tiles.debounced_tile_ids;
-        tiles.async_cycle_timer.reset();
-        const auto ids = tiles.debounced_tile_ids;
-        const auto candidate_tile_count =
-            static_cast<std::size_t>(
-                ctx.tile_result.total_candidate_tiles
-            );
+        if (!tiles.pending_load_ids.empty()) {
+            auto batch_ids = take_tile_read_batch(
+                *ctx.tile_reader,
+                tiles.pending_load_ids);
+            tiles.loading_ids = batch_ids;
 
-        if (missing_tile_ids.empty()) {
-            // All tiles already in CPU cache; the upload
-            // loop above will pick them up incrementally.
-            tiles.loading_ids.clear();
-            if (config_.tile_verbose) {
-                std::cout
-                    << "[TILE] all " << ids.size()
-                    << " desired tiles cached"
-                    << " (candidates="
-                    << candidate_tile_count
-                    << "), uploading incrementally.\n";
-            }
-        } else {
+            const auto ids = tiles.debounced_tile_ids;
+            const auto candidate_tile_count =
+                static_cast<std::size_t>(
+                    ctx.tile_result.total_candidate_tiles
+                );
             const auto request_revision =
                 tiles.gpu_required_revision;
             tiles.load_future = std::async(
@@ -683,9 +797,9 @@ void ViewerApp::update_tile_streaming(
                 [&reader = *ctx.tile_reader,
                  &ids_by_tile = ctx.tile_point_ids_by_tile,
                  ids,
-                 missing_tile_ids =
-                    std::move(missing_tile_ids),
+                 batch_ids = std::move(batch_ids),
                  cache_hit_tiles,
+                 cache_miss_tiles,
                  candidate_tile_count,
                  request_revision]()
                     -> TileLoadResult {
@@ -695,14 +809,15 @@ void ViewerApp::update_tile_streaming(
                     loaded.cache_hit_tiles =
                         cache_hit_tiles;
                     loaded.cache_miss_tiles =
-                        missing_tile_ids.size();
+                        cache_miss_tiles;
                     loaded.candidate_tiles =
                         candidate_tile_count;
                     loaded.request_revision =
                         request_revision;
 
-                    for (const auto tile_id :
-                         missing_tile_ids) {
+                    loaded.loaded_tiles.reserve(
+                        batch_ids.size());
+                    for (const auto tile_id : batch_ids) {
                         auto pts =
                             load_tile_points_with_ids(
                                 reader,
@@ -718,14 +833,17 @@ void ViewerApp::update_tile_streaming(
 
             if (config_.tile_verbose) {
                 std::cout
-                    << "[TILE] async load dispatched, "
-                    << ids.size() << " tiles"
+                    << "[TILE] async load dispatched: batch="
+                    << tiles.loading_ids.size()
+                    << ", remaining="
+                    << tiles.pending_load_ids.size()
+                    << ", desired=" << ids.size()
                     << " (candidates="
                     << candidate_tile_count
                     << ", cache_hit="
                     << cache_hit_tiles
                     << ", cache_miss="
-                    << missing_tile_ids.size()
+                    << cache_miss_tiles
                     << ", revision="
                     << request_revision
                     << ").\n";

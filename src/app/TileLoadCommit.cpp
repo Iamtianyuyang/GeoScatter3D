@@ -29,8 +29,19 @@ TileLoadCommitStats commit_streaming_tile_load_result(
         }
 
         if (!required_set.contains(entry.tile_id)) {
-            // Tile no longer belongs to the current GPU working set.
-            ++stats.stale_discarded;
+            // The tile is no longer needed by the current GPU working set,
+            // but the completed disk read is still useful for a future
+            // revisit. Keep it as a cold CPU-cache entry only when doing so
+            // cannot evict existing hot data.
+            if (cache.find(entry.tile_id)) {
+                ++stats.already_cached;
+            } else if (cache.put_if_space(
+                           entry.tile_id,
+                           entry.points)) {
+                ++stats.stale_retained;
+            } else {
+                ++stats.stale_discarded;
+            }
             continue;
         }
 
@@ -43,12 +54,10 @@ TileLoadCommitStats commit_streaming_tile_load_result(
             continue;
         }
 
-        // ponytail: make a mutable copy because put() takes
-        // shared_ptr<TilePoints> (non-const).
-        auto mutable_points =
-            std::make_shared<TilePoints>(
-                *entry.points);
-        cache.put(entry.tile_id, std::move(mutable_points));
+        // TilePointCache stores immutable shared ownership, so transfer the
+        // already-loaded allocation directly instead of copying both the
+        // point and point-id vectors on the main thread.
+        cache.put(entry.tile_id, entry.points);
         ++stats.accepted;
     }
 

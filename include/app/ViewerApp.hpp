@@ -224,7 +224,7 @@ struct ViewerAppConfig {
     bool tile_verbose = true;
     std::uint32_t tile_gpu_cache_max_tiles = 256;
     std::uint64_t tile_gpu_upload_budget_bytes =
-        8ull * 1024ull * 1024ull;
+        32ull * 1024ull * 1024ull;
     std::uint64_t tile_cpu_cache_max_bytes =
         512ull * 1024ull * 1024ull;
 

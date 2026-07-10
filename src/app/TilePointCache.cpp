@@ -5,6 +5,34 @@
 
 namespace gs3d::app {
 
+namespace {
+
+bool tile_bytes_for(
+    const SharedTilePoints& points,
+    std::uint64_t& bytes
+) noexcept {
+    if (!points) {
+        return false;
+    }
+
+    const auto point_count =
+        static_cast<std::uint64_t>(points->size());
+    if (point_count != points->point_ids.size() ||
+        point_count >
+            std::numeric_limits<std::uint64_t>::max() /
+                (sizeof(gs3d::data::Gs3dPoint) +
+                 sizeof(std::uint32_t))) {
+        return false;
+    }
+
+    bytes =
+        point_count *
+        (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t));
+    return true;
+}
+
+} // namespace
+
 TilePointCache::TilePointCache(std::uint64_t max_bytes)
     : max_bytes_(max_bytes)
 {
@@ -36,25 +64,12 @@ SharedTilePoints TilePointCache::find(std::uint64_t tile_id) const
 
 void TilePointCache::put(
     std::uint64_t tile_id,
-    std::shared_ptr<TilePoints> points
+    SharedTilePoints points
 ) {
-    if (!points) {
+    std::uint64_t bytes = 0;
+    if (!tile_bytes_for(points, bytes)) {
         return;
     }
-
-    const auto point_count =
-        static_cast<std::uint64_t>(points->size());
-    if (point_count != points->point_ids.size()) {
-        return;
-    }
-    if (point_count >
-        std::numeric_limits<std::uint64_t>::max() /
-            (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t))) {
-        return;
-    }
-    const auto bytes =
-        point_count *
-        (sizeof(gs3d::data::Gs3dPoint) + sizeof(std::uint32_t));
 
     std::unique_lock lock(mutex_);
     if (const auto existing = entries_.find(tile_id);
@@ -88,6 +103,40 @@ void TilePointCache::put(
             lru_.begin()
         }
     );
+}
+
+bool TilePointCache::put_if_space(
+    std::uint64_t tile_id,
+    SharedTilePoints points
+) {
+    std::uint64_t bytes = 0;
+    if (!tile_bytes_for(points, bytes)) {
+        return false;
+    }
+
+    std::unique_lock lock(mutex_);
+    if (entries_.contains(tile_id)) {
+        return true;
+    }
+    if (max_bytes_ == 0 ||
+        bytes > max_bytes_ ||
+        resident_bytes_ > max_bytes_ - bytes) {
+        return false;
+    }
+
+    lru_.push_back(tile_id);
+    auto lru_position = lru_.end();
+    --lru_position;
+    resident_bytes_ += bytes;
+    entries_.emplace(
+        tile_id,
+        Entry{
+            std::move(points),
+            bytes,
+            lru_position
+        }
+    );
+    return true;
 }
 
 void TilePointCache::clear() noexcept

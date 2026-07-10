@@ -60,6 +60,7 @@ struct TileLoadResult {
  */
 struct TileLoadCommitStats {
     std::size_t accepted = 0;
+    std::size_t stale_retained = 0;
     std::size_t stale_discarded = 0;
     std::size_t already_cached = 0;
     std::size_t invalid = 0;
@@ -93,8 +94,14 @@ struct ViewerAppTileStreamState {
 
     TilePointCache point_cache;
     std::future<TileLoadResult> load_future;
-    // IDs dispatched to background thread (may differ from current selection)
+    // IDs in the currently-running background batch.
     std::vector<std::uint64_t> loading_ids;
+    // Missing IDs from the current semantic cache request that have not yet
+    // been dispatched. Keeping them here lets disk I/O and GPU upload overlap.
+    std::vector<std::uint64_t> pending_load_ids;
+    // Desired set for which hit/miss accounting has already been performed.
+    // Internal read batches must not count the same misses repeatedly.
+    std::vector<std::uint64_t> cache_requested_tile_ids;
     std::vector<std::uint64_t> debounced_tile_ids;
     std::chrono::steady_clock::time_point selection_changed_at =
         std::chrono::steady_clock::now();
@@ -111,6 +118,9 @@ struct ViewerAppTileStreamState {
     // Incremented every time gpu_required_tile_ids changes (members,
     // order, or K).  Captured by async load tasks; used for diagnostics.
     std::uint64_t gpu_required_revision = 0;
+    // Prevent the completed-upload report (and benchmark sample) from being
+    // emitted every frame after a working set becomes fully resident.
+    std::optional<std::uint64_t> completed_gpu_required_revision;
 
     /*
      * 全量预加载状态(tile_preload_all):后台一次性读取全部瓦片,主循环
@@ -209,8 +219,9 @@ inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
  * Commit disk-loaded tile points to the CPU cache after main-thread
  * validation.  Only tiles that still belong to the current GPU working
  * set (current_required_tile_ids) and are not already cached are
- * inserted.  Stale or already-cached tiles are discarded without
- * touching the LRU order.
+ * inserted as hot entries. Stale tiles are retained at the cold end of the
+ * CPU LRU only when spare capacity exists; they never evict current hot data.
+ * Already-cached tiles are left untouched.
  *
  * Single-writer invariant: Stage 3 calls this exclusively from the
  * main thread.  No other path calls point_cache.put() while Stage 3

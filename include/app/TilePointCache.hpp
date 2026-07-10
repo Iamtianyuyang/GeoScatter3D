@@ -53,7 +53,17 @@ public:
 
     void put(
         std::uint64_t tile_id,
-        std::shared_ptr<TilePoints> points
+        SharedTilePoints points
+    );
+
+    // Admit speculative/stale data only when unused capacity is available.
+    // The entry is inserted at the cold end of the LRU and never evicts an
+    // existing hot tile. Returns true when the tile is cached (or already
+    // present), false when it is invalid or there is insufficient space.
+    [[nodiscard]]
+    bool put_if_space(
+        std::uint64_t tile_id,
+        SharedTilePoints points
     );
 
     void clear() noexcept;
