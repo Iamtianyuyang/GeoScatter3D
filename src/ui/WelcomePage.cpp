@@ -851,18 +851,11 @@ WelcomePageAction draw_new_project_dialog(
             ImGui::InvisibleButton("##OkBtn", ImVec2(btn_w, btn_h));
             const bool ok_hovered = ImGui::IsItemHovered();
             const bool ok_active = ImGui::IsItemActive();
-            // Gradient-like background: top slightly lighter, bottom normal
-            const ImU32 ok_bg_top = ok_active
-                ? IM_COL32(0, 80, 220, 255)
-                : (ok_hovered ? IM_COL32(25, 110, 255, 255) : IM_COL32(15, 98, 254, 255));
-            const ImU32 ok_bg_bottom = ok_active
-                ? IM_COL32(0, 70, 200, 255)
-                : (ok_hovered ? IM_COL32(15, 98, 254, 255) : IM_COL32(11, 78, 203, 255));
-            draw_list->AddRectFilledMultiColor(
-                ok_min, ok_max,
-                ok_bg_top, ok_bg_top,
-                ok_bg_bottom, ok_bg_bottom
-            );
+            // Blue background with matching 8px rounding
+            const ImU32 ok_bg = ok_active
+                ? IM_COL32(0, 75, 210, 255)
+                : (ok_hovered ? IM_COL32(20, 105, 255, 255) : IM_COL32(15, 98, 254, 255));
+            draw_list->AddRectFilled(ok_min, ok_max, ok_bg, 8.0f * scale);
             // Subtle inner highlight at top
             draw_list->AddRectFilled(
                 ImVec2(ok_min.x, ok_min.y),
