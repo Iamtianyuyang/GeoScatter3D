@@ -277,13 +277,13 @@ bool draw_action_card(
         min,
         max,
         hovered ? kSurfaceHover : kSurface,
-        6.0f * scale
+        8.0f * scale
     );
     draw_list->AddRect(
         min,
         max,
-        hovered ? rgb(86, 156, 214, 150) : kBorder,
-        6.0f * scale,
+        hovered ? to_u32(palette::kAccent, 120) : kBorder,
+        8.0f * scale,
         0,
         1.0f * scale
     );
@@ -292,7 +292,7 @@ bool draw_action_card(
         min.x + 28.0f * scale,
         min.y + height * 0.5f
     };
-    const ImU32 icon_color = hovered ? kText : rgb(180, 180, 180);
+    const ImU32 icon_color = hovered ? kText : to_u32(palette::kTextFaint, 200);
     if (icon == CardIcon::NewProject) {
         draw_plus_icon(draw_list, icon_center, scale, icon_color);
     } else if (icon == CardIcon::Folder) {
@@ -472,7 +472,7 @@ bool draw_recent_row(
     draw_list->AddLine(
         ImVec2(min.x, min.y + height),
         ImVec2(min.x + width, min.y + height),
-        rgb(62, 62, 62, 180),
+        to_u32(palette::kBorder, 180),
         1.0f
     );
     if (hovered) {
@@ -817,8 +817,8 @@ WelcomePageAction draw_start_panel(
     draw_section_title(draw_list, ImVec2(min.x, y), scale, "开始");
     y += 31.0f * scale;
 
-    const float card_height = 67.0f * scale;
-    const float gap = 10.0f * scale;
+    const float card_height = 72.0f * scale;
+    const float gap = 12.0f * scale;
     if (draw_action_card(
             "##NewProject",
             ImVec2(min.x, y),
@@ -880,13 +880,15 @@ WelcomePageAction draw_start_panel(
             session_min,
             ImVec2(min.x + width, y + session_height),
             kSurface,
-            6.0f * scale
+            8.0f * scale
         );
         draw_list->AddRect(
             session_min,
             ImVec2(min.x + width, y + session_height),
-            kBorder,
-            6.0f * scale
+            to_u32(palette::kAccent, 100),
+            8.0f * scale,
+            0,
+            1.5f * scale
         );
         draw_folder_icon(
             draw_list,
@@ -1017,26 +1019,43 @@ WelcomePageAction draw_recent_panel(
 
     float y = min.y + 32.0f * scale;
     if (model.recent_projects.empty()) {
-        const float empty_height = 126.0f * scale;
+        const float empty_height = 160.0f * scale;
         draw_list->AddRectFilled(
             ImVec2(min.x, y),
             ImVec2(min.x + width, y + empty_height),
             kSurface,
-            6.0f * scale
+            8.0f * scale
         );
+        // Decorative point-cloud illustration for empty state
+        {
+            const float cx = min.x + width * 0.5f;
+            const float cy = y + empty_height * 0.35f;
+            constexpr int kDecorPoints = 30;
+            std::srand(static_cast<unsigned>(std::hash<std::string>{}("empty_state_deco")));
+            for (int i = 0; i < kDecorPoints; ++i) {
+                const float dx = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * width * 0.7f;
+                const float dy = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * empty_height * 0.4f;
+                const float r = (1.0f + static_cast<float>(std::rand()) / RAND_MAX * 2.5f) * scale;
+                const int alpha = 15 + static_cast<int>(static_cast<float>(std::rand()) / RAND_MAX * 50);
+                draw_list->AddCircleFilled(
+                    ImVec2(cx + dx, cy + dy), r,
+                    IM_COL32(15, 98, 254, alpha)
+                );
+            }
+        }
         draw_text(
             draw_list,
             medium_font(),
-            13.0f * scale,
-            ImVec2(min.x + 18.0f * scale, y + 31.0f * scale),
+            14.0f * scale,
+            ImVec2(min.x + width * 0.5f - 70.0f * scale, y + empty_height * 0.62f),
             kMuted,
             "还没有历史项目"
         );
         draw_text(
             draw_list,
             regular_font(),
-            11.0f * scale,
-            ImVec2(min.x + 18.0f * scale, y + 57.0f * scale),
+            11.5f * scale,
+            ImVec2(min.x + width * 0.5f - 80.0f * scale, y + empty_height * 0.75f),
             kFaint,
             "打开项目后会自动出现在这里"
         );
@@ -1069,13 +1088,91 @@ WelcomePageAction draw_recent_panel(
     return action;
 }
 
+} // namespace
+
+namespace {
+
+struct HeroParticle {
+    float x = 0.0f;
+    float y = 0.0f;
+    float vx = 0.0f;
+    float vy = 0.0f;
+    float radius = 0.0f;
+    int alpha = 0;
+};
+
+static std::vector<HeroParticle> g_hero_particles;
+static bool g_hero_particles_init = false;
+
+void init_hero_particles(float width, float height, float scale)
+{
+    if (g_hero_particles_init) return;
+    g_hero_particles.clear();
+    constexpr int kParticleCount = 60;
+    g_hero_particles.reserve(kParticleCount);
+    for (int i = 0; i < kParticleCount; ++i) {
+        HeroParticle p;
+        p.x = static_cast<float>(std::rand()) / RAND_MAX * width;
+        p.y = static_cast<float>(std::rand()) / RAND_MAX * height;
+        p.vx = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 0.6f * scale;
+        p.vy = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 0.6f * scale;
+        p.radius = (1.5f + static_cast<float>(std::rand()) / RAND_MAX * 3.0f) * scale;
+        p.alpha = 30 + static_cast<int>(static_cast<float>(std::rand()) / RAND_MAX * 80);
+        g_hero_particles.push_back(p);
+    }
+    g_hero_particles_init = true;
+}
+
+void draw_hero_particles(
+    ImDrawList* draw_list,
+    const ImVec2& min,
+    const ImVec2& max,
+    float scale
+)
+{
+    const float w = max.x - min.x;
+    const float h = max.y - min.y;
+    init_hero_particles(w, h, scale);
+    const ImU32 particle_color = IM_COL32(15, 98, 254, 255);
+    for (auto& p : g_hero_particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0.0f) p.x = w;
+        if (p.x > w) p.x = 0.0f;
+        if (p.y < 0.0f) p.y = h;
+        if (p.y > h) p.y = 0.0f;
+        draw_list->AddCircleFilled(
+            ImVec2(min.x + p.x, min.y + p.y),
+            p.radius,
+            IM_COL32(15, 98, 254, p.alpha)
+        );
+    }
+}
+
 void draw_brand(
     ImDrawList* draw_list,
     const WelcomePageModel& model,
     const ImVec2& min,
     float scale
 ) {
-    const float icon_size = 54.0f * scale;
+    const float icon_size = 64.0f * scale;
+    const float hero_width = 520.0f * scale;
+    const float hero_height = 130.0f * scale;
+    const ImVec2 hero_max{min.x + hero_width, min.y + hero_height};
+
+    // Hero background with subtle gradient simulation (top white, bottom bg)
+    draw_list->AddRectFilledMultiColor(
+        min,
+        hero_max,
+        IM_COL32(255, 255, 255, 255),
+        IM_COL32(255, 255, 255, 255),
+        IM_COL32(247, 248, 250, 255),
+        IM_COL32(247, 248, 250, 255)
+    );
+
+    // Particle animation behind brand
+    draw_hero_particles(draw_list, min, hero_max, scale);
+
     if (model.logo_texture != VK_NULL_HANDLE) {
         const ImTextureID texture = static_cast<ImTextureID>(
             reinterpret_cast<ImU64>(model.logo_texture)
@@ -1090,14 +1187,14 @@ void draw_brand(
             min,
             ImVec2(min.x + icon_size, min.y + icon_size),
             kSurface,
-            8.0f * scale
+            10.0f * scale
         );
     }
 
-    const float brand_size = 25.0f * scale;
+    const float brand_size = 30.0f * scale;
     const ImVec2 text_pos{
-        min.x + icon_size + 14.0f * scale,
-        min.y + 3.0f * scale
+        min.x + icon_size + 16.0f * scale,
+        min.y + 6.0f * scale
     };
     draw_text(
         draw_list,
@@ -1138,8 +1235,8 @@ void draw_brand(
     draw_text(
         draw_list,
         regular_font(),
-        11.5f * scale,
-        ImVec2(text_pos.x + 1.0f * scale, min.y + 37.0f * scale),
+        13.0f * scale,
+        ImVec2(text_pos.x + 1.0f * scale, min.y + 46.0f * scale),
         kMuted,
         "三维散点数据工作台"
     );
@@ -1208,12 +1305,14 @@ WelcomePageAction draw_welcome_page(
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_brand(draw_list, model, content_min, scale);
 
+    const float hero_height = 130.0f * scale;
     const ImVec2 body_min{
         content_min.x,
-        content_min.y + 82.0f * scale
+        content_min.y + hero_height
     };
+    const float footer_height = 40.0f * scale;
     const float body_height =
-        available.y - (body_min.y - canvas_min.y) - 20.0f * scale;
+        available.y - (body_min.y - canvas_min.y) - footer_height - 20.0f * scale;
     const bool landscape =
         content_width >= 760.0f * scale &&
         available.x > available.y * 1.05f;
@@ -1248,14 +1347,14 @@ WelcomePageAction draw_welcome_page(
     const float child_width = ImGui::GetContentRegionAvail().x;
 
     if (landscape) {
-        const float gap = 44.0f * scale;
+        const float gap = 36.0f * scale;
         const float left_width = std::clamp(
-            child_width * 0.41f,
-            310.0f * scale,
-            390.0f * scale
+            child_width * 0.38f,
+            300.0f * scale,
+            380.0f * scale
         );
         const float right_width =
-            std::max(240.0f * scale, child_width - left_width - gap);
+            std::max(280.0f * scale, child_width - left_width - gap);
         action = draw_start_panel(
             model,
             child_origin,
@@ -1273,7 +1372,7 @@ WelcomePageAction draw_welcome_page(
         }
         ImGui::SetCursorScreenPos(ImVec2(
             child_origin.x,
-            child_origin.y + 520.0f * scale
+            child_origin.y + 540.0f * scale
         ));
         ImGui::Dummy(ImVec2(child_width, 1.0f));
     } else {
@@ -1299,6 +1398,53 @@ WelcomePageAction draw_welcome_page(
     }
     ImGui::EndChild();
     ImGui::PopStyleColor(4);
+
+    // ── Footer bar: resource links ──
+    {
+        const float footer_y = body_min.y + std::max(body_height, 80.0f * scale) + 10.0f * scale;
+        const ImVec2 footer_min{content_left, footer_y};
+        const float footer_w = content_width;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddLine(
+            ImVec2(footer_min.x, footer_min.y),
+            ImVec2(footer_min.x + footer_w, footer_min.y),
+            to_u32(palette::kBorder, 128),
+            1.0f * scale
+        );
+
+        const char* links[] = {
+            "📖 文档",
+            "🗂️ 示例数据",
+            "⌨️ 快捷键参考",
+            "🐛 反馈问题"
+        };
+        constexpr int kLinkCount = 4;
+        float x_cursor = footer_min.x;
+        const float link_font_size = 12.0f * scale;
+        const float link_spacing = 28.0f * scale;
+        const float footer_v_pad = 10.0f * scale;
+
+        for (int i = 0; i < kLinkCount; ++i) {
+            const ImVec2 link_pos{x_cursor, footer_min.y + footer_v_pad};
+            const ImVec2 ts = regular_font()->CalcTextSizeA(
+                link_font_size, 1000.0f, 0.0f, links[i]);
+            ImGui::SetCursorScreenPos(link_pos);
+            ImGui::InvisibleButton(
+                std::string("##FooterLink" + std::to_string(i)).c_str(),
+                ImVec2(ts.x + 8.0f * scale, ts.y + 4.0f * scale)
+            );
+            const bool hovered = ImGui::IsItemHovered();
+            draw_text(
+                dl,
+                regular_font(),
+                link_font_size,
+                ImVec2(link_pos.x + 4.0f * scale, link_pos.y + 2.0f * scale),
+                hovered ? to_u32(palette::kAccent, 230) : to_u32(palette::kTextDim, 180),
+                links[i]
+            );
+            x_cursor += ts.x + link_spacing;
+        }
+    }
 
     ImGui::End();
     ImGui::PopStyleVar(3);

@@ -21,4 +21,4 @@ debug-zoom-horizon-singularity.md
 rc include -maxdepth 2 -type d
 reasonix.toml
 review_dump.txt
-design-proposal.html
+*.html
