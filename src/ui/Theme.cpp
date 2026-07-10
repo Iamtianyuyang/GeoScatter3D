@@ -260,7 +260,6 @@ void apply_theme(ThemeId id, float ui_scale)
 
     // ── ImGuiStyle：圆角按主题基准 × ui_scale ───────────────────────
     ImGuiStyle& style = ImGui::GetStyle();
-    auto& colors = style.Colors;
     style.WindowRounding = t.window_rounding * ui_scale;
     style.ChildRounding = t.child_rounding * ui_scale;
     style.FrameRounding = t.frame_rounding * ui_scale;
@@ -275,18 +274,6 @@ void apply_theme(ThemeId id, float ui_scale)
         ImGui::StyleColorsDark(&style);
     } else {
         ImGui::StyleColorsLight(&style);
-    }
-
-    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
-
-    // ── sRGB→linear：StyleColorsDark/Light 以 sRGB 写入，立即线性化 ──
-    // 必须在自定义覆盖之前执行，确保循环只处理 StyleColors 输出的新鲜
-    // sRGB 值，不会把上轮已线性化的冷门条目重复线性化。
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        colors[i] = to_linear(colors[i]);
     }
 
     // A compact desktop-tool rhythm with enough target area for repeated
@@ -320,86 +307,95 @@ void apply_theme(ThemeId id, float ui_scale)
     style.DockingSeparatorSize = 2.0f * ui_scale;
     style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
     style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
+    auto& colors = style.Colors;
 
-    // ── 自定义覆盖：to_linear() 内联，写入即线性值 ──
-    // StyleColors 底色已在上方批量线性化；这里覆盖的条目直接写入线性值，
-    // 避免循环重复线性化（冷门 StyleColors 条目不会被二次线性化）。
-
-    colors[ImGuiCol_Text] = to_linear(t.text);
-    colors[ImGuiCol_TextDisabled] = to_linear(t.text_dim);
-    colors[ImGuiCol_WindowBg] = to_linear(t.bg);
-    colors[ImGuiCol_ChildBg] = to_linear(t.surface);
-    colors[ImGuiCol_PopupBg] = to_linear(t.surface);
-    colors[ImGuiCol_Border] = to_linear(with_alpha(t.border, 0.50f));
+    colors[ImGuiCol_Text] = t.text;
+    colors[ImGuiCol_TextDisabled] = t.text_dim;
+    colors[ImGuiCol_WindowBg] = t.bg;
+    colors[ImGuiCol_ChildBg] = t.surface;
+    colors[ImGuiCol_PopupBg] = t.surface;
+    colors[ImGuiCol_Border] = with_alpha(t.border, 0.50f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
     // 输入框/下拉底色保持中性，交互态才引入 accent
-    colors[ImGuiCol_FrameBg] = to_linear(with_alpha(t.frame, 0.96f));
-    colors[ImGuiCol_FrameBgHovered] = to_linear(t.frame_hover);
-    colors[ImGuiCol_FrameBgActive] = to_linear(with_alpha(t.accent, 0.20f));
+    colors[ImGuiCol_FrameBg] = with_alpha(t.frame, 0.96f);
+    colors[ImGuiCol_FrameBgHovered] = t.frame_hover;
+    colors[ImGuiCol_FrameBgActive] = with_alpha(t.accent, 0.20f);
 
-    colors[ImGuiCol_TitleBg] = to_linear(t.bg);
-    colors[ImGuiCol_TitleBgActive] = to_linear(t.surface);
-    colors[ImGuiCol_TitleBgCollapsed] = to_linear(with_alpha(t.bg, 0.51f));
+    colors[ImGuiCol_TitleBg] = t.bg;
+    colors[ImGuiCol_TitleBgActive] = t.surface;
+    colors[ImGuiCol_TitleBgCollapsed] = with_alpha(t.bg, 0.51f);
 
-    colors[ImGuiCol_MenuBarBg] = to_linear(t.menu_bg);
+    colors[ImGuiCol_MenuBarBg] = t.menu_bg;
 
     // Low-contrast track + clearly stepped thumb states. The narrower track
     // saves panel width while GrabMinSize keeps short documents usable.
-    colors[ImGuiCol_ScrollbarBg] = to_linear(with_alpha(t.border, 0.18f));
-    colors[ImGuiCol_ScrollbarGrab] = to_linear(t.scrollbar_grab);
-    colors[ImGuiCol_ScrollbarGrabHovered] = to_linear(t.scrollbar_grab_hovered);
-    colors[ImGuiCol_ScrollbarGrabActive] = to_linear(t.scrollbar_grab_active);
+    colors[ImGuiCol_ScrollbarBg] = with_alpha(t.border, 0.18f);
+    colors[ImGuiCol_ScrollbarGrab] = t.scrollbar_grab;
+    colors[ImGuiCol_ScrollbarGrabHovered] = t.scrollbar_grab_hovered;
+    colors[ImGuiCol_ScrollbarGrabActive] = t.scrollbar_grab_active;
 
-    colors[ImGuiCol_CheckMark] = to_linear(t.accent);
-    colors[ImGuiCol_SliderGrab] = to_linear(with_alpha(t.accent, 0.92f));
-    colors[ImGuiCol_SliderGrabActive] = to_linear(t.accent_active);
+    colors[ImGuiCol_CheckMark] = t.accent;
+    colors[ImGuiCol_SliderGrab] = with_alpha(t.accent, 0.92f);
+    colors[ImGuiCol_SliderGrabActive] = t.accent_active;
 
-    colors[ImGuiCol_Button] = to_linear(with_alpha(t.accent, t.button_alpha));
-    colors[ImGuiCol_ButtonHovered] = to_linear(with_alpha(t.accent, t.button_hover_alpha));
-    colors[ImGuiCol_ButtonActive] = to_linear(t.accent_active);
+    colors[ImGuiCol_Button] = with_alpha(t.accent, t.button_alpha);
+    colors[ImGuiCol_ButtonHovered] = with_alpha(t.accent, t.button_hover_alpha);
+    colors[ImGuiCol_ButtonActive] = t.accent_active;
 
-    colors[ImGuiCol_Header] = to_linear(with_alpha(t.accent, 0.12f));
-    colors[ImGuiCol_HeaderHovered] = to_linear(with_alpha(t.accent, 0.25f));
-    colors[ImGuiCol_HeaderActive] = to_linear(with_alpha(t.accent, 0.40f));
+    colors[ImGuiCol_Header] = with_alpha(t.accent, 0.12f);
+    colors[ImGuiCol_HeaderHovered] = with_alpha(t.accent, 0.25f);
+    colors[ImGuiCol_HeaderActive] = with_alpha(t.accent, 0.40f);
 
-    colors[ImGuiCol_Separator] = to_linear(with_alpha(t.border, 0.50f));
-    colors[ImGuiCol_SeparatorHovered] = to_linear(with_alpha(t.accent, 0.78f));
-    colors[ImGuiCol_SeparatorActive] = to_linear(t.accent);
+    colors[ImGuiCol_Separator] = with_alpha(t.border, 0.50f);
+    colors[ImGuiCol_SeparatorHovered] = with_alpha(t.accent, 0.78f);
+    colors[ImGuiCol_SeparatorActive] = t.accent;
 
-    colors[ImGuiCol_ResizeGrip] = to_linear(with_alpha(t.accent, 0.20f));
-    colors[ImGuiCol_ResizeGripHovered] = to_linear(with_alpha(t.accent, 0.67f));
-    colors[ImGuiCol_ResizeGripActive] = to_linear(with_alpha(t.accent, 0.95f));
+    colors[ImGuiCol_ResizeGrip] = with_alpha(t.accent, 0.20f);
+    colors[ImGuiCol_ResizeGripHovered] = with_alpha(t.accent, 0.67f);
+    colors[ImGuiCol_ResizeGripActive] = with_alpha(t.accent, 0.95f);
 
-    colors[ImGuiCol_Tab] = to_linear(t.bg);
-    colors[ImGuiCol_TabHovered] = to_linear(with_alpha(t.accent, 0.15f));
-    colors[ImGuiCol_TabSelected] = to_linear(t.frame);
-    colors[ImGuiCol_TabSelectedOverline] = to_linear(t.accent);
-    colors[ImGuiCol_TabDimmed] = to_linear(t.tab_dimmed);
-    colors[ImGuiCol_TabDimmedSelected] = to_linear(t.surface);
+    colors[ImGuiCol_Tab] = t.bg;
+    colors[ImGuiCol_TabHovered] = with_alpha(t.accent, 0.15f);
+    colors[ImGuiCol_TabSelected] = t.frame;
+    colors[ImGuiCol_TabSelectedOverline] = t.accent;
+    colors[ImGuiCol_TabDimmed] = t.tab_dimmed;
+    colors[ImGuiCol_TabDimmedSelected] = t.surface;
 
-    colors[ImGuiCol_DockingPreview] = to_linear(with_alpha(t.accent, 0.30f));
-    colors[ImGuiCol_DockingEmptyBg] = to_linear(t.bg);
+    colors[ImGuiCol_DockingPreview] = with_alpha(t.accent, 0.30f);
+    colors[ImGuiCol_DockingEmptyBg] = t.bg;
 
-    colors[ImGuiCol_PlotLines] = to_linear(t.accent);
-    colors[ImGuiCol_PlotLinesHovered] = to_linear(t.red);
-    colors[ImGuiCol_PlotHistogram] = to_linear(with_alpha(t.accent, 0.70f));
-    colors[ImGuiCol_PlotHistogramHovered] = to_linear(with_alpha(t.red, 0.70f));
+    colors[ImGuiCol_PlotLines] = t.accent;
+    colors[ImGuiCol_PlotLinesHovered] = t.red;
+    colors[ImGuiCol_PlotHistogram] = with_alpha(t.accent, 0.70f);
+    colors[ImGuiCol_PlotHistogramHovered] = with_alpha(t.red, 0.70f);
 
-    colors[ImGuiCol_TableHeaderBg] = to_linear(t.surface);
-    colors[ImGuiCol_TableBorderStrong] = to_linear(with_alpha(t.border, 0.60f));
-    colors[ImGuiCol_TableBorderLight] = to_linear(with_alpha(t.border, 0.30f));
+    colors[ImGuiCol_TableHeaderBg] = t.surface;
+    colors[ImGuiCol_TableBorderStrong] = with_alpha(t.border, 0.60f);
+    colors[ImGuiCol_TableBorderLight] = with_alpha(t.border, 0.30f);
     colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
     colors[ImGuiCol_TableRowBgAlt] = t.dark
         ? ImVec4(1.0f, 1.0f, 1.0f, 0.03f)
         : ImVec4(0.0f, 0.0f, 0.0f, 0.03f);
 
-    colors[ImGuiCol_TextSelectedBg] = to_linear(with_alpha(t.accent, 0.20f));
-    colors[ImGuiCol_NavHighlight] = to_linear(with_alpha(t.accent, 0.40f));
-    colors[ImGuiCol_DragDropTarget] = to_linear(with_alpha(t.accent, 0.30f));
-    colors[ImGuiCol_NavWindowingHighlight] = to_linear(with_alpha(t.text, 0.70f));
+    colors[ImGuiCol_TextSelectedBg] = with_alpha(t.accent, 0.20f);
+    colors[ImGuiCol_NavHighlight] = with_alpha(t.accent, 0.40f);
+    colors[ImGuiCol_DragDropTarget] = with_alpha(t.accent, 0.30f);
+    colors[ImGuiCol_NavWindowingHighlight] = with_alpha(t.text, 0.70f);
     colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.15f);
     colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.25f);
+
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        style.WindowRounding = 0.0f;
+        colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    // 交换链是 B8G8R8A8_SRGB：硬件把 shader 输出当线性值再编码。上面的
+    // 颜色按 sRGB 十六进制值书写，必须整体预转换到线性空间，屏幕上才
+    // 显示为书写的原值（否则整个 UI 被提亮冲淡）。alpha 不转换。
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        colors[i] = to_linear(colors[i]);
+    }
 }
 
 } // namespace gs3d::ui
