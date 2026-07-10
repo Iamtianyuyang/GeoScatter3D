@@ -1,0 +1,41 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # glfw3 + Vulkan headers/loader via the runner's preinstalled vcpkg.
+      # Shaders are committed as prebuilt .spv, so no glslc is needed.
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-glfw3-vulkan-v1
+
+      - name: Install dependencies
+        run: vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows
+
+      - name: Configure
+        run: >
+          cmake -B build -S .
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # GPU-independent tests only: the pure-logic suites (GpuInfo, Data,
+      # Runtime, TileStreaming) and the include-dependency lint all run
+      # without a display or physical GPU.
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
