@@ -561,6 +561,7 @@ int ViewerApp::run() {
         vk_config.enable_validation_layers =
             config_.enable_validation_layers;
         vk_config.application_name = "GeoScatter3D";
+        vk_config.preferred_gpu = config_.preferred_gpu;
 
         gs3d::render::VulkanContext context(window, vk_config);
         std::cout << "[TIME] viewer.startup_seconds = "

@@ -95,6 +95,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/render/VulkanSwapchain.cpp
     src/render/VulkanRenderer.cpp
     src/render/VulkanBuffer.cpp
+    src/render/VulkanGpuInfo.cpp
     src/render/GpuFrameTimer.cpp
     src/render/PointCloudGpu.cpp
     src/render/PointPipeline.cpp
@@ -379,6 +380,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.TileStreaming
         COMMAND GeoScatter3DTileStreamingTests
+    )
+
+    add_executable(GeoScatter3DGpuInfoTests
+        tests/VulkanGpuInfoTests.cpp
+        src/render/VulkanGpuInfo.cpp
+    )
+
+    target_include_directories(GeoScatter3DGpuInfoTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DGpuInfoTests PRIVATE
+        Vulkan::Vulkan
+    )
+
+    add_test(
+        NAME GeoScatter3D.GpuInfo
+        COMMAND GeoScatter3DGpuInfoTests
     )
 
     add_test(

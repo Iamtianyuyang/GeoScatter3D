@@ -106,6 +106,11 @@ struct ViewerAppConfig {
 
     bool enable_validation_layers = true;
 
+    // "auto" or "uuid:<32-char-hex>".
+    // When auto, the best suitable GPU is chosen automatically.
+    // The UUID refers to VkPhysicalDeviceIDProperties::deviceUUID.
+    std::string preferred_gpu = "auto";
+
     std::array<float, 4> clear_color{
         0.118f,
         0.133f,

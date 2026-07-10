@@ -1,10 +1,12 @@
 #pragma once
 
 #include "app/RecentProjects.hpp"
+#include "render/VulkanGpuInfo.hpp"
 
 #include <vulkan/vulkan.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,17 @@ struct WelcomePageModel {
     std::filesystem::path current_path;
     std::vector<gs3d::app::RecentProjectEntry> recent_projects;
     NewProjectDialogState new_project_dialog;
+
+    // GPU selection state (populated once after Vulkan init).
+    std::vector<gs3d::render::VulkanGpuInfo> gpu_list;
+    std::size_t active_gpu_index = 0;
+    std::string preferred_gpu;  // "auto" or "uuid:<hex>"
+    bool gpu_dialog_active = false;
+    bool gpu_dialog_should_open = false;
+
+    // Called by the welcome page when the user picks a new GPU.
+    // The caller (WelcomeWindow) wires this to persist the config.
+    std::function<void(const std::string&)> on_preferred_gpu_changed;
 };
 
 struct WelcomePageAction {

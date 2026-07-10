@@ -41,6 +41,12 @@ multi_viewports = true
 [vulkan]
 validation_layers = true
 
+[graphics]
+# 图形设备选择："auto"（自动，优先独立显卡、显存大者优先）
+# 或 "uuid:<32位十六进制>"（固定某块显卡，UUID 跨重启/驱动更新稳定）。
+# 可在欢迎页"图形设备"卡片中选择，选择后由程序写回此字段（保留注释）。
+preferred_gpu = "uuid:868080a7040000000002000000000000"
+
 [render]
 clear_color = [0.118, 0.133, 0.165, 1.0]
 initial_point_size = 1.5

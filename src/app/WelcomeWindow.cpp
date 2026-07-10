@@ -1,5 +1,6 @@
 #include "app/WelcomeWindow.hpp"
 
+#include "app/AppConfig.hpp"
 #include "app/RecentProjects.hpp"
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
@@ -159,6 +160,7 @@ WelcomeWindowResult WelcomeWindow::run()
     context_config.enable_validation_layers =
         config_.enable_validation_layers;
     context_config.application_name = "GeoScatter3D Welcome";
+    context_config.preferred_gpu = config_.preferred_gpu;
     gs3d::render::VulkanContext context(window, context_config);
     gs3d::render::VulkanSwapchain swapchain(context, window);
     gs3d::render::VulkanRenderer renderer(context, swapchain);
@@ -197,6 +199,17 @@ WelcomeWindowResult WelcomeWindow::run()
     model.logo_texture = logo.descriptor();
     model.current_path = config_.current_path;
     model.recent_projects = config_.recent_projects;
+
+    // Populate GPU list from the already-created Vulkan context.
+    model.gpu_list = context.gpu_list();
+    model.active_gpu_index = context.active_gpu_index();
+    model.preferred_gpu = config_.preferred_gpu;
+    model.on_preferred_gpu_changed =
+        [this](const std::string& gpu) {
+            config_.preferred_gpu = gpu;
+            gs3d::app::save_viewer_config_string(
+                "graphics", "preferred_gpu", gpu);
+        };
 
     WelcomeWindowResult result;
     while (!window.should_close()) {

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iterator>
@@ -1313,6 +1314,409 @@ void draw_brand(
     );
 }
 
+/*
+ * Footer chip anchored bottom-right: shows the GPU this process is
+ * running on; clicking it opens the GPU selection dialog.  Also draws
+ * the "restart to apply" hint to the left of the chip when the saved
+ * preference resolves to a different device.  Returns true on click.
+ */
+bool draw_gpu_footer_chip(
+    const WelcomePageModel& model,
+    float right_x,
+    float center_y,
+    float scale
+) {
+    if (model.gpu_list.empty()) {
+        return false;
+    }
+    const auto& active = model.gpu_list[model.active_gpu_index];
+
+    ImFont* font = regular_font();
+    const float font_size = 14.0f * scale;
+    const char* label = "图形设备";
+    const ImVec2 label_size = font->CalcTextSizeA(
+        font_size, 10000.0f, 0.0f, label);
+    const ImVec2 name_size = font->CalcTextSizeA(
+        font_size, 10000.0f, 0.0f, active.name.c_str());
+
+    const float pad_x = 14.0f * scale;
+    const float gap = 8.0f * scale;
+    const float chevron_w = 9.0f * scale;
+    const float height = 32.0f * scale;
+    const float width = pad_x * 2.0f + label_size.x + gap
+        + name_size.x + gap + chevron_w;
+
+    const ImVec2 min{right_x - width, center_y - height * 0.5f};
+    const ImVec2 max{right_x, center_y + height * 0.5f};
+    ImGui::SetCursorScreenPos(min);
+    ImGui::InvisibleButton("##GpuFooterChip", ImVec2(width, height));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked();
+    if (hovered) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_list->AddRectFilled(
+        min, max,
+        hovered ? kSurfaceHover : kSurface,
+        height * 0.5f
+    );
+    draw_list->AddRect(
+        min, max,
+        hovered ? to_u32(palette::kAccent, 120) : kBorder,
+        height * 0.5f,
+        0,
+        1.0f * scale
+    );
+
+    float x = min.x + pad_x;
+    const float text_y = min.y + (height - label_size.y) * 0.5f;
+    draw_text(draw_list, font, font_size,
+              ImVec2(x, text_y), kFaint, label);
+    x += label_size.x + gap;
+    draw_text(draw_list, font, font_size,
+              ImVec2(x, text_y),
+              hovered ? kText : kMuted,
+              active.name.c_str());
+    x += name_size.x + gap;
+
+    // Chevron-down affordance.
+    const ImU32 chevron_color = hovered ? kText : kMuted;
+    const float cy = center_y - 1.5f * scale;
+    const float half = chevron_w * 0.5f;
+    draw_list->AddLine(
+        ImVec2(x, cy), ImVec2(x + half, cy + half + 0.5f * scale),
+        chevron_color, 1.5f * scale);
+    draw_list->AddLine(
+        ImVec2(x + half, cy + half + 0.5f * scale),
+        ImVec2(x + chevron_w, cy),
+        chevron_color, 1.5f * scale);
+
+    // Restart hint, left of the chip.
+    const auto expected = gs3d::render::select_gpu(
+        model.gpu_list, model.preferred_gpu);
+    if (expected.index.has_value() &&
+        *expected.index != model.active_gpu_index) {
+        const char* hint = "更改将在重启后生效";
+        const ImVec2 hint_size = font->CalcTextSizeA(
+            font_size, 10000.0f, 0.0f, hint);
+        draw_text(
+            draw_list, font, font_size,
+            ImVec2(min.x - 16.0f * scale - hint_size.x,
+                   min.y + (height - hint_size.y) * 0.5f),
+            kKeywordBlue,
+            hint
+        );
+    }
+
+    return clicked;
+}
+
+/*
+ * One selectable device row inside the GPU dialog: radio indicator,
+ * device name, and a muted meta line.  Returns true on click.
+ */
+bool draw_gpu_option_row(
+    const char* id,
+    const char* title,
+    const char* meta,
+    bool selected,
+    bool enabled,
+    float width,
+    float scale
+) {
+    const float height = 62.0f * scale;
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton(id, ImVec2(width, height));
+    const bool hovered = enabled && ImGui::IsItemHovered();
+    const bool clicked = enabled && ImGui::IsItemClicked();
+    if (hovered) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 max{min.x + width, min.y + height};
+
+    const ImU32 bg = selected
+        ? to_u32(palette::kAccent, 14)
+        : (hovered ? kSurfaceHover : kSurface);
+    draw_list->AddRectFilled(min, max, bg, 8.0f * scale);
+    draw_list->AddRect(
+        min, max,
+        selected
+            ? to_u32(palette::kAccent, 160)
+            : (hovered ? to_u32(palette::kAccent, 90) : kBorder),
+        8.0f * scale,
+        0,
+        1.0f * scale
+    );
+
+    // Radio indicator
+    const float radius = 7.0f * scale;
+    const ImVec2 radio_center{
+        min.x + 24.0f * scale,
+        min.y + height * 0.5f
+    };
+    draw_list->AddCircle(
+        radio_center, radius,
+        !enabled ? kFaint : (selected ? kBlue : kMuted),
+        0,
+        1.5f * scale
+    );
+    if (selected) {
+        draw_list->AddCircleFilled(
+            radio_center, radius - 3.5f * scale, kBlue);
+    }
+
+    const float text_x = min.x + 46.0f * scale;
+    draw_text(
+        draw_list, medium_font(), 17.0f * scale,
+        ImVec2(text_x, min.y + 11.0f * scale),
+        enabled ? kText : kFaint,
+        title
+    );
+    draw_text(
+        draw_list, regular_font(), 14.0f * scale,
+        ImVec2(text_x, min.y + 35.0f * scale),
+        enabled ? kMuted : kFaint,
+        meta
+    );
+
+    return clicked;
+}
+
+/*
+ * Centered modal for picking the preferred GPU.  Selection persists
+ * immediately via model.on_preferred_gpu_changed; the dialog stays
+ * open so the user can read the restart hint.
+ */
+void draw_gpu_selection_dialog(
+    WelcomePageModel& model,
+    float scale
+) {
+    if (!model.gpu_dialog_active) {
+        return;
+    }
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(
+        center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(
+        ImVec2(560.0f * scale, 0.0f), ImGuiCond_Appearing);
+
+    // Same dialog styling as the new-project dialog.
+    ImGui::PushStyleColor(
+        ImGuiCol_PopupBg, ImGui::ColorConvertU32ToFloat4(kBackground));
+    ImGui::PushStyleColor(
+        ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kText));
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowRounding, 12.0f * scale);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(32.0f * scale, 28.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FrameRounding, 8.0f * scale);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(12.0f * scale, 9.0f * scale));
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(12.0f * scale, 10.0f * scale));
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoTitleBar;
+
+    if (!ImGui::BeginPopupModal(
+            "##GpuSelectionDialog", nullptr, flags)) {
+        model.gpu_dialog_active = false;
+        ImGui::PopStyleVar(6);
+        ImGui::PopStyleColor(2);
+        return;
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 content_min = ImGui::GetCursorScreenPos();
+
+    // ── Title with accent bar ──
+    draw_list->AddRectFilled(
+        content_min,
+        ImVec2(content_min.x + 4.0f * scale,
+               content_min.y + 28.0f * scale),
+        kBlue,
+        2.0f * scale
+    );
+    draw_text(
+        draw_list, bold_font(), 26.0f * scale,
+        ImVec2(content_min.x + 14.0f * scale,
+               content_min.y - 2.0f * scale),
+        kText, "图形设备"
+    );
+    ImGui::Dummy(ImVec2(1.0f, 36.0f * scale));
+    draw_text(
+        draw_list, regular_font(), 15.0f * scale,
+        ImGui::GetCursorScreenPos(),
+        kMuted, "选择用于渲染的图形设备"
+    );
+    ImGui::Dummy(ImVec2(1.0f, 24.0f * scale));
+
+    const float row_width = ImGui::GetContentRegionAvail().x;
+
+    const bool preferred_is_auto =
+        model.preferred_gpu.empty() ||
+        model.preferred_gpu == "auto";
+    // Normalised 32-char hex of the preferred UUID (empty when auto
+    // or malformed).  Enumerated device_uuid values are already
+    // normalised, so plain string comparison suffices.
+    std::string preferred_uuid;
+    if (!preferred_is_auto) {
+        std::string hex = model.preferred_gpu;
+        if (hex.starts_with("uuid:")) {
+            hex = hex.substr(5);
+        }
+        preferred_uuid =
+            gs3d::render::normalise_device_uuid(hex);
+    }
+
+    auto set_preferred = [&model](const std::string& value) {
+        model.preferred_gpu = value;
+        if (model.on_preferred_gpu_changed) {
+            model.on_preferred_gpu_changed(value);
+        }
+    };
+
+    if (model.gpu_list.empty()) {
+        draw_text(
+            draw_list, regular_font(), 15.0f * scale,
+            ImGui::GetCursorScreenPos(),
+            kMuted, "图形设备信息不可用"
+        );
+        ImGui::Dummy(ImVec2(1.0f, 24.0f * scale));
+    } else {
+        // Auto option
+        {
+            std::string meta = "自动挑选最合适的设备";
+            const auto auto_idx =
+                gs3d::render::auto_select_gpu(model.gpu_list);
+            if (auto_idx.has_value()) {
+                meta = "当前解析为 "
+                    + model.gpu_list[*auto_idx].name;
+            }
+            if (draw_gpu_option_row(
+                    "##GpuOptionAuto",
+                    "自动（推荐）",
+                    meta.c_str(),
+                    preferred_is_auto,
+                    true,
+                    row_width,
+                    scale)) {
+                set_preferred("auto");
+            }
+        }
+
+        for (std::size_t i = 0; i < model.gpu_list.size(); ++i) {
+            const auto& g = model.gpu_list[i];
+            const bool selected =
+                !preferred_is_auto &&
+                g.device_uuid == preferred_uuid;
+
+            char row_id[32];
+            std::snprintf(row_id, sizeof(row_id),
+                          "##GpuOption%zu", i);
+            char meta[256];
+            if (g.suitable) {
+                std::snprintf(
+                    meta, sizeof(meta),
+                    "%s · %.1f GB · Vulkan %d.%d",
+                    gs3d::render::gpu_type_label(g.device_type),
+                    static_cast<double>(
+                        g.device_local_memory_bytes) /
+                        (1024.0 * 1024.0 * 1024.0),
+                    VK_API_VERSION_MAJOR(g.api_version),
+                    VK_API_VERSION_MINOR(g.api_version));
+            } else {
+                std::snprintf(
+                    meta, sizeof(meta),
+                    "不可用: %s",
+                    g.rejection_reason.c_str());
+            }
+
+            if (draw_gpu_option_row(
+                    row_id,
+                    g.name.c_str(),
+                    meta,
+                    selected,
+                    g.suitable,
+                    row_width,
+                    scale)) {
+                set_preferred("uuid:" + g.device_uuid);
+            }
+        }
+
+        // Restart hint / status line.
+        const auto expected = gs3d::render::select_gpu(
+            model.gpu_list, model.preferred_gpu);
+        if (expected.index.has_value() &&
+            *expected.index != model.active_gpu_index) {
+            ImGui::Dummy(ImVec2(1.0f, 4.0f * scale));
+            draw_text(
+                draw_list, regular_font(), 14.0f * scale,
+                ImGui::GetCursorScreenPos(),
+                kKeywordBlue,
+                "更改将在重新启动 GeoScatter3D 后生效"
+            );
+            ImGui::Dummy(ImVec2(1.0f, 24.0f * scale));
+        } else {
+            ImGui::Dummy(ImVec2(1.0f, 12.0f * scale));
+        }
+    }
+
+    // ── Close button, right aligned ──
+    bool should_close = false;
+    {
+        const ImVec2 button_size(96.0f * scale, 38.0f * scale);
+        ImGui::SetCursorPosX(
+            ImGui::GetCursorPosX()
+            + ImGui::GetContentRegionAvail().x - button_size.x);
+        ImGui::PushStyleColor(
+            ImGuiCol_Button,
+            ImGui::ColorConvertU32ToFloat4(kSurface));
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonHovered,
+            ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonActive,
+            ImGui::ColorConvertU32ToFloat4(kBackground));
+        ImGui::PushStyleColor(
+            ImGuiCol_Border,
+            ImGui::ColorConvertU32ToFloat4(kBorder));
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            ImGui::ColorConvertU32ToFloat4(kText));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        if (ImGui::Button("完成", button_size)) {
+            should_close = true;
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(5);
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        should_close = true;
+    }
+    if (should_close) {
+        model.gpu_dialog_active = false;
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+    ImGui::PopStyleVar(6);
+    ImGui::PopStyleColor(2);
+}
+
 } // namespace
 
 WelcomePageAction draw_welcome_page(
@@ -1381,8 +1785,10 @@ WelcomePageAction draw_welcome_page(
         content_min.x,
         content_min.y + hero_height
     };
+    // Reserve a footer strip below the body for the GPU chip.
+    const float footer_height = 52.0f * scale;
     const float body_height =
-        available.y - (body_min.y - canvas_min.y) - 20.0f * scale;
+        available.y - (body_min.y - canvas_min.y) - footer_height;
     const bool landscape =
         content_width >= 760.0f * scale &&
         available.x > available.y * 1.05f;
@@ -1466,8 +1872,19 @@ WelcomePageAction draw_welcome_page(
             action = recent_action;
         }
     }
+
     ImGui::EndChild();
     ImGui::PopStyleColor(4);
+
+    // ── Footer: GPU chip, bottom-right of the content column ──
+    if (draw_gpu_footer_chip(
+            model,
+            content_left + content_width,
+            canvas_min.y + available.y - footer_height * 0.5f,
+            scale)) {
+        model.gpu_dialog_active = true;
+        model.gpu_dialog_should_open = true;
+    }
 
     ImGui::End();
     ImGui::PopStyleVar(3);
@@ -1488,6 +1905,15 @@ WelcomePageAction draw_welcome_page(
         if (dialog_action.kind != WelcomePageActionKind::None) {
             action = dialog_action;
         }
+    }
+
+    // GPU selection dialog (same OpenPopup ID-stack rule as above).
+    if (model.gpu_dialog_active) {
+        if (model.gpu_dialog_should_open) {
+            model.gpu_dialog_should_open = false;
+            ImGui::OpenPopup("##GpuSelectionDialog");
+        }
+        draw_gpu_selection_dialog(model, scale);
     }
 
     return action;

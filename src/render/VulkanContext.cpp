@@ -152,29 +152,71 @@ void VulkanContext::create_surface(
 }
 
 void VulkanContext::pick_physical_device() {
-    std::uint32_t device_count = 0;
-    vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
+    gpu_list_ = enumerate_gpus(instance_, surface_);
 
-    if (device_count == 0) {
+    if (gpu_list_.empty()) {
         throw std::runtime_error(
             "VulkanContext: no Vulkan-capable physical device found"
         );
     }
 
-    std::vector<VkPhysicalDevice> devices(device_count);
-    vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
+    const auto selection = select_gpu(gpu_list_, config_.preferred_gpu);
 
-    for (const auto device : devices) {
-        if (physical_device_suitable(device)) {
-            physical_device_ = device;
-            queue_family_indices_ = find_queue_families(device);
-            return;
-        }
+    if (!selection.index.has_value()) {
+        throw std::runtime_error(
+            "VulkanContext: no suitable physical device found"
+        );
     }
 
-    throw std::runtime_error(
-        "VulkanContext: failed to find a suitable physical device"
-    );
+    active_gpu_index_ = *selection.index;
+    physical_device_ = gpu_list_[active_gpu_index_].physical_device;
+    queue_family_indices_ = find_queue_families(physical_device_);
+
+    // Build selection summary for logging and UI.
+    const auto& gpu = gpu_list_[active_gpu_index_];
+    if (selection.fallback_to_auto) {
+        selection_summary_ = "auto (回退: " + selection.fallback_reason + ")";
+        active_gpu_is_preferred_ = false;
+    } else if (config_.preferred_gpu == "auto" ||
+               config_.preferred_gpu.empty()) {
+        selection_summary_ = "auto";
+        active_gpu_is_preferred_ = false;
+    } else {
+        selection_summary_ = "preferred";
+        active_gpu_is_preferred_ = true;
+    }
+
+    std::cerr
+        << "[VULKAN] Selected GPU:\n"
+        << "  name=" << gpu.name << '\n'
+        << "  uuid=" << gpu.device_uuid << '\n'
+        << "  type=" << gpu_type_label(gpu.device_type) << '\n'
+        << "  memory=" << (gpu.device_local_memory_bytes / (1024.0 * 1024.0 * 1024.0)) << " GiB\n"
+        << "  selection=" << selection_summary_ << '\n';
+
+    if (selection.fallback_to_auto) {
+        std::cerr
+            << "[VULKAN] Preferred GPU unavailable:\n"
+            << "  preferred=" << config_.preferred_gpu << '\n'
+            << "  reason=" << selection.fallback_reason << '\n'
+            << "  falling back to automatic selection\n";
+    }
+}
+
+const std::vector<VulkanGpuInfo>& VulkanContext::gpu_list() const noexcept {
+    return gpu_list_;
+}
+
+std::size_t VulkanContext::active_gpu_index() const noexcept {
+    return active_gpu_index_;
+}
+
+bool VulkanContext::active_gpu_is_preferred() const noexcept {
+    return active_gpu_is_preferred_;
+}
+
+const std::string& VulkanContext::selection_summary() const noexcept {
+    return selection_summary_;
 }
 
 void VulkanContext::create_logical_device() {
@@ -296,22 +338,6 @@ bool VulkanContext::validation_layers_supported() const {
     }
 
     return false;
-}
-
-bool VulkanContext::physical_device_suitable(
-    VkPhysicalDevice device
-) const {
-    const QueueFamilyIndices indices = find_queue_families(device);
-
-    if (!indices.complete()) {
-        return false;
-    }
-
-    if (!device_extensions_supported(device)) {
-        return false;
-    }
-
-    return true;
 }
 
 QueueFamilyIndices VulkanContext::find_queue_families(

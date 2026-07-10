@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/Window.hpp"
+#include "render/VulkanGpuInfo.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -26,6 +27,8 @@ struct VulkanContextConfig {
     bool enable_validation_layers = true;
     std::string application_name = "GeoScatter3D";
     std::uint32_t application_version = VK_MAKE_VERSION(0, 1, 0);
+    // "auto" or "uuid:<32-char-hex>"
+    std::string preferred_gpu = "auto";
 };
 
 class VulkanContext {
@@ -67,6 +70,23 @@ public:
     [[nodiscard]]
     std::string physical_device_name() const;
 
+    // All enumerated GPUs (populated after construction).
+    [[nodiscard]]
+    const std::vector<VulkanGpuInfo>& gpu_list() const noexcept;
+
+    // Index into gpu_list() of the actually-selected device.
+    [[nodiscard]]
+    std::size_t active_gpu_index() const noexcept;
+
+    // Whether the active GPU was selected by explicit UUID match
+    // (vs. auto-selection or fallback).
+    [[nodiscard]]
+    bool active_gpu_is_preferred() const noexcept;
+
+    // Human-readable summary of how the GPU was chosen.
+    [[nodiscard]]
+    const std::string& selection_summary() const noexcept;
+
 private:
     VulkanContextConfig config_{};
 
@@ -80,6 +100,11 @@ private:
 
     QueueFamilyIndices queue_family_indices_{};
 
+    std::vector<VulkanGpuInfo> gpu_list_;
+    std::size_t active_gpu_index_ = 0;
+    bool active_gpu_is_preferred_ = false;
+    std::string selection_summary_;
+
 private:
     void create_instance();
     void create_surface(const gs3d::platform::Window& window);
@@ -91,9 +116,6 @@ private:
 
     [[nodiscard]]
     bool validation_layers_supported() const;
-
-    [[nodiscard]]
-    bool physical_device_suitable(VkPhysicalDevice device) const;
 
     [[nodiscard]]
     QueueFamilyIndices find_queue_families(VkPhysicalDevice device) const;

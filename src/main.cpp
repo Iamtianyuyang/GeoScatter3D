@@ -345,7 +345,9 @@ int main(int argc, char** argv) {
                     .ui_scale_multiplier =
                         app_config.viewer.ui_scale_multiplier,
                     .current_path = std::move(current_path),
-                    .recent_projects = recent_projects
+                    .recent_projects = recent_projects,
+                    .preferred_gpu =
+                        app_config.viewer.preferred_gpu
                 });
                 const auto welcome_result = welcome.run();
                 if (welcome_result.kind ==

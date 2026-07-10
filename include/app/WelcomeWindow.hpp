@@ -20,6 +20,8 @@ struct WelcomeWindowConfig {
     float ui_scale_multiplier = 1.0f;
     std::filesystem::path current_path;
     std::vector<RecentProjectEntry> recent_projects;
+    // "auto" or "uuid:<hex>"
+    std::string preferred_gpu = "auto";
 };
 
 struct WelcomeWindowResult {
