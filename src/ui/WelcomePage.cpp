@@ -1176,8 +1176,11 @@ void init_hero_particles(float width, float height, float scale)
         HeroParticle p;
         p.x = static_cast<float>(std::rand()) / RAND_MAX * width;
         p.y = static_cast<float>(std::rand()) / RAND_MAX * height;
-        p.vx = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 0.6f * scale;
-        p.vy = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 0.6f * scale;
+        // Velocity in pixels/second (integrated with DeltaTime, so the
+        // drift speed is framerate-independent).  Kept slow on purpose:
+        // a calm, unhurried drift.
+        p.vx = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 16.0f * scale;
+        p.vy = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 16.0f * scale;
         p.radius = (1.5f + static_cast<float>(std::rand()) / RAND_MAX * 3.0f) * scale;
         p.alpha = 30 + static_cast<int>(static_cast<float>(std::rand()) / RAND_MAX * 80);
         g_hero_particles.push_back(p);
@@ -1195,10 +1198,12 @@ void draw_hero_particles(
     const float w = max.x - min.x;
     const float h = max.y - min.y;
     init_hero_particles(w, h, scale);
-    const ImU32 particle_color = IM_COL32(15, 98, 254, 255);
+    // Clamp dt so a stalled frame (window drag, IO hitch) doesn't teleport
+    // the particles.
+    const float dt = std::min(ImGui::GetIO().DeltaTime, 0.05f);
     for (auto& p : g_hero_particles) {
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
         if (p.x < 0.0f) p.x = w;
         if (p.x > w) p.x = 0.0f;
         if (p.y < 0.0f) p.y = h;
