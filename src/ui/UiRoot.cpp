@@ -316,12 +316,13 @@ namespace LayoutMetrics {
     // read as ~0.17 / ~0.19). A ratio keeps the side bars proportional when
     // the window is maximized, while the min/max band prevents them from
     // collapsing on tiny windows or swallowing the center on huge ones.
-    constexpr float kDockLeftRatio  = 0.17f;
-    constexpr float kDockLeftMinPx  = 180.0f;
-    constexpr float kDockLeftMaxPx  = 360.0f;
-    constexpr float kDockRightRatio = 0.19f;
-    constexpr float kDockRightMinPx = 220.0f;
-    constexpr float kDockRightMaxPx = 400.0f;
+    constexpr float kDockLeftRatio  = 0.175f;
+    constexpr float kDockLeftMinPx  = 210.0f;
+    constexpr float kDockLeftMaxPx  = 320.0f;
+    constexpr float kDockRightRatio = 0.205f;
+    constexpr float kDockRightMinPx = 260.0f;
+    constexpr float kDockRightMaxPx = 360.0f;
+    constexpr float kToolsBarHeightBase = 44.0f;
     // Status bar: base pixel size, scaled by ui_scale at the call site.
     constexpr float kStatusBarHeightBase  = 22.0f;
     constexpr float kViewportToolbarGap = 6.0f;
@@ -750,22 +751,24 @@ void draw_viewport_window(
             view.show_world_axis = false;
         }
     }
-    const float hint_threshold = 520.0f;
-    const float short_hint_threshold = 250.0f;
+    const char* long_hint =
+        "左键旋转  右键平移  滚轮光标缩放  "
+        "双击定轴  F聚焦  Ctrl+左键框选";
+    const char* short_hint = "左键旋转  右键平移  滚轮缩放  F聚焦";
+    ImGui::SameLine();
     const float hint_space = ImGui::GetContentRegionAvail().x;
     const char* hint = nullptr;
-    if (hint_space > hint_threshold) {
-        hint =
-            "左键旋转  右键平移  滚轮光标缩放  "
-            "双击定轴  F聚焦  Ctrl+左键框选";
-    } else if (hint_space > short_hint_threshold) {
-        hint = "左键旋转  右键平移  双击定轴  F聚焦";
+    if (hint_space >= ImGui::CalcTextSize(long_hint).x) {
+        hint = long_hint;
+    } else if (hint_space >= ImGui::CalcTextSize(short_hint).x) {
+        hint = short_hint;
     }
     if (hint != nullptr) {
-        ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 125));
         ImGui::TextUnformatted(hint);
         ImGui::PopStyleColor();
+    } else {
+        ImGui::NewLine();
     }
     ImGui::PopStyleVar(2);
     ImGui::Separator();
@@ -1692,7 +1695,7 @@ void build_workspace_layout(
     const ImGuiID right_id = ImGui::DockBuilderSplitNode(
         center_id,
         ImGuiDir_Right,
-        right_width / work_width,
+        right_width / std::max(1.0f, work_width - left_width),
         nullptr,
         &center_id
     );
@@ -1708,7 +1711,8 @@ void build_workspace_layout(
 
     ImGuiID view_area_id = center_id;
     const float tools_ratio = std::clamp(
-        58.0f / std::max(1.0f, dock_size.y),
+        LayoutMetrics::kToolsBarHeightBase /
+            std::max(1.0f, dock_size.y),
         0.045f,
         0.12f
     );
@@ -1719,6 +1723,11 @@ void build_workspace_layout(
         nullptr,
         &view_area_id
     );
+    if (ImGuiDockNode* tools_node = ImGui::DockBuilderGetNode(tools_id)) {
+        tools_node->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar |
+            ImGuiDockNodeFlags_NoWindowMenuButton;
+    }
 
     ImGui::DockBuilderDockWindow(
         workspace_tools_window_name(workspace.id).c_str(),
@@ -1903,10 +1912,12 @@ void draw_panel_section_label(const char* label)
     if (panel_title_font() != nullptr) {
         ImGui::PushFont(panel_title_font());
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 4.0f));
-    ImGui::TextDisabled("%s", label);
-    ImGui::Separator();
-    ImGui::PopStyleVar();
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        to_u32(palette::kTextDim, 220)
+    );
+    ImGui::SeparatorText(label);
+    ImGui::PopStyleColor();
     if (panel_title_font() != nullptr) {
         ImGui::PopFont();
     }
@@ -1962,7 +1973,6 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         LayoutMetrics::kDockRightMaxPx
     );
     const float left_ratio = default_left_width / work_width;
-    const float right_ratio = default_right_width / work_width;
 
     const bool has_left_panels =
         state.panels.dataset ||
@@ -1975,6 +1985,15 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         state.panels.render_settings ||
         state.panels.performance ||
         state.panels.debug_log;
+    // The right split happens after the optional left split, so its ratio
+    // must be relative to the remaining center node rather than the original
+    // work width. Using work_width here made a requested 260px panel land at
+    // roughly 225px on a 1280px window.
+    const float right_split_width = std::max(
+        1.0f,
+        work_width - (has_left_panels ? default_left_width : 0.0f)
+    );
+    const float right_ratio = default_right_width / right_split_width;
 
     ImGuiID center_id = dockspace_id;
     ImGuiID left_id = 0;
@@ -2045,7 +2064,8 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     ImGuiID view_area_id = center_id;
     if (state.panels.tools) {
         const float tools_ratio = std::clamp(
-            58.0f / std::max(1.0f, work_size.y),
+            LayoutMetrics::kToolsBarHeightBase /
+                std::max(1.0f, work_size.y),
             0.045f,
             0.12f
         );
@@ -2056,6 +2076,12 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
             nullptr,
             &view_area_id
         );
+        if (ImGuiDockNode* tools_node =
+                ImGui::DockBuilderGetNode(tools_id)) {
+            tools_node->LocalFlags |=
+                ImGuiDockNodeFlags_NoTabBar |
+                ImGuiDockNodeFlags_NoWindowMenuButton;
+        }
         ImGui::DockBuilderDockWindow(kToolsWindowName, tools_id);
     }
 

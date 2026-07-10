@@ -2,6 +2,8 @@
 
 #include "imgui.h"
 
+#include <cstddef>
+
 namespace gs3d::ui::widgets {
 
 /*
@@ -59,6 +61,21 @@ bool DragFloat(
     float v_max,
     const char* format = "%.3f",
     ImGuiSliderFlags flags = 0
+);
+
+// 文本输入框：与数值字段共享 hover 描边和键盘焦点环。
+bool InputText(
+    const char* label,
+    char* buffer,
+    std::size_t buffer_size,
+    ImGuiInputTextFlags flags = 0
+);
+bool InputTextWithHint(
+    const char* label,
+    const char* hint,
+    char* buffer,
+    std::size_t buffer_size,
+    ImGuiInputTextFlags flags = 0
 );
 
 // 下拉框（包装 BeginCombo，去掉原生箭头，画 accent 三角 + 状态描边）。

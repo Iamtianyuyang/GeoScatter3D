@@ -1,6 +1,7 @@
 #include "ui/DatasetPanel.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
+#include "ui/Widgets.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -57,7 +58,7 @@ void draw_dataset_panel(
         ImGui::Spacing();
 
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputTextWithHint(
+        widgets::InputTextWithHint(
             "##DatasetSearch",
             "筛选项目",
             dataset_state.search_text.data(),

@@ -3,6 +3,7 @@
 #include "gui/UiFonts.hpp"
 #include "platform/NativeFileDialog.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/Widgets.hpp"
 
 #include "imgui.h"
 
@@ -664,7 +665,7 @@ WelcomePageAction draw_new_project_dialog(
 
     const float input_width = ImGui::GetContentRegionAvail().x;
     ImGui::PushItemWidth(input_width);
-    const bool name_edited = ImGui::InputText(
+    const bool name_edited = widgets::InputText(
         "##ProjectName",
         dialog.project_name,
         sizeof(dialog.project_name),

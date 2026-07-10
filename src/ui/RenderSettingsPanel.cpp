@@ -115,11 +115,21 @@ void draw_render_settings(
     auto& settings =
         render_settings != nullptr ? *render_settings : state.render_settings;
 
-    ImGui::SetNextWindowSize(ImVec2(240.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(window_name, open)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 6.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 4.0f));
+        const float scale = ImGui::GetFontSize() / 13.0f;
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_FramePadding,
+            ImVec2(8.0f * scale, 4.5f * scale)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_ItemSpacing,
+            ImVec2(8.0f * scale, 7.0f * scale)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_CellPadding,
+            ImVec2(0.0f, 5.0f * scale)
+        );
 
         draw_panel_section_label("点云外观");
 

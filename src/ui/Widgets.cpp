@@ -32,7 +32,9 @@ ImVec4 mix(const ImVec4& a, const ImVec4& b, float t)
 ImU32 u32(const ImVec4& c, float alpha = 1.0f)
 {
     ImVec4 v = c;
-    v.w = alpha;
+    // Custom draw-list widgets must honor BeginDisabled(), which dims native
+    // ImGui controls through style.Alpha.
+    v.w = alpha * ImGui::GetStyle().Alpha;
     return ImGui::ColorConvertFloat4ToU32(v);
 }
 
@@ -121,10 +123,13 @@ bool Button(
     const bool pressed = ImGui::InvisibleButton(label, size);
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
+    const bool focused = ImGui::IsItemFocused();
 
     ImDrawList* dl = window->DrawList;
     const float r = ImGui::GetStyle().FrameRounding;
-    const ImVec2 max(pos.x + size.x, pos.y + size.y);
+    const float press_offset = held ? 1.0f * s : 0.0f;
+    const ImVec2 draw_pos(pos.x, pos.y + press_offset);
+    const ImVec2 max(draw_pos.x + size.x, draw_pos.y + size.y);
 
     ImVec4 bg(0.0f, 0.0f, 0.0f, 0.0f);
     ImU32 border = 0;
@@ -136,7 +141,7 @@ bool Button(
         if (!held) {
             dl->AddRectFilled(
                 ImVec2(pos.x, pos.y + 2.0f * s),
-                ImVec2(max.x, max.y + 2.0f * s),
+                ImVec2(pos.x + size.x, pos.y + size.y + 2.0f * s),
                 u32(palette::kAccentActive, 0.55f),
                 r
             );
@@ -176,12 +181,29 @@ bool Button(
     }
 
     if (bg.w > 0.0f) {
-        dl->AddRectFilled(pos, max, ImGui::ColorConvertFloat4ToU32(bg), r);
+        bg.w *= ImGui::GetStyle().Alpha;
+        dl->AddRectFilled(
+            draw_pos,
+            max,
+            ImGui::ColorConvertFloat4ToU32(bg),
+            r
+        );
     }
     if (border != 0) {
-        dl->AddRect(pos, max, border, r, 0, 1.0f * s);
+        dl->AddRect(draw_pos, max, border, r, 0, 1.0f * s);
     }
-    centered_text(dl, pos, max, label, text_end, u32(text));
+    if (focused) {
+        dl->AddRect(
+            ImVec2(pos.x - 2.0f * s, pos.y - 2.0f * s),
+            ImVec2(pos.x + size.x + 2.0f * s,
+                   pos.y + size.y + 2.0f * s),
+            u32(palette::kAccent, 0.32f),
+            r + 2.0f * s,
+            0,
+            2.0f * s
+        );
+    }
+    centered_text(dl, draw_pos, max, label, text_end, u32(text));
     return pressed;
 }
 
@@ -200,6 +222,7 @@ bool Chip(const char* label, bool active)
     const bool pressed = ImGui::InvisibleButton(label, size);
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
+    const bool focused = ImGui::IsItemFocused();
 
     ImDrawList* dl = window->DrawList;
     const ImVec2 max(pos.x + size.x, pos.y + size.y);
@@ -207,7 +230,7 @@ bool Chip(const char* label, bool active)
 
     if (active) {
         ImVec4 bg = palette::kAccent;
-        bg.w = held ? 0.24f : 0.15f;
+        bg.w = (held ? 0.24f : 0.15f) * ImGui::GetStyle().Alpha;
         dl->AddRectFilled(pos, max, ImGui::ColorConvertFloat4ToU32(bg), r);
     } else {
         dl->AddRectFilled(
@@ -218,6 +241,16 @@ bool Chip(const char* label, bool active)
     dl->AddRect(
         pos, max,
         u32(lit ? palette::kAccent : palette::kBorder), r, 0, 1.0f * s);
+    if (focused) {
+        dl->AddRect(
+            ImVec2(pos.x - 2.0f * s, pos.y - 2.0f * s),
+            ImVec2(max.x + 2.0f * s, max.y + 2.0f * s),
+            u32(palette::kAccent, 0.30f),
+            r + 2.0f * s,
+            0,
+            2.0f * s
+        );
+    }
     centered_text(
         dl, pos, max, label, text_end,
         u32(lit ? palette::kAccent : palette::kText));
@@ -244,6 +277,7 @@ bool Checkbox(const char* label, bool* v)
     const bool pressed = ImGui::InvisibleButton(label, size);
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
+    const bool focused = ImGui::IsItemFocused();
     if (pressed) {
         *v = !*v;
     }
@@ -272,6 +306,16 @@ bool Checkbox(const char* label, bool* v)
             bmin, bmax,
             u32(hovered || held ? palette::kAccent : palette::kBorder),
             r, 0, 1.2f * s);
+    }
+    if (focused) {
+        dl->AddRect(
+            ImVec2(bmin.x - 2.0f * s, bmin.y - 2.0f * s),
+            ImVec2(bmax.x + 2.0f * s, bmax.y + 2.0f * s),
+            u32(palette::kAccent, 0.30f),
+            r + 2.0f * s,
+            0,
+            2.0f * s
+        );
     }
     if (ts.x > 0.0f) {
         dl->AddText(
@@ -398,6 +442,68 @@ bool DragFloat(
     field_decoration(
         window->DrawList, pos, max,
         ImGui::IsItemHovered(), ImGui::IsItemActive());
+    return changed;
+}
+
+bool InputText(
+    const char* label,
+    char* buffer,
+    std::size_t buffer_size,
+    ImGuiInputTextFlags flags
+)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) {
+        return false;
+    }
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 max(
+        pos.x + ImGui::CalcItemWidth(),
+        pos.y + ImGui::GetFrameHeight()
+    );
+    const bool changed =
+        ImGui::InputText(label, buffer, buffer_size, flags);
+    field_decoration(
+        window->DrawList,
+        pos,
+        max,
+        ImGui::IsItemHovered(),
+        ImGui::IsItemActive() || ImGui::IsItemFocused()
+    );
+    return changed;
+}
+
+bool InputTextWithHint(
+    const char* label,
+    const char* hint,
+    char* buffer,
+    std::size_t buffer_size,
+    ImGuiInputTextFlags flags
+)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) {
+        return false;
+    }
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 max(
+        pos.x + ImGui::CalcItemWidth(),
+        pos.y + ImGui::GetFrameHeight()
+    );
+    const bool changed = ImGui::InputTextWithHint(
+        label,
+        hint,
+        buffer,
+        buffer_size,
+        flags
+    );
+    field_decoration(
+        window->DrawList,
+        pos,
+        max,
+        ImGui::IsItemHovered(),
+        ImGui::IsItemActive() || ImGui::IsItemFocused()
+    );
     return changed;
 }
 

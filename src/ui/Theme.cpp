@@ -275,6 +275,38 @@ void apply_theme(ThemeId id, float ui_scale)
     } else {
         ImGui::StyleColorsLight(&style);
     }
+
+    // A compact desktop-tool rhythm with enough target area for repeated
+    // property editing. Keep these metrics theme-independent so switching
+    // palettes never makes the workspace jump or controls change size.
+    style.Alpha = 1.0f;
+    style.DisabledAlpha = 0.42f;
+    style.WindowPadding = ImVec2(10.0f * ui_scale, 9.0f * ui_scale);
+    style.FramePadding = ImVec2(8.0f * ui_scale, 4.5f * ui_scale);
+    style.ItemSpacing = ImVec2(8.0f * ui_scale, 7.0f * ui_scale);
+    style.ItemInnerSpacing = ImVec2(6.0f * ui_scale, 4.0f * ui_scale);
+    style.CellPadding = ImVec2(6.0f * ui_scale, 5.0f * ui_scale);
+    style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
+    style.IndentSpacing = 18.0f * ui_scale;
+    style.ColumnsMinSpacing = 6.0f * ui_scale;
+    style.ScrollbarSize = 11.0f * ui_scale;
+    style.GrabMinSize = 18.0f * ui_scale;
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 0.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 0.0f;
+    style.TabBorderSize = 0.0f;
+    style.TabBarBorderSize = 1.0f;
+    style.TabBarOverlineSize = 2.0f * ui_scale;
+    style.SeparatorTextBorderSize = 1.0f;
+    style.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
+    style.SeparatorTextPadding = ImVec2(
+        7.0f * ui_scale,
+        4.0f * ui_scale
+    );
+    style.DockingSeparatorSize = 2.0f * ui_scale;
+    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+    style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
     auto& colors = style.Colors;
 
     colors[ImGuiCol_Text] = t.text;
@@ -296,7 +328,9 @@ void apply_theme(ThemeId id, float ui_scale)
 
     colors[ImGuiCol_MenuBarBg] = t.menu_bg;
 
-    colors[ImGuiCol_ScrollbarBg] = with_alpha(t.bg, 0.53f);
+    // Low-contrast track + clearly stepped thumb states. The narrower track
+    // saves panel width while GrabMinSize keeps short documents usable.
+    colors[ImGuiCol_ScrollbarBg] = with_alpha(t.border, 0.18f);
     colors[ImGuiCol_ScrollbarGrab] = t.scrollbar_grab;
     colors[ImGuiCol_ScrollbarGrabHovered] = t.scrollbar_grab_hovered;
     colors[ImGuiCol_ScrollbarGrabActive] = t.scrollbar_grab_active;
