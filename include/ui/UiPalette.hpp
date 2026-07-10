@@ -9,39 +9,27 @@ namespace gs3d::ui {
 /*
  * 统一语义色板（默认初始化为「碳蓝 · Modern SaaS」主题）。
  *
- * 所有颜色以设计稿的 sRGB 十六进制值书写。主/副窗口交换链都是
- * B8G8R8A8_SRGB：硬件把 shader 输出当线性值再做 sRGB 编码，因此凡是
- * 交给 ImGui（样式或 draw list）的颜色必须先做 sRGB→linear 预转换，
- * 屏幕上才会显示为书写的原值。palette 命名空间里的值已经转换完毕，
- * 可直接使用；新增颜色请一律通过 srgb_color()/srgb_vec4() 生成。
+ * 所有颜色以设计稿的 sRGB 十六进制值书写，直接作为 sRGB 值使用。
+ * 交换链使用 UNORM 格式——硬件不做 sRGB EOTF，shader/ImGui 输出的
+ * 值即是屏幕显示值。不再需要 sRGB→linear 预转换。
  *
  * palette:: 里的值不是常量：ui::apply_theme()（见 Theme.hpp）会在主题
  * 切换时整体重写，各面板每帧取值即可自动跟随主题。不要把 palette 值
  * 缓存到 static/constexpr 里。三套主题的 token 定义在 Theme.cpp。
- *
- * 例外：色标（colormap）渐变预览等“所见即场景”的颜色不要转换——
- * 场景离屏渲染走的是另一条路径，预览需要与其保持一致。
  */
 
-[[nodiscard]]
-inline float srgb_to_linear(float srgb) {
-    return srgb <= 0.04045f
-        ? srgb / 12.92f
-        : std::pow((srgb + 0.055f) / 1.055f, 2.4f);
-}
-
-// sRGB 分量 (0-255) → 线性空间 ImVec4。alpha 不做转换。
+// sRGB 分量 (0-255) → ImVec4（直接归一化，不做颜色空间转换）。
 [[nodiscard]]
 inline ImVec4 srgb_vec4(int r, int g, int b, float alpha = 1.0f) {
     return ImVec4(
-        srgb_to_linear(static_cast<float>(r) / 255.0f),
-        srgb_to_linear(static_cast<float>(g) / 255.0f),
-        srgb_to_linear(static_cast<float>(b) / 255.0f),
+        static_cast<float>(r) / 255.0f,
+        static_cast<float>(g) / 255.0f,
+        static_cast<float>(b) / 255.0f,
         alpha
     );
 }
 
-// sRGB 分量 (0-255) → 线性空间 ImU32（draw list 用）。
+// sRGB 分量 (0-255) → ImU32（draw list 用，直接归一化）。
 [[nodiscard]]
 inline ImU32 srgb_color(int r, int g, int b, int alpha = 255) {
     return ImGui::ColorConvertFloat4ToU32(
@@ -94,15 +82,12 @@ inline ImU32 to_u32(const ImVec4& color, int alpha = 255) {
     return ImGui::ColorConvertFloat4ToU32(c);
 }
 
-// 存储在应用状态里的 sRGB ImU32 颜色（如用户自选的测量线颜色）
-// 在绘制前转换到线性空间。alpha 不变。
+// 用户自选颜色（如测量线/十字准线）按 sRGB ImU32 存储，交换链是 UNORM
+// 格式——直接使用无需转换。保留此函数作为标识（identity），避免调用处
+// 改动过大。
 [[nodiscard]]
 inline ImU32 srgb_u32_to_linear(ImU32 srgb) {
-    ImVec4 c = ImGui::ColorConvertU32ToFloat4(srgb);
-    c.x = srgb_to_linear(c.x);
-    c.y = srgb_to_linear(c.y);
-    c.z = srgb_to_linear(c.z);
-    return ImGui::ColorConvertFloat4ToU32(c);
+    return srgb;
 }
 
 } // namespace gs3d::ui

@@ -594,7 +594,17 @@ void ImGuiLayer::init(
     // Dynamic rendering：主窗口与副窗口共用同一格式声明。副窗口的交换链
     // 会按 PipelineInfoForViewports 请求的格式优先选择，从而继承主交换链
     // 的 sRGB 格式——否则后端默认只请求 UNORM，副窗口整体偏暗。
+    //
+    // 副视口管线创建时会将 colorAttachmentCount 重写为 1（见 ImGui
+    // Vulkan 后端 CreateWindow），因此这里可以安全地声明多个格式请求，
+    // 后端仅用它们做 Surface 格式优选，不影响实际管线。
     color_attachment_format_ = renderer.swapchain_image_format();
+
+    static const VkFormat kViewportFormatRequests[] = {
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_UNORM,  // dup: 推力大于单个条目，确保选中 UNORM
+    };
 
     VkPipelineRenderingCreateInfoKHR rendering_create_info{};
     rendering_create_info.sType =
@@ -602,12 +612,20 @@ void ImGuiLayer::init(
     rendering_create_info.colorAttachmentCount = 1;
     rendering_create_info.pColorAttachmentFormats = &color_attachment_format_;
 
+    VkPipelineRenderingCreateInfoKHR viewport_rendering_create_info{};
+    viewport_rendering_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    viewport_rendering_create_info.colorAttachmentCount =
+        static_cast<uint32_t>(sizeof(kViewportFormatRequests) / sizeof(kViewportFormatRequests[0]));
+    viewport_rendering_create_info.pColorAttachmentFormats =
+        kViewportFormatRequests;
+
     init_info.UseDynamicRendering = true;
     init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.PipelineInfoMain.PipelineRenderingCreateInfo =
         rendering_create_info;
     init_info.PipelineInfoForViewports.PipelineRenderingCreateInfo =
-        rendering_create_info;
+        viewport_rendering_create_info;
 
     if (!ImGui_ImplVulkan_Init(&init_info)) {
         ImGui_ImplGlfw_Shutdown();

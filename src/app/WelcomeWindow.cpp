@@ -21,13 +21,6 @@ namespace gs3d::app {
 
 namespace {
 
-float srgb_to_linear(float value)
-{
-    return value <= 0.04045f
-        ? value / 12.92f
-        : std::pow((value + 0.055f) / 1.055f, 2.4f);
-}
-
 int preferred_outer_width(float ui_scale)
 {
     constexpr int kBaseOuterWidth = 1024;
@@ -185,9 +178,9 @@ WelcomeWindowResult WelcomeWindow::run()
     );
 
     gs3d::render::ClearColor clear_color;
-    clear_color.r = srgb_to_linear(30.0f / 255.0f);
-    clear_color.g = srgb_to_linear(30.0f / 255.0f);
-    clear_color.b = srgb_to_linear(30.0f / 255.0f);
+    clear_color.r = 30.0f / 255.0f;
+    clear_color.g = 30.0f / 255.0f;
+    clear_color.b = 30.0f / 255.0f;
     clear_color.a = 1.0f;
     renderer.set_clear_color(clear_color);
 

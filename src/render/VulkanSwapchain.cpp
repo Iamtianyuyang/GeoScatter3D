@@ -246,14 +246,14 @@ VkSurfaceFormatKHR VulkanSwapchain::choose_surface_format(
     const std::vector<VkSurfaceFormatKHR>& formats
 ) const {
     for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+        if (format.format == VK_FORMAT_B8G8R8A8_UNORM &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return format;
         }
     }
 
     for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_UNORM &&
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return format;
         }

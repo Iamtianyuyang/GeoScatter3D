@@ -23,15 +23,11 @@ constexpr ImVec4 with_alpha(ImVec4 c, float alpha)
     return c;
 }
 
-// sRGB → linear（alpha 不变），palette:: 与 ImGuiStyle 落地前统一转换。
+// 交换链已切换为 UNORM，不再需要 sRGB→linear 预转换。保留此函数
+// 作为标识，避免 palette:: 赋值与 ImGuiStyle 覆盖的调用处改动过大。
 ImVec4 to_linear(const ImVec4& c)
 {
-    return ImVec4(
-        srgb_to_linear(c.x),
-        srgb_to_linear(c.y),
-        srgb_to_linear(c.z),
-        c.w
-    );
+    return c;
 }
 
 // ── 方案 A：碳蓝 · Modern SaaS（现有主题，白表面 + IBM Carbon 蓝）────
