@@ -727,8 +727,9 @@ WelcomePageAction draw_new_project_dialog(
 
     // ── Bottom separator + Buttons ──
     {
-        const float btn_w = 120.0f * scale;
-        const float btn_spacing = 12.0f * scale;
+        const float btn_w = 130.0f * scale;
+        const float btn_h = 44.0f * scale;
+        const float btn_spacing = 16.0f * scale;
         const float btn_count = dialog.name_conflict ? 2.0f : 2.0f;
         const float btn_total_w = btn_count * btn_w + (btn_count - 1.0f) * btn_spacing;
         const float btn_x = content_min.x + ImGui::GetContentRegionAvail().x - btn_total_w;
@@ -742,60 +743,147 @@ WelcomePageAction draw_new_project_dialog(
             to_u32(palette::kBorder, 160),
             1.0f * scale
         );
-        ImGui::Dummy(ImVec2(1.0f, 16.0f * scale));
+        ImGui::Dummy(ImVec2(1.0f, 20.0f * scale));
 
         ImGui::SetCursorScreenPos(ImVec2(btn_x, ImGui::GetCursorScreenPos().y));
 
-        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f * scale);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(18.0f * scale, 12.0f * scale));
-
         if (dialog.name_conflict) {
-            // "重命名" button
+            // ── "重命名" secondary button ──
             ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kSurface));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(kBackground));
-            if (ImGui::Button("重命名", ImVec2(btn_w, 0.0f))) {
+            ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(kBorder));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kText));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f * scale);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            if (ImGui::Button("重命名", ImVec2(btn_w, btn_h))) {
                 dialog.name_conflict = false;
                 dialog.error_message.clear();
             }
-            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(5);
 
             ImGui::SameLine(0.0f, btn_spacing);
 
-            // "覆盖" button — danger style
+            // ── "覆盖" danger button with bottom shadow ──
+            const ImVec2 cover_min = ImGui::GetCursorScreenPos();
+            const ImVec2 cover_max{cover_min.x + btn_w, cover_min.y + btn_h};
+            // Bottom shadow
+            draw_list->AddRectFilled(
+                ImVec2(cover_min.x + 1.0f * scale, cover_max.y),
+                ImVec2(cover_max.x - 1.0f * scale, cover_max.y + 2.5f * scale),
+                IM_COL32(180, 30, 30, 80),
+                4.0f * scale
+            );
             ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kError));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, srgb_vec4(220, 50, 50));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, srgb_vec4(180, 30, 30));
-            if (ImGui::Button("覆盖", ImVec2(btn_w, 0.0f))) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kBrandLight));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f * scale);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            if (ImGui::Button("覆盖", ImVec2(btn_w, btn_h))) {
                 action.kind = WelcomePageActionKind::NewProject;
                 action.path = dialog.data_file_path;
                 action.project_name = dialog.project_name;
                 dialog.active = false;
                 should_close = true;
             }
-            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(4);
         } else {
-            // "取消" button
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kSurface));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(kSurfaceHover));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(kBackground));
-            if (ImGui::Button("取消", ImVec2(btn_w, 0.0f))) {
+            // ── "取消" secondary outline button ──
+            const ImVec2 cancel_min = ImGui::GetCursorScreenPos();
+            const ImVec2 cancel_max{cancel_min.x + btn_w, cancel_min.y + btn_h};
+            // Bottom subtle shadow
+            draw_list->AddRectFilled(
+                ImVec2(cancel_min.x + 1.0f * scale, cancel_max.y),
+                ImVec2(cancel_max.x - 1.0f * scale, cancel_max.y + 2.0f * scale),
+                to_u32(palette::kBorder, 120),
+                4.0f * scale
+            );
+            // Hover detection for custom drawing
+            ImGui::SetCursorScreenPos(cancel_min);
+            ImGui::InvisibleButton("##CancelBtn", ImVec2(btn_w, btn_h));
+            const bool cancel_hovered = ImGui::IsItemHovered();
+            const bool cancel_active = ImGui::IsItemActive();
+            // Background + border
+            const ImU32 cancel_bg = cancel_active
+                ? to_u32(palette::kSurfaceHover, 255)
+                : (cancel_hovered ? to_u32(palette::kAccent, 20) : to_u32(palette::kSurface, 255));
+            const ImU32 cancel_border = cancel_hovered ? to_u32(palette::kAccent, 160) : kBorder;
+            draw_list->AddRectFilled(cancel_min, cancel_max, cancel_bg, 8.0f * scale);
+            draw_list->AddRect(cancel_min, cancel_max, cancel_border, 8.0f * scale, 0, 1.0f * scale);
+            // Text centered
+            const ImVec2 cancel_text_size = medium_font()->CalcTextSizeA(
+                16.0f * scale, 1000.0f, 0.0f, "取消"
+            );
+            draw_text(
+                draw_list, medium_font(), 16.0f * scale,
+                ImVec2(
+                    cancel_min.x + (btn_w - cancel_text_size.x) * 0.5f,
+                    cancel_min.y + (btn_h - cancel_text_size.y) * 0.5f
+                ),
+                cancel_hovered ? kBlue : kText,
+                "取消"
+            );
+            if (ImGui::IsItemClicked()) {
                 dialog.active = false;
                 dialog.error_message.clear();
                 should_close = true;
             }
-            ImGui::PopStyleColor(3);
 
             ImGui::SameLine(0.0f, btn_spacing);
 
-            // "确定" button — blue accent
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(kBlue));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, palette::kAccent);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, srgb_vec4(0, 90, 160));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kBrandLight));
-            if (ImGui::Button("确定", ImVec2(btn_w, 0.0f))) {
+            // ── "确定" primary blue button with bottom shadow ──
+            const ImVec2 ok_min = ImGui::GetCursorScreenPos();
+            const ImVec2 ok_max{ok_min.x + btn_w, ok_min.y + btn_h};
+            // Bottom shadow (darker blue)
+            draw_list->AddRectFilled(
+                ImVec2(ok_min.x + 1.0f * scale, ok_max.y),
+                ImVec2(ok_max.x - 1.0f * scale, ok_max.y + 2.5f * scale),
+                IM_COL32(11, 78, 203, 100),
+                4.0f * scale
+            );
+            // Hover detection
+            ImGui::SetCursorScreenPos(ok_min);
+            ImGui::InvisibleButton("##OkBtn", ImVec2(btn_w, btn_h));
+            const bool ok_hovered = ImGui::IsItemHovered();
+            const bool ok_active = ImGui::IsItemActive();
+            // Gradient-like background: top slightly lighter, bottom normal
+            const ImU32 ok_bg_top = ok_active
+                ? IM_COL32(0, 80, 220, 255)
+                : (ok_hovered ? IM_COL32(25, 110, 255, 255) : IM_COL32(15, 98, 254, 255));
+            const ImU32 ok_bg_bottom = ok_active
+                ? IM_COL32(0, 70, 200, 255)
+                : (ok_hovered ? IM_COL32(15, 98, 254, 255) : IM_COL32(11, 78, 203, 255));
+            draw_list->AddRectFilledMultiColor(
+                ok_min, ok_max,
+                ok_bg_top, ok_bg_top,
+                ok_bg_bottom, ok_bg_bottom
+            );
+            // Subtle inner highlight at top
+            draw_list->AddRectFilled(
+                ImVec2(ok_min.x, ok_min.y),
+                ImVec2(ok_max.x, ok_min.y + 1.5f * scale),
+                IM_COL32(80, 150, 255, 60),
+                8.0f * scale
+            );
+            // Text centered
+            const ImVec2 ok_text_size = medium_font()->CalcTextSizeA(
+                16.0f * scale, 1000.0f, 0.0f, "确定"
+            );
+            draw_text(
+                draw_list, medium_font(), 16.0f * scale,
+                ImVec2(
+                    ok_min.x + (btn_w - ok_text_size.x) * 0.5f,
+                    ok_min.y + (btn_h - ok_text_size.y) * 0.5f - 1.0f * scale
+                ),
+                IM_COL32(255, 255, 255, 255),
+                "确定"
+            );
+            if (ImGui::IsItemClicked()) {
                 const std::string name(dialog.project_name);
                 bool valid = true;
                 dialog.error_message.clear();
@@ -830,12 +918,7 @@ WelcomePageAction draw_new_project_dialog(
                     }
                 }
             }
-            ImGui::PopStyleColor(4);
         }
-
-        ImGui::PopStyleVar(3);
-        ImGui::PopStyleColor();
-    }
 
     if (should_close) {
         ImGui::CloseCurrentPopup();
@@ -844,6 +927,8 @@ WelcomePageAction draw_new_project_dialog(
 
     ImGui::PopStyleVar(6);
     ImGui::PopStyleColor(2);
+
+    } // button block
 
     return action;
 }
