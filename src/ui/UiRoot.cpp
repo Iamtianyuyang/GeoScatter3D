@@ -352,20 +352,27 @@ namespace LayoutMetrics {
 
 namespace AxisStyle {
     // 轻量坐标尺风格 — 简洁、克制、低对比。
-    // 统一取自 UiPalette（运算符灰/弱文字），已做 sRGB→linear 预转换。
-    inline const ImU32 kAxisLine    = to_u32(palette::kGray, 190);
-    inline const ImU32 kMajorTick   = to_u32(palette::kGray, 210);
-    inline const ImU32 kMinorTick   = to_u32(palette::kTextDim, 160);
-    inline const ImU32 kLabel       = to_u32(palette::kGray, 220);
-    inline const ImU32 kGrid        = to_u32(palette::kTextDim, 35);
-    inline const ImU32 kFrame       = to_u32(palette::kBorder, 80);
-    inline const ImU32 kScaleLine   = to_u32(palette::kGray, 200);
-    inline const ImU32 kScaleLabel  = to_u32(palette::kGray, 215);
+    //
+    // 必须是函数、每次调用时从 palette:: 取值：palette 会在
+    // apply_theme() 里被整体重写，缓存进 static/const 的取值永远停留
+    // 在启动默认主题（UiPalette.hpp 头部注释明确禁止这种缓存）。
+    //
+    // 轴线/刻度/标签画在 plot 外侧的窗口底色上 → 用 TextDim 系，
+    // 亮暗主题都可读；网格/比例尺画在 plot 内部的暗色画布上 → 用
+    // 中性灰（三套主题的 kGray 在暗画布上均可见）。
+    inline ImU32 kAxisLine()   { return to_u32(palette::kTextDim, 200); }
+    inline ImU32 kMajorTick()  { return to_u32(palette::kTextDim, 215); }
+    inline ImU32 kMinorTick()  { return to_u32(palette::kTextDim, 150); }
+    inline ImU32 kLabel()      { return to_u32(palette::kTextDim, 240); }
+    inline ImU32 kGrid()       { return to_u32(palette::kGray, 38); }
+    inline ImU32 kFrame()      { return to_u32(palette::kBorder, 80); }
+    inline ImU32 kScaleLine()  { return to_u32(palette::kGray, 200); }
+    inline ImU32 kScaleLabel() { return to_u32(palette::kGray, 215); }
     // 信息 badge
-    inline const ImU32 kBadgeBg     = to_u32(palette::kMenuBg, 185);
-    inline const ImU32 kBadgeText   = to_u32(palette::kText, 245);
+    inline ImU32 kBadgeBg()    { return to_u32(palette::kMenuBg, 185); }
+    inline ImU32 kBadgeText()  { return to_u32(palette::kText, 245); }
     // 方向指示器
-    inline const ImU32 kGizmoBg     = to_u32(palette::kMenuBg, 200);
+    inline ImU32 kGizmoBg()    { return to_u32(palette::kMenuBg, 200); }
 
     // 线宽
     constexpr float kAxisLineWidth   = 1.0f;
@@ -596,7 +603,7 @@ void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
         plot_max.y - r - LayoutMetrics::kGizmoInsetBottom * ui_scale
     };
 
-    dl->AddCircleFilled(origin, r, AxisStyle::kGizmoBg);
+    dl->AddCircleFilled(origin, r, AxisStyle::kGizmoBg());
 
     if (view.gizmo_axes_valid) {
         const float len = r - 2.0f * ui_scale;
@@ -633,13 +640,13 @@ void draw_scale_bar(const ImVec2& plot_min,
     const float tick_h = 4.0f * ui_scale;
     const float thick = 1.5f * ui_scale;
 
-    dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine, thick);
-    dl->AddLine({x0, y - tick_h}, {x0, y + 1.0f * ui_scale}, AxisStyle::kScaleLine, thick);
-    dl->AddLine({x1, y - tick_h}, {x1, y + 1.0f * ui_scale}, AxisStyle::kScaleLine, thick);
+    dl->AddLine({x0, y}, {x1, y}, AxisStyle::kScaleLine(), thick);
+    dl->AddLine({x0, y - tick_h}, {x0, y + 1.0f * ui_scale}, AxisStyle::kScaleLine(), thick);
+    dl->AddLine({x1, y - tick_h}, {x1, y + 1.0f * ui_scale}, AxisStyle::kScaleLine(), thick);
     if (axis_font() != nullptr) {
         ImGui::PushFont(axis_font());
     }
-    dl->AddText({x0, y - 18.0f * ui_scale}, AxisStyle::kScaleLabel, label);
+    dl->AddText({x0, y - 18.0f * ui_scale}, AxisStyle::kScaleLabel(), label);
     if (axis_font() != nullptr) {
         ImGui::PopFont();
     }
@@ -659,13 +666,13 @@ void draw_viewport_overlay(
     const BadgeOverlay badge = make_badge_overlay(view, plot_min, ui_scale);
     dl->AddRectFilled(
         badge.box_min, badge.box_max,
-        AxisStyle::kBadgeBg, LayoutMetrics::kBadgeRound * ui_scale);
+        AxisStyle::kBadgeBg(), LayoutMetrics::kBadgeRound * ui_scale);
     if (small_font() != nullptr) {
         ImGui::PushFont(small_font());
     }
     dl->AddText(
         {badge.box_min.x + 8.0f * ui_scale, badge.box_min.y + 5.0f * ui_scale},
-        AxisStyle::kBadgeText,
+        AxisStyle::kBadgeText(),
         badge.text);
     if (small_font() != nullptr) {
         ImGui::PopFont();
@@ -747,7 +754,7 @@ void draw_tools_window(
             200.0f * ui_scale) {
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
-                to_u32(palette::kTextDim, 150)
+                to_u32(palette::kTextDim, 190)
             );
             ImGui::TextUnformatted(
                 dataset.active_dataset.empty()
@@ -894,7 +901,7 @@ void draw_viewport_window(
         hint = short_hint;
     }
     if (hint != nullptr) {
-        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 125));
+        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 175));
         ImGui::TextUnformatted(hint);
         ImGui::PopStyleColor();
     } else {
@@ -958,7 +965,9 @@ void draw_viewport_window(
         const float kBadgePadX = 8.0f * ui_scale;
         const float kBadgePadY = 5.0f * ui_scale;
         const ImU32 kBadgeBg = to_u32(palette::kYellow, 230);
-        const ImU32 kBadgeText = to_u32(palette::kText, 255);
+        // 黄色底在三套主题里都是亮色，文字必须固定用深色——暗主题的
+        // kText 是近白色，用它会白字压黄底、完全读不清。
+        const ImU32 kBadgeText = IM_COL32(32, 26, 8, 255);
         const char* badge_label = "测量模式  中键量距  Shift框选统计";
         const ImVec2 ts = ImGui::CalcTextSize(badge_label);
         const ImVec2 badge_min{
@@ -996,10 +1005,10 @@ void draw_viewport_window(
         // 轴线：顶部 X 轴 + 左侧 Y 轴，全部保持在 plot 外侧科学绘图风格
         dl->AddLine(ImVec2(plot_min.x, plot_min.y),
                     ImVec2(plot_max.x, plot_min.y),
-                    AxisStyle::kAxisLine, AxisStyle::kAxisLineWidth);
+                    AxisStyle::kAxisLine(), AxisStyle::kAxisLineWidth);
         dl->AddLine(ImVec2(plot_min.x, plot_min.y),
                     ImVec2(plot_min.x, plot_max.y),
-                    AxisStyle::kAxisLine, AxisStyle::kAxisLineWidth);
+                    AxisStyle::kAxisLine(), AxisStyle::kAxisLineWidth);
 
         const float x_range = view.map_axis_x_max - view.map_axis_x_min;
         const float y_range = view.map_axis_y_max - view.map_axis_y_min;
@@ -1116,7 +1125,7 @@ void draw_viewport_window(
                 const float t = (tick - view.map_axis_x_min) / x_range;
                 const float px = plot_min.x + t * (plot_max.x - plot_min.x);
                 dl->AddLine(ImVec2(px, plot_min.y), ImVec2(px, plot_max.y),
-                            AxisStyle::kGrid, AxisStyle::kGridWidth);
+                            AxisStyle::kGrid(), AxisStyle::kGridWidth);
             }
 
             const float tick_len_major = AxisStyle::kMajorTickLen * ui_scale;
@@ -1131,7 +1140,7 @@ void draw_viewport_window(
                 dl->AddLine(
                     ImVec2(px, plot_min.y),
                     ImVec2(px, plot_min.y - tick_len_major),
-                    AxisStyle::kMajorTick, AxisStyle::kMajorTickWidth);
+                    AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
                 fmt_label(label, sizeof(label), tick,
@@ -1151,7 +1160,7 @@ void draw_viewport_window(
                 };
                 if (!rects_overlap(label_min, label_max,
                                    badge.box_min, badge.box_max)) {
-                    dl->AddText(label_min, AxisStyle::kLabel, label);
+                    dl->AddText(label_min, AxisStyle::kLabel(), label);
                 }
                 if (axis_font() != nullptr) {
                     ImGui::PopFont();
@@ -1169,7 +1178,7 @@ void draw_viewport_window(
                     dl->AddLine(
                         ImVec2(px, plot_min.y),
                         ImVec2(px, plot_min.y - tick_len_minor),
-                        AxisStyle::kMinorTick, AxisStyle::kMinorTickWidth);
+                        AxisStyle::kMinorTick(), AxisStyle::kMinorTickWidth);
                 }
             }
         }
@@ -1234,7 +1243,7 @@ void draw_viewport_window(
                 const float t = (tick - view.map_axis_y_min) / y_range;
                 const float py = plot_max.y - t * (plot_max.y - plot_min.y);
                 dl->AddLine(ImVec2(plot_min.x, py), ImVec2(plot_max.x, py),
-                            AxisStyle::kGrid, AxisStyle::kGridWidth);
+                            AxisStyle::kGrid(), AxisStyle::kGridWidth);
             }
 
             const float tick_len_major = AxisStyle::kMajorTickLen * ui_scale;
@@ -1249,7 +1258,7 @@ void draw_viewport_window(
                 dl->AddLine(
                     ImVec2(plot_min.x, py),
                     ImVec2(plot_min.x - tick_len_major, py),
-                    AxisStyle::kMajorTick, AxisStyle::kMajorTickWidth);
+                    AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
                 fmt_label(label, sizeof(label), tick,
@@ -1263,7 +1272,7 @@ void draw_viewport_window(
                                     plot_min.x - tick_len_major -
                                     label_gap - ts.x),
                            py - ts.y * 0.5f),
-                    AxisStyle::kLabel, label);
+                    AxisStyle::kLabel(), label);
                 if (axis_font() != nullptr) {
                     ImGui::PopFont();
                 }
@@ -1280,7 +1289,7 @@ void draw_viewport_window(
                     dl->AddLine(
                         ImVec2(plot_min.x, py),
                         ImVec2(plot_min.x - tick_len_minor, py),
-                        AxisStyle::kMinorTick, AxisStyle::kMinorTickWidth);
+                        AxisStyle::kMinorTick(), AxisStyle::kMinorTickWidth);
                 }
             }
         }
@@ -1451,7 +1460,8 @@ void draw_viewport_window(
         if (view.copy_feedback_frames > 0) {
             const float kFeedbackPad = 4.0f * ui_scale;
             const ImU32 kFeedbackBg = to_u32(palette::kGreen, 220);
-            const ImU32 kFeedbackText = to_u32(palette::kText, 255);
+            // 绿色底同理：固定深色文字，避免暗主题白字压亮绿底。
+            const ImU32 kFeedbackText = IM_COL32(8, 26, 16, 255);
             const char* feedback = "已复制";
             const ImVec2 fs = ImGui::CalcTextSize(feedback);
             const float fb_x = cx - fs.x * 0.5f;
@@ -2183,14 +2193,16 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         ImGui::DockBuilderDockWindow(kNavigationMapWindowName, left_bottom_id);
     }
     if (right_id != 0) {
-        if (state.panels.render_settings) {
-            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
+        // 属性 最后 dock：DockBuilder 把最后 dock 的窗口设为选中标签，
+        // 保证默认布局下右侧首先看到的是 属性 而不是 性能/日志。
+        if (state.panels.debug_log) {
+            ImGui::DockBuilderDockWindow(kDebugLogWindowName, right_id);
         }
         if (state.panels.performance) {
             ImGui::DockBuilderDockWindow(kPerformanceWindowName, right_id);
         }
-        if (state.panels.debug_log) {
-            ImGui::DockBuilderDockWindow(kDebugLogWindowName, right_id);
+        if (state.panels.render_settings) {
+            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
         }
     }
 
@@ -2466,7 +2478,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::SetCursorPosX(LayoutMetrics::kStatusInsetX);
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
-                to_u32(palette::kTextDim, 158)
+                to_u32(palette::kTextDim, 195)
             );
             if (status_font() != nullptr) {
                 ImGui::PushFont(status_font());
@@ -2534,7 +2546,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
         prune_workspace_windows(state);
 
-        draw_auxiliary_panels(state);
+        draw_auxiliary_panels(state, actions);
     } else {
         for (auto& view : state.render_views) {
             view.render_requested = false;

@@ -6,7 +6,6 @@
 #include "imgui.h"
 
 #include <algorithm>
-#include <cfloat>
 #include <cstdio>
 #include <vector>
 
@@ -384,39 +383,6 @@ void draw_render_settings(
             }
         }
 
-        ImGui::Spacing();
-        draw_panel_section_label("流式加载");
-        const bool two_col_stream = panel_supports_two_column();
-        if (two_col_stream ? begin_labeled_property_table("##StreamingInfoTable") : true) {
-            if (two_col_stream) setup_labeled_property_table();
-
-            // "used / total" 读数下画细进度条，直观看出容量水位
-            const auto usage_meter = [](const std::string& usage) {
-                float used = 0.0f;
-                float total = 0.0f;
-                if (std::sscanf(usage.c_str(), "%f / %f", &used, &total) == 2
-                    && total > 0.0f) {
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    widgets::Meter(used / total);
-                }
-            };
-
-            property_label("GPU 瓦片", two_col_stream);
-            ImGui::TextUnformatted(settings.cache_usage.c_str());
-            usage_meter(settings.cache_usage);
-
-            property_label("CPU 缓存", two_col_stream);
-            ImGui::TextUnformatted(settings.cpu_cache_usage.c_str());
-            usage_meter(settings.cpu_cache_usage);
-
-            property_label("缓存命中", two_col_stream);
-            ImGui::Text("%.1f%%", settings.cache_hit_rate);
-
-            if (two_col_stream) ImGui::EndTable();
-        }
-        if (widgets::Button("清空缓存", widgets::ButtonVariant::kDanger)) {
-            actions.clear_cache_requested = true;
-        }
         ImGui::PopStyleVar(3);
     }
     ImGui::End();

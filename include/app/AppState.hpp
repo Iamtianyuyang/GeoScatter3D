@@ -45,7 +45,7 @@ struct PanelVisibilityState {
     bool debug_log = false;
     bool tile_inspector = false;
     bool lod_view = false;
-    bool performance = false;
+    bool performance = true;
     bool navigation_map = true;
     bool measurement = true;
     bool region_stats = true;

@@ -1,4 +1,5 @@
 #include "ui/MeasurementPanel.hpp"
+#include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/Widgets.hpp"
 
@@ -50,8 +51,14 @@ void draw_measurement_panel(
     }
     if (mgr.has_pending()) {
         ImGui::SameLine();
+        // 亮主题的面板底近白，测量黄 0xF1C21B 压上去几乎不可读；
+        // 亮主题降为深琥珀，暗主题保持测量黄。
+        const ImVec4 pending_color =
+            theme_tokens(active_theme()).dark
+                ? palette::kYellow
+                : ImVec4(0.72f, 0.51f, 0.02f, 1.0f);
         ImGui::TextColored(
-            palette::kYellow,
+            pending_color,
             "等待第二个点..."
         );
     }

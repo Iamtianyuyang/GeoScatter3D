@@ -1509,13 +1509,15 @@ int ViewerApp::run() {
                             tile_cache_stats.max_bytes /
                             (1024ull * 1024ull)
                         ) + " MB";
+                    // < 0 ⇒ 尚无任何缓存请求（预加载快路径或未流式），
+                    // UI 显示为 "—" 而不是误导性的 0%。
                     settings.cache_hit_rate =
                         tile_cache_requests > 0
                             ? 100.0f * static_cast<float>(
                                 tile_cache_stats.hits
                             ) /
                                 static_cast<float>(tile_cache_requests)
-                            : 0.0f;
+                            : -1.0f;
                 };
             const auto view_owned_by_workspace = [&](int viewport_index) {
                 for (const auto& workspace : app_state.workspace_windows) {

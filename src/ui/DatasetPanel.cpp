@@ -48,7 +48,7 @@ void draw_dataset_panel(
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PopFont();
         }
-        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 150));
+        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 190));
         ImGui::Text("%llu 点", static_cast<unsigned long long>(dataset_state.point_count));
         ImGui::SameLine();
         ImGui::TextDisabled("|");
@@ -77,7 +77,8 @@ void draw_dataset_panel(
                 ImGui::TreePop();
             }
             ImGui::Spacing();
-            draw_panel_section_label("属性");
+            // 命名与右侧「属性」(渲染设置) 面板区分开
+            draw_panel_section_label("数据属性");
             for (const auto& attribute : dataset_state.attributes) {
                 ImGui::Bullet();
                 ImGui::SameLine(0.0f, 6.0f);

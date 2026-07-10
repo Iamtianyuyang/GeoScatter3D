@@ -90,7 +90,7 @@ constexpr ThemeTokens kDeepGraphite{
     .bg = rgb(0x171A20),
     .text = rgb(0xE8ECF2),
     .text_dim = rgb(0x8B96A6),
-    .text_faint = rgb(0x5E6979),
+    .text_faint = rgb(0x6E7B8D),
     .menu_bg = rgb(0x1C2128),
     .surface = rgb(0x1E232A),
     .surface_hover = rgb(0x252B33),
@@ -141,7 +141,7 @@ constexpr ThemeTokens kInstrumentAmber{
     .bg = rgb(0x181D1A),
     .text = rgb(0xE7EDE4),
     .text_dim = rgb(0x8C998A),
-    .text_faint = rgb(0x5C6858),
+    .text_faint = rgb(0x6E7C69),
     .menu_bg = rgb(0x131711),
     .surface = rgb(0x1E2420),
     .surface_hover = rgb(0x262E29),
@@ -337,7 +337,10 @@ void apply_theme(ThemeId id, float ui_scale)
 
     colors[ImGuiCol_Button] = with_alpha(t.accent, t.button_alpha);
     colors[ImGuiCol_ButtonHovered] = with_alpha(t.accent, t.button_hover_alpha);
-    colors[ImGuiCol_ButtonActive] = t.accent_active;
+    // 半透明而非实心 accent_active：原生按钮的文字用 ImGuiCol_Text
+    // （正文色），实心深蓝/亮琥珀底会和正文色撞色（碳蓝下黑字压深蓝、
+    // 琥珀下白字压亮橙）。半透明与底色混合后正文色在三套主题都可读。
+    colors[ImGuiCol_ButtonActive] = with_alpha(t.accent, 0.55f);
 
     colors[ImGuiCol_Header] = with_alpha(t.accent, 0.12f);
     colors[ImGuiCol_HeaderHovered] = with_alpha(t.accent, 0.25f);
