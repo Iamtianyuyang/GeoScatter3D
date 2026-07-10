@@ -33,7 +33,12 @@ void draw_navigation_map(
         return;
     }
 
-    auto& nm = navigation_map != nullptr ? *navigation_map : state.navigation_map;
+    auto& nm = navigation_map != nullptr
+        ? *navigation_map
+        : gs3d::app::navigation_map_for_view(
+            state,
+            state.active_viewport_index
+        );
 
     // 缩略图区域：尽量撑满内容区，保持正方形
     const float avail_w = ImGui::GetContentRegionAvail().x;

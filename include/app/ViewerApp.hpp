@@ -405,6 +405,7 @@ private:
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
     std::atomic<std::uint64_t>     region_stats_gen_{0};
+    int                            region_stats_view_index_ = 0;
 };
 
 } // namespace gs3d::app

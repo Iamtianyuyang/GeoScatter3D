@@ -1167,8 +1167,17 @@ int ViewerApp::run() {
             app_state.render_settings.height_by_options.push_back(attr.name);
             app_state.render_settings.color_by_options.push_back(attr.name);
         }
+        const auto viewport_state_count =
+            static_cast<std::size_t>(viewport_manager.viewport_count());
+        app_state.render_settings_by_view.assign(
+            viewport_state_count,
+            app_state.render_settings
+        );
+        app_state.navigation_maps.resize(viewport_state_count);
+        app_state.measurements.resize(viewport_state_count);
+        app_state.region_stats_by_view.resize(viewport_state_count);
         app_state.render_views.resize(
-            static_cast<std::size_t>(viewport_manager.viewport_count())
+            viewport_state_count
         );
         const int startup_view_count =
             std::clamp(config_.viewport_count, 1, kMaxViewportCount);
@@ -1205,35 +1214,52 @@ int ViewerApp::run() {
 
         // ── analysis.toml persistence ──────────────────────────────────
         app_state.bundle_dir = config_.bundle_dir;
-        load_analysis(app_state.bundle_dir, app_state.measurement);
-        app_state.measurement.on_changed = [&app_state]() {
-            save_analysis(app_state.bundle_dir, app_state.measurement);
+        auto& persisted_measurement =
+            app_state.measurements.empty()
+                ? app_state.measurement
+                : app_state.measurements.front();
+        load_analysis(app_state.bundle_dir, persisted_measurement);
+        app_state.measurement = persisted_measurement;
+        persisted_measurement.on_changed = [&app_state]() {
+            const auto& measurement =
+                app_state.measurements.empty()
+                    ? app_state.measurement
+                    : app_state.measurements.front();
+            save_analysis(app_state.bundle_dir, measurement);
         };
 
         // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
         // 尺寸/坐标映射与首帧渲染都在 init_navigation_map 里完成；
         // 着色属性变更后由 pre_pass 里的 record_navigation_thumbnail 重渲。
-        gs3d::render::OffscreenFramebuffer nav_thumbnail_fb;
-        auto& nm = app_state.navigation_map;
+        std::vector<gs3d::render::OffscreenFramebuffer> nav_thumbnail_fbs(
+            viewport_state_count
+        );
         const auto& nav_cloud =
             lod_gpu_cloud
                 ? lod_gpu_cloud->lowest_detail().gpu_cloud
                 : *full_gpu_cloud;
-        const ViewerAppNavThumbnailContext nav_thumbnail_ctx{
-            point_pipeline,
-            nav_cloud,
-            viewport_pushes.front(),
-            dataset.bbox_max_z()
-        };
-        init_navigation_map(
-            context,
-            renderer.command_pool(),
-            swapchain.image_format(),
-            dataset,
-            nav_thumbnail_fb,
-            nm,
-            nav_thumbnail_ctx
-        );
+        for (std::size_t i = 0; i < app_state.navigation_maps.size(); ++i) {
+            const ViewerAppNavThumbnailContext nav_thumbnail_ctx{
+                point_pipeline,
+                nav_cloud,
+                i < viewport_pushes.size()
+                    ? viewport_pushes[i]
+                    : viewport_pushes.front(),
+                dataset.bbox_max_z()
+            };
+            init_navigation_map(
+                context,
+                renderer.command_pool(),
+                swapchain.image_format(),
+                dataset,
+                nav_thumbnail_fbs[i],
+                app_state.navigation_maps[i],
+                nav_thumbnail_ctx
+            );
+        }
+        if (!app_state.navigation_maps.empty()) {
+            app_state.navigation_map = app_state.navigation_maps.front();
+        }
 
         std::vector<int> visible_viewports;
         visible_viewports.reserve(
@@ -1508,16 +1534,33 @@ int ViewerApp::run() {
                     break;
                 }
             }
-            sync_render_settings_state(
-                app_state.render_settings,
-                first_main_view
+            for (std::size_t i = 0;
+                 i < app_state.render_settings_by_view.size();
+                 ++i) {
+                sync_render_settings_state(
+                    app_state.render_settings_by_view[i],
+                    static_cast<int>(i)
+                );
+            }
+            app_state.render_settings = render_settings_for_view(
+                app_state,
+                app_state.active_viewport_index
             );
             for (auto& workspace : app_state.workspace_windows) {
                 if (!workspace.viewport_indices.empty()) {
-                    sync_render_settings_state(
-                        workspace.components.render_settings,
-                        workspace.viewport_indices.front()
-                    );
+                    const int workspace_view_index =
+                        std::find(
+                            workspace.viewport_indices.begin(),
+                            workspace.viewport_indices.end(),
+                            app_state.active_viewport_index
+                        ) != workspace.viewport_indices.end()
+                            ? app_state.active_viewport_index
+                            : workspace.viewport_indices.front();
+                    workspace.components.render_settings =
+                        render_settings_for_view(
+                            app_state,
+                            workspace_view_index
+                        );
                 }
             }
 
@@ -1557,33 +1600,25 @@ int ViewerApp::run() {
                 fill_render_views(app_state, render_ctx, pick, selected_focus_points);
             }
 
-            auto navigation_view_index = streaming_viewport_index;
-            if (view_owned_by_workspace(navigation_view_index)) {
-                navigation_view_index = first_main_view;
-            }
-            update_navigation_map_view_rect(
-                nm,
-                app_state.render_views,
-                navigation_view_index
-            );
-            for (auto& workspace : app_state.workspace_windows) {
-                if (workspace.viewport_indices.empty()) {
-                    continue;
-                }
-                int workspace_view_index = workspace.viewport_indices.front();
-                if (std::find(
-                        workspace.viewport_indices.begin(),
-                        workspace.viewport_indices.end(),
-                        streaming_viewport_index
-                    ) != workspace.viewport_indices.end()) {
-                    workspace_view_index = streaming_viewport_index;
-                }
+            for (std::size_t i = 0; i < app_state.navigation_maps.size(); ++i) {
                 update_navigation_map_view_rect(
-                    workspace.components.navigation_map,
+                    app_state.navigation_maps[i],
                     app_state.render_views,
-                    workspace_view_index
+                    static_cast<int>(i)
                 );
             }
+            app_state.navigation_map = navigation_map_for_view(
+                app_state,
+                app_state.active_viewport_index
+            );
+            app_state.measurement = measurement_for_view(
+                app_state,
+                app_state.active_viewport_index
+            );
+            app_state.region_stats = region_stats_for_view(
+                app_state,
+                app_state.active_viewport_index
+            );
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
             for (const auto& view : app_state.render_views) {
@@ -1636,6 +1671,26 @@ int ViewerApp::run() {
                         viewport_scene_states[src];
                     viewport_height_exags[dst] =
                         viewport_height_exags[src];
+                    if (dst < app_state.render_settings_by_view.size() &&
+                        src < app_state.render_settings_by_view.size()) {
+                        app_state.render_settings_by_view[dst] =
+                            app_state.render_settings_by_view[src];
+                    }
+                    if (dst < app_state.navigation_maps.size() &&
+                        src < app_state.navigation_maps.size()) {
+                        app_state.navigation_maps[dst].dirty = true;
+                        app_state.navigation_maps[dst].view_rect_valid = false;
+                    }
+                    if (dst < app_state.measurements.size() &&
+                        src < app_state.measurements.size()) {
+                        app_state.measurements[dst] =
+                            app_state.measurements[src];
+                    }
+                    if (dst < app_state.region_stats_by_view.size() &&
+                        src < app_state.region_stats_by_view.size()) {
+                        app_state.region_stats_by_view[dst] =
+                            app_state.region_stats_by_view[src];
+                    }
                 }
             }
             int runtime_active_count = 1;
@@ -1771,33 +1826,9 @@ int ViewerApp::run() {
                 apply_reset_camera_command(gui_cmds, cam_ctx);
             }
             {
-                const auto navigation_map_for_view =
-                    [&](int viewport_index) -> NavigationMapState& {
-                        for (auto& workspace : app_state.workspace_windows) {
-                            if (!workspace.visible) {
-                                continue;
-                            }
-                            if (std::find(
-                                    workspace.viewport_indices.begin(),
-                                    workspace.viewport_indices.end(),
-                                    viewport_index
-                                ) != workspace.viewport_indices.end()) {
-                                return workspace.components.navigation_map;
-                            }
-                        }
-                        return nm;
-                    };
                 const auto main_targets = [&]() {
                     std::vector<int> targets;
-                    for (const auto& view : app_state.render_views) {
-                        if (view.visible &&
-                            !view_owned_by_workspace(view.viewport_index)) {
-                            targets.push_back(view.viewport_index);
-                        }
-                    }
-                    if (targets.empty()) {
-                        targets.push_back(first_main_view);
-                    }
+                    targets.push_back(app_state.active_viewport_index);
                     return targets;
                 };
                 for (const auto& command :
@@ -1818,7 +1849,10 @@ int ViewerApp::run() {
                             .push = viewport_pushes[idx],
                             .scene_state = viewport_scene_states[idx],
                             .navigation_map =
-                                navigation_map_for_view(viewport_index),
+                                navigation_map_for_view(
+                                    app_state,
+                                    viewport_index
+                                ),
                             .attr_list = attr_list,
                             .dataset = dataset,
                             .height_exag = viewport_height_exags[idx]
@@ -1996,6 +2030,10 @@ int ViewerApp::run() {
                 if (active_push.color_range <= 0.0f) {
                     active_push.color_range = 1.0f;
                 }
+                navigation_map_for_view(
+                    app_state,
+                    static_cast<int>(active_render_index)
+                ).dirty = true;
                 std::cout << "[COLOR] switched to: " << a.name << '\n';
             }
 
@@ -2354,13 +2392,28 @@ int ViewerApp::run() {
                     // vkCmdBeginRenderPass / draw / vkCmdEndRenderPass sequence into
                     // cmd; none of them nest inside each other or the swapchain pass.
                     .pre_pass = [&](VkCommandBuffer cmd) {
-                        // ── 导航图缩略图重渲（着色属性变更时触发）──
-                        if (nm.dirty && nav_thumbnail_fb.valid()) {
+                        // ── 每视图导航图缩略图重渲（着色属性变更时触发）──
+                        for (std::size_t i = 0;
+                             i < app_state.navigation_maps.size() &&
+                             i < nav_thumbnail_fbs.size();
+                             ++i) {
+                            auto& nav = app_state.navigation_maps[i];
+                            if (!nav.dirty || !nav_thumbnail_fbs[i].valid()) {
+                                continue;
+                            }
+                            const ViewerAppNavThumbnailContext nav_ctx{
+                                point_pipeline,
+                                nav_cloud,
+                                i < viewport_pushes.size()
+                                    ? viewport_pushes[i]
+                                    : viewport_pushes.front(),
+                                dataset.bbox_max_z()
+                            };
                             record_navigation_thumbnail(
                                 cmd,
-                                nav_thumbnail_fb,
-                                nm,
-                                nav_thumbnail_ctx
+                                nav_thumbnail_fbs[i],
+                                nav,
+                                nav_ctx
                             );
                         }
 

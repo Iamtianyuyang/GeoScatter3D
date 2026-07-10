@@ -16,6 +16,12 @@ constexpr const char* kLodViewWindowName = "细节层级###LodView";
 
 void draw_auxiliary_panels(gs3d::app::AppState& state)
 {
+    const auto& active_render_settings =
+        gs3d::app::render_settings_for_view(
+            state,
+            state.active_viewport_index
+        );
+
     if (state.panels.performance) {
         if (ImGui::Begin(
                 kPerformanceWindowName,
@@ -61,19 +67,19 @@ void draw_auxiliary_panels(gs3d::app::AppState& state)
             )) {
             ImGui::Text(
                 "已加载瓦片  %u",
-                state.render_settings.loaded_tiles
+                active_render_settings.loaded_tiles
             );
             ImGui::Text(
                 "等待瓦片    %u",
-                state.render_settings.pending_tiles
+                active_render_settings.pending_tiles
             );
             ImGui::Text(
                 "GPU 驻留    %s",
-                state.render_settings.cache_usage.c_str()
+                active_render_settings.cache_usage.c_str()
             );
             ImGui::Text(
                 "CPU 缓存    %s",
-                state.render_settings.cpu_cache_usage.c_str()
+                active_render_settings.cpu_cache_usage.c_str()
             );
         }
         ImGui::End();
@@ -87,7 +93,7 @@ void draw_auxiliary_panels(gs3d::app::AppState& state)
             );
             ImGui::Text(
                 "目标帧率    %.0f",
-                state.render_settings.target_fps
+                active_render_settings.target_fps
             );
         }
         ImGui::End();

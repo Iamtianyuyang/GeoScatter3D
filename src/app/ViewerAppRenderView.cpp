@@ -15,23 +15,11 @@ namespace gs3d::app {
 
 namespace {
 
-const MeasurementManager& measurement_for_view(
+const MeasurementManager& measurement_for_render_view(
     const AppState& app_state,
     int viewport_index
 ) {
-    for (const auto& workspace : app_state.workspace_windows) {
-        if (!workspace.visible) {
-            continue;
-        }
-        if (std::find(
-                workspace.viewport_indices.begin(),
-                workspace.viewport_indices.end(),
-                viewport_index
-            ) != workspace.viewport_indices.end()) {
-            return workspace.components.measurement;
-        }
-    }
-    return app_state.measurement;
+    return measurement_for_view(app_state, viewport_index);
 }
 
 } // namespace
@@ -63,7 +51,7 @@ void ViewerApp::fill_render_views(
                         ? ctx.viewport_pushes[static_cast<std::size_t>(i)]
                         : ctx.viewport_pushes.front();
                 const auto& measurement =
-                    measurement_for_view(app_state, i);
+                    measurement_for_render_view(app_state, i);
                 view.measure_mode_active =
                     measurement.measure_mode_active();
 

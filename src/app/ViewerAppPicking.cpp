@@ -162,7 +162,7 @@ void ViewerApp::prepare_gpu_pick_requests(
         // Measurement pick: middle-click uses the latest hover
         // pick result (zero-latency, same strategy as orbit pivot).
         auto& measurement =
-            measurement_for_workspace_id(app_state, frame.workspace_id);
+            measurement_for_view(app_state, frame.index);
         if (frame.measure_pick_requested &&
             measurement.measure_mode_active()) {
             const auto idx =

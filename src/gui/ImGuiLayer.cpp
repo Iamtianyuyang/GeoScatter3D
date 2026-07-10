@@ -498,7 +498,7 @@ ImGuiLayer::~ImGuiLayer()
 
 void ImGuiLayer::init(
     GLFWwindow* window,
-    const gs3d::render::VulkanContext& context,
+    const gs3d::render::VulkanContext&  context,
     const gs3d::render::VulkanRenderer& renderer,
     std::uint32_t min_image_count,
     std::filesystem::path ini_path,

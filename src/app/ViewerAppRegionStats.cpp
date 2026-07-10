@@ -41,6 +41,16 @@ void ViewerApp::handle_region_stats_commands(
 
         // Cancel any in-flight computation by bumping the generation.
         const auto gen = ++region_stats_gen_;
+        if (region_stats_view_index_ >= 0 &&
+            region_stats_view_index_ <
+                static_cast<int>(app_state.region_stats_by_view.size())) {
+            app_state
+                .region_stats_by_view[
+                    static_cast<std::size_t>(region_stats_view_index_)
+                ]
+                .computing = false;
+        }
+        region_stats_view_index_ = frame.index;
 
         const auto& cam = ctx.viewport_manager.camera(frame.index);
         const gs3d::camera::Mat4 vp =
@@ -67,10 +77,12 @@ void ViewerApp::handle_region_stats_commands(
         const std::filesystem::path gs3d_path =
             has_points ? std::filesystem::path{} : config_.gs3d_path;
 
-        app_state.region_stats = RegionStatsResult{};
-        app_state.region_stats.computing = true;
-        app_state.region_stats.primary_label = ctx.primary_value_name;
-        app_state.region_stats.secondary_label = ctx.z_field_name;
+        auto& target_stats =
+            region_stats_for_view(app_state, frame.index);
+        target_stats = RegionStatsResult{};
+        target_stats.computing = true;
+        target_stats.primary_label = ctx.primary_value_name;
+        target_stats.secondary_label = ctx.z_field_name;
 
         // Compute world-space XY bounds of the selection rectangle
         // so the panel can display the approximate coordinate range.
@@ -215,11 +227,17 @@ void ViewerApp::handle_region_stats_commands(
                 std::chrono::seconds(0)) ==
             std::future_status::ready) {
             auto result = region_stats_future_.get();
+            auto& target_stats =
+                region_stats_for_view(app_state, region_stats_view_index_);
             if (result.valid) {
-                app_state.region_stats = std::move(result);
+                target_stats = std::move(result);
             } else {
-                app_state.region_stats.computing = false;
+                target_stats.computing = false;
             }
+            app_state.region_stats = region_stats_for_view(
+                app_state,
+                app_state.active_viewport_index
+            );
         }
     }
 }

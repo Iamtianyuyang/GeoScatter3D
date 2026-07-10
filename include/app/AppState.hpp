@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -375,7 +376,126 @@ struct AppState {
     RegionStatsResult region_stats;
     std::vector<RenderViewState> render_views;
     std::vector<WorkspaceWindowState> workspace_windows;
+    std::vector<RenderSettingsState> render_settings_by_view;
+    std::vector<NavigationMapState> navigation_maps;
+    std::vector<MeasurementManager> measurements;
+    std::vector<RegionStatsResult> region_stats_by_view;
+    int active_viewport_index = 0;
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
 };
+
+inline int resolve_viewport_index(
+    const AppState& state,
+    int viewport_index
+) noexcept {
+    const int count = static_cast<int>(state.render_views.size());
+    if (count <= 0) {
+        return 0;
+    }
+    if (viewport_index >= 0 && viewport_index < count) {
+        return viewport_index;
+    }
+    if (state.active_viewport_index >= 0 &&
+        state.active_viewport_index < count) {
+        return state.active_viewport_index;
+    }
+    return 0;
+}
+
+inline RenderSettingsState& render_settings_for_view(
+    AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.render_settings_by_view.size())) {
+        return state.render_settings_by_view[static_cast<std::size_t>(resolved)];
+    }
+    return state.render_settings;
+}
+
+inline const RenderSettingsState& render_settings_for_view(
+    const AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.render_settings_by_view.size())) {
+        return state.render_settings_by_view[static_cast<std::size_t>(resolved)];
+    }
+    return state.render_settings;
+}
+
+inline NavigationMapState& navigation_map_for_view(
+    AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.navigation_maps.size())) {
+        return state.navigation_maps[static_cast<std::size_t>(resolved)];
+    }
+    return state.navigation_map;
+}
+
+inline const NavigationMapState& navigation_map_for_view(
+    const AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.navigation_maps.size())) {
+        return state.navigation_maps[static_cast<std::size_t>(resolved)];
+    }
+    return state.navigation_map;
+}
+
+inline MeasurementManager& measurement_for_view(
+    AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.measurements.size())) {
+        return state.measurements[static_cast<std::size_t>(resolved)];
+    }
+    return state.measurement;
+}
+
+inline const MeasurementManager& measurement_for_view(
+    const AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.measurements.size())) {
+        return state.measurements[static_cast<std::size_t>(resolved)];
+    }
+    return state.measurement;
+}
+
+inline RegionStatsResult& region_stats_for_view(
+    AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.region_stats_by_view.size())) {
+        return state.region_stats_by_view[static_cast<std::size_t>(resolved)];
+    }
+    return state.region_stats;
+}
+
+inline const RegionStatsResult& region_stats_for_view(
+    const AppState& state,
+    int viewport_index
+) noexcept {
+    const int resolved = resolve_viewport_index(state, viewport_index);
+    if (resolved >= 0 &&
+        resolved < static_cast<int>(state.region_stats_by_view.size())) {
+        return state.region_stats_by_view[static_cast<std::size_t>(resolved)];
+    }
+    return state.region_stats;
+}
 
 } // namespace gs3d::app

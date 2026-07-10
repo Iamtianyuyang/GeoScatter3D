@@ -132,6 +132,24 @@ gs3d::app::MeasurementManager& measurement_for_workspace_id(
     return state.measurement;
 }
 
+int active_view_for_indices(
+    const gs3d::app::AppState& state,
+    const std::vector<int>& indices,
+    int fallback
+) {
+    if (std::find(
+            indices.begin(),
+            indices.end(),
+            state.active_viewport_index
+        ) != indices.end()) {
+        return state.active_viewport_index;
+    }
+    if (!indices.empty()) {
+        return indices.front();
+    }
+    return fallback;
+}
+
 std::vector<int> main_workspace_viewports(
     const gs3d::app::AppState& state
 ) {
@@ -579,10 +597,17 @@ void draw_tools_window(
         ImGuiWindowFlags_NoScrollWithMouse;
     bool* open = use_default_window ? &state.panels.tools : nullptr;
     if (ImGui::Begin(window_name, open, flags)) {
-        auto& measurement =
+        const auto target_viewports =
             workspace != nullptr
-                ? workspace->components.measurement
-                : state.measurement;
+                ? workspace->viewport_indices
+                : main_workspace_viewports(state);
+        const int target_view = active_view_for_indices(
+            state,
+            target_viewports,
+            state.active_viewport_index
+        );
+        auto& measurement =
+            gs3d::app::measurement_for_view(state, target_view);
         auto& dataset =
             workspace != nullptr
                 ? workspace->components.dataset
@@ -1837,13 +1862,19 @@ void draw_workspace_window(
         &workspace.components.dataset
     );
 
+    const int workspace_active_view = active_view_for_indices(
+        state,
+        workspace.viewport_indices,
+        workspace.viewport_indices.empty() ? 0 : workspace.viewport_indices.front()
+    );
+
     const auto measurement_name =
         workspace_measurement_window_name(workspace.id);
     draw_measurement_panel(
         state,
         measurement_name.c_str(),
         nullptr,
-        &workspace.components.measurement
+        &gs3d::app::measurement_for_view(state, workspace_active_view)
     );
 
     const auto navigation_name =
@@ -1852,18 +1883,19 @@ void draw_workspace_window(
         state,
         navigation_name.c_str(),
         nullptr,
-        &workspace.components.navigation_map
+        &gs3d::app::navigation_map_for_view(state, workspace_active_view)
     );
 
     const auto render_settings_name =
         workspace_render_settings_window_name(workspace.id);
+    const std::vector<int> workspace_target_viewports{workspace_active_view};
     draw_render_settings(
         state,
         actions,
         render_settings_name.c_str(),
         nullptr,
-        &workspace.components.render_settings,
-        &workspace.viewport_indices
+        &gs3d::app::render_settings_for_view(state, workspace_active_view),
+        &workspace_target_viewports
     );
 
     for (const int view_index : workspace.viewport_indices) {
@@ -2294,13 +2326,19 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         draw_tools_window(state, actions, ui_scale);
         draw_dataset_panel(state);
         const auto main_viewports = main_workspace_viewports(state);
+        const int main_active_view = active_view_for_indices(
+            state,
+            main_viewports,
+            main_viewports.empty() ? 0 : main_viewports.front()
+        );
+        const std::vector<int> main_target_viewports{main_active_view};
         draw_render_settings(
             state,
             actions,
             nullptr,
             nullptr,
-            nullptr,
-            &main_viewports
+            &gs3d::app::render_settings_for_view(state, main_active_view),
+            &main_target_viewports
         );
         draw_navigation_map(state);
 
@@ -2336,17 +2374,22 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     if (!ImGui::GetIO().WantTextInput &&
         !ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_M, false)) {
-        int target_workspace_id = 0;
+        int target_viewport_index = state.active_viewport_index;
         for (const auto& frame : actions.viewport_frames) {
             if (frame.active || frame.hovered) {
-                target_workspace_id = frame.workspace_id;
+                target_viewport_index = frame.index;
             }
         }
         auto& measurement =
-            measurement_for_workspace_id(state, target_workspace_id);
+            gs3d::app::measurement_for_view(state, target_viewport_index);
         measurement.toggle_measure_mode();
         if (!measurement.measure_mode_active()) {
             measurement.clear_pending();
+        }
+    }
+    for (const auto& frame : actions.viewport_frames) {
+        if (frame.active || frame.hovered) {
+            state.active_viewport_index = frame.index;
         }
     }
     return actions;

@@ -32,7 +32,12 @@ void draw_measurement_panel(
         return;
     }
 
-    auto& mgr = measurement != nullptr ? *measurement : state.measurement;
+    auto& mgr = measurement != nullptr
+        ? *measurement
+        : gs3d::app::measurement_for_view(
+            state,
+            state.active_viewport_index
+        );
 
     // ── 测量模式开关 ──
     bool measure_active = mgr.measure_mode_active();

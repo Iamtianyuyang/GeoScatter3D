@@ -29,14 +29,35 @@ std::string format_clipboard_text(const gs3d::app::RegionStatsResult& stats)
 }
 } // namespace
 
-void draw_region_stats_panel(gs3d::app::AppState& state)
+void draw_region_stats_panel(
+    gs3d::app::AppState& state,
+    const char* window_name,
+    bool* open,
+    const gs3d::app::RegionStatsResult* region_stats
+)
 {
-    if (!ImGui::Begin(kRegionStatsWindowName, &state.panels.region_stats)) {
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.region_stats) {
+        return;
+    }
+    if (window_name == nullptr) {
+        window_name = kRegionStatsWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.region_stats;
+    }
+
+    if (!ImGui::Begin(window_name, open)) {
         ImGui::End();
         return;
     }
 
-    const auto& stats = state.region_stats;
+    const auto& stats = region_stats != nullptr
+        ? *region_stats
+        : gs3d::app::region_stats_for_view(
+            state,
+            state.active_viewport_index
+        );
 
     if (stats.computing) {
         ImGui::TextUnformatted("统计中...");
