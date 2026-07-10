@@ -2,6 +2,7 @@
 #include "gui/UiFonts.hpp"
 
 #include "app/ResourcePath.hpp"
+#include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 
@@ -60,18 +61,6 @@ static constexpr ImVec4 kSyntaxVariable {0.612f, 0.804f, 0.937f, 1.00f}; // #9CD
 static constexpr ImVec4 kSyntaxString   {0.808f, 0.573f, 0.486f, 1.00f}; // #CE9178  orange
 static constexpr ImVec4 kSyntaxNumber   {0.710f, 0.808f, 0.659f, 1.00f}; // #B5CEA8  light green
 static constexpr ImVec4 kSyntaxOperator {0.706f, 0.706f, 0.706f, 1.00f}; // #B4B4B4  gray
-
-// Modern SaaS Light Theme UI tokens (used for ImGuiStyle below).
-// Values are in sRGB space (0-1); the loop at the end of init()
-// applies srgb_to_linear() before handing them to the GPU.
-static constexpr ImVec4 kVscBg         {0.969f, 0.973f, 0.980f, 1.00f}; // #F7F8FA
-static constexpr ImVec4 kVscText       {0.086f, 0.086f, 0.086f, 1.00f}; // #161616
-static constexpr ImVec4 kVscTextDim    {0.435f, 0.435f, 0.435f, 1.00f}; // #6F6F6F
-static constexpr ImVec4 kVscAccent     {0.059f, 0.384f, 0.996f, 1.00f}; // #0F62FE
-static constexpr ImVec4 kVscError      {0.957f, 0.278f, 0.278f, 1.00f}; // #F44747
-static constexpr ImVec4 kVscFrameBg    {0.969f, 0.973f, 0.980f, 1.00f}; // #F7F8FA
-static constexpr ImVec4 kVscSurface    {1.000f, 1.000f, 1.000f, 1.00f}; // #FFFFFF
-static constexpr ImVec4 kVscBorder     {0.898f, 0.906f, 0.922f, 1.00f}; // #E5E7EB
 
 // Plausibility guards for glfwGetMonitorPhysicalSize(), which on Linux/X11
 // and some virtual/remote displays returns 0x0 or nonsensical values.
@@ -566,18 +555,8 @@ void ImGuiLayer::init(
 
     g_ui_fonts = load_ui_fonts(io, ini_path, ui_scale);
 
-    ImGui::StyleColorsLight();
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(ui_scale);
-    // Modern SaaS Light Theme: #F7F8FA background, #161616 text,
-    // #0F62FE accent for interactive / selected states.
-    style.WindowRounding = 8.0f * ui_scale;
-    style.ChildRounding = 4.0f * ui_scale;
-    style.FrameRounding = 4.0f * ui_scale;
-    style.PopupRounding = 6.0f * ui_scale;
-    style.ScrollbarRounding = 6.0f * ui_scale;
-    style.GrabRounding = 4.0f * ui_scale;
-    style.TabRounding = 6.0f * ui_scale;
     style.WindowBorderSize = 1.0f * ui_scale;
     style.ChildBorderSize = 1.0f * ui_scale;
     style.FrameBorderSize = 1.0f * ui_scale;
@@ -589,110 +568,10 @@ void ImGuiLayer::init(
     style.ScrollbarSize = 11.0f * ui_scale;
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
-    // ── Modern SaaS Light Theme ───────────────────────────────────────────
-    // Rule: FrameBg defaults stay light gray (#F7F8FA).
-    //       Interactive states (hover/active/selected) get #0F62FE.
-    auto& colors = style.Colors;
-
-    colors[ImGuiCol_Text]                  = kVscText;                  // #161616
-    colors[ImGuiCol_TextDisabled]          = kVscTextDim;               // #6F6F6F
-    colors[ImGuiCol_WindowBg]              = kVscBg;                    // #F7F8FA
-    colors[ImGuiCol_ChildBg]               = kVscSurface;               // #FFFFFF
-    colors[ImGuiCol_PopupBg]               = kVscSurface;               // #FFFFFF
-    colors[ImGuiCol_Border]                = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.50f);
-    colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-
-    // Frame: inputs, combos — LIGHT GRAY, NOT BLUE
-    colors[ImGuiCol_FrameBg]               = ImVec4(kVscFrameBg.x, kVscFrameBg.y, kVscFrameBg.z, 0.96f);
-    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.910f, 0.918f, 0.929f, 1.00f); // #E8EAED
-    colors[ImGuiCol_FrameBgActive]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.20f);
-
-    // Title bars
-    colors[ImGuiCol_TitleBg]               = kVscBg;                    // #F7F8FA
-    colors[ImGuiCol_TitleBgActive]         = kVscSurface;               // #FFFFFF
-    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(kVscBg.x, kVscBg.y, kVscBg.z, 0.51f);
-
-    // Menu bar
-    colors[ImGuiCol_MenuBarBg]             = ImVec4(1.000f, 1.000f, 1.000f, 1.00f); // #FFFFFF
-
-    // Scrollbar
-    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.969f, 0.973f, 0.980f, 0.53f);
-    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.757f, 0.757f, 0.757f, 1.00f); // #C1C7CD
-    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.659f, 0.659f, 0.659f, 1.00f); // #A8AEB8
-    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.553f, 0.553f, 0.553f, 1.00f); // #8D949E
-
-    // CheckMark / Slider — ACCENT BLUE
-    colors[ImGuiCol_CheckMark]             = kVscAccent;                // #0F62FE
-    colors[ImGuiCol_SliderGrab]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.92f);
-    colors[ImGuiCol_SliderGrabActive]      = ImVec4(0.039f, 0.337f, 0.816f, 1.00f); // #0A56D0
-
-    // Button — ACCENT BLUE (default ~50%, hover/active ramp up)
-    colors[ImGuiCol_Button]                = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.50f);
-    colors[ImGuiCol_ButtonHovered]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.85f);
-    colors[ImGuiCol_ButtonActive]          = ImVec4(0.043f, 0.306f, 0.796f, 1.00f); // #0B4ECB
-
-    // Header — ACCENT BLUE
-    colors[ImGuiCol_Header]                = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.12f);
-    colors[ImGuiCol_HeaderHovered]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.25f);
-    colors[ImGuiCol_HeaderActive]          = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.40f);
-
-    // Separator
-    colors[ImGuiCol_Separator]             = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.50f);
-    colors[ImGuiCol_SeparatorHovered]      = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.78f);
-    colors[ImGuiCol_SeparatorActive]       = kVscAccent;
-
-    // Resize grip — ACCENT BLUE
-    colors[ImGuiCol_ResizeGrip]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.20f);
-    colors[ImGuiCol_ResizeGripHovered]     = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.67f);
-    colors[ImGuiCol_ResizeGripActive]      = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.95f);
-
-    // Tabs
-    colors[ImGuiCol_Tab]                   = kVscBg;                    // #F7F8FA
-    colors[ImGuiCol_TabHovered]            = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.15f);
-    colors[ImGuiCol_TabSelected]           = kVscFrameBg;               // #F7F8FA
-    colors[ImGuiCol_TabSelectedOverline]   = kVscAccent;                // #0F62FE
-    colors[ImGuiCol_TabDimmed]             = ImVec4(0.906f, 0.910f, 0.918f, 1.00f);
-    colors[ImGuiCol_TabDimmedSelected]     = kVscSurface;               // #FFFFFF
-
-    // Docking
-    colors[ImGuiCol_DockingPreview]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.30f);
-    colors[ImGuiCol_DockingEmptyBg]        = kVscBg;                    // #F7F8FA
-
-    // Plot — accent + error red as hover hint
-    colors[ImGuiCol_PlotLines]             = kVscAccent;
-    colors[ImGuiCol_PlotLinesHovered]      = kVscError;                 // #F44747
-    colors[ImGuiCol_PlotHistogram]         = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.70f);
-    colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(kVscError.x, kVscError.y, kVscError.z, 0.70f);
-
-    // Table
-    colors[ImGuiCol_TableHeaderBg]         = kVscSurface;               // #FFFFFF
-    colors[ImGuiCol_TableBorderStrong]     = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.60f);
-    colors[ImGuiCol_TableBorderLight]      = ImVec4(kVscBorder.x, kVscBorder.y, kVscBorder.z, 0.30f);
-    colors[ImGuiCol_TableRowBg]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_TableRowBgAlt]         = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
-
-    // Misc
-    colors[ImGuiCol_TextSelectedBg]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.20f);
-    colors[ImGuiCol_NavHighlight]          = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.40f);
-    colors[ImGuiCol_DragDropTarget]        = ImVec4(kVscAccent.x, kVscAccent.y, kVscAccent.z, 0.30f);
-    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(kVscText.x, kVscText.y, kVscText.z, 0.70f);
-    colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.15f);
-    colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.25f);
-
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
-
-    // 交换链是 B8G8R8A8_SRGB：硬件把 shader 输出当线性值再编码，上面的
-    // 主题颜色是按 sRGB 十六进制值书写的，必须整体预转换到线性空间，
-    // 屏幕上才显示为书写的原值（否则整个 UI 被提亮冲淡）。alpha 不转换。
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        ImVec4& c = style.Colors[i];
-        c.x = gs3d::ui::srgb_to_linear(c.x);
-        c.y = gs3d::ui::srgb_to_linear(c.y);
-        c.z = gs3d::ui::srgb_to_linear(c.z);
-    }
+    // 主题（颜色 + 圆角）统一由 Theme 模块落地：重写 ImGuiStyle 颜色表、
+    // palette:: 语义色，并做 sRGB→linear 预转换（交换链是 B8G8R8A8_SRGB）。
+    // 启动主题来自 viewer.toml，运行期可经 视图→主题 菜单随时切换。
+    gs3d::ui::apply_theme(gs3d::ui::active_theme(), ui_scale);
 
     if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
         ImGui::DestroyContext();

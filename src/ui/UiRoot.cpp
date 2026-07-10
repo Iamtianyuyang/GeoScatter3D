@@ -1,4 +1,6 @@
 #include "ui/UiRoot.hpp"
+#include "ui/Theme.hpp"
+#include "ui/Widgets.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/RegionStatsPanel.hpp"
 #include "ui/DatasetPanel.hpp"
@@ -624,7 +626,7 @@ void draw_tools_window(
 
         const bool can_add_view = has_hidden_view(state);
         ImGui::BeginDisabled(!can_add_view);
-        if (ImGui::SmallButton("+ 视图")) {
+        if (widgets::Chip("+ 视图")) {
             if (workspace != nullptr) {
                 add_view_to_workspace(state, *workspace);
             } else {
@@ -633,40 +635,14 @@ void draw_tools_window(
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::SmallButton("截图")) {
+        if (widgets::Chip("截图")) {
             actions.screenshot_requested = true;
         }
         ImGui::SameLine();
-        {
-            bool measure_active =
-                measurement.measure_mode_active();
-            if (measure_active) {
-                // 测量语义色：函数黄，激活时按钮反白（深底色文字）
-                ImGui::PushStyleColor(
-                    ImGuiCol_Button,
-                    to_u32(palette::kYellow, 230)
-                );
-                ImGui::PushStyleColor(
-                    ImGuiCol_ButtonHovered,
-                    to_u32(palette::kYellow, 255)
-                );
-                ImGui::PushStyleColor(
-                    ImGuiCol_ButtonActive,
-                    to_u32(palette::kYellow, 200)
-                );
-                ImGui::PushStyleColor(
-                    ImGuiCol_Text,
-                    to_u32(palette::kBg, 255)
-                );
-            }
-            if (ImGui::SmallButton("测量")) {
-                measurement.toggle_measure_mode();
-                if (!measurement.measure_mode_active()) {
-                    measurement.clear_pending();
-                }
-            }
-            if (measure_active) {
-                ImGui::PopStyleColor(4);
+        if (widgets::Chip("测量", measurement.measure_mode_active())) {
+            measurement.toggle_measure_mode();
+            if (!measurement.measure_mode_active()) {
+                measurement.clear_pending();
             }
         }
         ImGui::SameLine();
@@ -750,25 +726,25 @@ void draw_viewport_window(
         view.detached ? "独立窗口" : "工作区"
     );
     ImGui::SameLine();
-    if (ImGui::SmallButton("复位视角")) {
+    if (widgets::Chip("复位视角")) {
         actions.reset_camera_index = view.viewport_index;
     }
     ImGui::SameLine();
-    ImGui::Checkbox("联动相机", &view.camera_linked);
+    widgets::Checkbox("联动相机", &view.camera_linked);
     ImGui::SameLine();
-    if (ImGui::Checkbox("地图轴", &view.show_map_axis)) {
+    if (widgets::Checkbox("地图轴", &view.show_map_axis)) {
         if (view.show_map_axis) {
             view.show_world_axis = false;
         }
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("世界轴", &view.show_world_axis)) {
+    if (widgets::Checkbox("世界轴", &view.show_world_axis)) {
         if (view.show_world_axis) {
             view.show_map_axis = false;
         }
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("十字准线", &view.show_crosshair)) {
+    if (widgets::Checkbox("十字准线", &view.show_crosshair)) {
         if (view.show_crosshair && !view.show_map_axis) {
             view.show_map_axis = true;
             view.show_world_axis = false;
@@ -2177,6 +2153,28 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     }
                     state.workspace_windows.clear();
                     dock_layout_initialized_ = false;
+                }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("主题")) {
+                    for (int i = 0; i < kThemeCount; ++i) {
+                        const auto id = static_cast<ThemeId>(i);
+                        const bool selected = active_theme() == id;
+                        if (ImGui::MenuItem(
+                                theme_tokens(id).name,
+                                nullptr,
+                                selected
+                            ) &&
+                            !selected) {
+                            // 立即重写 ImGuiStyle 与 palette::，本帧剩余
+                            // 控件即以新主题绘制，无需等下一帧。圆角基准
+                            // 用字体系统的权威 ui_scale，与 init 时一致。
+                            apply_theme(
+                                id,
+                                gs3d::gui::ui_fonts().ui_scale
+                            );
+                        }
+                    }
+                    ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }

@@ -92,6 +92,13 @@ struct ViewerAppConfig {
      */
     float ui_scale_multiplier = 1.15f;
 
+    /*
+     * 启动 UI 主题（见 ui/Theme.hpp）：
+     *   "carbon-blue"（默认）| "deep-graphite" | "instrument-amber"
+     * 未知值回落到 carbon-blue。运行期可经 视图→主题 菜单切换（不回写）。
+     */
+    std::string theme = "carbon-blue";
+
     // Enable Dear ImGui multi-viewports: docked windows may be detached into
     // native OS windows. The backend may disable this at runtime on platforms
     // without viewport support, such as Wayland.

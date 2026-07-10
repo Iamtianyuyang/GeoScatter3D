@@ -1,5 +1,6 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/Widgets.hpp"
 
 #include "imgui.h"
 
@@ -41,7 +42,7 @@ void draw_measurement_panel(
 
     // ── 测量模式开关 ──
     bool measure_active = mgr.measure_mode_active();
-    if (ImGui::Checkbox("测量模式", &measure_active)) {
+    if (widgets::Checkbox("测量模式", &measure_active)) {
         mgr.set_measure_mode(measure_active);
         if (!measure_active) {
             mgr.clear_pending();
@@ -56,24 +57,22 @@ void draw_measurement_panel(
     }
 
     // ── 距离显示模式 ──
+    // DistanceDisplayMode 枚举值即 0/1/2，与分段控件索引一一对应
     int display_mode = static_cast<int>(mgr.display_mode());
     ImGui::TextUnformatted("距离显示:");
     ImGui::SameLine();
-    ImGui::RadioButton("三维", &display_mode,
-        static_cast<int>(gs3d::app::DistanceDisplayMode::ThreeD));
-    ImGui::SameLine();
-    ImGui::RadioButton("平面", &display_mode,
-        static_cast<int>(gs3d::app::DistanceDisplayMode::Planar));
-    ImGui::SameLine();
-    ImGui::RadioButton("都显示", &display_mode,
-        static_cast<int>(gs3d::app::DistanceDisplayMode::Both));
+    const char* const display_modes[] = {"三维", "平面", "都显示"};
+    widgets::Segmented(
+        "##DistanceDisplayMode", display_modes, 3, &display_mode);
     mgr.set_display_mode(
         static_cast<gs3d::app::DistanceDisplayMode>(display_mode));
 
     ImGui::Separator();
 
     // ── 全部删除（不删固定的）──
-    if (ImGui::Button("全部删除（保留固定）")) {
+    if (widgets::Button(
+            "全部删除（保留固定）",
+            widgets::ButtonVariant::kDanger)) {
         mgr.remove_all_unfixed();
     }
 
@@ -113,13 +112,17 @@ void draw_measurement_panel(
 
             // Fixed toggle
             bool fixed = line.fixed;
-            if (ImGui::Checkbox("固定", &fixed)) {
+            if (widgets::Checkbox("固定", &fixed)) {
                 mgr.toggle_fixed(i);
             }
             ImGui::SameLine();
 
             // Delete button
-            if (ImGui::SmallButton("删除")) {
+            if (widgets::Button(
+                    "删除",
+                    widgets::ButtonVariant::kDanger,
+                    ImVec2(0.0f, 0.0f),
+                    true)) {
                 mgr.remove_line(i);
                 ImGui::PopID();
                 // Don't access `line` after removal.

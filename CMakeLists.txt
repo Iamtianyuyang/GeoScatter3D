@@ -18,6 +18,8 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 # ViewerApp render loop, just with a different entry point.
 set(GEOSCATTER3D_CORE_SOURCES
     src/gui/ImGuiLayer.cpp
+    src/ui/Theme.cpp
+    src/ui/Widgets.cpp
     src/ui/UiRoot.cpp
     src/ui/RegionStatsPanel.cpp
     src/ui/DatasetPanel.cpp
@@ -106,6 +108,8 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/render/AxisGrid.cpp
 
     include/gui/ImGuiLayer.hpp
+    include/ui/Theme.hpp
+    include/ui/Widgets.hpp
     include/ui/UiRoot.hpp
     include/ui/RegionStatsPanel.hpp
     include/ui/DatasetPanel.hpp

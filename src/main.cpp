@@ -7,6 +7,7 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
+#include "ui/Theme.hpp"
 #include "util/Stopwatch.hpp"
 
 #include <exception>
@@ -309,6 +310,12 @@ int main(int argc, char** argv) {
                 argc,
                 argv
             );
+
+        // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
+        // ImGuiLayer::init() 会以 active_theme() 完成首次应用。
+        gs3d::ui::set_startup_theme(
+            gs3d::ui::theme_from_string(app_config.viewer.theme)
+        );
 
         bool show_welcome_window =
             !app_config.viewer.benchmark_mode;

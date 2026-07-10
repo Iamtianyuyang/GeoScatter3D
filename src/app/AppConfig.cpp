@@ -591,6 +591,12 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.ui_scale_multiplier
         );
 
+        config.viewer.theme = string_or_default(
+            *window,
+            "theme",
+            config.viewer.theme
+        );
+
         config.viewer.enable_multi_viewports = bool_or_default(
             *window,
             "multi_viewports",
@@ -1136,6 +1142,9 @@ void AppConfigPrinter::print(const AppConfig& config) {
 
     std::cout << "[CONFIG] window.ui_scale_multiplier = "
               << config.viewer.ui_scale_multiplier << '\n';
+
+    std::cout << "[CONFIG] window.theme = "
+              << config.viewer.theme << '\n';
 
     std::cout << "[CONFIG] window.multi_viewports = "
               << (config.viewer.enable_multi_viewports ? "true" : "false")

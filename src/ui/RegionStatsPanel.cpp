@@ -1,6 +1,8 @@
 #include "ui/RegionStatsPanel.hpp"
 
 #include "gui/UiFonts.hpp"
+#include "ui/Widgets.hpp"
+
 #include "imgui.h"
 
 #include <sstream>
@@ -83,7 +85,7 @@ void draw_region_stats_panel(
     ImGui::Spacing();
 
     // ── 复制按钮 ──
-    if (ImGui::Button("复制")) {
+    if (widgets::Button("复制")) {
         ImGui::SetClipboardText(format_clipboard_text(stats).c_str());
     }
 

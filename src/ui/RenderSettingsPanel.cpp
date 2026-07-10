@@ -1,10 +1,12 @@
 #include "ui/RenderSettingsPanel.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/Widgets.hpp"
 #include "ui/UiRoot.hpp"
 
 #include "imgui.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cstdio>
 #include <vector>
 
@@ -127,7 +129,7 @@ void draw_render_settings(
             if (two_col) setup_labeled_property_table();
 
             property_label("点大小", two_col);
-            if (ImGui::SliderFloat("##PointSize", &point_size, 1.0f, 10.0f, "%.1f")) {
+            if (widgets::SliderFloat("##PointSize", &point_size, 1.0f, 10.0f, "%.1f")) {
                 settings.point_size = point_size;
                 auto& command =
                     add_render_settings_command(actions, target_viewports);
@@ -139,7 +141,7 @@ void draw_render_settings(
             const char* shape_names[] = {"方形", "圆形", "菱形", "三角形"};
             int shape = settings.point_shape;
             if (shape < 0 || shape > 3) shape = 0;
-            if (ImGui::BeginCombo("##PointShape", shape_names[shape])) {
+            if (widgets::BeginCombo("##PointShape", shape_names[shape])) {
                 for (int i = 0; i < 4; ++i) {
                     if (ImGui::Selectable(shape_names[i], i == shape)) {
                         settings.point_shape = i;
@@ -149,7 +151,7 @@ void draw_render_settings(
                         command.point_shape = i;
                     }
                 }
-                ImGui::EndCombo();
+                widgets::EndCombo();
             }
 
             const auto& height_options = settings.height_by_options;
@@ -163,7 +165,7 @@ void draw_render_settings(
                 h_preview = height_options[static_cast<std::size_t>(h_idx)].c_str();
             }
             property_label("高度来源", two_col);
-            if (ImGui::BeginCombo("##HeightSource", h_preview)) {
+            if (widgets::BeginCombo("##HeightSource", h_preview)) {
                 for (std::size_t i = 0; i < height_options.size(); ++i) {
                     const bool selected =
                         static_cast<int>(i) == settings.height_attr_index;
@@ -175,7 +177,7 @@ void draw_render_settings(
                         command.height_by_index = static_cast<int>(i);
                     }
                 }
-                ImGui::EndCombo();
+                widgets::EndCombo();
             }
 
             float exag = settings.height_exaggeration;
@@ -183,7 +185,7 @@ void draw_render_settings(
             if (two_col) {
                 ImGui::SetNextItemWidth(ImGui::CalcTextSize("000.00x").x + 24.0f);
             }
-            if (ImGui::DragFloat("##HeightExaggeration", &exag, 0.1f,
+            if (widgets::DragFloat("##HeightExaggeration", &exag, 0.1f,
                     0.01f, 100.0f, "%.2fx")) {
                 settings.height_exaggeration = exag;
                 auto& command =
@@ -203,7 +205,7 @@ void draw_render_settings(
                 preview = color_options[static_cast<std::size_t>(preview_index)].c_str();
             }
             property_label("着色", two_col);
-            if (ImGui::BeginCombo("##ColorBy", preview)) {
+            if (widgets::BeginCombo("##ColorBy", preview)) {
                 for (std::size_t i = 0; i < color_options.size(); ++i) {
                     const bool selected =
                         static_cast<int>(i) == settings.color_attr_index;
@@ -215,7 +217,7 @@ void draw_render_settings(
                         command.color_by_index = static_cast<int>(i);
                     }
                 }
-                ImGui::EndCombo();
+                widgets::EndCombo();
             }
 
             if (two_col) ImGui::EndTable();
@@ -240,7 +242,7 @@ void draw_render_settings(
             int cmap = settings.colormap_index;
             if (cmap < 0 || cmap > 8) cmap = 0;
             ImGui::TextUnformatted("色标");
-            if (ImGui::BeginCombo("##Colormap", colormap_names[cmap])) {
+            if (widgets::BeginCombo("##Colormap", colormap_names[cmap])) {
                 for (int i = 0; i < 9; ++i) {
                     if (ImGui::Selectable(colormap_names[i], i == cmap)) {
                         settings.colormap_index = i;
@@ -250,7 +252,7 @@ void draw_render_settings(
                         command.colormap_index = i;
                     }
                 }
-                ImGui::EndCombo();
+                widgets::EndCombo();
             }
 
             // 色标预览条 — 根据当前选中的色标切换颜色
@@ -325,7 +327,7 @@ void draw_render_settings(
             const float step = data_range > 0.0f ? data_range * 0.001f : 0.001f;
 
             bool clip_enabled = settings.value_clip_enabled;
-            if (ImGui::Checkbox("值域裁切", &clip_enabled)) {
+            if (widgets::Checkbox("值域裁切", &clip_enabled)) {
                 settings.value_clip_enabled = clip_enabled;
                 if (clip_enabled) {
                     // 首次启用时初始化为当前属性的完整数据范围
@@ -348,7 +350,7 @@ void draw_render_settings(
                 if (hi > data_hi) hi = data_hi;
                 ImGui::SetNextItemWidth(
                     two_col ? (ImGui::CalcTextSize("0.0000").x + 48.0f) : -1.0f);
-                if (ImGui::DragFloat("下限", &lo, step, data_lo, hi, "%.4g")) {
+                if (widgets::DragFloat("下限", &lo, step, data_lo, hi, "%.4g")) {
                     settings.value_clip_min = lo;
                     auto& command =
                         add_render_settings_command(actions, target_viewports);
@@ -359,7 +361,7 @@ void draw_render_settings(
                 }
                 ImGui::SetNextItemWidth(
                     two_col ? (ImGui::CalcTextSize("0.0000").x + 48.0f) : -1.0f);
-                if (ImGui::DragFloat("上限", &hi, step, lo, data_hi, "%.4g")) {
+                if (widgets::DragFloat("上限", &hi, step, lo, data_hi, "%.4g")) {
                     settings.value_clip_max = hi;
                     auto& command =
                         add_render_settings_command(actions, target_viewports);
@@ -378,18 +380,31 @@ void draw_render_settings(
         if (two_col_stream ? begin_labeled_property_table("##StreamingInfoTable") : true) {
             if (two_col_stream) setup_labeled_property_table();
 
+            // "used / total" 读数下画细进度条，直观看出容量水位
+            const auto usage_meter = [](const std::string& usage) {
+                float used = 0.0f;
+                float total = 0.0f;
+                if (std::sscanf(usage.c_str(), "%f / %f", &used, &total) == 2
+                    && total > 0.0f) {
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    widgets::Meter(used / total);
+                }
+            };
+
             property_label("GPU 瓦片", two_col_stream);
             ImGui::TextUnformatted(settings.cache_usage.c_str());
+            usage_meter(settings.cache_usage);
 
             property_label("CPU 缓存", two_col_stream);
             ImGui::TextUnformatted(settings.cpu_cache_usage.c_str());
+            usage_meter(settings.cpu_cache_usage);
 
             property_label("缓存命中", two_col_stream);
             ImGui::Text("%.1f%%", settings.cache_hit_rate);
 
             if (two_col_stream) ImGui::EndTable();
         }
-        if (ImGui::Button("清空缓存")) {
+        if (widgets::Button("清空缓存", widgets::ButtonVariant::kDanger)) {
             actions.clear_cache_requested = true;
         }
         ImGui::PopStyleVar(3);
