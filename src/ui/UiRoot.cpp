@@ -1526,10 +1526,13 @@ void draw_viewport_window(
                     ImVec2(pmid.x + ts.x * 0.5f + kMeasureLabelPad * ui_scale,
                            pmid.y + ts.y * 0.5f + kMeasureLabelPad * ui_scale),
                     kMeasureLabelBg, 3.0f * ui_scale);
+                // Label color follows the line color for readability.
+                const ImU32 kLabelColor = srgb_u32_to_linear(overlay.color)
+                                          & 0x00FFFFFF | (240u << 24);
                 dl->AddText(
                     ImVec2(pmid.x - ts.x * 0.5f,
                            pmid.y - ts.y * 0.5f),
-                    to_u32(palette::kText, 240),
+                    kLabelColor,
                     overlay.label.c_str());
             }
         }
