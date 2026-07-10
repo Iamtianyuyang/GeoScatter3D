@@ -448,6 +448,102 @@ ImFont* status_font()
     return gs3d::gui::ui_fonts().status;
 }
 
+void push_application_menu_style(float ui_scale)
+{
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(10.0f * ui_scale, 8.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(10.0f * ui_scale, 5.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(8.0f * ui_scale, 5.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_PopupRounding,
+        8.0f * ui_scale
+    );
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_SeparatorTextPadding,
+        ImVec2(7.0f * ui_scale, 5.0f * ui_scale)
+    );
+
+    ImGui::PushStyleColor(
+        ImGuiCol_MenuBarBg,
+        to_u32(palette::kMenuBg, 255)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_PopupBg,
+        to_u32(palette::kSurface, 255)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_Header,
+        to_u32(palette::kAccent, 18)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_HeaderHovered,
+        to_u32(palette::kAccent, 32)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_HeaderActive,
+        to_u32(palette::kAccent, 52)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_Border,
+        to_u32(palette::kBorder, 180)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_Separator,
+        to_u32(palette::kBorder, 110)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_CheckMark,
+        to_u32(palette::kAccent, 255)
+    );
+}
+
+void pop_application_menu_style()
+{
+    ImGui::PopStyleColor(8);
+    ImGui::PopStyleVar(6);
+}
+
+void draw_menu_section_label(const char* label)
+{
+    if (small_font() != nullptr) {
+        ImGui::PushFont(small_font());
+    }
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        to_u32(palette::kTextFaint, 210)
+    );
+    ImGui::SeparatorText(label);
+    ImGui::PopStyleColor();
+    if (small_font() != nullptr) {
+        ImGui::PopFont();
+    }
+}
+
+void draw_menu_hint(const char* text)
+{
+    if (small_font() != nullptr) {
+        ImGui::PushFont(small_font());
+    }
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        to_u32(palette::kTextDim, 190)
+    );
+    ImGui::BulletText("%s", text);
+    ImGui::PopStyleColor();
+    if (small_font() != nullptr) {
+        ImGui::PopFont();
+    }
+}
+
 void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
 {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -2140,8 +2236,15 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 
     constexpr bool render_workspace = true;
     if (ImGui::Begin(kHostWindowName, nullptr, host_flags)) {
-        if (ImGui::BeginMenuBar()) {
+        push_application_menu_style(ui_scale);
+        ImFont* menu_font = gs3d::gui::ui_fonts().medium;
+        if (menu_font != nullptr) {
+            ImGui::PushFont(menu_font);
+        }
+        const bool menu_bar_visible = ImGui::BeginMenuBar();
+        if (menu_bar_visible) {
             if (ImGui::BeginMenu("文件")) {
+                draw_menu_section_label("文件操作");
                 if (ImGui::MenuItem("打开数据")) {
                     actions.open_requested = true;
                 }
@@ -2151,6 +2254,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("视图")) {
+                draw_menu_section_label("工作区");
                 const bool has_hidden = has_hidden_view(state);
                 if (ImGui::MenuItem(
                         "新建视图",
@@ -2160,18 +2264,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 )) {
                     show_first_hidden_view(state);
                 }
-                ImGui::Separator();
-                for (auto& view : state.render_views) {
-                    const auto label =
-                        "视图 " +
-                        std::to_string(view.viewport_index + 1);
-                    ImGui::MenuItem(
-                        label.c_str(),
-                        nullptr,
-                        &view.visible
-                    );
-                }
-                ImGui::Separator();
                 if (ImGui::MenuItem("恢复默认工作区")) {
                     for (auto& view : state.render_views) {
                         view.detached = false;
@@ -2180,7 +2272,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     state.workspace_windows.clear();
                     dock_layout_initialized_ = false;
                 }
-                ImGui::Separator();
+                draw_menu_section_label("外观");
                 if (ImGui::BeginMenu("主题")) {
                     for (int i = 0; i < kThemeCount; ++i) {
                         const auto id = static_cast<ThemeId>(i);
@@ -2205,16 +2297,17 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("窗口")) {
+                draw_menu_section_label("工作窗口");
                 const bool can_create_workspace = has_hidden_view(state);
                 if (ImGui::MenuItem(
                         "新建工作窗口",
                         nullptr,
                         false,
                         can_create_workspace
-                    )) {
+                )) {
                     create_workspace_window(state);
                 }
-                ImGui::Separator();
+                draw_menu_section_label("面板显示");
                 ImGui::MenuItem(
                     "工具",
                     nullptr,
@@ -2268,20 +2361,35 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("帮助")) {
+                draw_menu_section_label("帮助与引导");
                 if (ImGui::MenuItem("欢迎页")) {
                     actions.show_welcome_requested = true;
                 }
-                ImGui::Separator();
-                ImGui::TextUnformatted(
+                draw_menu_section_label("使用提示");
+                draw_menu_hint(
                     "视图可作为标签页使用，也可拖到其他显示器。"
                 );
-                ImGui::TextUnformatted(
+                draw_menu_hint(
                     "默认相机相互独立，可在视图工具条启用联动。"
                 );
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
         }
+        if (menu_font != nullptr) {
+            ImGui::PopFont();
+        }
+        if (menu_bar_visible) {
+            const ImRect menu_rect =
+                ImGui::GetCurrentWindow()->MenuBarRect();
+            ImGui::GetWindowDrawList()->AddLine(
+                ImVec2(menu_rect.Min.x, menu_rect.Max.y - 1.0f),
+                ImVec2(menu_rect.Max.x, menu_rect.Max.y - 1.0f),
+                to_u32(palette::kBorder, 110),
+                1.0f
+            );
+        }
+        pop_application_menu_style();
 
         {
             ImDrawList* host_dl = ImGui::GetWindowDrawList();
