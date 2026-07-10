@@ -238,6 +238,11 @@ struct RenderViewState {
     // 仅在地图轴开启时生效，关闭时只保留悬停 tooltip。
     bool show_crosshair = true;
 
+    // 十字准线 / 拾取准星自定义颜色。按 sRGB 存储（颜色选择器所见即
+    // 所存，同测量线），UiRoot 绘制前线性化。默认亮黄 #F1C21B。
+    std::uint32_t crosshair_color = 0xFF1BC2F1;  // IM_COL32(0xF1,0xC2,0x1B,0xFF)
+    std::uint32_t reticle_color   = 0xFF1BC2F1;
+
     // 当前视口中可见的 X/Y 坐标范围（世界坐标，已去除 origin 偏移的内
     // 部值，ViewerApp 填入）。用于地图坐标轴的刻度计算。
     float map_axis_x_min = 0.0f;

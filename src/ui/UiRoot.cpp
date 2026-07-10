@@ -847,6 +847,40 @@ void draw_viewport_window(
             view.show_world_axis = false;
         }
     }
+    ImGui::SameLine();
+    {
+        ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
+        float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
+        ImGui::SetNextItemWidth(22.0f);
+        if (ImGui::ColorEdit4("##CrosshairColor", ch_arr,
+                ImGuiColorEditFlags_NoInputs |
+                ImGuiColorEditFlags_NoLabel)) {
+            view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3]));
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("十字准线颜色");
+    }
+    ImGui::SameLine();
+    if (widgets::Chip("十字颜色")) {
+        view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+    }
+    ImGui::SameLine();
+    {
+        ImVec4 rt = ImGui::ColorConvertU32ToFloat4(view.reticle_color);
+        float rt_arr[4] = {rt.x, rt.y, rt.z, rt.w};
+        ImGui::SetNextItemWidth(22.0f);
+        if (ImGui::ColorEdit4("##ReticleColor", rt_arr,
+                ImGuiColorEditFlags_NoInputs |
+                ImGuiColorEditFlags_NoLabel)) {
+            view.reticle_color = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3]));
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("拾取准星颜色");
+    }
+    ImGui::SameLine();
+    if (widgets::Chip("准星颜色")) {
+        view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+    }
     const char* long_hint =
         "左键旋转  右键平移  滚轮光标缩放  "
         "双击定轴  F聚焦  Ctrl+左键框选";
@@ -1268,9 +1302,9 @@ void draw_viewport_window(
             const float cx = plot_min.x + scr.x;
             const float cy = plot_min.y + scr.y;
 
-            const ImU32 kCrosshairLine  = to_u32(palette::kYellow, 80);
+            const ImU32 kCrosshairLine  = srgb_u32_to_linear(view.crosshair_color) & 0x00FFFFFF | (80u << 24);
             const ImU32 kCrosshairBg    = to_u32(palette::kViewportBg, 200);
-            const ImU32 kCrosshairText  = to_u32(palette::kYellow, 240);
+            const ImU32 kCrosshairText  = srgb_u32_to_linear(view.crosshair_color) & 0x00FFFFFF | (240u << 24);
             const float kCrosshairWidth = 1.0f * ui_scale;
             const float kLabelPad = 3.0f * ui_scale;
             const float kLabelAxisGap = 3.0f * ui_scale;
@@ -1407,7 +1441,7 @@ void draw_viewport_window(
         const float cy = plot_min.y + scr.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float kR = 8.0f * ui_scale;
-        const ImU32 kColor = to_u32(palette::kYellow, 220);
+        const ImU32 kColor = srgb_u32_to_linear(view.reticle_color) & 0x00FFFFFF | (220u << 24);
         const float kThick = 2.0f * ui_scale;
         dl->AddLine({cx - kR, cy}, {cx + kR, cy}, kColor, kThick);
         dl->AddLine({cx, cy - kR}, {cx, cy + kR}, kColor, kThick);
