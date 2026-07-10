@@ -451,7 +451,7 @@ void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
     draw_list->AddRectFilled(
         min,
         max,
-        to_u32(palette::kMenuBg, 255)
+        to_u32(palette::kViewportBg, 255)
     );
 
     const float width = max.x - min.x;
@@ -836,7 +836,7 @@ void draw_viewport_window(
     canvas_dl->AddRectFilled(
         plot_min,
         plot_max,
-        to_u32(palette::kMenuBg, 255)
+        to_u32(palette::kViewportBg, 255)
     );
 
     // ── 测量模式视口边框提示 ──
@@ -849,7 +849,7 @@ void draw_viewport_window(
         const float kBadgePadX = 8.0f * ui_scale;
         const float kBadgePadY = 5.0f * ui_scale;
         const ImU32 kBadgeBg = to_u32(palette::kYellow, 230);
-        const ImU32 kBadgeText = to_u32(palette::kBg, 255);
+        const ImU32 kBadgeText = to_u32(palette::kText, 255);
         const char* badge_label = "测量模式  中键量距  Shift框选统计";
         const ImVec2 ts = ImGui::CalcTextSize(badge_label);
         const ImVec2 badge_min{
@@ -1194,7 +1194,7 @@ void draw_viewport_window(
             const float cy = plot_min.y + scr.y;
 
             const ImU32 kCrosshairLine  = to_u32(palette::kYellow, 80);
-            const ImU32 kCrosshairBg    = to_u32(palette::kMenuBg, 200);
+            const ImU32 kCrosshairBg    = to_u32(palette::kViewportBg, 200);
             const ImU32 kCrosshairText  = to_u32(palette::kYellow, 240);
             const float kCrosshairWidth = 1.0f * ui_scale;
             const float kLabelPad = 3.0f * ui_scale;
@@ -1342,7 +1342,7 @@ void draw_viewport_window(
         if (view.copy_feedback_frames > 0) {
             const float kFeedbackPad = 4.0f * ui_scale;
             const ImU32 kFeedbackBg = to_u32(palette::kGreen, 220);
-            const ImU32 kFeedbackText = to_u32(palette::kBg, 255);
+            const ImU32 kFeedbackText = to_u32(palette::kText, 255);
             const char* feedback = "已复制";
             const ImVec2 fs = ImGui::CalcTextSize(feedback);
             const float fb_x = cx - fs.x * 0.5f;
@@ -1381,7 +1381,7 @@ void draw_viewport_window(
         dl->PushClipRect(plot_min, plot_max, true);
         constexpr float kMeasureLineWidth = 2.0f;
         constexpr float kMeasureLabelPad = 3.0f;
-        const ImU32 kMeasureLabelBg = to_u32(palette::kMenuBg, 200);
+        const ImU32 kMeasureLabelBg = to_u32(palette::kViewportBg, 200);
 
         for (const auto& overlay : view.measurement_overlays) {
             if (!overlay.visible) continue;

@@ -73,7 +73,7 @@ void draw_navigation_map(
         dl->AddRectFilled(
             img_min,
             img_max,
-            to_u32(palette::kMenuBg, 255)
+            to_u32(palette::kFrame, 255)
         );
     }
 

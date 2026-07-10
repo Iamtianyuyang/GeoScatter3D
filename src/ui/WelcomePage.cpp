@@ -2,6 +2,7 @@
 
 #include "gui/UiFonts.hpp"
 #include "platform/NativeFileDialog.hpp"
+#include "ui/UiPalette.hpp"
 
 #include "imgui.h"
 
@@ -46,19 +47,19 @@ ImU32 rgb(
     );
 }
 
-const ImU32 kBackground = rgb(30, 30, 30);
-const ImU32 kSurface = rgb(37, 37, 38);
-const ImU32 kSurfaceHover = rgb(42, 45, 46);
-const ImU32 kBorder = rgb(62, 62, 62);
-const ImU32 kText = rgb(218, 218, 218);
-const ImU32 kMuted = rgb(154, 154, 154);
-const ImU32 kFaint = rgb(112, 112, 112);
-const ImU32 kBlue = rgb(0, 122, 204);
-const ImU32 kKeywordBlue = rgb(86, 156, 214);
-const ImU32 kTypeGreen = rgb(78, 201, 176);
-const ImU32 kError = rgb(244, 71, 71);
-const ImU32 kBrandLight = rgb(230, 238, 245);
-const ImU32 kScatterBlue = rgb(91, 159, 204);
+const ImU32 kBackground = to_u32(palette::kBg);
+const ImU32 kSurface = to_u32(palette::kSurface);
+const ImU32 kSurfaceHover = to_u32(palette::kSurfaceHover);
+const ImU32 kBorder = to_u32(palette::kBorder);
+const ImU32 kText = to_u32(palette::kText);
+const ImU32 kMuted = to_u32(palette::kTextDim);
+const ImU32 kFaint = to_u32(palette::kTextFaint);
+const ImU32 kBlue = to_u32(palette::kAccent);
+const ImU32 kKeywordBlue = to_u32(palette::kVarBlue);
+const ImU32 kTypeGreen = to_u32(palette::kGreen);
+const ImU32 kError = to_u32(palette::kRed);
+const ImU32 kBrandLight = to_u32(palette::kText);
+const ImU32 kScatterBlue = to_u32(palette::kAccent);
 
 std::string g_error_message;
 

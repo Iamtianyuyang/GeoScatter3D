@@ -7,7 +7,7 @@
 namespace gs3d::ui {
 
 /*
- * 统一语义色板（VSCode Dark+ 语法配色）。
+ * 统一语义色板（Modern SaaS Light Theme — IBM Carbon Blue accent）。
  *
  * 所有颜色以设计稿的 sRGB 十六进制值书写。主/副窗口交换链都是
  * B8G8R8A8_SRGB：硬件把 shader 输出当线性值再做 sRGB 编码，因此凡是
@@ -48,28 +48,34 @@ inline ImU32 srgb_color(int r, int g, int b, int alpha = 255) {
 namespace palette {
 
 // ── 基础 ────────────────────────────────────────────────────────────
-inline const ImVec4 kBg       = srgb_vec4(0x1E, 0x1E, 0x1E); // 背景
-inline const ImVec4 kText     = srgb_vec4(0xDA, 0xDA, 0xDA); // 正文
-inline const ImVec4 kTextDim  = srgb_vec4(0x9A, 0x9A, 0x9A); // 弱文字
+inline const ImVec4 kBg       = srgb_vec4(0xF7, 0xF8, 0xFA); // 背景
+inline const ImVec4 kText     = srgb_vec4(0x16, 0x16, 0x16); // 正文
+inline const ImVec4 kTextDim  = srgb_vec4(0x6F, 0x6F, 0x6F); // 弱文字
+inline const ImVec4 kTextFaint = srgb_vec4(0xA0, 0xA0, 0xA0); // 更弱文字
 
-// ── 派生表面（与背景同族的中性灰阶）─────────────────────────────────
-inline const ImVec4 kMenuBg   = srgb_vec4(0x1B, 0x1B, 0x1B); // 菜单栏
-inline const ImVec4 kSurface  = srgb_vec4(0x25, 0x25, 0x25); // 面板/弹窗
-inline const ImVec4 kFrame    = srgb_vec4(0x2D, 0x2D, 0x2D); // 输入框
-inline const ImVec4 kBorder   = srgb_vec4(0x3E, 0x3E, 0x3E); // 边框
+// ── 派生表面（中性灰阶）─────────────────────────────────
+inline const ImVec4 kMenuBg   = srgb_vec4(0xFF, 0xFF, 0xFF); // 菜单栏
+inline const ImVec4 kSurface  = srgb_vec4(0xFF, 0xFF, 0xFF); // 面板/弹窗
+inline const ImVec4 kSurfaceHover = srgb_vec4(0xF5, 0xF5, 0xF5); // 卡片悬停
+inline const ImVec4 kFrame    = srgb_vec4(0xF7, 0xF8, 0xFA); // 输入框
+inline const ImVec4 kBorder   = srgb_vec4(0xE5, 0xE7, 0xEB); // 边框
 
-// ── 语法色（语义用途见注释）─────────────────────────────────────────
-inline const ImVec4 kGreen    = srgb_vec4(0x57, 0xA6, 0x4A); // 注释绿：成功/确认
-inline const ImVec4 kBlue     = srgb_vec4(0x56, 0x9C, 0xD6); // 关键字蓝：Z轴/信息
-inline const ImVec4 kPurple   = srgb_vec4(0xD8, 0xA0, 0xDF); // 控制流紫：特殊状态
-inline const ImVec4 kYellow   = srgb_vec4(0xDC, 0xDC, 0xAA); // 函数黄：测量/十字线
+// ── 语义色（语义用途见注释）─────────────────────────────────────────
+inline const ImVec4 kGreen    = srgb_vec4(0x24, 0xA1, 0x48); // 成功绿：确认/通过
+inline const ImVec4 kBlue     = srgb_vec4(0x0F, 0x62, 0xFE); // 专业蓝：Z轴/信息
+inline const ImVec4 kPurple   = srgb_vec4(0xA2, 0x6E, 0xC4); // 控制流紫：特殊状态
+inline const ImVec4 kYellow   = srgb_vec4(0xF1, 0xC2, 0x1B); // 明亮黄：测量/十字线
 inline const ImVec4 kTeal     = srgb_vec4(0x4E, 0xC9, 0xB0); // 类型青绿：区域选择
-inline const ImVec4 kVarBlue  = srgb_vec4(0x9C, 0xDC, 0xFE); // 变量浅蓝：选中点/坐标
+inline const ImVec4 kVarBlue  = srgb_vec4(0x8A, 0xB6, 0xFF); // 变量浅蓝：选中点/坐标
 inline const ImVec4 kOrange   = srgb_vec4(0xCE, 0x91, 0x78); // 字符串橙：警告/降级
-inline const ImVec4 kNumGreen = srgb_vec4(0xB5, 0xCE, 0xA8); // 数字浅绿：数值读数
-inline const ImVec4 kGray     = srgb_vec4(0xB4, 0xB4, 0xB4); // 运算符灰：标尺/刻度
+inline const ImVec4 kNumGreen = srgb_vec4(0x24, 0xA1, 0x48); // 数字绿：数值读数
+inline const ImVec4 kGray     = srgb_vec4(0xB0, 0xB0, 0xB0); // 运算符灰：标尺/刻度
 inline const ImVec4 kRed      = srgb_vec4(0xF4, 0x47, 0x47); // 错误红：错误/X轴
-inline const ImVec4 kAccent   = srgb_vec4(0x00, 0x7A, 0xCC); // VSCode蓝：交互强调
+inline const ImVec4 kAccent   = srgb_vec4(0x0F, 0x62, 0xFE); // 专业蓝：交互强调
+
+// ── 3D 视口暗色画布（明暗对比核心）─────────────────────────────────
+inline const ImVec4 kViewportBg = srgb_vec4(0x1A, 0x1D, 0x23); // 暗色画布
+inline const ImVec4 kViewportBorder = srgb_vec4(0x2A, 0x30, 0x38); // 视口边框
 
 } // namespace palette
 
