@@ -276,7 +276,7 @@ add_library(gs3d_app STATIC
     src/app/ViewerFrameStateSynchronizer.cpp
     src/app/ViewerAppStateInitialization.cpp
     src/app/ViewerAppViewport.cpp
-    src/app/ViewerAppPicking.cpp
+    src/app/ViewerPickSystem.cpp
     src/app/ViewerAppRenderView.cpp
     src/app/ViewerAppGuiCommands.cpp
     src/app/ViewerAppCameraCommands.cpp
@@ -305,6 +305,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerDatasetSession.hpp
     include/app/ViewerDatasetDescriptor.hpp
     include/app/ViewerBenchmarkController.hpp
+    include/app/ViewerPickSystem.hpp
     include/app/NavigationMapSystem.hpp
     include/app/ViewerAttributeMapping.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
@@ -809,6 +810,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.NavigationMapSystem
         COMMAND GeoScatter3DNavigationMapSystemTests
+    )
+
+    add_executable(GeoScatter3DViewerPickSystemTests
+        tests/ViewerPickSystemTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerPickSystemTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerPickSystemTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerPickSystem
+        COMMAND GeoScatter3DViewerPickSystemTests
     )
 
     add_executable(GeoScatter3DViewerBenchmarkControllerTests

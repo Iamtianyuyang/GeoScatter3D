@@ -26,7 +26,7 @@ const MeasurementManager& measurement_for_render_view(
 void ViewerApp::fill_render_views(
     gs3d::app::AppState& app_state,
     const ViewerAppRenderViewContext& ctx,
-    const ViewerAppPickState& pick,
+    const ViewerPickState& pick,
     const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
 ) {
     for (int i = 0; i < ctx.n_viewports; ++i) {

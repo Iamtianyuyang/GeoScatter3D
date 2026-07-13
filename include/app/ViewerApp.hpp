@@ -213,30 +213,10 @@ public:
     }
 
 private:
-    void prepare_gpu_pick_requests(
-        ViewerAppPickState& pick,
-        const gs3d::render::ViewportManager& viewport_manager,
-        gs3d::app::AppState& app_state,
-        const gs3d::app::UiActions& gui_cmds,
-        const std::vector<float>& viewport_point_sizes,
-        ViewerBenchmarkController& benchmark_controller
-    );
-
-    void consume_ready_pick_frame_slot(
-        std::uint32_t frame_slot,
-        ViewerAppPickState& pick,
-        PickDebugFrameDumper& pick_debug_frame_dumper,
-        GpuPickReadback& gpu_pick_readback,
-        const ViewerAppPickLookupContext& pick_lookup,
-        ViewerAppPickCameraContext& pick_camera,
-        ViewerAppBenchmarkPickContext& pick_benchmark,
-        const VisibleTilePickResolver& resolve_hover_point_from_visible_tiles
-    );
-
     void fill_render_views(
         gs3d::app::AppState& app_state,
         const ViewerAppRenderViewContext& ctx,
-        const ViewerAppPickState& pick,
+        const ViewerPickState& pick,
         const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
     );
 

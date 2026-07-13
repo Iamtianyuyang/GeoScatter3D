@@ -8,7 +8,7 @@
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
-#include "app/ViewerAppGpuPick.hpp"
+#include "app/ViewerPickSystem.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
 #include "app/ViewerAppTileStreaming.hpp"
@@ -484,35 +484,14 @@ int ViewerApp::run() {
 
         gs3d::util::log::info() << "[OK] PointPipeline created.\n";
 
-        GpuPickReadback gpu_pick_readback(
+        ViewerPickSystem pick_system(
             context,
             renderer.frames_in_flight(),
-            static_cast<std::size_t>(viewport_manager.viewport_count())
-        );
-        PickDebugFrameDumper pick_debug_frame_dumper(
-            context,
-            renderer.frames_in_flight()
-        );
-        std::uint64_t pick_debug_dump_count = 0;
-        bool pick_debug_dump_completed = false;
-        std::vector<bool> pending_hover_miss_dump(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
+            config_.pick_debug.dump_enabled,
+            config_.pick_debug.dump_dir
         );
-        ViewerAppPickState pick;
-        {
-            const auto n = static_cast<std::size_t>(viewport_manager.viewport_count());
-            pick.latest_hover_points.resize(n);
-            pick.latest_capture_x.resize(n, 0.0f);
-            pick.latest_capture_y.resize(n, 0.0f);
-            // Frames since last successful pick hit — clears stale hover
-            // data after ~0.5 s of no hits.
-            pick.hover_timeout.resize(n, 0);
-            // Consecutive GPU pick misses (has_hit=false) — clears hover
-            // after a short debounce so moving between points doesn't flicker.
-            pick.consecutive_no_hit.resize(n, 0);
-            pick.requests.resize(n);
-        }
+        auto& pick = pick_system.state();
         ViewerBenchmarkController benchmark_controller(
             config_.benchmark.enabled,
             config_.benchmark.frame_count,
@@ -783,10 +762,7 @@ int ViewerApp::run() {
         );
 
         const auto consume_ready_pick_frame_slot =
-            [this,
-             &pick,
-             &pick_debug_frame_dumper,
-             &gpu_pick_readback,
+            [&pick_system,
              &runtime_points_by_id,
              &runtime_points_valid_by_id,
              &viewport_cameras,
@@ -796,17 +772,14 @@ int ViewerApp::run() {
              &viewport_pushes,
              &streaming_viewport_index,
              &tile_selection_dirty,
-             &benchmark_pick_enabled,
-             &benchmark_pick_issue_cpu_ms,
-             &benchmark_pick_issue_metadata,
-             &benchmark_pick_results,
+             &benchmark_controller,
              &resolve_hover_point_from_visible_tiles]
             (std::uint32_t frame_slot) {
-                ViewerAppPickLookupContext pick_lookup{
+                ViewerPickLookupContext pick_lookup{
                     runtime_points_by_id,
                     runtime_points_valid_by_id
                 };
-                ViewerAppPickCameraContext pick_camera{
+                ViewerPickCameraContext pick_camera{
                     viewport_cameras.controllers(),
                     selected_focus_points,
                     viewport_manager,
@@ -815,16 +788,13 @@ int ViewerApp::run() {
                     streaming_viewport_index,
                     tile_selection_dirty
                 };
-                ViewerAppBenchmarkPickContext pick_benchmark{
-                    benchmark_pick_enabled,
-                    benchmark_pick_issue_cpu_ms,
-                    benchmark_pick_issue_metadata,
-                    benchmark_pick_results
-                };
-                this->consume_ready_pick_frame_slot(
-                    frame_slot, pick, pick_debug_frame_dumper,
-                    gpu_pick_readback, pick_lookup, pick_camera,
-                    pick_benchmark, resolve_hover_point_from_visible_tiles);
+                pick_system.consume_ready_frame(
+                    frame_slot,
+                    pick_lookup,
+                    pick_camera,
+                    benchmark_controller,
+                    resolve_hover_point_from_visible_tiles
+                );
             };
 
         // ponytail: screenshot staging — allocated on demand in post_pass, read
@@ -1517,8 +1487,7 @@ int ViewerApp::run() {
             for (const auto& view_push : viewport_pushes) {
                 viewport_point_sizes.push_back(view_push.point_size);
             }
-            prepare_gpu_pick_requests(
-                pick,
+            pick_system.prepare_requests(
                 viewport_manager,
                 app_state,
                 gui_cmds,
@@ -1556,15 +1525,16 @@ int ViewerApp::run() {
                             .tile_gpu_cloud = tile_gpu_cloud.get(),
                             .tile_stream = tile_stream,
                             .tile_result = tile_result,
-                            .pick = pick,
-                            .gpu_pick_readback = gpu_pick_readback,
+                            .pick = pick_system.state(),
+                            .gpu_pick_readback = pick_system.gpu_readback(),
                             .pick_debug_frame_dumper =
-                                pick_debug_frame_dumper,
+                                pick_system.debug_frame_dumper(),
                             .pending_hover_miss_dump =
-                                pending_hover_miss_dump,
-                            .pick_debug_dump_count = pick_debug_dump_count,
+                                pick_system.pending_hover_miss_dump(),
+                            .pick_debug_dump_count =
+                                pick_system.debug_dump_count(),
                             .pick_debug_dump_completed =
-                                pick_debug_dump_completed,
+                                pick_system.debug_dump_completed(),
                             .lod_level_for_frame = lod_level_for_frame,
                             .interacting = interacting,
                             .benchmark_pick_enabled = benchmark_pick_enabled,
