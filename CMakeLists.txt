@@ -256,6 +256,7 @@ add_library(gs3d_app STATIC
 
     src/app/ViewerApp.cpp
     src/app/ViewerDatasetSession.cpp
+    src/app/ViewerAppStateInitialization.cpp
     src/app/ViewerAppViewport.cpp
     src/app/ViewerAppPicking.cpp
     src/app/ViewerAppRenderView.cpp
@@ -287,6 +288,7 @@ add_library(gs3d_app STATIC
 
     include/app/ViewerApp.hpp
     include/app/ViewerDatasetSession.hpp
+    include/app/ViewerAppStateInitialization.hpp
     include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
     include/app/BenchmarkSession.hpp
@@ -695,6 +697,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewerDatasetSession
         COMMAND GeoScatter3DViewerDatasetSessionTests
+    )
+
+    add_executable(GeoScatter3DViewerAppStateInitializationTests
+        tests/ViewerAppStateInitializationTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerAppStateInitializationTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerAppStateInitializationTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerAppStateInitialization
+        COMMAND GeoScatter3DViewerAppStateInitializationTests
     )
 
     add_executable(GeoScatter3DTileStreamingTests

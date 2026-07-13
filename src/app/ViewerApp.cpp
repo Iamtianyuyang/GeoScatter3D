@@ -1,6 +1,7 @@
 #include "app/ViewerApp.hpp"
 #include "util/Log.hpp"
 #include "app/ViewerDatasetSession.hpp"
+#include "app/ViewerAppStateInitialization.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
@@ -108,18 +109,6 @@ gs3d::core::Bounds3f make_dataset_bounds(
         dataset.bbox_max_y(),
         dataset.bbox_max_z()
     };
-}
-
-std::string format_bounds_label(
-    const gs3d::core::Bounds3f& bounds
-) {
-    return
-        "[" + std::to_string(bounds.min_x) + ", " +
-        std::to_string(bounds.min_y) + ", " +
-        std::to_string(bounds.min_z) + "] -> [" +
-        std::to_string(bounds.max_x) + ", " +
-        std::to_string(bounds.max_y) + ", " +
-        std::to_string(bounds.max_z) + "]";
 }
 
 gs3d::render::SwapchainPresentModeHint benchmark_present_mode_hint(
@@ -835,88 +824,21 @@ int ViewerApp::run() {
         auto& viewport_scene_states = viewport_presentation.scenes();
         auto& viewport_height_exags =
             viewport_presentation.height_exaggerations();
-        gs3d::app::AppState app_state;
-        app_state.dataset.active_dataset = dataset_descriptor.display_name;
-        app_state.dataset.path = dataset_descriptor.path;
-        app_state.dataset.format = dataset_descriptor.format;
-        app_state.dataset.point_count = dataset_descriptor.point_count;
-        app_state.dataset.loaded_points = dataset_descriptor.point_count;
-        app_state.dataset.file_size = dataset_descriptor.file_size;
-        app_state.dataset.bounding_box =
-            format_bounds_label(dataset_descriptor.bounds);
-        app_state.dataset.dataset_tree = dataset_descriptor.dataset_tree;
-        app_state.dataset.attributes.clear();
-        app_state.dataset.tile_details.clear();
-        if (tile_reader.has_value()) {
-            const auto tile_stats = tile_reader->stats();
-            app_state.dataset.tile_details = {
-                "状态：已启用",
-                "瓦片数：" + std::to_string(tile_stats.tile_count),
-                "瓦片内点数：" +
-                    std::to_string(tile_stats.total_point_count),
-                "瓦片数据：" +
-                    std::to_string(tile_stats.total_point_bytes / 1024 / 1024) +
-                    " MB",
-                tile_stream.preload_enabled
-                    ? "加载方式：全量预加载"
-                    : "加载方式：按需流式"
-            };
-        } else {
-            app_state.dataset.tile_details = {"状态：未启用"};
-        }
-        app_state.dataset.lod_details.clear();
-        if (!lod_dataset.empty()) {
-            app_state.dataset.lod_details.push_back(
-                "状态：已启用（" +
-                std::to_string(lod_dataset.level_count()) + " 层）"
-            );
-            for (std::size_t i = 0; i < lod_dataset.level_count(); ++i) {
-                const auto& level = lod_dataset.level(i);
-                app_state.dataset.lod_details.push_back(
-                    level.name + "：" +
-                    std::to_string(level.target_point_count) + " 点"
-                );
-            }
-        } else {
-            app_state.dataset.lod_details = {"状态：未启用"};
-        }
-        app_state.render_settings.height_by_options.clear();
-        app_state.render_settings.color_by_options.clear();
-        for (const auto& attr : attr_list) {
-            app_state.dataset.attributes.push_back(attr.name);
-            app_state.render_settings.height_by_options.push_back(attr.name);
-            app_state.render_settings.color_by_options.push_back(attr.name);
-        }
-        const auto viewport_state_count =
+        const std::size_t viewport_state_count =
             static_cast<std::size_t>(viewport_manager.viewport_count());
-        app_state.render_settings_by_view.assign(
+        const ViewerAppStateInitializationInput initial_state_input{
+            dataset_descriptor,
+            attr_list,
+            lod_dataset,
+            tile_reader,
+            tile_stream.preload_enabled,
             viewport_state_count,
-            app_state.render_settings
-        );
-        app_state.navigation_maps.resize(viewport_state_count);
-        app_state.measurements.resize(viewport_state_count);
-        app_state.region_stats_by_view.resize(viewport_state_count);
-        app_state.render_views.resize(
-            viewport_state_count
-        );
-        const int startup_view_count =
-            std::clamp(config_.window.viewport_count, 1, kMaxViewportCount);
-        for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
-            auto& view =
-                app_state.render_views[static_cast<std::size_t>(i)];
-            view.viewport_index = i;
-            view.visible = i < startup_view_count;
-            view.camera_linked = false;
-        }
+            config_.window.viewport_count,
+            config_.benchmark.enabled
+        };
+        AppState app_state =
+            make_initial_viewer_app_state(initial_state_input);
         viewport_presentation.initialize_visibility(app_state);
-        if (config_.benchmark.enabled) {
-            app_state.panels.dataset = false;
-            app_state.panels.render_settings = false;
-            app_state.panels.debug_log = false;
-            app_state.panels.tile_inspector = false;
-            app_state.panels.lod_view = false;
-            app_state.panels.performance = false;
-        }
 
         app_state.logo_texture = logo_texture.descriptor();
 
