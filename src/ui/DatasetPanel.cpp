@@ -89,18 +89,88 @@ void draw_dataset_panel(
             if (ImGui::TreeNodeEx("当前数据集",
                                   ImGuiTreeNodeFlags_DefaultOpen |
                                       ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                for (const auto& item : dataset_state.dataset_tree) {
-                    ImGui::TextWrapped("%s", item.c_str());
+                if (ImGui::TreeNodeEx(
+                        "数据概览",
+                        ImGuiTreeNodeFlags_DefaultOpen |
+                            ImGuiTreeNodeFlags_SpanAvailWidth
+                    )) {
+                    ImGui::TextDisabled("名称");
+                    ImGui::SameLine();
+                    ImGui::TextWrapped(
+                        "%s",
+                        dataset_state.active_dataset.c_str()
+                    );
+                    ImGui::TextDisabled("点数");
+                    ImGui::SameLine();
+                    ImGui::Text(
+                        "%llu",
+                        static_cast<unsigned long long>(
+                            dataset_state.point_count
+                        )
+                    );
+                    ImGui::TextDisabled("格式");
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(dataset_state.format.c_str());
+                    ImGui::TextDisabled("路径");
+                    ImGui::TextWrapped(
+                        "%s",
+                        dataset_state.path.c_str()
+                    );
+                    ImGui::TreePop();
+                }
+                if (ImGui::TreeNodeEx(
+                        "瓦片",
+                        ImGuiTreeNodeFlags_DefaultOpen |
+                            ImGuiTreeNodeFlags_SpanAvailWidth
+                    )) {
+                    if (dataset_state.tile_details.empty()) {
+                        ImGui::TextDisabled("当前数据集未启用瓦片流式加载");
+                    } else {
+                        ImGui::Text(
+                            "当前：%u 已加载 / %u 等待",
+                            state.performance.loaded_tiles,
+                            state.performance.pending_tiles
+                        );
+                        for (const auto& detail : dataset_state.tile_details) {
+                            ImGui::TextWrapped("%s", detail.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNodeEx(
+                        "细节层级",
+                        ImGuiTreeNodeFlags_DefaultOpen |
+                            ImGuiTreeNodeFlags_SpanAvailWidth
+                    )) {
+                    if (dataset_state.lod_details.empty()) {
+                        ImGui::TextDisabled("当前数据集未启用细节层级");
+                    } else {
+                        ImGui::TextUnformatted(state.performance.lod_mode.c_str());
+                        for (const auto& detail : dataset_state.lod_details) {
+                            ImGui::TextWrapped("%s", detail.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNodeEx(
+                        "属性",
+                        ImGuiTreeNodeFlags_DefaultOpen |
+                            ImGuiTreeNodeFlags_SpanAvailWidth
+                    )) {
+                    ImGui::Text(
+                        "共 %zu 个属性",
+                        dataset_state.attributes.size()
+                    );
+                    for (const auto& attribute : dataset_state.attributes) {
+                        ImGui::Bullet();
+                        ImGui::SameLine(0.0f, 6.0f * scale);
+                        ImGui::TextWrapped("%s", attribute.c_str());
+                    }
+                    ImGui::TreePop();
                 }
                 ImGui::TreePop();
-            }
-            ImGui::Spacing();
-            // 命名与右侧「属性」(渲染设置) 面板区分开
-            draw_panel_section_label("数据属性");
-            for (const auto& attribute : dataset_state.attributes) {
-                ImGui::Bullet();
-                ImGui::SameLine(0.0f, 6.0f * scale);
-                ImGui::TextWrapped("%s", attribute.c_str());
             }
             ImGui::Spacing();
             draw_panel_section_label("文件信息");

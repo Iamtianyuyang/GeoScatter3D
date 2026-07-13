@@ -1161,6 +1161,40 @@ int ViewerApp::run() {
             format_bounds_label(dataset_descriptor.bounds);
         app_state.dataset.dataset_tree = dataset_descriptor.dataset_tree;
         app_state.dataset.attributes.clear();
+        app_state.dataset.tile_details.clear();
+        if (tile_reader.has_value()) {
+            const auto tile_stats = tile_reader->stats();
+            app_state.dataset.tile_details = {
+                "状态：已启用",
+                "瓦片数：" + std::to_string(tile_stats.tile_count),
+                "瓦片内点数：" +
+                    std::to_string(tile_stats.total_point_count),
+                "瓦片数据：" +
+                    std::to_string(tile_stats.total_point_bytes / 1024 / 1024) +
+                    " MB",
+                tile_stream.preload_enabled
+                    ? "加载方式：全量预加载"
+                    : "加载方式：按需流式"
+            };
+        } else {
+            app_state.dataset.tile_details = {"状态：未启用"};
+        }
+        app_state.dataset.lod_details.clear();
+        if (!lod_dataset.empty()) {
+            app_state.dataset.lod_details.push_back(
+                "状态：已启用（" +
+                std::to_string(lod_dataset.level_count()) + " 层）"
+            );
+            for (std::size_t i = 0; i < lod_dataset.level_count(); ++i) {
+                const auto& level = lod_dataset.level(i);
+                app_state.dataset.lod_details.push_back(
+                    level.name + "：" +
+                    std::to_string(level.target_point_count) + " 点"
+                );
+            }
+        } else {
+            app_state.dataset.lod_details = {"状态：未启用"};
+        }
         app_state.render_settings.height_by_options.clear();
         app_state.render_settings.color_by_options.clear();
         for (const auto& attr : attr_list) {

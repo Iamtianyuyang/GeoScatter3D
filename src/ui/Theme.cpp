@@ -30,29 +30,29 @@ ImVec4 to_linear(const ImVec4& c)
     return c;
 }
 
-// ── 方案 A：碳蓝 · Modern SaaS（现有主题，白表面 + IBM Carbon 蓝）────
+// ── 方案 A：碳蓝 · 浅色测绘（冷白表面 + 克制蓝）────────────────────
 constexpr ThemeTokens kCarbonBlue{
     .id = "carbon-blue",
-    .name = "碳蓝 · Modern SaaS",
+    .name = "碳蓝 · 浅色测绘",
     .dark = false,
 
-    .bg = rgb(0xF9FAFB),
-    .text = rgb(0x161616),
-    .text_dim = rgb(0x6F6F6F),
-    .text_faint = rgb(0xA0A0A0),
+    .bg = rgb(0xF5F7FA),
+    .text = rgb(0x17212B),
+    .text_dim = rgb(0x4D5C6B),
+    .text_faint = rgb(0x758397),
     .menu_bg = rgb(0xFFFFFF),
-    .surface = rgb(0xFFFFFF),
-    .surface_hover = rgb(0xF7F8FA),
-    .frame = rgb(0xF9FAFB),
-    .frame_hover = rgb(0xECEDF0),
-    .border = rgb(0xE8EAED),
+    .surface = rgb(0xFBFCFD),
+    .surface_hover = rgb(0xF0F4F8),
+    .frame = rgb(0xF4F7FA),
+    .frame_hover = rgb(0xE8EEF5),
+    .border = rgb(0xCAD4DF),
 
-    .accent = rgb(0x0F62FE),
-    .accent_active = rgb(0x0B4ECB),
+    .accent = rgb(0x2176D2),
+    .accent_active = rgb(0x175EAA),
     .on_accent = rgb(0xFFFFFF),
 
     .green = rgb(0x24A148),
-    .blue = rgb(0x0F62FE),
+    .blue = rgb(0x2176D2),
     .purple = rgb(0xA26EC4),
     .yellow = rgb(0xF1C21B),
     .teal = rgb(0x4EC9B0),
@@ -62,7 +62,7 @@ constexpr ThemeTokens kCarbonBlue{
     .red = rgb(0xF44747),
 
     .viewport_bg = rgb(0x1A1D23),
-    .viewport_border = rgb(0x2A3038),
+    .viewport_border = rgb(0x35404D),
 
     .scrollbar_grab = rgb(0xC8CDD3),
     .scrollbar_grab_hovered = rgb(0xB0B5BD),
@@ -81,25 +81,25 @@ constexpr ThemeTokens kCarbonBlue{
     .tab_rounding = 6.0f,
 };
 
-// ── 方案 B：石墨 · Deep Graphite（暗色 DCC 工作台 + 亮蓝）────────────
+// ── 方案 B：石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）──────────────────
 constexpr ThemeTokens kDeepGraphite{
     .id = "deep-graphite",
-    .name = "石墨 · Deep Graphite",
+    .name = "石墨 · 深色测绘",
     .dark = true,
 
-    .bg = rgb(0x171A20),
-    .text = rgb(0xE8ECF2),
-    .text_dim = rgb(0x8B96A6),
-    .text_faint = rgb(0x6E7B8D),
-    .menu_bg = rgb(0x1C2128),
-    .surface = rgb(0x1E232A),
-    .surface_hover = rgb(0x252B33),
-    .frame = rgb(0x181B21),
-    .frame_hover = rgb(0x282E38),
-    .border = rgb(0x3A4350),
+    .bg = rgb(0x10151C),
+    .text = rgb(0xF1F5FA),
+    .text_dim = rgb(0xB9C5D3),
+    .text_faint = rgb(0x8E9BAA),
+    .menu_bg = rgb(0x151B23),
+    .surface = rgb(0x1C2430),
+    .surface_hover = rgb(0x273343),
+    .frame = rgb(0x121923),
+    .frame_hover = rgb(0x293746),
+    .border = rgb(0x526274),
 
-    .accent = rgb(0x4D9FFF),
-    .accent_active = rgb(0x3B8BEC),
+    .accent = rgb(0x5BA7F7),
+    .accent_active = rgb(0x3487DD),
     .on_accent = rgb(0x0A1526),
 
     .green = rgb(0x4FC98D),
@@ -109,19 +109,19 @@ constexpr ThemeTokens kDeepGraphite{
     .teal = rgb(0x4EC9B0),
     .var_blue = rgb(0x8AB6FF),
     .orange = rgb(0xE0A375),
-    .gray = rgb(0x707C8C),
+    .gray = rgb(0x8190A1),
     .red = rgb(0xF26D76),
 
-    .viewport_bg = rgb(0x12151A),
-    .viewport_border = rgb(0x2A313C),
+    .viewport_bg = rgb(0x0D1218),
+    .viewport_border = rgb(0x374554),
 
-    .scrollbar_grab = rgb(0x3E4855),
-    .scrollbar_grab_hovered = rgb(0x4E5A6A),
-    .scrollbar_grab_active = rgb(0x5F6E82),
-    .tab_dimmed = rgb(0x1C2028),
+    .scrollbar_grab = rgb(0x4A596A),
+    .scrollbar_grab_hovered = rgb(0x5C6E82),
+    .scrollbar_grab_active = rgb(0x71859B),
+    .tab_dimmed = rgb(0x171E27),
 
-    .button_alpha = 0.30f,
-    .button_hover_alpha = 0.55f,
+    .button_alpha = 0.26f,
+    .button_hover_alpha = 0.48f,
 
     .window_rounding = 6.0f,
     .child_rounding = 3.0f,
@@ -132,47 +132,47 @@ constexpr ThemeTokens kDeepGraphite{
     .tab_rounding = 4.0f,
 };
 
-// ── 方案 C：仪器 · Instrument Amber（墨绿灰 + 琥珀，直角仪表感）──────
+// ── 方案 C：仪器 · 琥珀测绘（中性深灰 + 低饱和琥珀）──────────────────
 constexpr ThemeTokens kInstrumentAmber{
     .id = "instrument-amber",
-    .name = "仪器 · Instrument Amber",
+    .name = "仪器 · 琥珀测绘",
     .dark = true,
 
-    .bg = rgb(0x181D1A),
-    .text = rgb(0xE7EDE4),
-    .text_dim = rgb(0x8C998A),
-    .text_faint = rgb(0x6E7C69),
-    .menu_bg = rgb(0x131711),
-    .surface = rgb(0x1E2420),
-    .surface_hover = rgb(0x262E29),
-    .frame = rgb(0x141812),
-    .frame_hover = rgb(0x2A332D),
-    .border = rgb(0x3E4A40),
+    .bg = rgb(0x151914),
+    .text = rgb(0xF5F4EC),
+    .text_dim = rgb(0xC6C7B9),
+    .text_faint = rgb(0x969B8D),
+    .menu_bg = rgb(0x191E18),
+    .surface = rgb(0x222821),
+    .surface_hover = rgb(0x2E382C),
+    .frame = rgb(0x121712),
+    .frame_hover = rgb(0x303B2E),
+    .border = rgb(0x596653),
 
-    .accent = rgb(0xFFB000),
-    .accent_active = rgb(0xE09B00),
-    .on_accent = rgb(0x201500),
+    .accent = rgb(0xE8AF3A),
+    .accent_active = rgb(0xCC8D14),
+    .on_accent = rgb(0x1C1608),
 
     .green = rgb(0x7AD05B),
     .blue = rgb(0x6FB1FF),
     .purple = rgb(0xB48EDC),
-    .yellow = rgb(0xF1C21B),
+    .yellow = rgb(0xE8AF3A),
     .teal = rgb(0x4EC9B0),
     .var_blue = rgb(0x9CC3FF),
     .orange = rgb(0xD89A72),
-    .gray = rgb(0x77836F),
+    .gray = rgb(0x87917F),
     .red = rgb(0xF0655A),
 
-    .viewport_bg = rgb(0x101412),
-    .viewport_border = rgb(0x2D362F),
+    .viewport_bg = rgb(0x0E120E),
+    .viewport_border = rgb(0x3A4537),
 
-    .scrollbar_grab = rgb(0x404C44),
-    .scrollbar_grab_hovered = rgb(0x505E55),
-    .scrollbar_grab_active = rgb(0x617266),
-    .tab_dimmed = rgb(0x1A1F1C),
+    .scrollbar_grab = rgb(0x4C5848),
+    .scrollbar_grab_hovered = rgb(0x60705A),
+    .scrollbar_grab_active = rgb(0x76866E),
+    .tab_dimmed = rgb(0x1B211A),
 
-    .button_alpha = 0.25f,
-    .button_hover_alpha = 0.50f,
+    .button_alpha = 0.28f,
+    .button_hover_alpha = 0.48f,
 
     .window_rounding = 2.0f,
     .child_rounding = 1.0f,
@@ -276,7 +276,9 @@ void apply_theme(ThemeId id, float ui_scale)
     // property editing. Keep these metrics theme-independent so switching
     // palettes never makes the workspace jump or controls change size.
     style.Alpha = 1.0f;
-    style.DisabledAlpha = 0.42f;
+    // 标题、标签和只读值在项目树与属性面板中大量使用 TextDisabled。
+    // 过低的 alpha 会在深色底上看似“消失”，因此保留足够的阅读对比。
+    style.DisabledAlpha = 0.70f;
     style.WindowPadding = ImVec2(10.0f * ui_scale, 9.0f * ui_scale);
     style.FramePadding = ImVec2(8.0f * ui_scale, 4.5f * ui_scale);
     style.ItemSpacing = ImVec2(8.0f * ui_scale, 7.0f * ui_scale);
@@ -310,7 +312,7 @@ void apply_theme(ThemeId id, float ui_scale)
     colors[ImGuiCol_WindowBg] = t.bg;
     colors[ImGuiCol_ChildBg] = t.surface;
     colors[ImGuiCol_PopupBg] = t.surface;
-    colors[ImGuiCol_Border] = with_alpha(t.border, 0.50f);
+    colors[ImGuiCol_Border] = with_alpha(t.border, t.dark ? 0.72f : 0.62f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
     // 输入框/下拉底色保持中性，交互态才引入 accent
@@ -389,9 +391,8 @@ void apply_theme(ThemeId id, float ui_scale)
         colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
-    // 交换链是 B8G8R8A8_SRGB：硬件把 shader 输出当线性值再编码。上面的
-    // 颜色按 sRGB 十六进制值书写，必须整体预转换到线性空间，屏幕上才
-    // 显示为书写的原值（否则整个 UI 被提亮冲淡）。alpha 不转换。
+    // 交换链使用 UNORM，ThemeTokens 的十六进制色值即为最终显示色；
+    // 保留统一入口，供将来切换颜色管线时集中处理。
     for (int i = 0; i < ImGuiCol_COUNT; ++i) {
         colors[i] = to_linear(colors[i]);
     }

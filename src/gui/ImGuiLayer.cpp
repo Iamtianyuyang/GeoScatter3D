@@ -584,8 +584,8 @@ void ImGuiLayer::init(
     style.ScrollbarSize = 11.0f * ui_scale;
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
-    // 主题（颜色 + 圆角）统一由 Theme 模块落地：重写 ImGuiStyle 颜色表、
-    // palette:: 语义色，并做 sRGB→linear 预转换（交换链是 B8G8R8A8_SRGB）。
+    // 主题（颜色 + 圆角）统一由 Theme 模块落地：重写 ImGuiStyle 颜色表与
+    // palette:: 语义色；当前 UNORM 交换链直接使用主题定义的显示色。
     // 启动主题来自 viewer.toml，运行期可经 视图→主题 菜单随时切换。
     gs3d::ui::apply_theme(gs3d::ui::active_theme(), ui_scale);
 

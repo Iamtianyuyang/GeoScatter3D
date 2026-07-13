@@ -68,6 +68,10 @@ struct DatasetSummaryState {
         "value",
         "z"
     };
+    // 由 ViewerApp 在载入数据后写入，项目树直接展示真实数据，
+    // 而不是只有没有内容的占位节点。
+    std::vector<std::string> tile_details;
+    std::vector<std::string> lod_details;
     std::array<char, 128> search_text{};
     int selected_tab = 0;
 };

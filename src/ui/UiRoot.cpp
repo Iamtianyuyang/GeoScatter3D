@@ -483,6 +483,17 @@ void push_application_menu_style(float ui_scale)
         ImGuiCol_MenuBarBg,
         to_u32(palette::kMenuBg, 255)
     );
+    // The application menu sits directly below the native title bar. Keep
+    // its foreground explicit so each dark theme remains legible even when
+    // a platform backend supplies a light non-client frame.
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        to_u32(palette::kText, 255)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_TextDisabled,
+        to_u32(palette::kTextDim, 255)
+    );
     ImGui::PushStyleColor(
         ImGuiCol_PopupBg,
         to_u32(palette::kSurface, 255)
@@ -515,7 +526,7 @@ void push_application_menu_style(float ui_scale)
 
 void pop_application_menu_style()
 {
-    ImGui::PopStyleColor(8);
+    ImGui::PopStyleColor(10);
     ImGui::PopStyleVar(6);
 }
 
@@ -695,7 +706,7 @@ void draw_tools_window(
     }
 
     ImGui::SetNextWindowSize(
-        ImVec2(420.0f, 68.0f * ui_scale),
+        ImVec2(500.0f * ui_scale, 68.0f * ui_scale),
         ImGuiCond_FirstUseEver
     );
     const ImGuiWindowFlags flags =
@@ -728,14 +739,14 @@ void draw_tools_window(
             ImVec2(6.0f, 4.0f)
         );
 
+        ImGui::TextDisabled("操作");
+        ImGui::SameLine();
         const bool can_add_view = has_hidden_view(state);
         ImGui::BeginDisabled(!can_add_view);
-        if (widgets::Chip("+ 视图")) {
-            if (workspace != nullptr) {
-                add_view_to_workspace(state, *workspace);
-            } else {
-                show_first_hidden_view(state);
-            }
+        if (widgets::Chip("添加视图")) {
+            // Match Ctrl+N exactly: reveal the first available viewport
+            // without changing workspace ownership or docking.
+            show_first_hidden_view(state);
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -751,7 +762,7 @@ void draw_tools_window(
         }
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x >
-            200.0f * ui_scale) {
+            190.0f * ui_scale) {
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
                 to_u32(palette::kTextDim, 190)
@@ -817,18 +828,24 @@ void draw_viewport_window(
         (window_viewport != nullptr &&
          window_viewport->ID != ImGui::GetMainViewport()->ID);
 
+    const float toolbar_scale = ImGui::GetFontSize() / 13.0f;
     ImGui::PushStyleVar(
         ImGuiStyleVar_FramePadding,
-        ImVec2(LayoutMetrics::kViewportToolbarFramePadX,
-               LayoutMetrics::kViewportToolbarFramePadY)
+        ImVec2(
+            LayoutMetrics::kViewportToolbarFramePadX * toolbar_scale,
+            LayoutMetrics::kViewportToolbarFramePadY * toolbar_scale
+        )
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_ItemSpacing,
-        ImVec2(LayoutMetrics::kViewportToolbarGap, 4.0f)
+        ImVec2(
+            LayoutMetrics::kViewportToolbarGap * toolbar_scale,
+            4.0f * toolbar_scale
+        )
     );
-    ImGui::TextDisabled(
-        view.detached ? "独立窗口" : "工作区"
-    );
+    // Keep the essential navigation controls on one compact row. Colour
+    // editing lives in a popup so the toolbar never consumes canvas height.
+    ImGui::TextDisabled(view.detached ? "独立窗口" : "视图");
     ImGui::SameLine();
     if (widgets::Chip("复位视角")) {
         actions.reset_camera_index = view.viewport_index;
@@ -836,6 +853,7 @@ void draw_viewport_window(
     ImGui::SameLine();
     widgets::Checkbox("联动相机", &view.camera_linked);
     ImGui::SameLine();
+
     if (widgets::Checkbox("地图轴", &view.show_map_axis)) {
         if (view.show_map_axis) {
             view.show_world_axis = false;
@@ -855,57 +873,57 @@ void draw_viewport_window(
         }
     }
     ImGui::SameLine();
-    {
-        ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
-        float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
-        ImGui::SetNextItemWidth(22.0f);
-        if (ImGui::ColorEdit4("##CrosshairColor", ch_arr,
-                ImGuiColorEditFlags_NoInputs |
-                ImGuiColorEditFlags_NoLabel)) {
-            view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
-                ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3]));
+    if (widgets::Chip("准星样式")) {
+        ImGui::OpenPopup("##ReticleStyle");
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("调整十字准线和拾取准星颜色");
+    }
+    if (ImGui::BeginPopup("##ReticleStyle")) {
+        ImGui::TextUnformatted("十字准线");
+        if (view.show_crosshair) {
+            ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
+            float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
+            if (ImGui::ColorEdit4(
+                    "颜色##CrosshairColor",
+                    ch_arr,
+                    ImGuiColorEditFlags_NoInputs
+                )) {
+                view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
+                    ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3])
+                );
+            }
+            ImGui::SameLine();
+            if (widgets::Chip("恢复默认##Crosshair")) {
+                view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+            }
+        } else {
+            ImGui::TextDisabled("先启用十字准线后可设置颜色");
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("十字准线颜色");
-    }
-    ImGui::SameLine();
-    if (widgets::Chip("十字颜色")) {
-        view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-    }
-    ImGui::SameLine();
-    {
+        ImGui::Separator();
+        ImGui::TextUnformatted("拾取准星");
         ImVec4 rt = ImGui::ColorConvertU32ToFloat4(view.reticle_color);
         float rt_arr[4] = {rt.x, rt.y, rt.z, rt.w};
-        ImGui::SetNextItemWidth(22.0f);
-        if (ImGui::ColorEdit4("##ReticleColor", rt_arr,
-                ImGuiColorEditFlags_NoInputs |
-                ImGuiColorEditFlags_NoLabel)) {
+        if (ImGui::ColorEdit4(
+                "颜色##ReticleColor",
+                rt_arr,
+                ImGuiColorEditFlags_NoInputs
+            )) {
             view.reticle_color = ImGui::ColorConvertFloat4ToU32(
-                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3]));
+                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3])
+            );
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("拾取准星颜色");
-    }
-    ImGui::SameLine();
-    if (widgets::Chip("准星颜色")) {
-        view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-    }
-    const char* long_hint =
-        "左键旋转  右键平移  滚轮光标缩放  "
-        "双击定轴  F聚焦  Ctrl+左键框选";
-    const char* short_hint = "左键旋转  右键平移  滚轮缩放  F聚焦";
-    ImGui::SameLine();
-    const float hint_space = ImGui::GetContentRegionAvail().x;
-    const char* hint = nullptr;
-    if (hint_space >= ImGui::CalcTextSize(long_hint).x) {
-        hint = long_hint;
-    } else if (hint_space >= ImGui::CalcTextSize(short_hint).x) {
-        hint = short_hint;
-    }
-    if (hint != nullptr) {
+        ImGui::SameLine();
+        if (widgets::Chip("恢复默认##Reticle")) {
+            view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+        }
+        ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 175));
-        ImGui::TextUnformatted(hint);
+        ImGui::TextUnformatted(
+            "左键旋转 · 右键平移 · 滚轮缩放 · F 聚焦"
+        );
         ImGui::PopStyleColor();
-    } else {
-        ImGui::NewLine();
+        ImGui::EndPopup();
     }
     ImGui::PopStyleVar(2);
     ImGui::Separator();
@@ -2251,11 +2269,17 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
 gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 {
     gs3d::app::UiActions actions;
+    ThemeId requested_theme = active_theme();
+    bool theme_change_requested = false;
     // UI scale for high-DPI chrome (toolbar / status bar heights). Same
     // definition as the per-viewport scale in draw_render_view: font size
     // relative to the 13px baseline. Does NOT feed the render-size chain.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;
     prune_workspace_windows(state);
+    if (ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+        actions.open_requested = true;
+    }
     if (ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
@@ -2282,6 +2306,12 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImGuiStyleVar_WindowPadding,
         ImVec2(0.0f, 0.0f)
     );
+    // ImGui 在 Begin() 内绘制菜单栏底色；必须在 Begin() 前覆盖
+    // MenuBarBg，深色主题才不会出现浅色菜单底配浅色文字的情况。
+    ImGui::PushStyleColor(
+        ImGuiCol_MenuBarBg,
+        to_u32(palette::kMenuBg, 255)
+    );
 
     constexpr bool render_workspace = true;
     if (ImGui::Begin(kHostWindowName, nullptr, host_flags)) {
@@ -2294,8 +2324,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         if (menu_bar_visible) {
             if (ImGui::BeginMenu("文件")) {
                 draw_menu_section_label("文件操作");
-                if (ImGui::MenuItem("打开数据")) {
+                if (ImGui::MenuItem("打开数据文件…", "Ctrl+O")) {
                     actions.open_requested = true;
+                }
+                if (ImGui::MenuItem("打开 GS3D Bundle 项目…")) {
+                    actions.open_bundle_requested = true;
                 }
                 if (ImGui::MenuItem("截图")) {
                     actions.screenshot_requested = true;
@@ -2332,13 +2365,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                                 selected
                             ) &&
                             !selected) {
-                            // 立即重写 ImGuiStyle 与 palette::，本帧剩余
-                            // 控件即以新主题绘制，无需等下一帧。圆角基准
-                            // 用字体系统的权威 ui_scale，与 init 时一致。
-                            apply_theme(
-                                id,
-                                gs3d::gui::ui_fonts().ui_scale
-                            );
+                            // 此处仍处在菜单颜色压栈范围内。若立即应用主题，
+                            // PopStyleColor 会把 Text 等颜色恢复成旧主题，
+                            // 造成“亮色自绘控件 + 黑色原生文字”的混合状态。
+                            requested_theme = id;
+                            theme_change_requested = true;
                         }
                     }
                     ImGui::EndMenu();
@@ -2439,7 +2470,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             );
         }
         pop_application_menu_style();
-
         {
             ImDrawList* host_dl = ImGui::GetWindowDrawList();
             const float content_avail_y =
@@ -2501,7 +2531,16 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(3);
+    if (theme_change_requested) {
+        // 所有临时样式均已出栈，再整体替换主题。后续面板在本帧即可
+        // 使用一致的 ImGuiStyle 与 palette 颜色。
+        apply_theme(
+            requested_theme,
+            gs3d::gui::ui_fonts().ui_scale
+        );
+    }
 
     if (render_workspace) {
         draw_tools_window(state, actions, ui_scale);

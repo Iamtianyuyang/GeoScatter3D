@@ -293,6 +293,13 @@ void apply_open_request(
     }
 
     const auto extension = request.path.extension().string();
+    if (extension == ".gs3d" || extension == ".GS3D") {
+        app_config.input_mode = "gs3d";
+        app_config.viewer.gs3d_path = request.path;
+        app_config.csv_input_path.clear();
+        app_config.bundle_dir.clear();
+        return;
+    }
     app_config.input_mode =
         extension == ".dat" || extension == ".DAT"
             ? "dat"

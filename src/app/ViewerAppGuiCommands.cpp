@@ -4,11 +4,13 @@
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
 #include "data/Gs3dDataset.hpp"
+#include "platform/NativeFileDialog.hpp"
 #include "platform/Window.hpp"
 #include "render/PointPipeline.hpp"
 #include "scene/SceneState.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 
 namespace gs3d::app {
@@ -122,7 +124,12 @@ void ViewerApp::apply_project_open_commands(
     const UiActions& gui_cmds,
     gs3d::platform::Window& window
 ) {
-    if (!gui_cmds.open_project_path.empty()) {
+    if (gui_cmds.show_welcome_requested) {
+        open_request_ = ViewerOpenRequest{
+            .kind = ViewerOpenRequestKind::Welcome
+        };
+        window.request_close();
+    } else if (!gui_cmds.open_project_path.empty()) {
         open_request_ = ViewerOpenRequest{
             .kind = ViewerOpenRequestKind::Project,
             .path = gui_cmds.open_project_path
@@ -134,6 +141,36 @@ void ViewerApp::apply_project_open_commands(
             .path = gui_cmds.open_raw_data_path
         };
         window.request_close();
+    } else if (gui_cmds.open_bundle_requested) {
+        const auto result = gs3d::platform::choose_project_directory();
+        if (!result.error.empty()) {
+            std::cerr << "[OPEN] " << result.error << '\n';
+        } else if (result.path.has_value()) {
+            std::error_code ec;
+            const auto manifest_path = *result.path / "manifest.toml";
+            if (!std::filesystem::is_regular_file(manifest_path, ec)) {
+                std::cerr
+                    << "[OPEN] 请选择包含 manifest.toml 的 "
+                    << ".gs3d.bundle 项目目录。\n";
+            } else {
+                open_request_ = ViewerOpenRequest{
+                    .kind = ViewerOpenRequestKind::Project,
+                    .path = *result.path
+                };
+                window.request_close();
+            }
+        }
+    } else if (gui_cmds.open_requested) {
+        const auto result = gs3d::platform::choose_raw_data_file();
+        if (!result.error.empty()) {
+            std::cerr << "[OPEN] " << result.error << '\n';
+        } else if (result.path.has_value()) {
+            open_request_ = ViewerOpenRequest{
+                .kind = ViewerOpenRequestKind::RawData,
+                .path = *result.path
+            };
+            window.request_close();
+        }
     }
 }
 
