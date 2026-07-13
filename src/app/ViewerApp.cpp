@@ -4,6 +4,7 @@
 #include "app/ViewerDatasetDescriptor.hpp"
 #include "app/ViewerBenchmarkController.hpp"
 #include "app/ViewerKeyboardShortcutSystem.hpp"
+#include "app/ViewerCameraFrameSystem.hpp"
 #include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
@@ -259,13 +260,6 @@ std::string format_vec3_text(const gs3d::camera::Vec3& value)
     );
     return buf;
 }
-namespace {
-
-constexpr double kInteractingDebounceSeconds = 0.15;
-
-} // namespace
-
-
 ViewerApp::ViewerApp(ViewerAppConfig config)
     : config_(std::move(config))
 {
@@ -569,11 +563,6 @@ int ViewerApp::run() {
         );
         auto& tile_stream = tile_streaming.state();
 
-        // Debounce interacting so rapid scroll zoom doesn't cause
-        // frame-by-frame toggling (tiles pop in/out, LOD clip flicker).
-        auto interacting_debounce_until =
-            std::chrono::steady_clock::now();
-
         const auto resolve_hover_point_from_visible_tiles =
             [&tile_stream](
                 std::size_t view_index,
@@ -647,6 +636,9 @@ int ViewerApp::run() {
             config_.input.z_field_name
         );
         ViewerKeyboardShortcutSystem keyboard_shortcuts;
+        ViewerCameraFrameSystem camera_frame_system(
+            std::chrono::milliseconds(150)
+        );
         ViewerRenderSettingsSystem render_settings;
         const auto& primary_value_name = attribute_mapping.primary_value_name();
         const auto& z_field_name = attribute_mapping.z_field_name();
@@ -1078,51 +1070,27 @@ int ViewerApp::run() {
             };
             keyboard_shortcuts.process(shortcut_context);
 
-            bool interacting = false;
-            bool camera_changed = false;
-            for (const auto& frame : gui_cmds.viewport_frames) {
-                if (!viewport_cameras.contains(frame.index)) {
-                    continue;
-                }
-
-                if ((frame.hovered || frame.active) &&
-                    streaming_viewport_index != frame.index) {
-                    streaming_viewport_index = frame.index;
-                    tile_selection_dirty = true;
-                }
-
-                const auto camera_update = viewport_cameras.update(
-                    frame,
-                    viewport_manager.camera(frame.index)
-                );
-                interacting = interacting || camera_update.interacting;
-                if (camera_update.camera_changed) {
-                    camera_changed = true;
-                    streaming_viewport_index = frame.index;
-                    camera_hub.propagate(frame.index);
-                }
-            }
-
-            if (!benchmark_pick_enabled &&
-                benchmark_session.should_orbit()) {
-                // Orbit + a slow zoom-in so the visible region actually
-                // shrinks — a pure yaw orbit at a fixed distance can leave
-                // the whole bbox in view the entire time, never forcing a
-                // different tile selection, which would starve the reload-
-                // latency measurement below.
-                auto& bench_camera =
-                    viewport_manager.camera(streaming_viewport_index);
-                bench_camera.orbit(0.01f, 0.0f);
-                bench_camera.zoom(0.999f);
-                camera_hub.propagate(streaming_viewport_index);
-                interacting = true;
-                camera_changed = true;
-            }
+            const ViewerCameraFrameContext camera_context{
+                .viewport_frames = gui_cmds.viewport_frames,
+                .viewport_cameras = viewport_cameras,
+                .viewport_manager = viewport_manager,
+                .camera_hub = camera_hub,
+                .streaming_viewport_index = streaming_viewport_index,
+                .benchmark_orbit =
+                    !benchmark_pick_enabled && benchmark_session.should_orbit(),
+                .current_time = current_time
+            };
+            const auto camera_frame = camera_frame_system.update(
+                camera_context
+            );
+            streaming_viewport_index = camera_frame.streaming_viewport_index;
+            const bool interacting = camera_frame.interacting;
+            const bool camera_changed = camera_frame.camera_changed;
 
             benchmark_camera_update_ms_frame =
                 benchmark_camera_timer.elapsed_milliseconds();
 
-            if (camera_changed) {
+            if (camera_frame.streaming_viewport_changed || camera_changed) {
                 tile_selection_dirty = true;
             }
 
@@ -1133,33 +1101,6 @@ int ViewerApp::run() {
                         benchmark_lod_tile_timer.elapsed_milliseconds();
                     benchmark_lod_tile_timer.reset();
                 };
-
-            /*
-             * Debounce the interacting signal so rapid scroll zoom doesn't
-             * cause frame-by-frame oscillation between true/false. Without
-             * this, fast mouse-wheel scrolling produces frames where
-             * scroll_y is 0 between discrete wheel events, briefly flipping
-             * interacting to false.  That would:
-             *   - toggle tiles on then off (tile_will_render)
-             *   - toggle LOD clip bbox on then off
-             *   - trigger tile selection update mid-scroll
-             * …all of which cause visible flicker.
-             *
-             * The debounce keeps interacting=true for kInteractingDebounceSeconds
-             * after the last real interacting frame, bridging the gaps between
-             * discrete scroll events.
-             */
-            if (interacting) {
-                interacting_debounce_until =
-                    current_time +
-                    std::chrono::milliseconds(
-                        static_cast<long>(
-                            kInteractingDebounceSeconds * 1000.0
-                        )
-                    );
-            } else if (current_time < interacting_debounce_until) {
-                interacting = true;
-            }
 
             if (config_.lod.enabled) {
                 lod_selector.update(
