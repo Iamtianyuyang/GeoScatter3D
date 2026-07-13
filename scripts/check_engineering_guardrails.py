@@ -38,7 +38,7 @@ LINE_BUDGETS = {
     "src/app/ViewerApp.cpp": 1240,
     "ViewerApp::run()": 969,
     "src/ui/UiRoot.cpp": 2250,
-    "src/app/AppConfig.cpp": 1369,
+    "src/app/AppConfig.cpp": 763,
 }
 
 

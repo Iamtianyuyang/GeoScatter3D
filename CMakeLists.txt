@@ -217,6 +217,7 @@ target_link_libraries(gs3d_viewport_lod PUBLIC
 add_library(gs3d_app_support STATIC
     src/app/AppConfig.cpp
     src/app/AppConfigValidation.cpp
+    src/app/AppConfigViewerToml.cpp
     src/app/BenchmarkSession.cpp
     src/app/PreprocessedBundle.cpp
     src/app/RecentProjects.cpp
@@ -328,6 +329,8 @@ add_library(gs3d_app STATIC
     include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
     include/app/AppConfigValidation.hpp
+    include/app/AppConfigTomlValue.hpp
+    include/app/AppConfigViewerToml.hpp
     include/app/BenchmarkSession.hpp
     include/app/PreprocessedBundle.hpp
     include/app/RecentProjects.hpp

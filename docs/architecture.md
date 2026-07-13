@@ -135,13 +135,14 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewerLodFrameSystem`；pick 就绪帧轮询及其查找/相机桥接已收归
    `ViewerPickSystem`；帧间隔、FPS 平滑和排除 present acquire 等待后的 LOD 时间估算已
    提取为 `ViewerFrameClock`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
-   CTest 的工程护栏会校验上述行数，并以 1240 / 969 / 2250 / 1369 行分别作为
+   CTest 的工程护栏会校验上述行数，并以 1240 / 969 / 2250 / 763 行分别作为
    `ViewerApp.cpp` / `run()` / `UiRoot.cpp` / `AppConfig.cpp` 的非回归上限；
    后续重构只能压低这些上限，不能靠改风险数字掩盖增长。
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
    benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
-   `ViewerApp` 重新成为配置耦合中心。`AppConfigValidation` 会在创建渲染资源前拒绝
-   无效的窗口、相机、LOD、tile 预算和 UNORM 清屏色配置。
+   `ViewerApp` 重新成为配置耦合中心。`AppConfigViewerToml` 已按 TOML section 解析
+   viewer/runtime 域，loader 只编排输入、CSV 与路径解析；`AppConfigValidation` 会在
+   创建渲染资源前拒绝无效的窗口、相机、LOD、tile 预算和 UNORM 清屏色配置。
    `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`；大坐标/极小步长的 minor tick 生成已提取为可单测的
    `ViewportAxisTicks`，但其余 ImGui 绘制代码仍需要继续分拆。

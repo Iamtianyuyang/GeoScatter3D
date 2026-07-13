@@ -1,5 +1,7 @@
 #include "app/AppConfig.hpp"
+#include "app/AppConfigTomlValue.hpp"
 #include "app/AppConfigValidation.hpp"
+#include "app/AppConfigViewerToml.hpp"
 #include "util/Log.hpp"
 #include "app/ResourcePath.hpp"
 
@@ -263,186 +265,6 @@ void resolve_viewer_resource_paths(
     }
 }
 
-[[nodiscard]]
-std::filesystem::path path_or_default(
-    const toml::table& table,
-    std::string_view key,
-    const std::filesystem::path& default_value
-) {
-    if (const auto value = table[key].value<std::string>()) {
-        return std::filesystem::path(*value);
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-std::string string_or_default(
-    const toml::table& table,
-    std::string_view key,
-    const std::string& default_value
-) {
-    if (const auto value = table[key].value<std::string>()) {
-        return *value;
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-bool bool_or_default(
-    const toml::table& table,
-    std::string_view key,
-    bool default_value
-) {
-    if (const auto value = table[key].value<bool>()) {
-        return *value;
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-unsigned int uint_or_default(
-    const toml::table& table,
-    std::string_view key,
-    unsigned int default_value
-) {
-    if (const auto value = table[key].value<std::int64_t>()) {
-        if (*value < 0) {
-            throw std::runtime_error(
-                "AppConfig: unsigned integer field is negative"
-            );
-        }
-
-        return static_cast<unsigned int>(*value);
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-std::uint64_t uint64_or_default(
-    const toml::table& table,
-    std::string_view key,
-    std::uint64_t default_value
-) {
-    if (const auto value = table[key].value<std::int64_t>()) {
-        if (*value < 0) {
-            throw std::runtime_error(
-                "AppConfig: uint64 field is negative"
-            );
-        }
-
-        return static_cast<std::uint64_t>(*value);
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-float float_or_default(
-    const toml::table& table,
-    std::string_view key,
-    float default_value
-) {
-    if (const auto value = table[key].value<double>()) {
-        return static_cast<float>(*value);
-    }
-
-    if (const auto value = table[key].value<std::int64_t>()) {
-        return static_cast<float>(*value);
-    }
-
-    return default_value;
-}
-
-[[nodiscard]]
-std::array<float, 3> float3_or_default(
-    const toml::table& table,
-    std::string_view key,
-    const std::array<float, 3>& default_value
-) {
-    const auto* array = table[key].as_array();
-
-    if (!array) {
-        return default_value;
-    }
-
-    if (array->size() != 3) {
-        throw std::runtime_error(
-            "AppConfig: expected array with 3 values"
-        );
-    }
-
-    std::array<float, 3> result{};
-
-    for (std::size_t i = 0; i < 3; ++i) {
-        const auto node = array->get(i);
-
-        if (!node) {
-            throw std::runtime_error(
-                "AppConfig: invalid float3 array element"
-            );
-        }
-
-        if (const auto value = node->value<double>()) {
-            result[i] = static_cast<float>(*value);
-        } else if (const auto value = node->value<std::int64_t>()) {
-            result[i] = static_cast<float>(*value);
-        } else {
-            throw std::runtime_error(
-                "AppConfig: float3 array contains non-numeric value"
-            );
-        }
-    }
-
-    return result;
-}
-
-[[nodiscard]]
-std::array<float, 4> float4_or_default(
-    const toml::table& table,
-    std::string_view key,
-    const std::array<float, 4>& default_value
-) {
-    const auto* array = table[key].as_array();
-
-    if (!array) {
-        return default_value;
-    }
-
-    if (array->size() != 4) {
-        throw std::runtime_error(
-            "AppConfig: expected array with 4 values"
-        );
-    }
-
-    std::array<float, 4> result{};
-
-    for (std::size_t i = 0; i < 4; ++i) {
-        const auto node = array->get(i);
-
-        if (!node) {
-            throw std::runtime_error(
-                "AppConfig: invalid float4 array element"
-            );
-        }
-
-        if (const auto value = node->value<double>()) {
-            result[i] = static_cast<float>(*value);
-        } else if (const auto value = node->value<std::int64_t>()) {
-            result[i] = static_cast<float>(*value);
-        } else {
-            throw std::runtime_error(
-                "AppConfig: float4 array contains non-numeric value"
-            );
-        }
-    }
-
-    return result;
-}
-
 } // namespace
 
 AppConfig AppConfigLoader::load_from_file(
@@ -464,25 +286,25 @@ AppConfig AppConfigLoader::load_from_file(
     AppConfig config;
 
     if (const auto* input = root["input"].as_table()) {
-        config.input_mode = string_or_default(
+        config.input_mode = detail::string_or_default(
             *input,
             "mode",
             config.input_mode
         );
 
-        config.viewer.input.gs3d_path = path_or_default(
+        config.viewer.input.gs3d_path = detail::path_or_default(
             *input,
             "gs3d_path",
             config.viewer.input.gs3d_path
         );
 
-        config.csv_input_path = path_or_default(
+        config.csv_input_path = detail::path_or_default(
             *input,
             "csv_path",
             config.csv_input_path
         );
 
-        config.bundle_dir = path_or_default(
+        config.bundle_dir = detail::path_or_default(
             *input,
             "bundle_dir",
             config.bundle_dir
@@ -490,43 +312,43 @@ AppConfig AppConfigLoader::load_from_file(
     }
 
     if (const auto* csv_convert = root["csv_convert"].as_table()) {
-        config.csv_convert.num_threads = uint_or_default(
+        config.csv_convert.num_threads = detail::uint_or_default(
             *csv_convert,
             "num_threads",
             config.csv_convert.num_threads
         );
 
-        config.csv_convert.chunk_bytes = uint64_or_default(
+        config.csv_convert.chunk_bytes = detail::uint64_or_default(
             *csv_convert,
             "chunk_bytes",
             config.csv_convert.chunk_bytes
         );
 
-        config.csv_convert.min_parallel_file_bytes = uint64_or_default(
+        config.csv_convert.min_parallel_file_bytes = detail::uint64_or_default(
             *csv_convert,
             "min_parallel_file_bytes",
             config.csv_convert.min_parallel_file_bytes
         );
 
-        config.csv_convert.x_field = string_or_default(
+        config.csv_convert.x_field = detail::string_or_default(
             *csv_convert,
             "x_field",
             config.csv_convert.x_field
         );
 
-        config.csv_convert.y_field = string_or_default(
+        config.csv_convert.y_field = detail::string_or_default(
             *csv_convert,
             "y_field",
             config.csv_convert.y_field
         );
 
-        config.csv_convert.z_field = string_or_default(
+        config.csv_convert.z_field = detail::string_or_default(
             *csv_convert,
             "z_field",
             config.csv_convert.z_field
         );
 
-        config.csv_convert.primary_value_field = string_or_default(
+        config.csv_convert.primary_value_field = detail::string_or_default(
             *csv_convert,
             "primary_value_field",
             config.csv_convert.primary_value_field
@@ -538,436 +360,8 @@ AppConfig AppConfigLoader::load_from_file(
 
     validate_input_mode(config.input_mode);
 
-    if (const auto* shader = root["shader"].as_table()) {
-        config.viewer.graphics.vertex_shader_path = path_or_default(
-            *shader,
-            "vertex_shader_path",
-            config.viewer.graphics.vertex_shader_path
-        );
+    detail::apply_viewer_toml_sections(root, config);
 
-        config.viewer.graphics.fragment_shader_path = path_or_default(
-            *shader,
-            "fragment_shader_path",
-            config.viewer.graphics.fragment_shader_path
-        );
-    }
-
-    if (const auto* window = root["window"].as_table()) {
-        config.viewer.window.width = uint_or_default(
-            *window,
-            "width",
-            config.viewer.window.width
-        );
-
-        config.viewer.window.height = uint_or_default(
-            *window,
-            "height",
-            config.viewer.window.height
-        );
-
-        config.viewer.window.title = string_or_default(
-            *window,
-            "title",
-            config.viewer.window.title
-        );
-
-        config.viewer.window.resizable = bool_or_default(
-            *window,
-            "resizable",
-            config.viewer.window.resizable
-        );
-
-        /*
-         * ImGui docking 布局持久化文件路径；留空字符串表示不持久化
-         * （每次启动都用默认布局，不写不读 .ini）。
-         */
-        config.viewer.window.ui_layout_ini_path = path_or_default(
-            *window,
-            "ui_layout_ini_path",
-            config.viewer.window.ui_layout_ini_path
-        );
-
-        config.viewer.window.ui_scale_multiplier = float_or_default(
-            *window,
-            "ui_scale_multiplier",
-            config.viewer.window.ui_scale_multiplier
-        );
-
-        config.viewer.window.theme = string_or_default(
-            *window,
-            "theme",
-            config.viewer.window.theme
-        );
-
-        config.viewer.window.enable_multi_viewports = bool_or_default(
-            *window,
-            "multi_viewports",
-            config.viewer.window.enable_multi_viewports
-        );
-    }
-
-    if (const auto* vulkan = root["vulkan"].as_table()) {
-        config.viewer.graphics.enable_validation_layers = bool_or_default(
-            *vulkan,
-            "validation_layers",
-            config.viewer.graphics.enable_validation_layers
-        );
-    }
-
-    if (const auto* graphics = root["graphics"].as_table()) {
-        config.viewer.graphics.preferred_gpu = string_or_default(
-            *graphics,
-            "preferred_gpu",
-            config.viewer.graphics.preferred_gpu
-        );
-    }
-
-    if (const auto* render = root["render"].as_table()) {
-        config.render.clear_color = float4_or_default(
-            *render,
-            "clear_color",
-            config.render.clear_color
-        );
-
-        config.render.initial_point_size = float_or_default(
-            *render,
-            "initial_point_size",
-            config.render.initial_point_size
-        );
-    }
-
-    if (const auto* camera = root["camera"].as_table()) {
-        config.camera.mode = string_or_default(
-            *camera,
-            "mode",
-            config.camera.mode
-        );
-
-        config.camera.position = float3_or_default(
-            *camera,
-            "position",
-            config.camera.position
-        );
-
-        config.camera.target = float3_or_default(
-            *camera,
-            "target",
-            config.camera.target
-        );
-
-        config.camera.up = float3_or_default(
-            *camera,
-            "up",
-            config.camera.up
-        );
-
-        config.camera.fov_y = float_or_default(
-            *camera,
-            "fov_y",
-            config.camera.fov_y
-        );
-
-        config.camera.near_plane = float_or_default(
-            *camera,
-            "near",
-            config.camera.near_plane
-        );
-
-        config.camera.far_plane = float_or_default(
-            *camera,
-            "far",
-            config.camera.far_plane
-        );
-    }
-
-    if (const auto* controller = root["controller"].as_table()) {
-        config.controller.rotate_speed = float_or_default(
-            *controller,
-            "rotate_speed",
-            config.controller.rotate_speed
-        );
-
-        config.controller.pan_speed = float_or_default(
-            *controller,
-            "pan_speed",
-            config.controller.pan_speed
-        );
-
-        config.controller.zoom_speed = float_or_default(
-            *controller,
-            "zoom_speed",
-            config.controller.zoom_speed
-        );
-
-        config.controller.invert_rotate_x = bool_or_default(
-            *controller,
-            "invert_rotate_x",
-            config.controller.invert_rotate_x
-        );
-
-        config.controller.invert_rotate_y = bool_or_default(
-            *controller,
-            "invert_rotate_y",
-            config.controller.invert_rotate_y
-        );
-
-        config.controller.invert_pan_x = bool_or_default(
-            *controller,
-            "invert_pan_x",
-            config.controller.invert_pan_x
-        );
-
-        config.controller.invert_pan_y = bool_or_default(
-            *controller,
-            "invert_pan_y",
-            config.controller.invert_pan_y
-        );
-    }
-
-        if (const auto* lod = root["lod"].as_table()) {
-        config.viewer.lod.enabled = bool_or_default(
-            *lod,
-            "enabled",
-            config.viewer.lod.enabled
-        );
-
-        config.viewer.lod.keep_full_buffer = bool_or_default(
-            *lod,
-            "keep_full_buffer",
-            config.viewer.lod.keep_full_buffer
-        );
-        config.viewer.lod.sidecar_path = path_or_default(
-            *lod,
-            "sidecar_path",
-            config.viewer.lod.sidecar_path
-        );
-
-        config.viewer.lod.auto_load_sidecar = bool_or_default(
-            *lod,
-            "auto_load_sidecar",
-            config.viewer.lod.auto_load_sidecar
-        );
-
-        config.viewer.lod.auto_save_sidecar = bool_or_default(
-            *lod,
-            "auto_save_sidecar",
-            config.viewer.lod.auto_save_sidecar
-        );
-        
-        /*
-         * Potree 式自动分层参数（替代旧的 target_point_counts / target_point_ratios）。
-         * 最精细层由 finest_target_points 锚定，然后每层 voxel_size ×= growth_factor，
-         * 层数由数据自然决定。
-         */
-        config.viewer.lod.finest_target_points = uint64_or_default(
-            *lod,
-            "finest_target_points",
-            config.viewer.lod.finest_target_points
-        );
-
-        config.viewer.lod.growth_factor = float_or_default(
-            *lod,
-            "growth_factor",
-            config.viewer.lod.growth_factor
-        );
-
-        config.viewer.lod.min_points_per_level = uint64_or_default(
-            *lod,
-            "min_points_per_level",
-            config.viewer.lod.min_points_per_level
-        );
-
-        config.viewer.lod.voxel_mode = string_or_default(
-            *lod,
-            "voxel_mode",
-            config.viewer.lod.voxel_mode
-        );
-
-        config.viewer.lod.voxel_scale = float_or_default(
-            *lod,
-            "voxel_scale",
-            config.viewer.lod.voxel_scale
-        );
-
-        config.viewer.lod.medium_delay_seconds =
-            static_cast<double>(
-                float_or_default(
-                    *lod,
-                    "medium_delay_seconds",
-                    static_cast<float>(
-                        config.viewer.lod.medium_delay_seconds
-                    )
-                )
-            );
-
-        config.viewer.lod.high_delay_seconds =
-            static_cast<double>(
-                float_or_default(
-                    *lod,
-                    "high_delay_seconds",
-                    static_cast<float>(
-                        config.viewer.lod.high_delay_seconds
-                    )
-                )
-            );
-
-        config.viewer.lod.use_lowest_while_interacting = bool_or_default(
-            *lod,
-            "use_lowest_while_interacting",
-            config.viewer.lod.use_lowest_while_interacting
-        );
-
-        config.viewer.lod.adaptive_interacting_level = bool_or_default(
-            *lod,
-            "adaptive_interacting_level",
-            config.viewer.lod.adaptive_interacting_level
-        );
-
-        config.viewer.lod.frame_time_budget_ms =
-            static_cast<double>(
-                float_or_default(
-                    *lod,
-                    "frame_time_budget_ms",
-                    static_cast<float>(
-                        config.viewer.lod.frame_time_budget_ms
-                    )
-                )
-            );
-
-        // 交互期间显示策略:keep_stable(默认) / coarse / freeze_texture。
-        // 默认保持高质量,不在交互途中切到稀疏粗 LOD。
-        {
-            const std::string mode_str = string_or_default(
-                *lod,
-                "interactive_display_mode",
-                "keep_stable"
-            );
-            if (mode_str == "coarse" ||
-                mode_str == "allow_coarse" ||
-                mode_str == "AllowCoarseLOD") {
-                config.viewer.lod.interactive_display_mode =
-                    gs3d::app::InteractiveDisplayMode::AllowCoarseLOD;
-            } else if (mode_str == "freeze_texture" ||
-                       mode_str == "FreezeLastFrameTexture") {
-                config.viewer.lod.interactive_display_mode =
-                    gs3d::app::InteractiveDisplayMode::FreezeLastFrameTexture;
-            } else {
-                config.viewer.lod.interactive_display_mode =
-                    gs3d::app::InteractiveDisplayMode::KeepStableHighQuality;
-            }
-        }
-
-        config.viewer.lod.verbose = bool_or_default(
-            *lod,
-            "verbose",
-            config.viewer.lod.verbose
-        );
-    }
-    if (const auto* viewport = root["viewport"].as_table()) {
-        config.viewer.window.viewport_count = static_cast<int>(
-            uint_or_default(*viewport, "count",
-                static_cast<unsigned int>(config.viewer.window.viewport_count))
-        );
-    }
-
-    if (const auto* tile = root["tile"].as_table()) {
-        config.viewer.tile.enabled = bool_or_default(
-            *tile,
-            "enabled",
-            config.viewer.tile.enabled
-        );
-
-        config.viewer.tile.index_path = path_or_default(
-            *tile,
-            "index_path",
-            config.viewer.tile.index_path
-        );
-
-        config.viewer.tile.data_path = path_or_default(
-            *tile,
-            "data_path",
-            config.viewer.tile.data_path
-        );
-
-        config.viewer.tile.min_pixel_size = float_or_default(
-            *tile,
-            "min_tile_pixel_size",
-            config.viewer.tile.min_pixel_size
-        );
-
-        config.viewer.tile.max_visible_tiles = uint_or_default(
-            *tile,
-            "max_visible_tiles",
-            config.viewer.tile.max_visible_tiles
-        );
-
-        config.viewer.tile.use_full_z_range = bool_or_default(
-            *tile,
-            "use_full_z_range",
-            config.viewer.tile.use_full_z_range
-        );
-
-        config.viewer.tile.verbose = bool_or_default(
-            *tile,
-            "verbose",
-            config.viewer.tile.verbose
-        );
-
-        config.viewer.tile.gpu_cache_max_tiles = uint_or_default(
-            *tile,
-            "gpu_cache_max_tiles",
-            config.viewer.tile.gpu_cache_max_tiles
-        );
-
-        config.viewer.tile.gpu_upload_budget_bytes = uint64_or_default(
-            *tile,
-            "gpu_upload_budget_bytes",
-            config.viewer.tile.gpu_upload_budget_bytes
-        );
-
-        config.viewer.tile.cpu_cache_max_bytes = uint64_or_default(
-            *tile,
-            "cpu_cache_max_bytes",
-            config.viewer.tile.cpu_cache_max_bytes
-        );
-
-        config.viewer.tile.preload_all = bool_or_default(
-            *tile,
-            "preload_all",
-            config.viewer.tile.preload_all
-        );
-
-        config.viewer.tile.preload_max_bytes = uint64_or_default(
-            *tile,
-            "preload_max_bytes",
-            config.viewer.tile.preload_max_bytes
-        );
-
-        config.viewer.tile.preload_upload_budget_bytes = uint64_or_default(
-            *tile,
-            "preload_upload_budget_bytes",
-            config.viewer.tile.preload_upload_budget_bytes
-        );
-
-    }
-
-    if (const auto* debug = root["debug"].as_table()) {
-        config.viewer.pick_debug.dump_enabled = bool_or_default(
-            *debug,
-            "pick_debug_dump_enabled",
-            config.viewer.pick_debug.dump_enabled
-        );
-        config.viewer.pick_debug.dump_dir = path_or_default(
-            *debug,
-            "pick_debug_dump_dir",
-            config.viewer.pick_debug.dump_dir
-        );
-        config.viewer.pick_debug.dump_once_on_hover = bool_or_default(
-            *debug,
-            "pick_debug_dump_once_on_hover",
-            config.viewer.pick_debug.dump_once_on_hover
-        );
-    }
     validate_app_config(config);
     return config;
 }
