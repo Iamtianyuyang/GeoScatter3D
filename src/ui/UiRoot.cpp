@@ -9,6 +9,7 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/ViewportAxisTicks.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -840,80 +841,6 @@ void draw_viewport_window(
                 static_cast<double>(tick) + origin_offset);
         };
 
-        // ---- 辅助 lambda：生成 minor ticks ----
-        //
-        // 必须用 double + 整数索引步进：之前用 `v += minor_step` 的
-        // float 累加，在缩放视野下（如 first_major≈-14544、
-        // minor_step≈0.002）float 的精度间隙已经 >= step，循环永不
-        // 终止 → 主线程死循环 → UI 卡死。这里把迭代改成 `i * step`
-        // 索引步进，强制上限，并处理退化（range 极小而 step 极小）。
-        const auto make_minors = [](float major_step, float first_major,
-                                     float range_min, float range_max)
-            -> std::vector<float>
-        {
-            std::vector<float> minors;
-            if (major_step <= 0.0f || !std::isfinite(major_step)) {
-                return minors;
-            }
-            const float minor_step =
-                major_step / static_cast<float>(AxisStyle::kMinorPerMajor);
-            if (minor_step <= 0.0f || !std::isfinite(minor_step)) {
-                return minors;
-            }
-
-            constexpr int kMaxMinorsPerSide = 200;
-
-            const double minor_step_d = static_cast<double>(minor_step);
-            const double first_major_d = static_cast<double>(first_major);
-            const double range_min_d = static_cast<double>(range_min);
-            const double range_max_d = static_cast<double>(range_max);
-            // 阈值用 double 算，避免在边界上漏一根 / 多一根
-            const double end_threshold =
-                minor_step_d * 0.5;
-
-            // 向左（向 range_min）
-            int left_count = static_cast<int>(
-                std::floor((first_major_d - range_min_d) / minor_step_d));
-            if (left_count < 0) left_count = 0;
-            if (left_count > kMaxMinorsPerSide) left_count = kMaxMinorsPerSide;
-            minors.reserve(
-                static_cast<std::size_t>(left_count + kMaxMinorsPerSide));
-            for (int i = 1; i <= left_count; ++i) {
-                const double v = first_major_d -
-                                 static_cast<double>(i) * minor_step_d;
-                if (v <= range_min_d + end_threshold) {
-                    break;
-                }
-                minors.push_back(static_cast<float>(v));
-            }
-
-            // 向右（向 range_max）
-            int right_count = static_cast<int>(
-                std::floor((range_max_d - first_major_d) / minor_step_d));
-            if (right_count < 0) right_count = 0;
-            if (right_count > kMaxMinorsPerSide) {
-                right_count = kMaxMinorsPerSide;
-            }
-            for (int i = 1; i <= right_count; ++i) {
-                const double v = first_major_d +
-                                 static_cast<double>(i) * minor_step_d;
-                if (v >= range_max_d - end_threshold) {
-                    break;
-                }
-                minors.push_back(static_cast<float>(v));
-            }
-
-            // 退化降级：上面两侧迭代都已经有迭代上限 kMaxMinorsPerSide
-            // 作为死循环安全网。若 range_min/range_max 与 first_major
-            // 都几乎重合（极度病态视野），仍保证输出最多 2*kMaxMinorsPerSide
-            // 个 tick，且都不会让 v += step 的累加逻辑出现。
-            if (minors.size() >
-                static_cast<std::size_t>(2 * kMaxMinorsPerSide)) {
-                minors.resize(2 * kMaxMinorsPerSide);
-            }
-            return minors;
-        };
-
         // ---- X 轴（顶部）----
         if (x_range > 0.0f) {
             const auto x_major = gs3d::render::compute_axis_ticks(
@@ -970,7 +897,7 @@ void draw_viewport_window(
 
             // Minor ticks 向上
             if (x_major.size() >= 2) {
-                const auto x_minors = make_minors(
+                const auto x_minors = compute_minor_axis_ticks(
                     x_major_step, x_major.front(),
                     view.map_axis_x_min, view.map_axis_x_max);
                 for (const float tick : x_minors) {
@@ -1033,7 +960,7 @@ void draw_viewport_window(
 
             // Minor ticks 向左
             if (y_major.size() >= 2) {
-                const auto y_minors = make_minors(
+                const auto y_minors = compute_minor_axis_ticks(
                     y_major_step, y_major.front(),
                     view.map_axis_y_min, view.map_axis_y_max);
                 for (const float tick : y_minors) {

@@ -260,6 +260,7 @@ add_library(gs3d_app STATIC
     src/ui/Theme.cpp
     src/ui/Widgets.cpp
     src/ui/UiRoot.cpp
+    src/ui/ViewportAxisTicks.cpp
     src/ui/RegionStatsPanel.cpp
     src/ui/DatasetPanel.cpp
     src/ui/NavigationMapPanel.cpp
@@ -298,6 +299,7 @@ add_library(gs3d_app STATIC
     include/ui/Theme.hpp
     include/ui/Widgets.hpp
     include/ui/UiRoot.hpp
+    include/ui/ViewportAxisTicks.hpp
     include/ui/RegionStatsPanel.hpp
     include/ui/DatasetPanel.hpp
     include/ui/NavigationMapPanel.hpp
@@ -838,6 +840,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewerLodFrameSystem
         COMMAND GeoScatter3DViewerLodFrameSystemTests
+    )
+
+    add_executable(GeoScatter3DViewportAxisTicksTests
+        tests/ViewportAxisTicksTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewportAxisTicksTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewportAxisTicksTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewportAxisTicks
+        COMMAND GeoScatter3DViewportAxisTicksTests
     )
 
     add_executable(GeoScatter3DViewerFrameStateSynchronizerTests
