@@ -7,6 +7,7 @@
 #include "app/ViewerCameraFrameSystem.hpp"
 #include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/ViewerRuntimeConfiguration.hpp"
+#include "app/ViewerWorkbenchLayout.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameClock.hpp"
@@ -309,56 +310,43 @@ int ViewerApp::run() {
             config_.window.enable_multi_viewports
         );
 
-        // Size the window adaptively to the monitor, mirroring the welcome
-        // page's approach but with a wider 16:10 ratio suitable for a
-        // multi-panel workbench.
-        {
-            const float ui_scale = gs3d::gui::ui_fonts().ui_scale;
-            constexpr int kBaseOuterWidth = 1440;
-            constexpr int kMinOuterWidth = 1100;
-            constexpr float kAspect = 16.0f / 10.0f;
-
-            int outer_w = std::max(kMinOuterWidth,
-                static_cast<int>(std::lround(
-                    static_cast<float>(kBaseOuterWidth) * ui_scale)));
-
-            GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-            if (monitor != nullptr) {
-                int work_x = 0, work_y = 0, work_w = 0, work_h = 0;
-                glfwGetMonitorWorkarea(
-                    monitor, &work_x, &work_y, &work_w, &work_h);
-                if (work_w > 0 && work_h > 0) {
-                    const int w_limit = static_cast<int>(
-                        std::floor(static_cast<float>(work_w) * 0.85f));
-                    const int h_limit = static_cast<int>(
-                        std::floor(static_cast<float>(work_h) * 0.85f));
-                    const int w_from_h = static_cast<int>(
-                        std::floor(static_cast<float>(h_limit) * kAspect));
-                    outer_w = std::clamp(outer_w, kMinOuterWidth,
-                        std::max(kMinOuterWidth,
-                                 std::min(w_limit, w_from_h)));
-                }
-            }
-
-            const int outer_h = static_cast<int>(std::lround(
-                static_cast<float>(outer_w) / kAspect));
-
-            int frame_l = 0, frame_t = 0, frame_r = 0, frame_b = 0;
-            glfwGetWindowFrameSize(window.native_handle(),
-                                   &frame_l, &frame_t, &frame_r, &frame_b);
-            const int client_w = std::max(1, outer_w - frame_l - frame_r);
-            const int client_h = std::max(1, outer_h - frame_t - frame_b);
-            glfwSetWindowSize(window.native_handle(), client_w, client_h);
-
-            GLFWmonitor* center_monitor = glfwGetPrimaryMonitor();
-            if (center_monitor != nullptr) {
-                int work_x = 0, work_y = 0, work_w = 0, work_h = 0;
-                glfwGetMonitorWorkarea(center_monitor,
-                                       &work_x, &work_y, &work_w, &work_h);
-                glfwSetWindowPos(window.native_handle(),
-                                 work_x + (work_w - outer_w) / 2,
-                                 work_y + (work_h - outer_h) / 2);
-            }
+        std::optional<DesktopWorkArea> primary_work_area;
+        if (GLFWmonitor* monitor = glfwGetPrimaryMonitor(); monitor != nullptr) {
+            DesktopWorkArea work_area;
+            glfwGetMonitorWorkarea(
+                monitor,
+                &work_area.x,
+                &work_area.y,
+                &work_area.width,
+                &work_area.height
+            );
+            primary_work_area = work_area;
+        }
+        WindowFrameInsets frame_insets;
+        glfwGetWindowFrameSize(
+            window.native_handle(),
+            &frame_insets.left,
+            &frame_insets.top,
+            &frame_insets.right,
+            &frame_insets.bottom
+        );
+        const auto workbench_layout = compute_workbench_window_layout(
+            gs3d::gui::ui_fonts().ui_scale,
+            primary_work_area,
+            frame_insets
+        );
+        glfwSetWindowSize(
+            window.native_handle(),
+            workbench_layout.client_width,
+            workbench_layout.client_height
+        );
+        if (workbench_layout.outer_x.has_value() &&
+            workbench_layout.outer_y.has_value()) {
+            glfwSetWindowPos(
+                window.native_handle(),
+                *workbench_layout.outer_x,
+                *workbench_layout.outer_y
+            );
         }
 
         // 交换链是 UNORM 格式——配置里的 clear_color 按 sRGB 语义书写，

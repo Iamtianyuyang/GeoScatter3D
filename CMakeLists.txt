@@ -229,6 +229,7 @@ add_library(gs3d_app_support STATIC
     src/app/ViewportInteractionState.cpp
     src/app/ViewportPresentationState.cpp
     src/app/ViewerFrameClock.cpp
+    src/app/ViewerWorkbenchLayout.cpp
     src/app/MeasurementManager.cpp
     src/ui/WorkspaceManager.cpp
 )
@@ -344,6 +345,7 @@ add_library(gs3d_app STATIC
     include/app/ViewportResizeScheduler.hpp
     include/app/ViewportInteractionState.hpp
     include/app/ViewerFrameClock.hpp
+    include/app/ViewerWorkbenchLayout.hpp
     include/app/ViewportCameraSystem.hpp
     include/app/MeasurementManager.hpp
     include/ui/WorkspaceManager.hpp
@@ -867,6 +869,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewerRuntimeConfiguration
         COMMAND GeoScatter3DViewerRuntimeConfigurationTests
+    )
+
+    add_executable(GeoScatter3DViewerWorkbenchLayoutTests
+        tests/ViewerWorkbenchLayoutTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerWorkbenchLayout
+        COMMAND GeoScatter3DViewerWorkbenchLayoutTests
     )
 
     add_executable(GeoScatter3DViewerLodFrameSystemTests

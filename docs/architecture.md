@@ -114,7 +114,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 1180 行，其中 `ViewerApp::run()` 独占 924 行；它仍同时
+1. `ViewerApp.cpp` 当前有 1168 行，其中 `ViewerApp::run()` 独占 911 行；它仍同时
    负责缓存、GPU 上传、输入、UI 映射和渲染。数据加载、瓦片/LOD 准备和运行时点 ID
    索引已提取为可独立验证的 `ViewerDatasetSession`；UI 初始数据摘要、每视图状态和
    benchmark 面板策略已提取为 `ViewerAppStateInitialization`；属性通道与 push constant 映射
@@ -135,14 +135,15 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewerLodFrameSystem`；pick 就绪帧轮询及其查找/相机桥接已收归
    `ViewerPickSystem`；帧间隔、FPS 平滑和排除 present acquire 等待后的 LOD 时间估算已
    提取为 `ViewerFrameClock`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
-   CTest 的工程护栏会校验上述行数，并以 1180 / 924 / 2250 / 763 行分别作为
+   CTest 的工程护栏会校验上述行数，并以 1168 / 911 / 2250 / 763 行分别作为
    `ViewerApp.cpp` / `run()` / `UiRoot.cpp` / `AppConfig.cpp` 的非回归上限；
    后续重构只能压低这些上限，不能靠改风险数字掩盖增长。
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
    benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
    `ViewerApp` 重新成为配置耦合中心。`ViewerRuntimeConfiguration` 将窗口、Vulkan、
-   管线、相机、LOD 和 tile 域转换为窄运行时配置；`AppConfigViewerToml` 已按 TOML
-   section 解析 viewer/runtime 域，loader 只编排输入、CSV 与路径解析；
+   管线、相机、LOD 和 tile 域转换为窄运行时配置；首启工作台窗口几何已由可测的
+   `ViewerWorkbenchLayout` 计算；`AppConfigViewerToml` 已按 TOML section 解析
+   viewer/runtime 域，loader 只编排输入、CSV 与路径解析；
    `AppConfigValidation` 会在创建渲染资源前拒绝无效的窗口、相机、LOD、tile 预算和
    UNORM 清屏色配置。
    `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
