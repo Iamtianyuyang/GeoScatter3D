@@ -55,20 +55,6 @@ void initialize_camera_from_config(
     camera.set_orthographic(view_h, 0.01f, 1.0e7f);
 }
 
-void ViewerApp::sync_camera_link_groups(
-    const AppState& app_state,
-    gs3d::camera::CameraHub& camera_hub
-) {
-    for (const auto& view : app_state.render_views) {
-        camera_hub.set_group(
-            view.viewport_index,
-            view.camera_linked
-                ? 0
-                : gs3d::camera::CameraHub::kIndependent
-        );
-    }
-}
-
 void ViewerApp::apply_reset_camera_command(
     const UiActions& gui_cmds,
     ViewerAppCameraCommandContext& ctx

@@ -3,6 +3,7 @@
 #include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerDatasetDescriptor.hpp"
 #include "app/ViewerBenchmarkController.hpp"
+#include "app/ViewerKeyboardShortcutSystem.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
@@ -639,16 +640,12 @@ int ViewerApp::run() {
             gs3d::util::log::info() << "[OK] TileSelection initialized.\n";
         }
 
-        bool r_was_pressed = false;
-        bool f_was_pressed = false;
-        bool tab_was_pressed = false;
-        bool shift_tab_was_pressed = false;
-
         ViewerAttributeMapping attribute_mapping(
             dataset,
             config_.input.primary_value_field_name,
             config_.input.z_field_name
         );
+        ViewerKeyboardShortcutSystem keyboard_shortcuts;
         const auto& primary_value_name = attribute_mapping.primary_value_name();
         const auto& z_field_name = attribute_mapping.z_field_name();
         const auto& attr_list = attribute_mapping.descriptors();
@@ -1108,159 +1105,26 @@ int ViewerApp::run() {
                 handle_region_stats_commands(gui_cmds, app_state, rs_ctx);
             }
 
-            if (!imgui_wants_keyboard && window.key_pressed(GLFW_KEY_ESCAPE)) {
-                window.request_close();
-            }
-
-            if (!imgui_wants_keyboard) {
-                const auto active_render_index =
-                    static_cast<std::size_t>(
-                        std::clamp(
-                            streaming_viewport_index,
-                            0,
-                            static_cast<int>(viewport_pushes.size()) - 1
-                        )
-                    );
-                auto& active_push = viewport_pushes[active_render_index];
-                if (window.key_pressed(GLFW_KEY_EQUAL) ||
-                    window.key_pressed(GLFW_KEY_KP_ADD)) {
-                    active_push.point_size = std::min(
-                        active_push.point_size + 0.05f,
-                        10.0f
-                    );
-                }
-
-                if (window.key_pressed(GLFW_KEY_MINUS) ||
-                    window.key_pressed(GLFW_KEY_KP_SUBTRACT)) {
-                    active_push.point_size = std::max(
-                        active_push.point_size - 0.05f,
-                        1.0f
-                    );
-                }
-            }
-
-            const bool r_pressed =
-                keyboard_shortcuts_allowed &&
-                (window.key_pressed(GLFW_KEY_R) ||
-                 ImGui::IsKeyPressed(ImGuiKey_R, false));
-
-            if (r_pressed && !r_was_pressed) {
-                viewport_cameras.controller(streaming_viewport_index)
-                    .clear_orbit_pivot();
-                initialize_camera_from_config(
-                    viewport_manager.camera(streaming_viewport_index),
-                    config_,
-                    bounds
-                );
-                camera_hub.propagate(streaming_viewport_index);
-                tile_selection_dirty = true;
-            }
-
-            r_was_pressed = r_pressed;
-
-            const bool f_pressed =
-                keyboard_shortcuts_allowed &&
-                (window.key_pressed(GLFW_KEY_F) ||
-                 ImGui::IsKeyPressed(ImGuiKey_F, false));
-
-            if (f_pressed && !f_was_pressed) {
-                const auto focus_index =
-                    static_cast<std::size_t>(streaming_viewport_index);
-                if (focus_index < selected_focus_points.size() &&
-                    selected_focus_points[focus_index].has_value()) {
-                    viewport_cameras.controller(
-                        streaming_viewport_index
-                    ).focus_on(
-                        viewport_manager.camera(
-                            streaming_viewport_index
-                        ),
-                        *selected_focus_points[focus_index]
-                    );
-                    camera_hub.propagate(streaming_viewport_index);
-                    tile_selection_dirty = true;
-                    gs3d::util::log::info()
-                        << "[CAMERA] focused selected point in viewport "
-                        << streaming_viewport_index << '\n';
-                } else {
-                    gs3d::util::log::info()
-                        << "[CAMERA] focus skipped: no selected point in viewport "
-                        << streaming_viewport_index << '\n';
-                }
-            }
-
-            f_was_pressed = f_pressed;
-
-            // Tab: cycle color attribute; Shift+Tab: cycle height attribute
-            // (zero GPU cost — push constant only)
-            const bool tab_held =
-                !imgui_wants_keyboard && window.key_pressed(GLFW_KEY_TAB);
-            const bool shift_mod =
-                window.key_pressed(GLFW_KEY_LEFT_SHIFT) ||
-                window.key_pressed(GLFW_KEY_RIGHT_SHIFT);
-
-            if (!tab_held) {
-                tab_was_pressed = false;
-                shift_tab_was_pressed = false;
-            } else if (shift_mod && !shift_tab_was_pressed) {
-                shift_tab_was_pressed = true;
-                tab_was_pressed = true;
-                const auto active_render_index =
-                    static_cast<std::size_t>(
-                        std::clamp(
-                            streaming_viewport_index,
-                            0,
-                            static_cast<int>(viewport_pushes.size()) - 1
-                        )
-                    );
-                auto& active_scene =
-                    viewport_scene_states[active_render_index];
-                auto& active_push = viewport_pushes[active_render_index];
-                auto& active_height_exag =
-                    viewport_height_exags[active_render_index];
-                const auto n = static_cast<std::uint32_t>(attr_list.size());
-                const std::uint32_t new_idx =
-                    (static_cast<std::uint32_t>(
-                        active_scene.active_height_index) + 1u) % n;
-                active_scene.active_height_index = static_cast<int>(new_idx);
-                attribute_mapping.apply_height_to(
-                    active_push,
-                    attr_list[new_idx],
-                    active_height_exag
-                );
-                gs3d::util::log::info() << "[HEIGHT] switched to: " << attr_list[new_idx].name << '\n';
-            } else if (!tab_was_pressed) {
-                tab_was_pressed = true;
-                const auto active_render_index =
-                    static_cast<std::size_t>(
-                        std::clamp(
-                            streaming_viewport_index,
-                            0,
-                            static_cast<int>(viewport_pushes.size()) - 1
-                        )
-                    );
-                auto& active_scene =
-                    viewport_scene_states[active_render_index];
-                auto& active_push = viewport_pushes[active_render_index];
-                const auto n = static_cast<std::uint32_t>(attr_list.size());
-                const std::uint32_t new_idx =
-                    (static_cast<std::uint32_t>(
-                        active_scene.active_attribute_index) + 1u) % n;
-                active_scene.active_attribute_index = static_cast<int>(new_idx);
-                const auto& a = attr_list[new_idx];
-                active_push.color_source = static_cast<std::uint32_t>(a.source);
-                active_push.color_min    = a.min_val;
-                active_push.color_range  = a.range();
-                if (active_push.color_range <= 0.0f) {
-                    active_push.color_range = 1.0f;
-                }
-                navigation_map_for_view(
-                    app_state,
-                    static_cast<int>(active_render_index)
-                ).dirty = true;
-                gs3d::util::log::info() << "[COLOR] switched to: " << a.name << '\n';
-            }
-
-            sync_camera_link_groups(app_state, camera_hub);
+            ViewerKeyboardShortcutContext shortcut_context{
+                .window = window,
+                .imgui_wants_keyboard = imgui_wants_keyboard,
+                .keyboard_shortcuts_allowed = keyboard_shortcuts_allowed,
+                .config = config_,
+                .app_state = app_state,
+                .viewport_manager = viewport_manager,
+                .viewport_pushes = viewport_pushes,
+                .viewport_scene_states = viewport_scene_states,
+                .viewport_height_exaggerations = viewport_height_exags,
+                .attributes = attr_list,
+                .attribute_mapping = attribute_mapping,
+                .viewport_cameras = viewport_cameras,
+                .camera_hub = camera_hub,
+                .bounds = bounds,
+                .selected_focus_points = selected_focus_points,
+                .streaming_viewport_index = streaming_viewport_index,
+                .tile_selection_dirty = tile_selection_dirty
+            };
+            keyboard_shortcuts.process(shortcut_context);
 
             bool interacting = false;
             bool camera_changed = false;

@@ -233,11 +233,6 @@ private:
         ViewerAppCameraCommandContext& ctx
     );
 
-    void sync_camera_link_groups(
-        const AppState& app_state,
-        gs3d::camera::CameraHub& camera_hub
-    );
-
     void apply_project_open_commands(
         const UiActions& gui_cmds,
         gs3d::platform::Window& window
