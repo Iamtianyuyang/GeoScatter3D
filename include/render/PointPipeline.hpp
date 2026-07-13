@@ -5,7 +5,10 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <type_traits>
 
 namespace gs3d::render {
 
@@ -73,10 +76,30 @@ static_assert(
     sizeof(PointPushConstants) == 128,
     "PointPushConstants must be 128 bytes"
 );
+static_assert(
+    std::is_standard_layout_v<PointPushConstants>,
+    "PointPushConstants must remain standard-layout for Vulkan"
+);
+static_assert(offsetof(PointPushConstants, mvp) == 0,
+    "PointPushConstants: mvp must be at offset 0");
 static_assert(offsetof(PointPushConstants, clip_min)  == 64,
     "PointPushConstants: clip_min must be at offset 64");
 static_assert(offsetof(PointPushConstants, clip_max)  == 80,
     "PointPushConstants: clip_max must be at offset 80");
+static_assert(offsetof(PointPushConstants, color_min) == 96,
+    "PointPushConstants: color_min must be at offset 96");
+static_assert(offsetof(PointPushConstants, color_range) == 100,
+    "PointPushConstants: color_range must be at offset 100");
+static_assert(offsetof(PointPushConstants, height_offset) == 104,
+    "PointPushConstants: height_offset must be at offset 104");
+static_assert(offsetof(PointPushConstants, height_mult) == 108,
+    "PointPushConstants: height_mult must be at offset 108");
+static_assert(offsetof(PointPushConstants, point_size) == 112,
+    "PointPushConstants: point_size must be at offset 112");
+static_assert(offsetof(PointPushConstants, height_source) == 116,
+    "PointPushConstants: height_source must be at offset 116");
+static_assert(offsetof(PointPushConstants, color_source) == 120,
+    "PointPushConstants: color_source must be at offset 120");
 static_assert(offsetof(PointPushConstants, flags) == 124,
     "PointPushConstants: flags must be at offset 124");
 

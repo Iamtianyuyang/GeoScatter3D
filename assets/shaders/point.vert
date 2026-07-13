@@ -8,26 +8,8 @@ layout(location = 0) out float out_value;
 layout(location = 1) out vec3  out_world_pos;
 layout(location = 2) flat out uint out_point_id;
 
-/*
- * PUSH CONSTANT LAYOUT — MUST match PointPipeline.hpp byte-for-byte.
- * If you change any field or reorder them, update BOTH point.vert AND point.frag
- * to match the C++ struct AND keep the offset comments aligned.
- *
- * Offset map identical to point.frag; see point.frag for the authoritative table.
- */
-layout(push_constant) uniform PointPushConstants {
-    mat4  mvp;            // offset   0
-    vec4  clip_min;       // offset  64 — xyz = spatial clip, w = value_clip_min
-    vec4  clip_max;       // offset  80 — xyz = spatial clip, w = value_clip_max
-    float color_min;      // offset  96 — min of the selected color attribute
-    float color_range;    // offset 100 — range of the selected color attribute
-    float height_offset;  // offset 104 — height = offset + raw * mult (pre-computed on CPU)
-    float height_mult;    // offset 108
-    float point_size;     // offset 112
-    uint  height_source;  // offset 116 — AttrPhysicalSource: 0=z, 1=value, ...
-    uint  color_source;   // offset 120 — AttrPhysicalSource: 0=z, 1=value, ...
-    uint  flags;          // offset 124 — bit0=spatial_clip, bits1-7=colormap, bit8=value_clip
-} pc;
+#extension GL_GOOGLE_include_directive : require
+#include "point_push_constants.glsl"
 
 void main() {
     // ===== 高度通道：从选中的物理来源读取原始值，做 CPU 预计算的线性映射 =====

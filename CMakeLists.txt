@@ -56,11 +56,17 @@ set(GS3D_GENERATED_ASSETS_DIR
 set(GS3D_GENERATED_SHADER_DIR
     ${GS3D_GENERATED_ASSETS_DIR}/shaders
 )
+set(GS3D_SHADER_INCLUDE_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders
+)
+set(GS3D_SHADER_COMMON_HEADERS
+    ${GS3D_SHADER_INCLUDE_DIR}/point_push_constants.glsl
+)
 
 set(GS3D_SHADER_OUTPUTS)
 foreach(shader_source
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/point.vert
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/point.frag)
+        ${GS3D_SHADER_INCLUDE_DIR}/point.vert
+        ${GS3D_SHADER_INCLUDE_DIR}/point.frag)
     get_filename_component(shader_name ${shader_source} NAME)
     set(shader_output
         ${GS3D_GENERATED_SHADER_DIR}/${shader_name}.spv
@@ -71,9 +77,10 @@ foreach(shader_source
                 ${GS3D_GENERATED_SHADER_DIR}
         COMMAND ${GS3D_GLSLANG_VALIDATOR}
                 -V
+                -I${GS3D_SHADER_INCLUDE_DIR}
                 ${shader_source}
                 -o ${shader_output}
-        DEPENDS ${shader_source}
+        DEPENDS ${shader_source} ${GS3D_SHADER_COMMON_HEADERS}
         COMMENT "Compiling ${shader_name} to SPIR-V"
         VERBATIM
     )
