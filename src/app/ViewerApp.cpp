@@ -12,6 +12,7 @@
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameClock.hpp"
+#include "app/ViewerFrameRenderer.hpp"
 #include "app/ViewerFrameMetricsCollector.hpp"
 #include "app/ViewerLodFrameSystem.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
@@ -264,8 +265,6 @@ int ViewerApp::run() {
         );
         auto& benchmark_session = benchmark_controller.session();
         const bool benchmark_pick_enabled = benchmark_controller.pick_enabled();
-        auto& benchmark_pick_issue_cpu_ms = benchmark_controller.issue_cpu_ms();
-        auto& benchmark_pick_issue_metadata = benchmark_controller.issue_metadata();
         auto& benchmark_pick_results = benchmark_controller.results();
 
         ViewportCameraSystem viewport_cameras(
@@ -491,6 +490,22 @@ int ViewerApp::run() {
         // ponytail: screenshot staging — allocated on demand in post_pass, read
         // back after draw_frame. Only one screenshot at a time.
         ScreenshotService screenshot_service;
+        ViewerFrameRenderer frame_renderer(
+            window,
+            context,
+            swapchain,
+            renderer,
+            imgui_layer,
+            navigation_maps,
+            point_pipeline,
+            nav_cloud,
+            viewport_render_system,
+            pick_system,
+            pick_frame_context,
+            benchmark_controller,
+            screenshot_service,
+            dataset.bbox_max_z()
+        );
 
         while (!window.should_close() &&
                benchmark_session.should_continue()) {
@@ -801,102 +816,33 @@ int ViewerApp::run() {
                 benchmark_controller
             );
 
-            renderer.draw_frame(
-                window,
-                gs3d::render::VulkanRenderer::FrameDrawCallbacks{
-                    .frame_ready = [&](std::uint32_t frame_slot) {
-                        pick_system.consume_ready_frame_slot(
-                            frame_slot,
-                            pick_frame_context
-                        );
-                    },
-                    // pre_pass: all offscreen render passes execute here, before the
-                    // swapchain render pass starts. Each viewport records its own
-                    // vkCmdBeginRenderPass / draw / vkCmdEndRenderPass sequence into
-                    // cmd; none of them nest inside each other or the swapchain pass.
-                    .pre_pass = [&](VkCommandBuffer cmd) {
-                        navigation_maps.record_dirty_thumbnails(
-                            cmd,
-                            app_state,
-                            point_pipeline,
-                            nav_cloud,
-                            viewport_pushes,
-                            dataset.bbox_max_z()
-                        );
-
-                        ViewerViewportDrawContext draw_ctx{
-                            .visible_viewports = visible_viewports,
-                            .viewport_manager = viewport_manager,
-                            .point_pipeline = point_pipeline,
-                            .viewport_pushes = viewport_pushes,
-                            .lod_gpu_cloud = lod_gpu_cloud,
-                            .full_gpu_cloud = full_gpu_cloud,
-                            .tile_gpu_cloud = tile_gpu_cloud,
-                            .tile_stream = tile_stream,
-                            .tile_result = tile_result,
-                            .pick = pick_system.state(),
-                            .gpu_pick_readback = pick_system.gpu_readback(),
-                            .pick_debug_frame_dumper =
-                                pick_system.debug_frame_dumper(),
-                            .pending_hover_miss_dump =
-                                pick_system.pending_hover_miss_dump(),
-                            .pick_debug_dump_count =
-                                pick_system.debug_dump_count(),
-                            .pick_debug_dump_completed =
-                                pick_system.debug_dump_completed(),
-                            .lod_level_for_frame = lod_level_for_frame,
-                            .interacting = interacting,
-                            .benchmark_pick_enabled = benchmark_pick_enabled,
-                            .app_frame_index =
-                                benchmark_session.app_frame_index(),
-                            .benchmark_pick_issue_cpu_ms =
-                                benchmark_pick_issue_cpu_ms,
-                            .benchmark_pick_issue_metadata =
-                                benchmark_pick_issue_metadata
-                        };
-                        viewport_render_system.record(cmd, draw_ctx);
-                    },
-                    // in_pass: only ImGui runs in the swapchain render pass.
-                    // Each ImGui::Image() samples its viewport's offscreen texture.
-                    .in_pass = [&](VkCommandBuffer cmd) {
-                        imgui_layer.render(cmd);
-                    },
-                    // post_pass: after the swapchain render pass ends, copy
-                    // the viewport region to a staging buffer for screenshots.
-                    .post_pass = [&](VkCommandBuffer cmd, std::uint32_t image_index) {
-                        screenshot_service.record_copy(
-                            cmd,
-                            image_index,
-                            context,
-                            swapchain
-                        );
-                    }
-                }
-            );
+            const auto render_measurements = frame_renderer.render({
+                .app_state = app_state,
+                .visible_viewports = visible_viewports,
+                .viewport_manager = viewport_manager,
+                .viewport_pushes = viewport_pushes,
+                .lod_gpu_cloud = lod_gpu_cloud,
+                .full_gpu_cloud = full_gpu_cloud,
+                .tile_gpu_cloud = tile_gpu_cloud,
+                .tile_stream = tile_stream,
+                .tile_result = tile_result,
+                .lod_level_for_frame = lod_level_for_frame,
+                .interacting = interacting
+            });
             const double benchmark_draw_record_ms_frame =
-                renderer.last_draw_record_cpu_ms();
+                render_measurements.draw_record_ms;
             const double benchmark_acquire_wait_ms_frame =
-                renderer.last_acquire_wait_ms();
+                render_measurements.acquire_wait_ms;
             const double benchmark_frame_fence_wait_ms_frame =
-                renderer.last_frame_fence_wait_ms();
+                render_measurements.frame_fence_wait_ms;
             const double benchmark_upload_fence_wait_ms_frame =
-                renderer.last_upload_fence_wait_ms();
+                render_measurements.upload_fence_wait_ms;
             benchmark_cpu_frame_ms =
                 benchmark_camera_update_ms_frame +
                 benchmark_lod_tile_select_ms_frame +
                 benchmark_cpu_cull_ms_frame +
                 benchmark_upload_record_ms_frame +
                 benchmark_draw_record_ms_frame;
-            // Render ImGui platform windows (docked panels torn out to separate
-            // OS windows). Must happen outside the main render pass.
-            imgui_layer.render_platform_windows();
-            // If draw_frame() returned early (minimized / swapchain out-of-date)
-            // the draw callback was never invoked, so close the dangling ImGui frame.
-            imgui_layer.discard_frame();
-
-            // ── Screenshot PNG write ──────────────────────────────────
-            screenshot_service.write_pending(context, swapchain);
-
             // Rebuild framebuffer resources only after the user stops resizing.
             // All ready viewports share one device-idle synchronization point.
             const auto ready_resizes =

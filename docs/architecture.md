@@ -114,7 +114,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 966 行，其中 `ViewerApp::run()` 独占 771 行；它仍同时
+1. `ViewerApp.cpp` 当前有 912 行，其中 `ViewerApp::run()` 独占 716 行；它仍同时
    负责缓存、GPU 上传、输入、UI 映射和渲染。数据加载、瓦片/LOD 准备和运行时点 ID
    索引已提取为可独立验证的 `ViewerDatasetSession`；UI 初始数据摘要、每视图状态和
    benchmark 面板策略已提取为 `ViewerAppStateInitialization`；属性通道与 push constant 映射
@@ -135,7 +135,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewerLodFrameSystem`；pick 就绪帧轮询及其查找/相机桥接已收归
    `ViewerPickSystem`；帧间隔、FPS 平滑和排除 present acquire 等待后的 LOD 时间估算已
    提取为 `ViewerFrameClock`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
-   CTest 的工程护栏会校验上述行数，并以 966 / 771 / 2250 / 763 行分别作为
+   CTest 的工程护栏会校验上述行数，并以 912 / 716 / 2250 / 763 行分别作为
    `ViewerApp.cpp` / `run()` / `UiRoot.cpp` / `AppConfig.cpp` 的非回归上限；
    后续重构只能压低这些上限，不能靠改风险数字掩盖增长。
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
@@ -148,6 +148,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    viewer/runtime 域，loader 只编排输入、CSV 与路径解析；
    每视口离屏绘制、GPU pick 记录和 pick 调试策略已收归
    `ViewerViewportRenderSystem`，不再由 `ViewerApp` 直接读取 LOD 或 pick-debug 配置。
+   `ViewerFrameRenderer` 则统一执行离屏 pass、ImGui、截图读回和帧等待测量，避免主循环
+   手写跨 pass 回调和在 draw-frame 早退时遗漏 ImGui 收尾。
    `AppConfigValidation` 会在创建渲染资源前拒绝无效的窗口、相机、LOD、tile 预算和
    UNORM 清屏色配置。
    `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
