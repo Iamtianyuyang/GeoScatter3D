@@ -188,6 +188,18 @@ target_link_libraries(gs3d_render PUBLIC
     Threads::Threads
 )
 
+add_library(gs3d_viewport_lod STATIC
+    src/app/ViewportLodController.cpp
+)
+
+target_include_directories(gs3d_viewport_lod PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_viewport_lod PUBLIC
+    gs3d_render
+)
+
 add_library(gs3d_app_support STATIC
     src/app/AppConfig.cpp
     src/app/BenchmarkSession.cpp
@@ -360,6 +372,7 @@ target_include_directories(gs3d_app PUBLIC
 target_link_libraries(gs3d_app PUBLIC
     gs3d_app_support
     gs3d_viewport_camera
+    gs3d_viewport_lod
     gs3d_render
     gs3d_imgui
     glfw
@@ -606,6 +619,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewportPresentationState
         COMMAND GeoScatter3DViewportPresentationStateTests
+    )
+
+    add_executable(GeoScatter3DViewportLodControllerTests
+        tests/ViewportLodControllerTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewportLodControllerTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewportLodControllerTests PRIVATE
+        gs3d_viewport_lod
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewportLodController
+        COMMAND GeoScatter3DViewportLodControllerTests
     )
 
     add_executable(GeoScatter3DDataTests

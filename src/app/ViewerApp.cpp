@@ -9,6 +9,7 @@
 #include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewportCameraSystem.hpp"
+#include "app/ViewportLodController.hpp"
 #include "app/ViewportPresentationState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
@@ -1018,42 +1019,12 @@ int ViewerApp::run() {
         push.flags &= ~gs3d::render::PointFlags::kColormapMask;
         push.flags |= (8u << 1) & gs3d::render::PointFlags::kColormapMask;
 
-        std::size_t last_lod_level =
-             static_cast<std::size_t>(-1);
+        ViewportLodController viewport_lod;
         // Hoisted out of the loop body so report_frame_time() can pair the
         // level rendered in frame N-1 with frame N-1's measured duration
         // (delta_seconds, computed at the top of frame N) before this
         // frame reassigns it.
         std::size_t lod_level_for_frame = 0;
-
-        /*
-         * 安全网：最后一次确认可用的 LOD 级别。select_level() 理论上
-         * 永远返回有效值（LOD GPU cloud 所有级别都是启动时预上传的），
-         * 但万一出现越界或无效索引，退回到 last_valid 而不是画空帧。
-         */
-        std::size_t last_valid_lod_level = 0;
-
-        /*
-         * KeepStableHighQuality 模式下,交互期间冻结的显示档位。空闲时持续
-         * 刷新为当前稳定显示的档位(会收敛到 level 0 = 最高细节);交互开始
-         * 时锁定该值,交互途中绝不切到比它更粗的档位。lower index = 更精细。
-         */
-        std::size_t frozen_display_lod = 0;
-
-        /*
-         * 空间选层的上一帧结果（用于滞回）。初始化为 level_count
-         * 表示"无前值"，首帧不出滞回。
-         */
-        std::size_t last_spatial_level =
-            static_cast<std::size_t>(-1);
-
-        /*
-         * 交互期间冻结的空间目标层。交互中不跟踪 ortho_height 变化，
-         * 停手后才更新——与 tile 选择的 !interacting 门控语义一致，
-         * 避免缩放中 LOD 硬切导致抽稀跳变。
-         */
-        std::size_t frozen_spatial_level =
-            static_cast<std::size_t>(-1);
 
         auto previous_time =
             std::chrono::steady_clock::now();
@@ -2072,11 +2043,6 @@ int ViewerApp::run() {
             // Select LOD level once per frame (not per-viewport) so all views
             // use the same level and the verbose log fires at most once.
             if (config_.lod_enabled && lod_gpu_cloud) {
-                const auto level_count = lod_gpu_cloud->level_count();
-
-                // --- Spatial: what level does the current zoom need? ---
-                // 交互中冻结，停手后更新——与 tile 选择的 !interacting
-                // 门控语义一致，避免缩放中 LOD 硬切导致抽稀跳变。
                 const auto voxel_sizes = lod_gpu_cloud->voxel_sizes();
                 float world_per_pixel = 0.0f;
                 float spatial_ortho_h = 0.0f;
@@ -2091,118 +2057,63 @@ int ViewerApp::run() {
                     }
                 }
 
-                std::size_t spatial_level;
-                if (interacting) {
-                    // 交互中冻结：首帧正常计算，后续用冻结值
-                    if (frozen_spatial_level >= level_count) {
-                        frozen_spatial_level =
-                            gs3d::render::LodSelector::select_level_by_spacing(
-                                world_per_pixel,
-                                voxel_sizes,
-                                last_spatial_level
-                            );
+                const auto selection = viewport_lod.select(
+                    lod_selector,
+                    voxel_sizes,
+                    world_per_pixel,
+                    interacting,
+                    config_.interactive_display_mode ==
+                        gs3d::app::InteractiveDisplayMode::AllowCoarseLOD,
+                    config_.lod_high_delay_seconds
+                );
+                if (selection) {
+                    lod_level_for_frame = selection->level;
+                    if (selection->used_fallback) {
+                        gs3d::util::log::warning()
+                            << "[WARN] LOD level out of range: "
+                            << selection->requested_level
+                            << " >= " << voxel_sizes.size()
+                            << ", falling back to "
+                            << selection->fallback_level << "\n";
                     }
-                    spatial_level = frozen_spatial_level;
-                } else {
-                    // 停手后更新到当前 zoom 对应的目标层
-                    spatial_level =
-                        gs3d::render::LodSelector::select_level_by_spacing(
-                            world_per_pixel,
-                            voxel_sizes,
-                            last_spatial_level
-                        );
-                    frozen_spatial_level = spatial_level;
-                }
-                last_spatial_level = spatial_level;
 
-                // --- Temporal: existing time / frame-rate logic ---
-                const auto temporal_level =
-                    lod_selector.select_level(level_count);
-
-                // --- Combine: coarser of the two constraints ---
-                // spatial 定"当前缩放需要多精"，temporal 定"当前性能允许多精"
-                // 取 max = 更粗的那个，既是空间底线也是性能保护
-                const auto requested =
-                    std::max(spatial_level, temporal_level);
-
-                // 安全网：select_level 理论上永远返回有效值（所有 LOD
-                // 级别都在启动时一次性上传到 GPU），但万一索引越界退回到
-                // last_valid，绝不画空帧。
-                std::size_t resolved_lod;
-                if (requested < level_count) {
-                    resolved_lod = requested;
-                } else {
-                    resolved_lod = last_valid_lod_level;
-                    gs3d::util::log::warning() << "[WARN] LOD level out of range: "
-                              << requested << " >= " << level_count
-                              << ", falling back to "
-                              << last_valid_lod_level << '\n';
-                }
-
-                /*
-                 * KeepStableHighQuality: frozen 是显示质量地板，交互中锁定，
-                 * 空闲时向更精细方向更新。新增：空间缩放允许 coarsening
-                 * —— 缩小后经 high_delay 延迟才降质，防止缩放刚停就闪跳。
-                 */
-                if (config_.interactive_display_mode ==
-                        gs3d::app::InteractiveDisplayMode::AllowCoarseLOD) {
-                    lod_level_for_frame = resolved_lod;
-                } else {
-                    if (!interacting) {
-                        // 传统：temporal 改善时 frozen 跟踪到更精细
-                        if (resolved_lod < frozen_display_lod) {
-                            frozen_display_lod = resolved_lod;
+                    if (selection->changed) {
+                        if (config_.lod_verbose) {
+                            const auto& level =
+                                lod_gpu_cloud->level(lod_level_for_frame);
+                            gs3d::util::log::info() << "[LOD] active level = "
+                                      << lod_level_for_frame
+                                      << ", points = "
+                                      << level.gpu_point_count
+                                      << ", idle_seconds = "
+                                      << lod_selector.idle_seconds()
+                                      << ", ortho_h = "
+                                      << world_per_pixel
+                                      << " m/px\n";
                         }
-                        // 新增：缩小后空间缩放允许 coarsening
-                        // （仅在 idle ≥ high_delay 后，防松手瞬间跳粗）
-                        if (lod_selector.idle_seconds() >=
-                            config_.lod_high_delay_seconds) {
-                            frozen_display_lod =
-                                std::max(frozen_display_lod, spatial_level);
+
+                        if (const char* env =
+                                std::getenv("GS3D_LOD_DEBUG")) {
+                            if (env[0] == '1') {
+                                gs3d::util::log::info()
+                                    << "[LODDBG] ortho_h="
+                                    << spatial_ortho_h
+                                    << " wpix=" << world_per_pixel
+                                    << " spatial="
+                                    << selection->spatial_level
+                                    << (interacting ? "(frozen)" : "")
+                                    << " temporal="
+                                    << selection->temporal_level
+                                    << " -> level="
+                                    << lod_level_for_frame
+                                    << " frozen="
+                                    << selection->frozen_display_level
+                                    << (interacting
+                                            ? " (interacting)\n"
+                                            : " (idle)\n");
+                            }
                         }
                     }
-                    lod_level_for_frame =
-                        std::min(resolved_lod, frozen_display_lod);
-                }
-                last_valid_lod_level = lod_level_for_frame;
-
-                if (lod_level_for_frame != last_lod_level) {
-                    if (config_.lod_verbose) {
-                        const auto& level =
-                            lod_gpu_cloud->level(lod_level_for_frame);
-                        gs3d::util::log::info() << "[LOD] active level = "
-                                  << lod_level_for_frame
-                                  << ", points = "
-                                  << level.gpu_point_count
-                                  << ", idle_seconds = "
-                                  << lod_selector.idle_seconds()
-                                  << ", ortho_h = "
-                                  << world_per_pixel
-                                  << " m/px"
-                                  << '\n';
-                    }
-
-                    // 空间选层调试（GS3D_LOD_DEBUG=1）
-                    if (const char* env =
-                            std::getenv("GS3D_LOD_DEBUG")) {
-                        if (env[0] == '1') {
-                            std::fprintf(
-                                stderr,
-                                "[LODDBG] ortho_h=%.1f wpix=%.3f "
-                                "spatial=%zu%s temporal=%zu → level=%zu "
-                                "frozen=%zu %s\n",
-                                static_cast<double>(spatial_ortho_h),
-                                static_cast<double>(world_per_pixel),
-                                spatial_level,
-                                interacting ? "(frozen)" : "",
-                                temporal_level,
-                                lod_level_for_frame,
-                                frozen_display_lod,
-                                interacting ? "(interacting)" : "(idle)");
-                        }
-                    }
-
-                    last_lod_level = lod_level_for_frame;
                 }
             }
 
