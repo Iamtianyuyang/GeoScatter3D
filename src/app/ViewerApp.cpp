@@ -3,6 +3,7 @@
 #include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerDatasetDescriptor.hpp"
 #include "app/ViewerBenchmarkController.hpp"
+#include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
@@ -754,38 +755,22 @@ int ViewerApp::run() {
             save_analysis(app_state.bundle_dir, measurement);
         };
 
-        // ── 导航图缩略图：离屏预渲染到独立 framebuffer ─────────────────
-        // 尺寸/坐标映射与首帧渲染都在 init_navigation_map 里完成；
-        // 着色属性变更后由 pre_pass 里的 record_navigation_thumbnail 重渲。
-        std::vector<gs3d::render::OffscreenFramebuffer> nav_thumbnail_fbs(
-            viewport_state_count
-        );
         const auto& nav_cloud =
             lod_gpu_cloud
                 ? lod_gpu_cloud->lowest_detail().gpu_cloud
                 : *full_gpu_cloud;
-        for (std::size_t i = 0; i < app_state.navigation_maps.size(); ++i) {
-            const ViewerAppNavThumbnailContext nav_thumbnail_ctx{
-                point_pipeline,
-                nav_cloud,
-                i < viewport_pushes.size()
-                    ? viewport_pushes[i]
-                    : viewport_pushes.front(),
-                dataset.bbox_max_z()
-            };
-            init_navigation_map(
-                context,
-                renderer.command_pool(),
-                swapchain.image_format(),
-                dataset,
-                nav_thumbnail_fbs[i],
-                app_state.navigation_maps[i],
-                nav_thumbnail_ctx
-            );
-        }
-        if (!app_state.navigation_maps.empty()) {
-            app_state.navigation_map = app_state.navigation_maps.front();
-        }
+        NavigationMapSystem navigation_maps;
+        navigation_maps.initialize(
+            context,
+            renderer.command_pool(),
+            swapchain.image_format(),
+            dataset,
+            app_state,
+            point_pipeline,
+            nav_cloud,
+            viewport_pushes,
+            dataset.bbox_max_z()
+        );
 
         std::vector<int> visible_viewports;
         visible_viewports.reserve(
@@ -1020,17 +1005,7 @@ int ViewerApp::run() {
                 fill_render_views(app_state, render_ctx, pick, selected_focus_points);
             }
 
-            for (std::size_t i = 0; i < app_state.navigation_maps.size(); ++i) {
-                update_navigation_map_view_rect(
-                    app_state.navigation_maps[i],
-                    app_state.render_views,
-                    static_cast<int>(i)
-                );
-            }
-            app_state.navigation_map = navigation_map_for_view(
-                app_state,
-                app_state.active_viewport_index
-            );
+            navigation_maps.synchronize_view_rects(app_state);
             app_state.measurement = measurement_for_view(
                 app_state,
                 app_state.active_viewport_index
@@ -1562,30 +1537,14 @@ int ViewerApp::run() {
                     // vkCmdBeginRenderPass / draw / vkCmdEndRenderPass sequence into
                     // cmd; none of them nest inside each other or the swapchain pass.
                     .pre_pass = [&](VkCommandBuffer cmd) {
-                        // ── 每视图导航图缩略图重渲（着色属性变更时触发）──
-                        for (std::size_t i = 0;
-                             i < app_state.navigation_maps.size() &&
-                             i < nav_thumbnail_fbs.size();
-                             ++i) {
-                            auto& nav = app_state.navigation_maps[i];
-                            if (!nav.dirty || !nav_thumbnail_fbs[i].valid()) {
-                                continue;
-                            }
-                            const ViewerAppNavThumbnailContext nav_ctx{
-                                point_pipeline,
-                                nav_cloud,
-                                i < viewport_pushes.size()
-                                    ? viewport_pushes[i]
-                                    : viewport_pushes.front(),
-                                dataset.bbox_max_z()
-                            };
-                            record_navigation_thumbnail(
-                                cmd,
-                                nav_thumbnail_fbs[i],
-                                nav,
-                                nav_ctx
-                            );
-                        }
+                        navigation_maps.record_dirty_thumbnails(
+                            cmd,
+                            app_state,
+                            point_pipeline,
+                            nav_cloud,
+                            viewport_pushes,
+                            dataset.bbox_max_z()
+                        );
 
                         ViewerAppViewportDrawContext draw_ctx{
                             .visible_viewports = visible_viewports,

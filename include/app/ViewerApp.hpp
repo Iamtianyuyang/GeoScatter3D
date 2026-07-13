@@ -16,11 +16,7 @@
 namespace gs3d::app { struct ViewerAppTileStreamState; }
 namespace gs3d::app { struct ViewerAppTileStreamFrameContext; }
 namespace gs3d::app { class ViewerBenchmarkController; }
-namespace gs3d::data { class Gs3dDataset; }
-namespace gs3d::render { class OffscreenFramebuffer; }
 namespace gs3d::render { class ViewportManager; }
-namespace gs3d::render { class VulkanContext; }
-namespace gs3d::render { class VulkanSwapchain; }
 namespace gs3d::app { struct UiActions; }
 namespace gs3d::app { struct RenderSettingsCommand; }
 namespace gs3d::app { class ViewportResizeScheduler; }
@@ -244,12 +240,6 @@ private:
         const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
     );
 
-    void update_navigation_map_view_rect(
-        NavigationMapState& nav,
-        const std::vector<RenderViewState>& render_views,
-        int streaming_viewport_index
-    );
-
     void build_visible_viewports(
         std::vector<int>& visible_viewports,
         const std::vector<RenderViewState>& render_views
@@ -291,23 +281,6 @@ private:
         const BenchmarkFrameSamples& samples,
         VkPresentModeKHR present_mode
     ) const;
-
-    void init_navigation_map(
-        gs3d::render::VulkanContext& context,
-        VkCommandPool command_pool,
-        VkFormat color_format,
-        const gs3d::data::Gs3dDataset& dataset,
-        gs3d::render::OffscreenFramebuffer& nav_fb,
-        NavigationMapState& nav,
-        const ViewerAppNavThumbnailContext& ctx
-    );
-
-    void record_navigation_thumbnail(
-        VkCommandBuffer cmd,
-        gs3d::render::OffscreenFramebuffer& nav_fb,
-        NavigationMapState& nav,
-        const ViewerAppNavThumbnailContext& ctx
-    );
 
     void clear_tile_cpu_cache(ViewerAppTileStreamState& tiles);
 

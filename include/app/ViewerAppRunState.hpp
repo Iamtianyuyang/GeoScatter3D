@@ -88,20 +88,6 @@ struct ViewerAppCameraCommandContext {
 };
 
 /*
- * Fixed inputs for rendering the navigation-map thumbnail: the point
- * pipeline, the cloud drawn into the thumbnail (lowest LOD level, or
- * the full cloud when LOD is disabled), the live push-constant
- * template (colormap / clip flags follow the main view), and the
- * dataset's max Z for placing the top-down ortho camera.
- */
-struct ViewerAppNavThumbnailContext {
-    gs3d::render::PointPipeline& point_pipeline;
-    const gs3d::render::PointCloudGpu& nav_cloud;
-    const gs3d::render::PointPushConstants& push;
-    float dataset_bbox_max_z = 0.0f;
-};
-
-/*
  * Inputs for ViewerApp::record_viewport_passes() — the per-frame
  * offscreen render of every visible viewport (LOD safety net + active
  * LOD level or full cloud + resident tile overlay) plus GPU pick

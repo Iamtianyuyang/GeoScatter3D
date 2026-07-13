@@ -254,39 +254,6 @@ void ViewerApp::fill_render_views(
 
 }
 
-void ViewerApp::update_navigation_map_view_rect(
-    NavigationMapState& nav,
-    const std::vector<RenderViewState>& render_views,
-    int streaming_viewport_index
-) {
-    if (!nav.valid) {
-        return;
-    }
-    const auto& sv =
-        render_views[static_cast<std::size_t>(streaming_viewport_index)];
-    const float wx_min = sv.map_axis_x_min;
-    const float wx_max = sv.map_axis_x_max;
-    const float wy_min = sv.map_axis_y_min;
-    const float wy_max = sv.map_axis_y_max;
-
-    const float bbox_w = nav.bbox_max_x - nav.bbox_min_x;
-    const float bbox_h = nav.bbox_max_y - nav.bbox_min_y;
-    if (bbox_w > 0.0f && bbox_h > 0.0f) {
-        nav.view_rect_min_x =
-            (wx_min - nav.bbox_min_x) / bbox_w * nav.tex_w;
-        nav.view_rect_max_x =
-            (wx_max - nav.bbox_min_x) / bbox_w * nav.tex_w;
-        // 纹理北在上(tex_y=0)，世界 Y↑ 映射到 tex_y↓
-        nav.view_rect_min_y =
-            (1.0f - (wy_max - nav.bbox_min_y) / bbox_h) *
-            nav.tex_h;
-        nav.view_rect_max_y =
-            (1.0f - (wy_min - nav.bbox_min_y) / bbox_h) *
-            nav.tex_h;
-        nav.view_rect_valid = true;
-    }
-}
-
 void ViewerApp::build_visible_viewports(
     std::vector<int>& visible_viewports,
     const std::vector<RenderViewState>& render_views

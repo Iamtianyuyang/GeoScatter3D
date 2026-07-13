@@ -47,7 +47,7 @@ def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
     return [
         pathlib.PurePosixPath(item)
         for item in result.stdout.decode("utf-8").split("\0")
-        if item
+        if item and (root / item).is_file()
     ]
 
 
