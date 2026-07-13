@@ -8,6 +8,7 @@
 #include "app/AppState.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
+#include "app/ViewportCameraSystem.hpp"
 #include "app/ViewportInteractionState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
@@ -820,23 +821,15 @@ int ViewerApp::run() {
         controller_config.invert_pan_y =
             config_.controller_invert_pan_y;
 
-        // One controller per viewport so each can be interacted with independently.
-        std::vector<gs3d::camera::CameraController> controllers;
-        controllers.reserve(
+        ViewportCameraSystem viewport_cameras(
+            controller_config,
+            bounds,
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
-        for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
-            controllers.emplace_back(controller_config);
-            controllers.back().set_bounds(bounds);
-        }
         std::vector<std::optional<gs3d::camera::Vec3>>
             selected_focus_points(
                 static_cast<std::size_t>(viewport_manager.viewport_count())
             );
-
-        ViewportInteractionState viewport_interaction(
-            static_cast<std::size_t>(viewport_manager.viewport_count())
-        );
 
         // Views start independent. The per-view UI can opt into sync group 0.
         gs3d::camera::CameraHub camera_hub;
@@ -1289,7 +1282,7 @@ int ViewerApp::run() {
              &gpu_pick_readback,
              &runtime_points_by_id,
              &runtime_points_valid_by_id,
-             &controllers,
+             &viewport_cameras,
              &selected_focus_points,
              &viewport_manager,
              &bounds,
@@ -1307,7 +1300,7 @@ int ViewerApp::run() {
                     runtime_points_valid_by_id
                 };
                 ViewerAppPickCameraContext pick_camera{
-                    controllers,
+                    viewport_cameras.controllers(),
                     selected_focus_points,
                     viewport_manager,
                     bounds,
@@ -1839,7 +1832,7 @@ int ViewerApp::run() {
             {
                 ViewerAppCameraCommandContext cam_ctx{
                     .n_viewports = n_viewports,
-                    .controllers = controllers,
+                    .controllers = viewport_cameras.controllers(),
                     .viewport_manager = viewport_manager,
                     .camera_hub = camera_hub,
                     .bounds = bounds,
@@ -1946,9 +1939,8 @@ int ViewerApp::run() {
                  ImGui::IsKeyPressed(ImGuiKey_R, false));
 
             if (r_pressed && !r_was_pressed) {
-                controllers[
-                    static_cast<std::size_t>(streaming_viewport_index)
-                ].clear_orbit_pivot();
+                viewport_cameras.controller(streaming_viewport_index)
+                    .clear_orbit_pivot();
                 initialize_camera_from_config(
                     viewport_manager.camera(streaming_viewport_index),
                     config_,
@@ -1970,7 +1962,9 @@ int ViewerApp::run() {
                     static_cast<std::size_t>(streaming_viewport_index);
                 if (focus_index < selected_focus_points.size() &&
                     selected_focus_points[focus_index].has_value()) {
-                    controllers[focus_index].focus_on(
+                    viewport_cameras.controller(
+                        streaming_viewport_index
+                    ).focus_on(
                         viewport_manager.camera(
                             streaming_viewport_index
                         ),
@@ -2065,8 +2059,7 @@ int ViewerApp::run() {
             bool interacting = false;
             bool camera_changed = false;
             for (const auto& frame : gui_cmds.viewport_frames) {
-                if (frame.index < 0 ||
-                    frame.index >= static_cast<int>(controllers.size())) {
+                if (!viewport_cameras.contains(frame.index)) {
                     continue;
                 }
 
@@ -2076,26 +2069,12 @@ int ViewerApp::run() {
                     tile_selection_dirty = true;
                 }
 
-                gs3d::camera::CameraInput input;
-                input.viewport_width = frame.width;
-                input.viewport_height = frame.height;
-                input.delta_x = frame.mouse_delta_x;
-                input.delta_y = frame.mouse_delta_y;
-                input.scroll_y = frame.mouse_wheel;
-                input.mouse_x = frame.mouse_local_x;
-                input.mouse_y = frame.mouse_local_y;
-                input.mouse_position_valid = frame.mouse_on_image;
-                input.rotate = frame.rotate;
-                input.pan = frame.pan;
-
-                viewport_interaction.apply_rotation_gate(frame, input);
-
-                interacting = interacting || input.interacting();
-                if (controllers[static_cast<std::size_t>(frame.index)]
-                        .update(
-                            viewport_manager.camera(frame.index),
-                            input
-                        )) {
+                const auto camera_update = viewport_cameras.update(
+                    frame,
+                    viewport_manager.camera(frame.index)
+                );
+                interacting = interacting || camera_update.interacting;
+                if (camera_update.camera_changed) {
                     camera_changed = true;
                     streaming_viewport_index = frame.index;
                     camera_hub.propagate(frame.index);

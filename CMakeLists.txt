@@ -210,6 +210,20 @@ target_link_libraries(gs3d_app_support PUBLIC
     gs3d_preprocess
 )
 
+add_library(gs3d_viewport_camera STATIC
+    src/app/ViewportCameraSystem.cpp
+    include/app/ViewportCameraSystem.hpp
+)
+
+target_include_directories(gs3d_viewport_camera PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_viewport_camera PUBLIC
+    gs3d_app_support
+    gs3d_render
+)
+
 # Viewer-specific orchestration and UI. The executable and benchmark both
 # link this target, so these sources compile once per build.
 add_library(gs3d_app STATIC
@@ -267,6 +281,7 @@ add_library(gs3d_app STATIC
     include/app/TilePointCache.hpp
     include/app/ViewportResizeScheduler.hpp
     include/app/ViewportInteractionState.hpp
+    include/app/ViewportCameraSystem.hpp
     include/app/MeasurementManager.hpp
 
     include/platform/Window.hpp
@@ -339,6 +354,7 @@ target_include_directories(gs3d_app PUBLIC
 
 target_link_libraries(gs3d_app PUBLIC
     gs3d_app_support
+    gs3d_viewport_camera
     gs3d_render
     gs3d_imgui
     glfw
@@ -513,6 +529,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.Log
         COMMAND GeoScatter3DLogTests
+    )
+
+    add_executable(GeoScatter3DViewportCameraSystemTests
+        tests/ViewportCameraSystemTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewportCameraSystemTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewportCameraSystemTests PRIVATE
+        gs3d_viewport_camera
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewportCameraSystem
+        COMMAND GeoScatter3DViewportCameraSystemTests
     )
 
     add_executable(GeoScatter3DDataTests

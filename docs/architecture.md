@@ -114,10 +114,10 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 2569 行，其中 `ViewerApp::run()` 独占 2204 行；它仍同时
-   负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。逐视口旋转手势历史已提取为
-   可单测的 `ViewportInteractionState`，但主循环的其余职责边界仍不清晰，修改任何功能
-   都容易影响主循环。
+1. `ViewerApp.cpp` 当前有 2549 行，其中 `ViewerApp::run()` 独占 2182 行；它仍同时
+   负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。逐视口输入映射、旋转手势历史和
+   相机控制器已提取为可单测的 `ViewportCameraSystem`，但主循环的其余职责边界仍不清晰，
+   修改任何功能都容易影响主循环。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
    大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
    已有 v1 数据应重建为 v2，LOD/tile sidecar 也需要独立评估相同的可移植性问题。
