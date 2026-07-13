@@ -114,7 +114,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 1256 行，其中 `ViewerApp::run()` 独占 986 行；它仍同时
+1. `ViewerApp.cpp` 当前有 1240 行，其中 `ViewerApp::run()` 独占 969 行；它仍同时
    负责缓存、GPU 上传、输入、UI 映射和渲染。数据加载、瓦片/LOD 准备和运行时点 ID
    索引已提取为可独立验证的 `ViewerDatasetSession`；UI 初始数据摘要、每视图状态和
    benchmark 面板策略已提取为 `ViewerAppStateInitialization`；属性通道与 push constant 映射
@@ -133,7 +133,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewerCameraFrameSystem`；GPU/瓦片驻留、可见点、缓存和帧时序遥测已提取为
    `ViewerFrameMetricsCollector`；跨帧 LOD 显示层级、相机空间分辨率和选层诊断已提取为
    `ViewerLodFrameSystem`；pick 就绪帧轮询及其查找/相机桥接已收归
-   `ViewerPickSystem`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
+   `ViewerPickSystem`；帧间隔、FPS 平滑和排除 present acquire 等待后的 LOD 时间估算已
+   提取为 `ViewerFrameClock`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
    CTest 的工程护栏会校验上述行数，避免风险清单再次悄然过期。
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
    benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免

@@ -8,6 +8,7 @@
 #include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
+#include "app/ViewerFrameClock.hpp"
 #include "app/ViewerFrameMetricsCollector.hpp"
 #include "app/ViewerLodFrameSystem.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
@@ -657,11 +658,7 @@ int ViewerApp::run() {
         // (delta_seconds, computed at the top of frame N) before selecting
         // this frame's level.
 
-        auto previous_time =
-            std::chrono::steady_clock::now();
-
-        // Smoothed FPS via exponential moving average
-        float fps_smooth = 0.0f;
+        ViewerFrameClock frame_clock;
 
         print_controls(
                         config_.lod.enabled,
@@ -776,13 +773,8 @@ int ViewerApp::run() {
             double benchmark_upload_record_ms_frame = 0.0;
             const auto current_time =
                 std::chrono::steady_clock::now();
-
-            const double delta_seconds =
-                std::chrono::duration<double>(
-                    current_time - previous_time
-                ).count();
-
-            previous_time = current_time;
+            const auto frame_clock_tick = frame_clock.tick(current_time);
+            const double delta_seconds = frame_clock_tick.delta_seconds;
 
             pick_system.consume_ready_frames(renderer, pick_frame_context);
 
@@ -801,24 +793,16 @@ int ViewerApp::run() {
                  */
                 const double present_wait_ms =
                     renderer.last_acquire_wait_ms();
-                const double report_ms =
-                    (delta_seconds * 1000.0) - present_wait_ms;
                 lod_selector.report_frame_time(
                     lod_frame_system.current_level(),
-                    report_ms > 0.0 ? report_ms : 0.0
+                    ViewerFrameClock::estimate_render_work_milliseconds(
+                        delta_seconds,
+                        present_wait_ms
+                    )
                 );
             }
 
             window.poll_events();
-
-            // Update FPS (exponential moving average, α=0.1)
-            if (delta_seconds > 0.0) {
-                const float frame_fps =
-                    static_cast<float>(1.0 / delta_seconds);
-                fps_smooth = fps_smooth > 0.0f
-                    ? fps_smooth * 0.9f + frame_fps * 0.1f
-                    : frame_fps;
-            }
 
             const int n_viewports = viewport_manager.viewport_count();
             const ViewerFrameMetricsContext frame_metrics_context{
@@ -830,7 +814,7 @@ int ViewerApp::run() {
                 .tile_result = tile_result,
                 .tile_reader = tile_reader.has_value() ? &*tile_reader : nullptr,
                 .dataset_point_count = dataset.point_count(),
-                .fps = fps_smooth,
+                .fps = frame_clock_tick.smoothed_fps,
                 .delta_seconds = delta_seconds,
                 .camera_position = format_vec3_text(
                     viewport_manager.camera(streaming_viewport_index).position()
