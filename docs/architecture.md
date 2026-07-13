@@ -120,7 +120,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `BenchmarkSession`，逐视口渲染状态与首次显示时的状态复制已提取为
    `ViewportPresentationState`；空间/时间 LOD 合并与交互期冻结已提取为
    `ViewportLodController`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
-   `UiRoot.cpp` 仍有 2401 行；其中工作区所有权、视图分配与清理已移至可单测的
+   `UiRoot.cpp` 仍有 2353 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`，但其余 ImGui 绘制代码仍需要继续分拆。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
    大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；

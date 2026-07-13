@@ -13,10 +13,7 @@
 #include "util/Stopwatch.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <cstdio>
-#include <iostream>
 #include <utility>
 
 namespace gs3d::app {
@@ -438,87 +435,10 @@ void ViewerApp::consume_ready_pick_frame_slot(
                         continue;
                     }
 
-                    // --- diagnostic: box-select full trace ---
-                    constexpr bool kBoxFitDiag = false;  // set true to enable
-                    const auto& ac = result.request.anchor_camera;
                     const float fb_min_x = result.request.box_select_min_x;
                     const float fb_min_y = result.request.box_select_min_y;
                     const float fb_max_x = result.request.box_select_max_x;
                     const float fb_max_y = result.request.box_select_max_y;
-
-                    if (kBoxFitDiag) {
-                        const auto& bc = ac;
-                        std::fprintf(stderr,
-                            "[BOXFIT] ========================================\n");
-                        std::fprintf(stderr,
-                            "[BOXFIT] fb_rect=(%.1f,%.1f)-(%.1f,%.1f) "
-                            "fb_size=(%.1f,%.1f) fb_center=(%.1f,%.1f)\n",
-                            static_cast<double>(fb_min_x),
-                            static_cast<double>(fb_min_y),
-                            static_cast<double>(fb_max_x),
-                            static_cast<double>(fb_max_y),
-                            static_cast<double>(fb_max_x - fb_min_x),
-                            static_cast<double>(fb_max_y - fb_min_y),
-                            static_cast<double>(0.5*(fb_min_x + fb_max_x)),
-                            static_cast<double>(0.5*(fb_min_y + fb_max_y)));
-                        std::fprintf(stderr,
-                            "[BOXFIT] mouse_vp=%ux%u cam_vp=%ux%u "
-                            "plane_z=%.2f vp_idx=%d\n",
-                            mouse_viewport.width, mouse_viewport.height,
-                            ac.viewport_width(), ac.viewport_height(),
-                            static_cast<double>(plane_z),
-                            result.request.viewport_index);
-                        std::fprintf(stderr,
-                            "[BOXFIT] cam_BEFORE: pos=(%.2f,%.2f,%.2f) "
-                            "tgt=(%.2f,%.2f,%.2f) ortho_h=%.2f aspect=%.4f "
-                            "near=%.4f far=%.2f\n",
-                            static_cast<double>(bc.position().x),
-                            static_cast<double>(bc.position().y),
-                            static_cast<double>(bc.position().z),
-                            static_cast<double>(bc.target().x),
-                            static_cast<double>(bc.target().y),
-                            static_cast<double>(bc.target().z),
-                            static_cast<double>(bc.ortho_height()),
-                            static_cast<double>(bc.aspect_ratio()),
-                            static_cast<double>(bc.near_plane()),
-                            static_cast<double>(bc.far_plane()));
-
-                        // Print each corner's from_screen result
-                        const std::array<std::pair<double,double>, 4> dbg_corners{{
-                            {static_cast<double>(fb_min_x), static_cast<double>(fb_min_y)},
-                            {static_cast<double>(fb_max_x), static_cast<double>(fb_min_y)},
-                            {static_cast<double>(fb_min_x), static_cast<double>(fb_max_y)},
-                            {static_cast<double>(fb_max_x), static_cast<double>(fb_max_y)},
-                        }};
-                        const char* dbg_names[] = {"TL","TR","BL","BR"};
-                        for (int ci = 0; ci < 4; ++ci) {
-                            auto dbg_ray = gs3d::camera::MouseRay::from_screen(
-                                dbg_corners[ci].first, dbg_corners[ci].second,
-                                mouse_viewport, ac);
-                            auto dbg_hit = gs3d::camera::MouseRay::intersect_plane(
-                                dbg_ray, {0,0,ac.target().z}, {0,0,1});
-                            std::fprintf(stderr,
-                                "[BOXFIT] corner[%s] scr=(%.1f,%.1f) "
-                                "ray_org=(%.2f,%.2f,%.2f) ray_dir=(%.4f,%.4f,%.4f) "
-                                "hit_z=%.2f %s",
-                                dbg_names[ci],
-                                dbg_corners[ci].first, dbg_corners[ci].second,
-                                static_cast<double>(dbg_ray.origin.x),
-                                static_cast<double>(dbg_ray.origin.y),
-                                static_cast<double>(dbg_ray.origin.z),
-                                static_cast<double>(dbg_ray.direction.x),
-                                static_cast<double>(dbg_ray.direction.y),
-                                static_cast<double>(dbg_ray.direction.z),
-                                static_cast<double>(ac.target().z),
-                                dbg_hit ? "hit" : "miss");
-                            if (dbg_hit) std::fprintf(stderr,
-                                "=(%.2f,%.2f,%.2f)",
-                                static_cast<double>(dbg_hit->x),
-                                static_cast<double>(dbg_hit->y),
-                                static_cast<double>(dbg_hit->z));
-                            std::fprintf(stderr, "\n");
-                        }
-                    }
 
                     auto& box_camera =
                         pick_camera.viewport_manager.camera(
@@ -564,63 +484,6 @@ void ViewerApp::consume_ready_pick_frame_slot(
                         desired_ortho_h
                     );
 
-                    // --- expected box-zoom (screen-space formula) ---
-                    if (kBoxFitDiag) {
-                        const float old_ortho_h = ac.ortho_height();
-                        const float vp_w = static_cast<float>(mouse_viewport.width);
-                        const float vp_h = static_cast<float>(mouse_viewport.height);
-                        const float rect_w = fb_max_x - fb_min_x;
-                        const float rect_h = fb_max_y - fb_min_y;
-                        const float scale_x = rect_w / std::max(vp_w, 1.0f);
-                        const float scale_y = rect_h / std::max(vp_h, 1.0f);
-                        const float expected_ortho_h =
-                            old_ortho_h * std::max(scale_x, scale_y) * 1.05f;
-
-                        const float ctr_x = 0.5f*(fb_min_x + fb_max_x);
-                        const float ctr_y = 0.5f*(fb_min_y + fb_max_y);
-                        auto ctr_ray = gs3d::camera::MouseRay::from_screen(
-                            static_cast<double>(ctr_x),
-                            static_cast<double>(ctr_y),
-                            mouse_viewport, ac);
-                        auto ctr_hit = gs3d::camera::MouseRay::intersect_plane(
-                            ctr_ray, {0,0,ac.target().z}, {0,0,1});
-                        float exp_tgt_x = ac.target().x;
-                        float exp_tgt_y = ac.target().y;
-                        if (ctr_hit) {
-                            exp_tgt_x = ctr_hit->x;
-                            exp_tgt_y = ctr_hit->y;
-                        }
-
-                        std::fprintf(stderr,
-                            "[BOXFIT] EXPECTED: scale_x=%.4f scale_y=%.4f "
-                            "ortho_h=%.2f target=(%.2f,%.2f,%.2f)\n",
-                            static_cast<double>(scale_x),
-                            static_cast<double>(scale_y),
-                            static_cast<double>(expected_ortho_h),
-                            static_cast<double>(exp_tgt_x),
-                            static_cast<double>(exp_tgt_y),
-                            static_cast<double>(ac.target().z));
-                    }
-
-                    if (kBoxFitDiag) {
-                        std::fprintf(stderr,
-                            "[BOXFIT] ACTUAL:   ortho_h=%.2f "
-                            "target=(%.2f,%.2f,%.2f) "
-                            "pos=(%.2f,%.2f,%.2f) "
-                            "near=%.4f far=%.2f up=(%.2f,%.2f,%.2f)\n",
-                            static_cast<double>(desired_ortho_h),
-                            static_cast<double>(desired_target.x),
-                            static_cast<double>(desired_target.y),
-                            static_cast<double>(desired_target.z),
-                            static_cast<double>(desired_pos.x),
-                            static_cast<double>(desired_pos.y),
-                            static_cast<double>(desired_pos.z),
-                            static_cast<double>(desired_near),
-                            static_cast<double>(desired_far),
-                            static_cast<double>(desired_up.x),
-                            static_cast<double>(desired_up.y),
-                            static_cast<double>(desired_up.z));
-                    }
                     pick_camera.streaming_viewport_index =
                         result.request.viewport_index;
                     pick_camera.tile_selection_dirty = true;

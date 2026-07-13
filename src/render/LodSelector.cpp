@@ -1,7 +1,7 @@
 #include "render/LodSelector.hpp"
+#include "util/Log.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstdlib>
 
 namespace gs3d::render {
@@ -167,9 +167,10 @@ void LodSelector::report_frame_time(
         if (adaptive_level_ + 1 < static_cast<long>(last_level_count_)) {
             ++adaptive_level_; // step toward lower detail
             if (lod_debug_enabled()) {
-                std::fprintf(stderr,
-                    "[LODDBG] DROP  to level %ld (ft=%.2f ms, cooldown=%d)\n",
-                    adaptive_level_, frame_time_ms, kDropCooldownFrames);
+                gs3d::util::log::info()
+                    << "[LODDBG] DROP to level " << adaptive_level_
+                    << " (ft=" << frame_time_ms
+                    << " ms, cooldown=" << kDropCooldownFrames << ")\n";
             }
         }
         return;
@@ -186,9 +187,10 @@ void LodSelector::report_frame_time(
         if (adaptive_level_ > 0) {
             --adaptive_level_; // step toward higher detail
             if (lod_debug_enabled()) {
-                std::fprintf(stderr,
-                    "[LODDBG] CLIMB to level %ld (streak=%d, ft=%.2f ms)\n",
-                    adaptive_level_, kGoodStreakToClimb, frame_time_ms);
+                gs3d::util::log::info()
+                    << "[LODDBG] CLIMB to level " << adaptive_level_
+                    << " (streak=" << kGoodStreakToClimb
+                    << ", ft=" << frame_time_ms << " ms)\n";
             }
         }
     }

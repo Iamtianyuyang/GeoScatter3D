@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace gs3d::app {
 
@@ -178,24 +177,6 @@ void ViewerApp::fill_render_views(
                     if (screen_pt) {
                         view.hover_screen_x = screen_pt->x;
                         view.hover_screen_y = screen_pt->y;
-                        static int diag_count = 0;
-                        if (diag_count < 5) {
-                            ++diag_count;
-                            const auto idx = static_cast<std::size_t>(i);
-                            std::fprintf(stderr,
-                                "[PICK] mouse=(%.0f,%.0f) fb=%ux%u "
-                                "hit3d=(%.3f,%.3f,%.3f) "
-                                "proj_screen=(%.1f,%.1f)\n",
-                                static_cast<double>(idx < pick.latest_capture_x.size() ? pick.latest_capture_x[idx] : -1.0f),
-                                static_cast<double>(idx < pick.latest_capture_y.size() ? pick.latest_capture_y[idx] : -1.0f),
-                                camera.viewport_width(), camera.viewport_height(),
-                                static_cast<double>(hover_point->x),
-                                static_cast<double>(hover_point->y),
-                                static_cast<double>(
-                                    point_to_render_position(*hover_point).z),
-                                static_cast<double>(screen_pt->x),
-                                static_cast<double>(screen_pt->y));
-                        }
                     }
                 }
 

@@ -985,57 +985,9 @@ void draw_viewport_window(
         }
 
         // ---- Y 轴（左侧）----
-        // --- diagnostic: Y-axis visibility trace (off by default) ---
-        constexpr bool kYAxisDiag = false;  // set true to enable
-        if (kYAxisDiag) {
-            static int ydiag_count = 0;
-            if (++ydiag_count % 30 == 0) {
-                std::fprintf(stderr,
-                    "[YAXIS] frame=%d y_range=%.6f "
-                    "y_min=%.2f y_max=%.2f "
-                    "plot_y=[%.1f,%.1f] major_cnt=%d\n",
-                    ydiag_count,
-                    static_cast<double>(y_range),
-                    static_cast<double>(view.map_axis_y_min),
-                    static_cast<double>(view.map_axis_y_max),
-                    static_cast<double>(plot_min.y),
-                    static_cast<double>(plot_max.y),
-                    major_cnt);
-            }
-        }
         if (y_range > 0.0f) {
             const auto y_major = gs3d::render::compute_axis_ticks(
                 view.map_axis_y_min, view.map_axis_y_max, major_cnt);
-            if (kYAxisDiag) {
-                static int ydiag_count2 = 0;
-                if (++ydiag_count2 % 30 == 0) {
-                    std::fprintf(stderr,
-                        "[YAXIS] y_major cnt=%zu step=%.2f "
-                        "first=%.2f last=%.2f\n",
-                        y_major.size(),
-                        y_major.size() >= 2
-                            ? static_cast<double>(y_major[1] - y_major[0])
-                            : -1.0,
-                        y_major.empty()
-                            ? 0.0
-                            : static_cast<double>(y_major.front()),
-                        y_major.empty()
-                            ? 0.0
-                            : static_cast<double>(y_major.back()));
-                    for (size_t ti = 0; ti < std::min(y_major.size(), size_t{4}); ++ti) {
-                        const float t = (y_major[ti] - view.map_axis_y_min) / y_range;
-                        const float py = plot_max.y - t * (plot_max.y - plot_min.y);
-                        std::fprintf(stderr,
-                            "[YAXIS]   tick[%zu]=%.2f t=%.4f py=%.1f "
-                            "in_plot=%s\n",
-                            ti,
-                            static_cast<double>(y_major[ti]),
-                            static_cast<double>(t),
-                            static_cast<double>(py),
-                            (py >= plot_min.y && py <= plot_max.y) ? "YES" : "NO");
-                    }
-                }
-            }
             const float y_major_step = (y_major.size() >= 2)
                 ? (y_major[1] - y_major[0]) : 1.0f;
 

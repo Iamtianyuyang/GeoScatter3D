@@ -13,7 +13,6 @@
 
 #include <GLFW/glfw3.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <vector>
@@ -633,64 +632,6 @@ void ImGuiLayer::init(
         throw std::runtime_error("ImGuiLayer: failed to init ImGui Vulkan backend");
     }
 
-    // Gather diagnostics. Note: io.DisplayFramebufferScale is the ImGui
-    // default (1,1) here because the GLFW backend only updates it during
-    // ImGui_ImplGlfw_NewFrame(); we also compute the live framebuffer/window
-    // ratio so the real (upcoming) value is visible at startup.
-    const MonitorInfo monitor_info = get_window_monitor_info(window);
-    int win_w = 0;
-    int win_h = 0;
-    int fb_w = 0;
-    int fb_h = 0;
-    glfwGetWindowSize(window, &win_w, &win_h);
-    glfwGetFramebufferSize(window, &fb_w, &fb_h);
-    float glfw_content_scale = 1.0f;
-    glfwGetWindowContentScale(window, &glfw_content_scale, nullptr);
-    if (glfw_content_scale <= 0.0f) {
-        glfw_content_scale = 1.0f;
-    }
-    const float fb_ratio_x = (win_w > 0) ? static_cast<float>(fb_w) / static_cast<float>(win_w) : 1.0f;
-    const float fb_ratio_y = (win_h > 0) ? static_cast<float>(fb_h) / static_cast<float>(win_h) : 1.0f;
-    const float baseline_ppi = compute_baseline_ppi();
-
-    std::fprintf(stderr,
-        "[UI] monitor_res=%dx%d  monitor_physical=%dx%dmm  "
-        "diagonal=%.2fin  ppi=%.1f  base_ppi=%.1f  fallback=%s  "
-        "window=%dx%d  framebuffer=%dx%d  glfw_content_scale=%.2f  "
-        "ppi_ui_scale=%.3f  user_multiplier=%.2f  "
-        "final_ui_scale=%.3f (clamp %.2f..%.2f)  "
-        "regular=%.1f small=%.1f panel=%.1f axis=%.1f status=%.1f  "
-        "overlay_scale=font_derived  "
-        "oversample=1/1  glyph_range=ChineseSimplifiedCommon  "
-        "DisplayFramebufferScale=io(%.2f,%.2f) live_ratio(%.2f,%.2f)  "
-        "build_called=false  descriptor_pool_size=%u  "
-        "min_window=%dx%d\n",
-        monitor_info.resolution.width, monitor_info.resolution.height,
-        monitor_info.physical_mm.width_mm, monitor_info.physical_mm.height_mm,
-        static_cast<double>(scale_result.diagonal_inches),
-        static_cast<double>(scale_result.ppi),
-        static_cast<double>(baseline_ppi),
-        scale_result.fallback_used ? "yes(res-height)" : "no",
-        win_w, win_h,
-        fb_w, fb_h,
-        static_cast<double>(glfw_content_scale),
-        static_cast<double>(ppi_ui_scale),
-        static_cast<double>(ui_scale_multiplier),
-        static_cast<double>(final_ui_scale),
-        static_cast<double>(kMinUiScale),
-        static_cast<double>(kMaxUiScale),
-        static_cast<double>(kRegularFontSize * final_ui_scale),
-        static_cast<double>(kSmallFontSize * final_ui_scale),
-        static_cast<double>(kPanelTitleFontSize * final_ui_scale),
-        static_cast<double>(kAxisFontSize * final_ui_scale),
-        static_cast<double>(kStatusFontSize * final_ui_scale),
-        static_cast<double>(io.DisplayFramebufferScale.x),
-        static_cast<double>(io.DisplayFramebufferScale.y),
-        static_cast<double>(fb_ratio_x),
-        static_cast<double>(fb_ratio_y),
-        init_info.DescriptorPoolSize,
-        min_win_w, min_win_h);
-
     initialized_ = true;
 }
 
@@ -722,22 +663,6 @@ void ImGuiLayer::begin_frame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    // TODO(debug): 临时诊断多视口点击路由，定位副窗口输入失效
-    {
-        ImGuiContext& g = *ImGui::GetCurrentContext();
-        if (g.IO.MouseClicked[0] || g.IO.MouseReleased[0]) {
-            std::fprintf(stderr,
-                "[VPDBG] %s pos=(%.0f,%.0f) hovered_vp=%08X mouse_vp=%08X "
-                "hovered_win=%s moving_win=%s nav_win=%s\n",
-                g.IO.MouseClicked[0] ? "CLICK" : "RELEASE",
-                g.IO.MousePos.x, g.IO.MousePos.y,
-                g.IO.MouseHoveredViewport,
-                g.MouseViewport ? g.MouseViewport->ID : 0,
-                g.HoveredWindow ? g.HoveredWindow->Name : "<none>",
-                g.MovingWindow ? g.MovingWindow->Name : "<none>",
-                g.NavWindow ? g.NavWindow->Name : "<none>");
-        }
-    }
     frame_open_ = true;
 }
 
