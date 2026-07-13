@@ -186,33 +186,22 @@ std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
 );
 
 /*
- * Build the Stage-3 bounded GPU working set from sorted candidates.
+ * Build the Stage-3 GPU working set from sorted visible candidates.
  *
  *  sorted_candidates — tile IDs in priority order (projected_pixels DESC,
  *                       center_distance_sq ASC, tile_id ASC).
- *  working_set_limit — K = tile_gpu_cache_max_tiles (0 = all candidates).
+ *  working_set_limit — legacy cache capacity hint. It does not truncate the
+ *                      active viewport: visible tiles must all be resident.
  *
- * Returns the first K candidates (or all when K == 0).
+ * Returns every visible candidate in priority order.
  */
 [[nodiscard]]
 inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
     const std::vector<std::uint64_t>& sorted_candidates,
     std::uint32_t working_set_limit
 ) {
-    if (sorted_candidates.empty()) {
-        return {};
-    }
-
-    const auto K =
-        (working_set_limit == 0)
-            ? sorted_candidates.size()
-            : std::min(
-                  static_cast<std::size_t>(working_set_limit),
-                  sorted_candidates.size());
-    return {
-        sorted_candidates.begin(),
-        sorted_candidates.begin() + K
-    };
+    (void)working_set_limit;
+    return sorted_candidates;
 }
 
 /*

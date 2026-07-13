@@ -481,8 +481,9 @@ void ViewerApp::update_tile_streaming(
     }
 
     /*
-     * (Re)build the Stage 3 bounded GPU working set from sorted
-     * candidates.  K = tile_gpu_cache_max_tiles (0 = unlimited).
+     * (Re)build the Stage 3 GPU working set from sorted visible candidates.
+     * Every visible tile is required. tile_gpu_cache_max_tiles remains a
+     * residency budget for tiles outside the active viewport.
      *
      * The working set is recomputed every frame so that priority-order
      * changes (which TileSelection::same_tile_ids ignores — it uses a
@@ -493,10 +494,9 @@ void ViewerApp::update_tile_streaming(
         const auto working_set_limit =
             config_.tile_gpu_cache_max_tiles;
 
-        // Keep the GPU eviction budget synchronised with the
-        // working-set limit so that shrinking K also shrinks the
-        // resident set (via evict_to_budget inside the next
-        // sync_from_cached_tiles call).
+        // Keep the GPU eviction budget synchronised with the cache limit.
+        // Current visible tiles are pinned by sync_from_cached_tiles, so the
+        // budget can be exceeded temporarily when the viewport needs it.
         if (working_set_limit != tiles.last_working_set_limit) {
             tiles.last_working_set_limit = working_set_limit;
             ctx.tile_gpu_cloud->set_resident_tile_budget(

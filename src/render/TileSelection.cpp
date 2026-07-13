@@ -173,14 +173,11 @@ TileSelectionResult TileSelection::update(
         }
     );
 
-    const bool apply_visible_tile_cap =
-        config_.max_visible_tiles > 0 &&
-        camera.projection_mode() !=
-            gs3d::camera::ProjectionMode::Orthographic;
-    if (apply_visible_tile_cap &&
-        candidates.size() > config_.max_visible_tiles) {
-        candidates.resize(config_.max_visible_tiles);
-    }
+    // Every tile that intersects the current view is part of the active
+    // selection.  Limiting this list creates holes in the viewport, which is
+    // especially noticeable while navigating a perspective view.  The order
+    // above remains the streaming priority: larger on-screen tiles upload
+    // first, while the GPU cache budget controls residency separately.
 
     float sel_min_x = std::numeric_limits<float>::max();
     float sel_min_y = std::numeric_limits<float>::max();

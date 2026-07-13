@@ -619,11 +619,11 @@ void test_tile_selection_uses_mapped_height_space()
     );
 }
 
-void test_tile_selection_does_not_cap_orthographic_tiles()
+void test_tile_selection_does_not_cap_visible_tiles()
 {
     gs3d::camera::Camera camera;
     camera.set_viewport(400, 400);
-    camera.set_orthographic(40.0f, 0.1f, 200.0f);
+    camera.set_perspective(60.0f, 0.1f, 200.0f);
     camera.look_at(
         {15.0f, 50.0f, 5.0f},
         {15.0f, 0.0f, 5.0f},
@@ -672,7 +672,7 @@ void test_tile_selection_does_not_cap_orthographic_tiles()
 
     expect(
         result.tile_ids.size() == 2,
-        "orthographic tile selection ignores max_visible_tiles to avoid holes"
+        "visible tile selection ignores max_visible_tiles to avoid viewport holes"
     );
 }
 
@@ -2876,7 +2876,7 @@ int main()
     test_orthographic_fit_bounds_uses_true_top_down_view();
     test_tile_selection_honors_full_z_range_config();
     test_tile_selection_uses_mapped_height_space();
-    test_tile_selection_does_not_cap_orthographic_tiles();
+    test_tile_selection_does_not_cap_visible_tiles();
     test_zoom_caps_depth_ratio_for_close_large_scene();
     test_rotate_refreshes_depth_ratio();
     test_pan_refreshes_depth_ratio();
