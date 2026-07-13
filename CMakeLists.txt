@@ -284,6 +284,7 @@ add_library(gs3d_app STATIC
     src/app/ViewerFrameMetricsCollector.cpp
     src/app/ViewerLodFrameSystem.cpp
     src/app/ViewerRuntimeConfiguration.cpp
+    src/app/ViewerRenderRuntime.cpp
     src/app/ViewerFrameStateSynchronizer.cpp
     src/app/ViewerAppStateInitialization.cpp
     src/app/ViewerAppViewport.cpp
@@ -326,6 +327,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerFrameMetricsCollector.hpp
     include/app/ViewerLodFrameSystem.hpp
     include/app/ViewerRuntimeConfiguration.hpp
+    include/app/ViewerRenderRuntime.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
     include/app/ScreenshotService.hpp
     include/app/ViewerAppStateInitialization.hpp

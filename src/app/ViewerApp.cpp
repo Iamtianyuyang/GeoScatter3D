@@ -6,6 +6,7 @@
 #include "app/ViewerKeyboardShortcutSystem.hpp"
 #include "app/ViewerCameraFrameSystem.hpp"
 #include "app/ViewerRenderSettingsSystem.hpp"
+#include "app/ViewerRenderRuntime.hpp"
 #include "app/ViewerRuntimeConfiguration.hpp"
 #include "app/ViewerWorkbenchLayout.hpp"
 #include "app/NavigationMapSystem.hpp"
@@ -91,41 +92,6 @@ namespace gs3d::app {
 
 namespace {
 
-gs3d::camera::CameraBounds make_camera_bounds(
-    const gs3d::data::Gs3dDataset& dataset
-) {
-    gs3d::camera::CameraBounds bounds;
-
-    bounds.min = {
-        dataset.bbox_min_x(),
-        dataset.bbox_min_y(),
-        dataset.bbox_min_z()
-    };
-
-    bounds.max = {
-        dataset.bbox_max_x(),
-        dataset.bbox_max_y(),
-        dataset.bbox_max_z()
-    };
-
-    return bounds;
-}
-
-gs3d::render::SwapchainPresentModeHint benchmark_present_mode_hint(
-    const std::string& mode
-) {
-    if (mode == "immediate") {
-        return gs3d::render::SwapchainPresentModeHint::Immediate;
-    }
-    if (mode == "mailbox") {
-        return gs3d::render::SwapchainPresentModeHint::Mailbox;
-    }
-    if (mode == "fifo") {
-        return gs3d::render::SwapchainPresentModeHint::Fifo;
-    }
-    return gs3d::render::SwapchainPresentModeHint::Auto;
-}
-
 gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
     const std::string& mode
 ) {
@@ -141,31 +107,6 @@ gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
         "ViewerApp: unsupported LOD voxel_mode: " + mode
     );
 }
-
-gs3d::render::PointCloudLodSource build_lod_source(
-    const gs3d::data::Gs3dLodDataset& lod_dataset,
-    const std::vector<std::vector<std::uint32_t>>& lod_point_ids
-) {
-    gs3d::render::PointCloudLodSource source;
-    source.levels.reserve(lod_dataset.level_count());
-    for (std::size_t i = 0; i < lod_dataset.level_count(); ++i) {
-        const auto& level = lod_dataset.level(i);
-        source.levels.push_back({
-            level.name,
-            gs3d::data::Gs3dLodDataset::voxel_mode_name(level.voxel_mode),
-            level.level_index,
-            level.source_point_count,
-            level.target_point_count,
-            level.voxel_size,
-            gs3d::data::make_point_data_view(
-                level.points,
-                lod_point_ids[i].data()
-            )
-        });
-    }
-    return source;
-}
-
 
 void print_controls(
     bool lod_enabled,
@@ -275,164 +216,37 @@ int ViewerApp::run() {
             dataset_session->runtime_points_valid_by_id;
 
         gs3d::platform::Window window(make_window_config(config_.window));
-        const auto vk_config = make_vulkan_context_config(config_.graphics);
-
-        gs3d::render::VulkanContext context(window, vk_config);
-        gs3d::util::log::info() << "[TIME] viewer.startup_seconds = "
-                  << startup_timer.elapsed_seconds()
-                  << '\n';
-
-        gs3d::util::log::info() << "[OK] VulkanContext created.\n";
-        gs3d::util::log::info() << "Physical device: "
-                  << context.physical_device_name() << '\n';
-
-        gs3d::render::VulkanSwapchain swapchain(
-            context,
+        ViewerRenderRuntime render_runtime(
             window,
-            benchmark_present_mode_hint(
-                config_.benchmark.present_mode
-            )
+            {
+                .window_config = config_.window,
+                .graphics_config = config_.graphics,
+                .benchmark_config = config_.benchmark,
+                .camera_config = config_.camera,
+                .lod_config = config_.lod,
+                .tile_config = config_.tile,
+                .dataset = dataset,
+                .full_point_ids = full_point_ids,
+                .lod_dataset = lod_dataset,
+                .lod_point_ids = lod_point_ids,
+                .tile_reader_available = tile_reader.has_value(),
+                .on_context_created = [&startup_timer]() {
+                    gs3d::util::log::info()
+                        << "[TIME] viewer.startup_seconds = "
+                        << startup_timer.elapsed_seconds() << '\n';
+                }
+            }
         );
-        gs3d::render::VulkanRenderer renderer(context, swapchain);
-
-        gs3d::gui::ImGuiLayer imgui_layer;
-        imgui_layer.init(
-            window.native_handle(),
-            context,
-            renderer,
-            swapchain.image_count(),
-            config_.window.ui_layout_ini_path,
-            config_.window.ui_scale_multiplier,
-            config_.window.enable_multi_viewports
-        );
-
-        std::optional<DesktopWorkArea> primary_work_area;
-        if (GLFWmonitor* monitor = glfwGetPrimaryMonitor(); monitor != nullptr) {
-            DesktopWorkArea work_area;
-            glfwGetMonitorWorkarea(
-                monitor,
-                &work_area.x,
-                &work_area.y,
-                &work_area.width,
-                &work_area.height
-            );
-            primary_work_area = work_area;
-        }
-        WindowFrameInsets frame_insets;
-        glfwGetWindowFrameSize(
-            window.native_handle(),
-            &frame_insets.left,
-            &frame_insets.top,
-            &frame_insets.right,
-            &frame_insets.bottom
-        );
-        const auto workbench_layout = compute_workbench_window_layout(
-            gs3d::gui::ui_fonts().ui_scale,
-            primary_work_area,
-            frame_insets
-        );
-        glfwSetWindowSize(
-            window.native_handle(),
-            workbench_layout.client_width,
-            workbench_layout.client_height
-        );
-        if (workbench_layout.outer_x.has_value() &&
-            workbench_layout.outer_y.has_value()) {
-            glfwSetWindowPos(
-                window.native_handle(),
-                *workbench_layout.outer_x,
-                *workbench_layout.outer_y
-            );
-        }
-
-        // 交换链是 UNORM 格式——配置里的 clear_color 按 sRGB 语义书写，
-        // 直接使用，无需颜色空间转换。
-        const auto clear_color = make_clear_color(config_.graphics);
-        renderer.set_clear_color(clear_color);
-
-        gs3d::ui::SvgLogoTexture logo_texture(
-            context.device(),
-            context.physical_device(),
-            context.graphics_queue(),
-            renderer.command_pool(),
-            "assets/icon.svg",
-            128
-        );
-        gs3d::util::log::info() << "[OK] SvgLogoTexture loaded.\n";
-
-        std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud;
-        std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud;
-        std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud;
-
-        if (config_.lod.enabled) {
-            const auto lod_source =
-                build_lod_source(lod_dataset, lod_point_ids);
-            lod_gpu_cloud =
-                std::make_unique<gs3d::render::PointCloudLodGpu>(
-                    context,
-                    renderer.command_pool(),
-                    context.graphics_queue(),
-                    lod_source
-                );
-
-            gs3d::util::log::info() << "[OK] PointCloudLodGpu uploaded.\n";
-            gs3d::util::log::info() << lod_gpu_cloud->summary();
-
-        } else {
-            full_gpu_cloud =
-                std::make_unique<gs3d::render::PointCloudGpu>(
-                    context,
-                    renderer.command_pool(),
-                    context.graphics_queue(),
-                    gs3d::data::make_point_data_view(
-                        dataset,
-                        full_point_ids.data()
-                    )
-                );
-
-            gs3d::util::log::info() << "[OK] PointCloudGpu uploaded.\n";
-            gs3d::util::log::info() << "gpu point_count = "
-                      << full_gpu_cloud->point_count()
-                      << '\n';
-        }
-
-        // Camera must be initialized before ViewportManager (which clones it).
-        // Bounds are needed for fit-mode and for the CameraController.
-        const gs3d::camera::CameraBounds bounds =
-            make_camera_bounds(dataset);
-
-        gs3d::camera::Camera initial_camera;
-        VkExtent2D initial_viewport_extent = swapchain.extent();
-        initial_camera.set_viewport(
-            initial_viewport_extent.width,
-            initial_viewport_extent.height
-        );
-        initialize_camera_from_config(initial_camera, config_.camera, bounds);
-
-        // ViewportManager: N (OffscreenFramebuffer, Camera) pairs.
-        // All framebuffers use swapchain.image_format() → Vulkan-compatible with
-        // each other, so a single PointPipeline works for all viewports.
-        // Must be created after ImGui init (registers descriptors via AddTexture).
-        gs3d::render::ViewportManager viewport_manager;
-        viewport_manager.init(
-            context,
-            swapchain.image_format(),
-            kMaxViewportCount,
-            initial_viewport_extent,
-            initial_camera
-        );
-        viewport_manager.set_active_count(
-            std::clamp(config_.window.viewport_count, 1, kMaxViewportCount)
-        );
-        viewport_manager.set_clear_color(clear_color);
-
-        gs3d::render::PointPipeline point_pipeline(
-            context,
-            viewport_manager.render_pass(),
-            make_point_pipeline_config(config_.graphics)
-        );
-
-        gs3d::util::log::info() << "[OK] PointPipeline created.\n";
+        auto& context = render_runtime.context();
+        auto& swapchain = render_runtime.swapchain();
+        auto& renderer = render_runtime.renderer();
+        auto& imgui_layer = render_runtime.imgui_layer();
+        auto& viewport_manager = render_runtime.viewport_manager();
+        auto& point_pipeline = render_runtime.point_pipeline();
+        const auto& bounds = render_runtime.bounds();
+        auto* full_gpu_cloud = render_runtime.full_gpu_cloud();
+        auto* lod_gpu_cloud = render_runtime.lod_gpu_cloud();
+        auto* tile_gpu_cloud = render_runtime.tile_gpu_cloud();
 
         ViewerPickSystem pick_system(
             context,
@@ -547,12 +361,6 @@ int ViewerApp::run() {
                 make_tile_selection_config(config_.tile)
             );
 
-            tile_gpu_cloud =
-                std::make_unique<gs3d::render::PointCloudTileGpu>();
-            tile_gpu_cloud->set_resident_tile_budget(
-                config_.tile.gpu_cache_max_tiles
-            );
-
             gs3d::util::log::info() << "[OK] TileSelection initialized.\n";
         }
 
@@ -624,7 +432,7 @@ int ViewerApp::run() {
             make_initial_viewer_app_state(initial_state_input);
         viewport_presentation.initialize_visibility(app_state);
 
-        app_state.logo_texture = logo_texture.descriptor();
+        app_state.logo_texture = render_runtime.logo_texture().descriptor();
 
         // ── analysis.toml persistence ──────────────────────────────────
         app_state.bundle_dir = config_.input.bundle_dir;
@@ -642,10 +450,7 @@ int ViewerApp::run() {
             save_analysis(app_state.bundle_dir, measurement);
         };
 
-        const auto& nav_cloud =
-            lod_gpu_cloud
-                ? lod_gpu_cloud->lowest_detail().gpu_cloud
-                : *full_gpu_cloud;
+        const auto& nav_cloud = render_runtime.navigation_cloud();
         NavigationMapSystem navigation_maps;
         navigation_maps.initialize(
             context,
@@ -731,9 +536,9 @@ int ViewerApp::run() {
             const int n_viewports = viewport_manager.viewport_count();
             const ViewerFrameMetricsContext frame_metrics_context{
                 .tile_enabled = config_.tile.enabled,
-                .tile_gpu_cloud = tile_gpu_cloud.get(),
-                .full_gpu_cloud = full_gpu_cloud.get(),
-                .lod_gpu_cloud = lod_gpu_cloud.get(),
+                .tile_gpu_cloud = tile_gpu_cloud,
+                .full_gpu_cloud = full_gpu_cloud,
+                .lod_gpu_cloud = lod_gpu_cloud,
                 .tile_stream = tile_stream,
                 .tile_result = tile_result,
                 .tile_reader = tile_reader.has_value() ? &*tile_reader : nullptr,
@@ -945,7 +750,7 @@ int ViewerApp::run() {
                     .tile_reader =
                         tile_reader.has_value() ? &*tile_reader : nullptr,
                     .tile_point_ids_by_tile = tile_point_ids_by_tile,
-                    .tile_gpu_cloud = tile_gpu_cloud.get(),
+                    .tile_gpu_cloud = tile_gpu_cloud,
                     .tile_selection = tile_selection,
                     .tile_result = tile_result,
                     .tile_index_view = tile_index_view,
@@ -971,7 +776,7 @@ int ViewerApp::run() {
                 );
             }
             const auto lod_level_for_frame = lod_frame_system.update({
-                .lod_gpu_cloud = lod_gpu_cloud.get(),
+                .lod_gpu_cloud = lod_gpu_cloud,
                 .lod_selector = lod_selector,
                 .viewport_manager = viewport_manager,
                 .streaming_viewport_index = streaming_viewport_index,
@@ -1028,9 +833,9 @@ int ViewerApp::run() {
                             .viewport_manager = viewport_manager,
                             .point_pipeline = point_pipeline,
                             .viewport_pushes = viewport_pushes,
-                            .lod_gpu_cloud = lod_gpu_cloud.get(),
-                            .full_gpu_cloud = full_gpu_cloud.get(),
-                            .tile_gpu_cloud = tile_gpu_cloud.get(),
+                            .lod_gpu_cloud = lod_gpu_cloud,
+                            .full_gpu_cloud = full_gpu_cloud,
+                            .tile_gpu_cloud = tile_gpu_cloud,
                             .tile_stream = tile_stream,
                             .tile_result = tile_result,
                             .pick = pick_system.state(),
