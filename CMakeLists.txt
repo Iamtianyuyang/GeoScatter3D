@@ -276,6 +276,7 @@ add_library(gs3d_app STATIC
     src/app/ViewerCameraFrameSystem.cpp
     src/app/ViewerRenderSettingsSystem.cpp
     src/app/ViewerAttributeMapping.cpp
+    src/app/ViewerFrameMetricsCollector.cpp
     src/app/ViewerFrameStateSynchronizer.cpp
     src/app/ViewerAppStateInitialization.cpp
     src/app/ViewerAppViewport.cpp
@@ -314,6 +315,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerPickSystem.hpp
     include/app/NavigationMapSystem.hpp
     include/app/ViewerAttributeMapping.hpp
+    include/app/ViewerFrameMetricsCollector.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
     include/app/ScreenshotService.hpp
     include/app/ViewerAppStateInitialization.hpp
@@ -798,6 +800,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewerCameraFrameSystem
         COMMAND GeoScatter3DViewerCameraFrameSystemTests
+    )
+
+    add_executable(GeoScatter3DViewerFrameMetricsCollectorTests
+        tests/ViewerFrameMetricsCollectorTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerFrameMetricsCollectorTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerFrameMetricsCollectorTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerFrameMetricsCollector
+        COMMAND GeoScatter3DViewerFrameMetricsCollectorTests
     )
 
     add_executable(GeoScatter3DViewerFrameStateSynchronizerTests

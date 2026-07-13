@@ -8,6 +8,7 @@
 #include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
+#include "app/ViewerFrameMetricsCollector.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
@@ -640,6 +641,7 @@ int ViewerApp::run() {
             std::chrono::milliseconds(150)
         );
         ViewerRenderSettingsSystem render_settings;
+        ViewerFrameMetricsCollector frame_metrics_collector;
         const auto& primary_value_name = attribute_mapping.primary_value_name();
         const auto& z_field_name = attribute_mapping.z_field_name();
         const auto& attr_list = attribute_mapping.descriptors();
@@ -849,102 +851,31 @@ int ViewerApp::run() {
             }
 
             const int n_viewports = viewport_manager.viewport_count();
-            const auto& primary_camera =
-                viewport_manager.camera(streaming_viewport_index);
-
-            std::uint32_t loaded_tiles = 0;
-            // Pending = required GPU working-set tiles not yet resident.
-            // Stages 1/2 fall back to the full candidate set.
-            std::size_t pending_tile_count = 0;
-            if (config_.tile.enabled && tile_gpu_cloud &&
-                tile_result.enabled) {
-                const auto& pending_source =
-                    tile_stream.gpu_required_tile_ids.empty()
-                        ? tile_result.tile_ids
-                        : tile_stream.gpu_required_tile_ids;
-                for (const auto tile_id : pending_source) {
-                    if (!tile_gpu_cloud->has_resident_tile(tile_id)) {
-                        ++pending_tile_count;
-                    }
-                }
-            }
-            if (tile_stream.load_future.valid()) {
-                pending_tile_count = std::max(
-                    pending_tile_count,
-                    tile_stream.loading_ids.size());
-            }
-            const std::uint32_t pending_tiles =
-                static_cast<std::uint32_t>(
-                    std::min<std::size_t>(
-                        pending_tile_count,
-                        std::numeric_limits<std::uint32_t>::max()
-                    )
-                );
-            std::uint64_t gpu_buffer_bytes = 0;
-            std::uint64_t gpu_resident_points = 0;
-
-            if (config_.tile.enabled && tile_gpu_cloud) {
-                const auto& ts = tile_gpu_cloud->stats();
-                loaded_tiles =
-                    static_cast<std::uint32_t>(
-                        ts.resident_tile_count
-                    );
-                gpu_buffer_bytes += ts.gpu_buffer_bytes;
-                gpu_resident_points += ts.point_count;
-            }
-            if (full_gpu_cloud) {
-                gpu_buffer_bytes +=
-                    static_cast<std::uint64_t>(full_gpu_cloud->vertex_buffer_size());
-                gpu_resident_points += full_gpu_cloud->point_count();
-            }
-            if (lod_gpu_cloud) {
-                for (std::size_t i = 0; i < lod_gpu_cloud->level_count(); ++i) {
-                    gpu_buffer_bytes += static_cast<std::uint64_t>(
-                        lod_gpu_cloud->gpu_cloud(i).vertex_buffer_size()
-                    );
-                    gpu_resident_points +=
-                        lod_gpu_cloud->level(i).gpu_point_count;
-                }
-            }
-
-            // 视窗中实际可见的点数：瓦片模式下统计视锥体筛选后
-            // 的瓦片点数和，非瓦片模式下使用 GPU 驻留点数。
-            std::uint64_t visible_points = gpu_resident_points;
-            if (tile_result.enabled && tile_reader.has_value()) {
-                visible_points = 0;
-                for (const auto tile_id : tile_result.tile_ids) {
-                    visible_points +=
-                        tile_reader->record(tile_id).point_count;
-                }
-            }
-
-            const auto tile_cache_stats = tile_stream.point_cache.stats();
-            const ViewerFrameTileCacheMetrics tile_cache_metrics{
-                .resident_bytes = tile_cache_stats.resident_bytes,
-                .max_bytes = tile_cache_stats.max_bytes,
-                .hits = tile_cache_stats.hits,
-                .misses = tile_cache_stats.misses
-            };
-            const ViewerFrameStateMetrics frame_state_metrics{
+            const ViewerFrameMetricsContext frame_metrics_context{
+                .tile_enabled = config_.tile.enabled,
+                .tile_gpu_cloud = tile_gpu_cloud.get(),
+                .full_gpu_cloud = full_gpu_cloud.get(),
+                .lod_gpu_cloud = lod_gpu_cloud.get(),
+                .tile_stream = tile_stream,
+                .tile_result = tile_result,
+                .tile_reader = tile_reader.has_value() ? &*tile_reader : nullptr,
                 .dataset_point_count = dataset.point_count(),
-                .gpu_resident_points = gpu_resident_points,
-                .visible_points = visible_points,
-                .gpu_buffer_bytes = gpu_buffer_bytes,
-                .loaded_tiles = loaded_tiles,
-                .pending_tiles = pending_tiles,
                 .fps = fps_smooth,
-                .frame_time_ms = delta_seconds > 0.0
-                    ? static_cast<float>(delta_seconds * 1000.0)
-                    : 0.0f,
-                .camera_position = format_vec3_text(primary_camera.position())
+                .delta_seconds = delta_seconds,
+                .camera_position = format_vec3_text(
+                    viewport_manager.camera(streaming_viewport_index).position()
+                )
             };
+            const auto frame_metrics = frame_metrics_collector.collect(
+                frame_metrics_context
+            );
             frame_state_synchronizer.synchronize(
                 app_state,
                 viewport_pushes,
                 viewport_scene_states,
                 viewport_height_exags,
-                tile_cache_metrics,
-                frame_state_metrics
+                frame_metrics.tile_cache,
+                frame_metrics.frame_state
             );
 
             {
@@ -955,7 +886,7 @@ int ViewerApp::run() {
                     viewport_pushes,
                     primary_value_name,
                     z_field_name,
-                    visible_points,
+                    frame_metrics.frame_state.visible_points,
                     n_viewports
                 };
                 fill_render_views(app_state, render_ctx, pick, selected_focus_points);
