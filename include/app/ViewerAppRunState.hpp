@@ -87,27 +87,6 @@ struct ViewerAppCameraCommandContext {
     bool& tile_selection_dirty;
 };
 
-struct ViewerAppScreenshotContext {
-    const AppState& app_state;
-    const gs3d::render::VulkanSwapchain& swapchain;
-    VkExtent2D& screenshot_offset;
-    VkExtent2D& screenshot_extent;
-    bool& screenshot_pending;
-};
-
-/*
- * Screenshot capture round-trip state: staging buffer allocated on
- * demand in the post-pass copy, read back and freed after draw_frame.
- * Only one screenshot is in flight at a time.
- */
-struct ViewerAppScreenshotCaptureState {
-    VkBuffer staging_buf = VK_NULL_HANDLE;
-    VkDeviceMemory staging_mem = VK_NULL_HANDLE;
-    VkExtent2D offset{};
-    VkExtent2D extent{};
-    bool pending = false;
-};
-
 /*
  * Fixed inputs for rendering the navigation-map thumbnail: the point
  * pipeline, the cloud drawn into the thumbnail (lowest LOD level, or

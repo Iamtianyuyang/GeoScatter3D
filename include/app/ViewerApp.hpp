@@ -275,11 +275,6 @@ private:
         gs3d::platform::Window& window
     );
 
-    void apply_screenshot_command(
-        const UiActions& gui_cmds,
-        ViewerAppScreenshotContext& ctx
-    );
-
     void observe_viewport_resize_requests(
         const UiActions& gui_cmds,
         ViewportResizeScheduler& scheduler,
@@ -296,20 +291,6 @@ private:
         const BenchmarkFrameSamples& samples,
         VkPresentModeKHR present_mode
     ) const;
-
-    void record_screenshot_copy(
-        VkCommandBuffer cmd,
-        std::uint32_t image_index,
-        gs3d::render::VulkanContext& context,
-        const gs3d::render::VulkanSwapchain& swapchain,
-        ViewerAppScreenshotCaptureState& capture
-    );
-
-    void write_pending_screenshot(
-        gs3d::render::VulkanContext& context,
-        const gs3d::render::VulkanSwapchain& swapchain,
-        ViewerAppScreenshotCaptureState& capture
-    );
 
     void init_navigation_map(
         gs3d::render::VulkanContext& context,

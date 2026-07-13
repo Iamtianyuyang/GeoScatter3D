@@ -151,6 +151,19 @@ target_link_libraries(gs3d_imgui PUBLIC
     glfw
 )
 
+add_library(gs3d_platform STATIC
+    src/platform/Window.cpp
+    src/platform/NativeFileDialog.cpp
+)
+
+target_include_directories(gs3d_platform PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_platform PUBLIC
+    glfw
+)
+
 add_library(gs3d_render STATIC
     src/camera/BoxSelect.cpp
     src/camera/Camera.cpp
@@ -184,6 +197,7 @@ target_include_directories(gs3d_render PUBLIC
 target_link_libraries(gs3d_render PUBLIC
     gs3d_data
     gs3d_imgui
+    gs3d_platform
     Vulkan::Vulkan
     Threads::Threads
 )
@@ -273,9 +287,6 @@ add_library(gs3d_app STATIC
     src/app/ViewerAppTileStreaming.cpp
     src/app/ViewerAppRenderPass.cpp
 
-    src/platform/Window.cpp
-    src/platform/NativeFileDialog.cpp
-
     include/gui/ImGuiLayer.hpp
     include/ui/Theme.hpp
     include/ui/Widgets.hpp
@@ -292,6 +303,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerDatasetSession.hpp
     include/app/ViewerAttributeMapping.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
+    include/app/ScreenshotService.hpp
     include/app/ViewerAppStateInitialization.hpp
     include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
@@ -383,6 +395,7 @@ target_link_libraries(gs3d_app PUBLIC
     gs3d_viewport_lod
     gs3d_render
     gs3d_imgui
+    gs3d_platform
     glfw
 )
 
@@ -755,6 +768,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewerFrameStateSynchronizer
         COMMAND GeoScatter3DViewerFrameStateSynchronizerTests
+    )
+
+    add_executable(GeoScatter3DScreenshotServiceTests
+        tests/ScreenshotServiceTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DScreenshotServiceTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DScreenshotServiceTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ScreenshotService
+        COMMAND GeoScatter3DScreenshotServiceTests
     )
 
     add_executable(GeoScatter3DTileStreamingTests

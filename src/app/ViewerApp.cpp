@@ -3,6 +3,7 @@
 #include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
+#include "app/ScreenshotService.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
@@ -897,7 +898,7 @@ int ViewerApp::run() {
 
         // ponytail: screenshot staging — allocated on demand in post_pass, read
         // back after draw_frame. Only one screenshot at a time.
-        ViewerAppScreenshotCaptureState screenshot_capture;
+        ScreenshotService screenshot_service;
 
         while (!window.should_close() &&
                benchmark_session.should_continue()) {
@@ -1263,16 +1264,7 @@ int ViewerApp::run() {
             if (gui_cmds.clear_cache_requested) {
                 clear_tile_cpu_cache(tile_stream);
             }
-            {
-                ViewerAppScreenshotContext ss_ctx{
-                    .app_state = app_state,
-                    .swapchain = swapchain,
-                    .screenshot_offset = screenshot_capture.offset,
-                    .screenshot_extent = screenshot_capture.extent,
-                    .screenshot_pending = screenshot_capture.pending
-                };
-                apply_screenshot_command(gui_cmds, ss_ctx);
-            }
+            screenshot_service.request(gui_cmds, app_state, swapchain);
 
             {
                 RegionStatsCommandContext rs_ctx{
@@ -1744,12 +1736,11 @@ int ViewerApp::run() {
                     // post_pass: after the swapchain render pass ends, copy
                     // the viewport region to a staging buffer for screenshots.
                     .post_pass = [&](VkCommandBuffer cmd, std::uint32_t image_index) {
-                        record_screenshot_copy(
+                        screenshot_service.record_copy(
                             cmd,
                             image_index,
                             context,
-                            swapchain,
-                            screenshot_capture
+                            swapchain
                         );
                     }
                 }
@@ -1776,7 +1767,7 @@ int ViewerApp::run() {
             imgui_layer.discard_frame();
 
             // ── Screenshot PNG write ──────────────────────────────────
-            write_pending_screenshot(context, swapchain, screenshot_capture);
+            screenshot_service.write_pending(context, swapchain);
 
             // Rebuild framebuffer resources only after the user stops resizing.
             // All ready viewports share one device-idle synchronization point.
