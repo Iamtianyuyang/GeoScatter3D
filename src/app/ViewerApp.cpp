@@ -1,6 +1,7 @@
 #include "app/ViewerApp.hpp"
 #include "util/Log.hpp"
 #include "app/ViewerDatasetSession.hpp"
+#include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
@@ -600,11 +601,6 @@ int ViewerApp::run() {
         gs3d::util::log::info() << "camera distance = "
                   << viewport_manager.camera(0).distance() << '\n';
 
-        gs3d::render::PointPushConstants push{};
-        push.point_size  = config_.graphics.initial_point_size;
-        // Channel attributes set below after attr_list is built.
-        // MVP is set per-viewport inside render_all; flags is zero-initialized.
-
         /*
          * 瓦片流式状态：每视口可见瓦片集与 clip 包围盒、CPU 缓存、异步
          * future、全量预加载进度。见 ViewerAppTileStreaming.hpp；必须
@@ -700,67 +696,19 @@ int ViewerApp::run() {
         bool tab_was_pressed = false;
         bool shift_tab_was_pressed = false;
 
-        const std::string primary_value_name =
-            config_.input.primary_value_field_name.empty()
-                ? "value"
-                : config_.input.primary_value_field_name;
-        const std::string z_field_name =
-            config_.input.z_field_name.empty()
-                ? "z"
-                : config_.input.z_field_name;
-
-        // Logical names come from preprocessing; physical slots stay Value/Z.
-        const std::vector<gs3d::app::AttrDescriptor> attr_list = {
-            { primary_value_name,
-              gs3d::app::AttrPhysicalSource::Value,
-              dataset.value_min(),
-              dataset.value_max() },
-            { z_field_name,
-              gs3d::app::AttrPhysicalSource::Z,
-              dataset.bbox_min_z(),
-              dataset.bbox_max_z() }
-        };
-
-        // 高程范围 — 用于非空间属性映射到物理 Z 坐标时的基准。
-        const float elev_min   = dataset.bbox_min_z();
-        const float elev_range = dataset.bbox_max_z() - dataset.bbox_min_z();
-
-        // 当前高度夸张系数（跨源持久）。
+        ViewerAttributeMapping attribute_mapping(
+            dataset,
+            config_.input.primary_value_field_name,
+            config_.input.z_field_name
+        );
+        const auto& primary_value_name = attribute_mapping.primary_value_name();
+        const auto& z_field_name = attribute_mapping.z_field_name();
+        const auto& attr_list = attribute_mapping.descriptors();
         float height_exag = 1.0f;
-
-        // 根据属性描述 + 夸张系数计算 height_offset / height_mult。
-        auto apply_height_attr_to = [&](
-            gs3d::render::PointPushConstants& target_push,
-            const gs3d::app::AttrDescriptor& a,
-            float exag
-        ) {
-            target_push.height_source = static_cast<std::uint32_t>(a.source);
-            if (a.source == gs3d::app::AttrPhysicalSource::Z) {
-                // 高程值已在空间尺度，stretch around origin
-                target_push.height_mult   = exag;
-                target_push.height_offset = 0.0f;
-            } else {
-                // 非空间属性 → 线性映射到 [elev_min, elev_min + elev_range * exag]
-                const float r = a.range();
-                const float m = (r > 0.0f) ? (elev_range / r * exag) : exag;
-                target_push.height_mult   = m;
-                target_push.height_offset = elev_min - a.min_val * m;
-            }
-        };
-
-        // 初始化默认通道：颜色=fold (attr_list[0]), 高度=高程 (attr_list[1])
-        {
-            const auto& c = attr_list[0];
-            push.color_source = static_cast<std::uint32_t>(c.source);
-            push.color_min    = c.min_val;
-            push.color_range  = c.range();
-            if (push.color_range <= 0.0f) push.color_range = 1.0f;
-        }
-        apply_height_attr_to(push, attr_list[1], height_exag);
-
-        // 初始化默认色标：Rainbow256 (索引 8)
-        push.flags &= ~gs3d::render::PointFlags::kColormapMask;
-        push.flags |= (8u << 1) & gs3d::render::PointFlags::kColormapMask;
+        auto push = attribute_mapping.make_initial_push(
+            config_.graphics.initial_point_size,
+            height_exag
+        );
 
         ViewportLodController viewport_lod;
         // Hoisted out of the loop body so report_frame_time() can pair the
@@ -1539,7 +1487,7 @@ int ViewerApp::run() {
                     (static_cast<std::uint32_t>(
                         active_scene.active_height_index) + 1u) % n;
                 active_scene.active_height_index = static_cast<int>(new_idx);
-                apply_height_attr_to(
+                attribute_mapping.apply_height_to(
                     active_push,
                     attr_list[new_idx],
                     active_height_exag
