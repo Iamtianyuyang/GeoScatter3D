@@ -199,6 +199,7 @@ add_library(gs3d_app_support STATIC
     src/app/TilePointCache.cpp
     src/app/ViewportResizeScheduler.cpp
     src/app/ViewportInteractionState.cpp
+    src/app/ViewportPresentationState.cpp
     src/app/MeasurementManager.cpp
     src/ui/WorkspaceManager.cpp
 )
@@ -587,6 +588,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.BenchmarkSession
         COMMAND GeoScatter3DBenchmarkSessionTests
+    )
+
+    add_executable(GeoScatter3DViewportPresentationStateTests
+        tests/ViewportPresentationStateTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewportPresentationStateTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewportPresentationStateTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewportPresentationState
+        COMMAND GeoScatter3DViewportPresentationStateTests
     )
 
     add_executable(GeoScatter3DDataTests

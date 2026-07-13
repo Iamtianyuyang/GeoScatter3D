@@ -9,7 +9,7 @@
 #include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewportCameraSystem.hpp"
-#include "app/ViewportInteractionState.hpp"
+#include "app/ViewportPresentationState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
@@ -1100,18 +1100,16 @@ int ViewerApp::run() {
         scene_state.active_dataset = &dataset_descriptor;
         scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])
         scene_state.active_height_index    = 1;  // 高度=高程 (attr_list[1])
-        std::vector<gs3d::render::PointPushConstants> viewport_pushes(
+        ViewportPresentationState viewport_presentation(
             static_cast<std::size_t>(viewport_manager.viewport_count()),
-            push
-        );
-        std::vector<gs3d::scene::SceneState> viewport_scene_states(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            scene_state
-        );
-        std::vector<float> viewport_height_exags(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
+            push,
+            scene_state,
             height_exag
         );
+        auto& viewport_pushes = viewport_presentation.pushes();
+        auto& viewport_scene_states = viewport_presentation.scenes();
+        auto& viewport_height_exags =
+            viewport_presentation.height_exaggerations();
         gs3d::app::AppState app_state;
         app_state.dataset.active_dataset = dataset_descriptor.display_name;
         app_state.dataset.path = dataset_descriptor.path;
@@ -1185,19 +1183,7 @@ int ViewerApp::run() {
             view.visible = i < startup_view_count;
             view.camera_linked = false;
         }
-        std::vector<bool> previous_view_visible(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
-        );
-        for (const auto& view : app_state.render_views) {
-            if (view.viewport_index >= 0 &&
-                view.viewport_index <
-                    static_cast<int>(previous_view_visible.size())) {
-                previous_view_visible[
-                    static_cast<std::size_t>(view.viewport_index)
-                ] = view.visible;
-            }
-        }
+        viewport_presentation.initialize_visibility(app_state);
         if (config_.benchmark_mode) {
             app_state.panels.dataset = false;
             app_state.panels.render_settings = false;
@@ -1514,17 +1500,6 @@ int ViewerApp::run() {
                                 static_cast<float>(tile_cache_requests)
                             : -1.0f;
                 };
-            auto first_main_view = 0;
-            for (const auto& view : app_state.render_views) {
-                if (view.visible &&
-                    !gs3d::ui::view_is_owned_by_workspace(
-                        app_state,
-                        view.viewport_index
-                    )) {
-                    first_main_view = view.viewport_index;
-                    break;
-                }
-            }
             for (std::size_t i = 0;
                  i < app_state.render_settings_by_view.size();
                  ++i) {
@@ -1611,79 +1586,13 @@ int ViewerApp::run() {
                 app_state.active_viewport_index
             );
 
+            const int default_view_source =
+                viewport_presentation.first_visible_main_view(app_state);
             auto gui_cmds = imgui_layer.new_frame(app_state);
-            for (const auto& view : app_state.render_views) {
-                if (view.viewport_index < 0 ||
-                    view.viewport_index >=
-                        static_cast<int>(previous_view_visible.size()) ||
-                    !view.visible ||
-                    previous_view_visible[
-                        static_cast<std::size_t>(view.viewport_index)
-                    ]) {
-                    continue;
-                }
-
-                int source_view = first_main_view;
-                for (const auto& workspace : app_state.workspace_windows) {
-                    if (std::find(
-                            workspace.viewport_indices.begin(),
-                            workspace.viewport_indices.end(),
-                            view.viewport_index
-                        ) == workspace.viewport_indices.end()) {
-                        continue;
-                    }
-                    for (const int workspace_view :
-                         workspace.viewport_indices) {
-                        if (workspace_view != view.viewport_index &&
-                            workspace_view >= 0 &&
-                            workspace_view <
-                                static_cast<int>(
-                                    previous_view_visible.size()
-                                ) &&
-                            previous_view_visible[
-                                static_cast<std::size_t>(workspace_view)
-                            ]) {
-                            source_view = workspace_view;
-                            break;
-                        }
-                    }
-                    break;
-                }
-
-                if (source_view >= 0 &&
-                    source_view <
-                        static_cast<int>(viewport_pushes.size())) {
-                    const auto src =
-                        static_cast<std::size_t>(source_view);
-                    const auto dst =
-                        static_cast<std::size_t>(view.viewport_index);
-                    viewport_pushes[dst] = viewport_pushes[src];
-                    viewport_scene_states[dst] =
-                        viewport_scene_states[src];
-                    viewport_height_exags[dst] =
-                        viewport_height_exags[src];
-                    if (dst < app_state.render_settings_by_view.size() &&
-                        src < app_state.render_settings_by_view.size()) {
-                        app_state.render_settings_by_view[dst] =
-                            app_state.render_settings_by_view[src];
-                    }
-                    if (dst < app_state.navigation_maps.size() &&
-                        src < app_state.navigation_maps.size()) {
-                        app_state.navigation_maps[dst].dirty = true;
-                        app_state.navigation_maps[dst].view_rect_valid = false;
-                    }
-                    if (dst < app_state.measurements.size() &&
-                        src < app_state.measurements.size()) {
-                        app_state.measurements[dst] =
-                            app_state.measurements[src];
-                    }
-                    if (dst < app_state.region_stats_by_view.size() &&
-                        src < app_state.region_stats_by_view.size()) {
-                        app_state.region_stats_by_view[dst] =
-                            app_state.region_stats_by_view[src];
-                    }
-                }
-            }
+            viewport_presentation.copy_newly_visible_views(
+                app_state,
+                default_view_source
+            );
             int runtime_active_count = 1;
             for (const auto& view : app_state.render_views) {
                 if (view.visible) {
@@ -1699,15 +1608,6 @@ int ViewerApp::run() {
                 viewport_manager.viewport_count()
             );
             viewport_manager.set_active_count(runtime_active_count);
-            for (const auto& view : app_state.render_views) {
-                if (view.viewport_index >= 0 &&
-                    view.viewport_index <
-                        static_cast<int>(previous_view_visible.size())) {
-                    previous_view_visible[
-                        static_cast<std::size_t>(view.viewport_index)
-                    ] = view.visible;
-                }
-            }
             if (streaming_viewport_index < 0 ||
                 streaming_viewport_index >=
                     static_cast<int>(app_state.render_views.size()) ||
