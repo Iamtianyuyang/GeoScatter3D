@@ -1,4 +1,4 @@
-name: Windows Build
+name: Build and Test
 
 on:
   push:
@@ -7,12 +7,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  windows:
+    name: Windows
     runs-on: windows-latest
     timeout-minutes: 60
 
     steps:
+      # Dear ImGui is a submodule and is compiled by both application targets.
+      # A checkout without submodules cannot even generate the build system.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       # glfw3 + Vulkan headers/loader via the runner's preinstalled vcpkg.
       # Shaders are committed as prebuilt .spv, so no glslc is needed.
@@ -39,3 +44,29 @@ jobs:
       # without a display or physical GPU.
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev
+
+      - name: Configure
+        run: >
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

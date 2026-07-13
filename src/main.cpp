@@ -1,6 +1,7 @@
 #include "app/AppConfig.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
+#include "app/UserPreferences.hpp"
 #include "app/ViewerApp.hpp"
 #include "app/WelcomeWindow.hpp"
 #include "data/Gs3dLodDataset.hpp"
@@ -317,6 +318,13 @@ int main(int argc, char** argv) {
                 argc,
                 argv
             );
+
+        // GPU UUIDs identify hardware on one machine. Keep the project
+        // template portable and apply a per-user choice only after it loads.
+        if (const auto preferred_gpu =
+                gs3d::app::load_preferred_gpu_preference()) {
+            app_config.viewer.preferred_gpu = *preferred_gpu;
+        }
 
         // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
         // ImGuiLayer::init() 会以 active_theme() 完成首次应用。

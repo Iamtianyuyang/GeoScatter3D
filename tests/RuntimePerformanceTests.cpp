@@ -1,5 +1,6 @@
 #include "app/RecentProjects.hpp"
 #include "app/TilePointCache.hpp"
+#include "app/UserPreferences.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "camera/BoxSelect.hpp"
 #include "camera/Camera.hpp"
@@ -21,7 +22,10 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -34,6 +38,56 @@ void expect(bool condition, std::string_view name)
         ++failures;
     }
 }
+
+bool set_environment_variable(
+    const std::string& name,
+    const std::string& value
+)
+{
+#if defined(_WIN32)
+    return _putenv_s(name.c_str(), value.c_str()) == 0;
+#else
+    return setenv(name.c_str(), value.c_str(), 1) == 0;
+#endif
+}
+
+bool unset_environment_variable(const std::string& name)
+{
+#if defined(_WIN32)
+    return _putenv_s(name.c_str(), "") == 0;
+#else
+    return unsetenv(name.c_str()) == 0;
+#endif
+}
+
+class ScopedEnvironmentVariable {
+public:
+    explicit ScopedEnvironmentVariable(std::string name)
+        : name_(std::move(name))
+    {
+        if (const char* value = std::getenv(name_.c_str())) {
+            original_value_ = value;
+        }
+    }
+
+    ~ScopedEnvironmentVariable()
+    {
+        if (original_value_) {
+            set_environment_variable(name_, *original_value_);
+        } else {
+            unset_environment_variable(name_);
+        }
+    }
+
+    bool set(const std::string& value) const
+    {
+        return set_environment_variable(name_, value);
+    }
+
+private:
+    std::string name_;
+    std::optional<std::string> original_value_;
+};
 
 std::shared_ptr<gs3d::app::TilePoints> make_points(std::size_t count)
 {
@@ -57,10 +111,12 @@ void test_recent_projects_persist_and_dedupe()
     const auto project_b = test_root / "b.gs3d.bundle";
     std::filesystem::create_directories(project_a);
     std::filesystem::create_directories(project_b);
-    setenv(
-        "GS3D_RECENT_PROJECTS_PATH",
-        storage.string().c_str(),
-        1
+    ScopedEnvironmentVariable storage_override(
+        "GS3D_RECENT_PROJECTS_PATH"
+    );
+    expect(
+        storage_override.set(storage.string()),
+        "recent projects test can set storage override"
     );
 
     gs3d::app::remember_recent_project(project_a);
@@ -84,7 +140,55 @@ void test_recent_projects_persist_and_dedupe()
         "recent projects can be cleared from the welcome window"
     );
 
-    unsetenv("GS3D_RECENT_PROJECTS_PATH");
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
+}
+
+void test_gpu_preference_is_user_scoped()
+{
+    const auto nonce =
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count();
+    const auto test_root =
+        std::filesystem::temp_directory_path() /
+        ("gs3d-user-preferences-" + std::to_string(nonce));
+    ScopedEnvironmentVariable config_root_override(
+        "GS3D_USER_CONFIG_DIR"
+    );
+    expect(
+        config_root_override.set(test_root.string()),
+        "user preferences test can set config directory override"
+    );
+
+    const auto preferences_path =
+        gs3d::app::user_preferences_path();
+    expect(
+        preferences_path == test_root / "preferences.toml",
+        "user preferences use the user config directory"
+    );
+    expect(
+        !gs3d::app::load_preferred_gpu_preference().has_value(),
+        "missing user GPU preference falls back to template default"
+    );
+    expect(
+        gs3d::app::save_preferred_gpu_preference(
+            "uuid:0123456789abcdef0123456789abcdef"
+        ),
+        "GPU preference is persisted outside the project config"
+    );
+    expect(
+        std::filesystem::is_regular_file(preferences_path),
+        "GPU preference writes a user preferences file"
+    );
+    const auto preferred_gpu =
+        gs3d::app::load_preferred_gpu_preference();
+    expect(
+        preferred_gpu.has_value() &&
+            *preferred_gpu == "uuid:0123456789abcdef0123456789abcdef",
+        "saved GPU preference is loaded from user preferences"
+    );
+
     std::error_code ec;
     std::filesystem::remove_all(test_root, ec);
 }
@@ -2862,6 +2966,7 @@ void test_hover_cleared_when_no_hit()
 int main()
 {
     test_recent_projects_persist_and_dedupe();
+    test_gpu_preference_is_user_scoped();
     test_resize_debounce();
     test_resize_batch();
     test_tile_cache_budget_and_lru();

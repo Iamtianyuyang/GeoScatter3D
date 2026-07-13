@@ -14,13 +14,16 @@ bench/
 tools/__pycache__/
 config/imgui_layout.ini
 
+# Local IDE and debugging state
+/.idea/
+/.vscode/
+/.cursor/
+/.dbg/
+
 # Generated / temporary
 Testing/
 .reasonix/
 debug-zoom-horizon-singularity.md
-rc include -maxdepth 2 -type d
 reasonix.toml
 review_dump.txt
-*.html
-*.png
 *.xwd

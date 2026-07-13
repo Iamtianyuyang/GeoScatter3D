@@ -61,6 +61,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/app/PreprocessedBundle.cpp
     src/app/RecentProjects.cpp
     src/app/ResourcePath.cpp
+    src/app/UserPreferences.cpp
     src/app/TilePointCache.cpp
     src/app/ViewportResizeScheduler.cpp
     src/app/MeasurementManager.cpp
@@ -133,6 +134,7 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/app/PreprocessedBundle.hpp
     include/app/RecentProjects.hpp
     include/app/ResourcePath.hpp
+    include/app/UserPreferences.hpp
     include/app/AppState.hpp
     include/app/UiActions.hpp
     include/app/TilePointCache.hpp
@@ -340,6 +342,7 @@ if(BUILD_TESTING)
     add_executable(GeoScatter3DRuntimeTests
         tests/RuntimePerformanceTests.cpp
         src/app/RecentProjects.cpp
+        src/app/UserPreferences.cpp
         src/app/TilePointCache.cpp
         src/app/ViewportResizeScheduler.cpp
         src/camera/BoxSelect.cpp
@@ -354,6 +357,7 @@ if(BUILD_TESTING)
 
     target_include_directories(GeoScatter3DRuntimeTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
     )
 
     target_link_libraries(GeoScatter3DRuntimeTests PRIVATE
@@ -410,6 +414,23 @@ if(BUILD_TESTING)
         NAME GeoScatter3D.IncludeDeps
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_include_deps.py
+    )
+
+    # Fresh-clone smoke test: a tracked CSV is converted into an ignored
+    # bundle, exercising config resolution and the standalone preprocessor
+    # without requiring a window server or physical GPU.
+    add_test(
+        NAME GeoScatter3D.FreshClonePreprocess
+        COMMAND GeoScatter3DPreprocess
+                --config
+                ${CMAKE_CURRENT_SOURCE_DIR}/config/sample-viewer.toml
+    )
+    set_tests_properties(
+        GeoScatter3D.FreshClonePreprocess
+        PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            ENVIRONMENT
+                "GS3D_USER_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-user-config"
     )
 
     # Manual GPU performance harness — not registered with add_test()/ctest

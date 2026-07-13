@@ -32,6 +32,7 @@ LOD 和 tile 文件支持分级与局部加载。
 - GLFW 3
 - pthreads
 - Git submodule 中的 Dear ImGui
+- Python 3（仅用于 include 依赖检查）
 
 ```bash
 git submodule update --init --recursive
@@ -40,15 +41,38 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-运行默认配置：
+`ctest` 包含一个从仓库内样例 CSV 生成 bundle 的无窗口 smoke test，因此上述
+命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。
+
+## 从干净克隆打开样例
+
+仓库提供了 25 行的 [样例 CSV](examples/sample-points.csv) 和可直接运行的
+[样例配置](config/sample-viewer.toml)。以下命令从零开始生成数据并打开窗口：
 
 ```bash
-./build/GeoScatter3D --config config/viewer.toml
+git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/GeoScatter3D --config config/sample-viewer.toml
 ```
 
-配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
+样例生成的 bundle 位于被 Git 忽略的 `data/sample-points.gs3d.bundle/`。若只需
+验证转换而不启动窗口，可运行：
+
+```bash
+./build/GeoScatter3DPreprocess --config config/sample-viewer.toml
+```
+
+默认配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
 会在启动时重新生成 GS3D 和启用的 tile 数据；`input.mode = "gs3d"` 直接打开现有
 GS3D 文件。
+
+## 用户偏好
+
+项目配置是可提交的模板。欢迎页选择的 GPU UUID 不再修改
+`config/viewer.toml`，而是保存至 Linux 的 `$XDG_CONFIG_HOME/geoscatter3d/`
+（默认 `~/.config/geoscatter3d/`）或 Windows 的
+`%APPDATA%\\geoscatter3d\\preferences.toml`。这样在新机器上运行不会弄脏仓库。
 
 ## 多窗口使用
 

@@ -44,8 +44,9 @@ validation_layers = true
 [graphics]
 # 图形设备选择："auto"（自动，优先独立显卡、显存大者优先）
 # 或 "uuid:<32位十六进制>"（固定某块显卡，UUID 跨重启/驱动更新稳定）。
-# 可在欢迎页"图形设备"卡片中选择，选择后由程序写回此字段（保留注释）。
-preferred_gpu = "uuid:868080a7040000000002000000000000"
+# 这是可提交的项目默认值。欢迎页中的个人选择会写入 XDG/AppData
+# 下的 geoscatter3d/preferences.toml，绝不会修改本文件。
+preferred_gpu = "auto"
 
 [render]
 clear_color = [0.118, 0.133, 0.165, 1.0]
@@ -124,12 +125,9 @@ max_visible_tiles = 160
 
 use_full_z_range = true
 verbose = true
-# Raised from 128 -> 512 (docs/benchmark/memory-budget.md Task 3/4): memory
-# is not the bottleneck at 1e8 points (16 bytes/point), so cap is sized to
-# cover the full tile set rather than rationing GPU-resident tiles.
 # LRU 淘汰上限。设为可见 tile 数的 2-3× 让淘汰真正生效，
-# 避免长时间浏览后所有 tile 全量驻留 GPU（159 个=660MB）。
-# 72 ≈ 单帧可见 30-60 的 ~2×，留有相邻视野缓冲。
+# 默认 288 覆盖高峰可见集及相邻视野缓冲，避免调试时的小上限
+# 被误提交后持续触发 GPU 缓存淘汰。
 gpu_cache_max_tiles = 288
 # Upload at most 32 MiB of newly visible tile data per frame. The previous
 # 8 MiB cap dominated cold-load latency on large visible working sets.

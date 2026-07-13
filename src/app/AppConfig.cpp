@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -1362,91 +1361,6 @@ void AppConfigPrinter::print(const AppConfig& config) {
     std::cout << "[CONFIG] viewport.count = "
               << config.viewer.viewport_count
               << '\n';
-}
-
-bool save_viewer_config_string(
-    const std::string& section,
-    const std::string& key,
-    const std::string& value
-) {
-    // Line-level edit instead of a toml++ round-trip: serialising the
-    // parsed table would drop every comment and reorder the file.
-    const auto path = AppConfigLoader::default_config_path();
-
-    std::vector<std::string> lines;
-    {
-        std::ifstream in(path);
-        std::string line;
-        while (std::getline(in, line)) {
-            lines.push_back(std::move(line));
-        }
-    }
-
-    const auto trimmed = [](const std::string& s) {
-        const auto begin = s.find_first_not_of(" \t");
-        if (begin == std::string::npos) {
-            return std::string{};
-        }
-        return s.substr(begin, s.find_last_not_of(" \t") - begin + 1);
-    };
-
-    const std::string section_header = "[" + section + "]";
-    const std::string new_line = key + " = \"" + value + "\"";
-
-    // Locate the section, then the key within it.
-    std::size_t section_line = std::string::npos;
-    std::size_t section_end = lines.size();
-    for (std::size_t i = 0; i < lines.size(); ++i) {
-        const std::string t = trimmed(lines[i]);
-        if (section_line == std::string::npos) {
-            if (t == section_header) {
-                section_line = i;
-            }
-        } else if (!t.empty() && t.front() == '[') {
-            section_end = i;
-            break;
-        }
-    }
-
-    if (section_line == std::string::npos) {
-        // Append a new section at the end.
-        if (!lines.empty() && !trimmed(lines.back()).empty()) {
-            lines.push_back("");
-        }
-        lines.push_back(section_header);
-        lines.push_back(new_line);
-    } else {
-        bool replaced = false;
-        for (std::size_t i = section_line + 1; i < section_end; ++i) {
-            const std::string t = trimmed(lines[i]);
-            if (t.rfind(key, 0) == 0) {
-                const std::string rest = trimmed(t.substr(key.size()));
-                if (!rest.empty() && rest.front() == '=') {
-                    lines[i] = new_line;
-                    replaced = true;
-                    break;
-                }
-            }
-        }
-        if (!replaced) {
-            lines.insert(
-                lines.begin()
-                    + static_cast<std::ptrdiff_t>(section_line) + 1,
-                new_line
-            );
-        }
-    }
-
-    std::ofstream out(path, std::ios::trunc);
-    if (!out) {
-        std::cerr << "[CONFIG] failed to open " << path
-                  << " for writing\n";
-        return false;
-    }
-    for (const auto& line : lines) {
-        out << line << '\n';
-    }
-    return out.good();
 }
 
 } // namespace gs3d::app

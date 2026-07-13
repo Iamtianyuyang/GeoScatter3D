@@ -2,6 +2,7 @@
 
 #include "app/AppConfig.hpp"
 #include "app/RecentProjects.hpp"
+#include "app/UserPreferences.hpp"
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
 #include "platform/Window.hpp"
@@ -207,8 +208,7 @@ WelcomeWindowResult WelcomeWindow::run()
     model.on_preferred_gpu_changed =
         [this](const std::string& gpu) {
             config_.preferred_gpu = gpu;
-            gs3d::app::save_viewer_config_string(
-                "graphics", "preferred_gpu", gpu);
+            gs3d::app::save_preferred_gpu_preference(gpu);
         };
 
     WelcomeWindowResult result;
