@@ -274,12 +274,8 @@ int ViewerApp::run() {
         auto& runtime_points_valid_by_id =
             dataset_session->runtime_points_valid_by_id;
 
-        gs3d::platform::Window window(
-            make_window_config(config_.window)
-        );
-
-        const auto vk_config =
-            make_vulkan_context_config(config_.graphics);
+        gs3d::platform::Window window(make_window_config(config_.window));
+        const auto vk_config = make_vulkan_context_config(config_.graphics);
 
         gs3d::render::VulkanContext context(window, vk_config);
         gs3d::util::log::info() << "[TIME] viewer.startup_seconds = "
@@ -411,7 +407,7 @@ int ViewerApp::run() {
             initial_viewport_extent.width,
             initial_viewport_extent.height
         );
-        initialize_camera_from_config(initial_camera, config_, bounds);
+        initialize_camera_from_config(initial_camera, config_.camera, bounds);
 
         // ViewportManager: N (OffscreenFramebuffer, Camera) pairs.
         // All framebuffers use swapchain.image_format() → Vulkan-compatible with
@@ -831,6 +827,7 @@ int ViewerApp::run() {
                     .controllers = viewport_cameras.controllers(),
                     .viewport_manager = viewport_manager,
                     .camera_hub = camera_hub,
+                    .camera_config = config_.camera,
                     .bounds = bounds,
                     .streaming_viewport_index = streaming_viewport_index,
                     .tile_selection_dirty = tile_selection_dirty
@@ -866,7 +863,7 @@ int ViewerApp::run() {
                 .window = window,
                 .imgui_wants_keyboard = imgui_wants_keyboard,
                 .keyboard_shortcuts_allowed = keyboard_shortcuts_allowed,
-                .config = config_,
+                .camera_config = config_.camera,
                 .app_state = app_state,
                 .viewport_manager = viewport_manager,
                 .viewport_pushes = viewport_pushes,

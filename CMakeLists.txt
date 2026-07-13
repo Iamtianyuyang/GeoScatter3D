@@ -817,6 +817,24 @@ if(BUILD_TESTING)
         COMMAND GeoScatter3DViewerCameraFrameSystemTests
     )
 
+    add_executable(GeoScatter3DViewerCameraConfigurationTests
+        tests/ViewerCameraConfigurationTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerCameraConfigurationTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerCameraConfigurationTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerCameraConfiguration
+        COMMAND GeoScatter3DViewerCameraConfigurationTests
+    )
+
     add_executable(GeoScatter3DViewerFrameMetricsCollectorTests
         tests/ViewerFrameMetricsCollectorTests.cpp
     )

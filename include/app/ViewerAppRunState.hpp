@@ -24,6 +24,7 @@ namespace gs3d::scene { struct SceneState; }
 namespace gs3d::app {
 
 struct ViewerAppTileStreamState;
+struct ViewerCameraConfig;
 
 struct ViewerAppRenderViewContext {
     const gs3d::render::ViewportManager& viewport_manager;
@@ -41,6 +42,7 @@ struct ViewerAppCameraCommandContext {
     std::vector<gs3d::camera::CameraController>& controllers;
     gs3d::render::ViewportManager& viewport_manager;
     gs3d::camera::CameraHub& camera_hub;
+    const ViewerCameraConfig& camera_config;
     const gs3d::camera::CameraBounds& bounds;
     int& streaming_viewport_index;
     bool& tile_selection_dirty;

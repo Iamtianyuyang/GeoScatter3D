@@ -9,7 +9,7 @@
 
 namespace gs3d::app {
 class ViewerAttributeMapping;
-struct ViewerAppConfig;
+struct ViewerCameraConfig;
 class ViewportCameraSystem;
 }
 namespace gs3d::platform { class Window; }
@@ -22,7 +22,7 @@ struct ViewerKeyboardShortcutContext {
     gs3d::platform::Window& window;
     bool imgui_wants_keyboard = false;
     bool keyboard_shortcuts_allowed = false;
-    const ViewerAppConfig& config;
+    const ViewerCameraConfig& camera_config;
     AppState& app_state;
     gs3d::render::ViewportManager& viewport_manager;
     std::vector<gs3d::render::PointPushConstants>& viewport_pushes;

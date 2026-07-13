@@ -76,7 +76,7 @@ void ViewerKeyboardShortcutSystem::process(
             .clear_orbit_pivot();
         initialize_camera_from_config(
             context.viewport_manager.camera(context.streaming_viewport_index),
-            context.config,
+            context.camera_config,
             context.bounds
         );
         context.camera_hub.propagate(context.streaming_viewport_index);
