@@ -2,6 +2,7 @@
 #include "util/Log.hpp"
 #include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerDatasetDescriptor.hpp"
+#include "app/ViewerBenchmarkController.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
@@ -511,35 +512,19 @@ int ViewerApp::run() {
             pick.consecutive_no_hit.resize(n, 0);
             pick.requests.resize(n);
         }
-        const bool benchmark_pick_enabled =
-            config_.benchmark.enabled &&
-            !config_.benchmark.pick_script_path.empty();
-        const auto benchmark_pick_queries =
-            benchmark_pick_enabled
-                ? load_benchmark_pick_script(
-                      config_.benchmark.pick_script_path
-                  )
-                : std::vector<BenchmarkPickScriptQuery>{};
-        std::vector<double> benchmark_pick_issue_cpu_ms(
-            benchmark_pick_queries.size(),
-            0.0
-        );
-        std::vector<BenchmarkPickIssuedMetadata> benchmark_pick_issue_metadata(
-            benchmark_pick_queries.size()
-        );
-        std::vector<BenchmarkPickObservedResult> benchmark_pick_results;
-        benchmark_pick_results.reserve(benchmark_pick_queries.size());
-        std::size_t benchmark_pick_issue_index = 0;
-        BenchmarkSession benchmark_session(
+        ViewerBenchmarkController benchmark_controller(
             config_.benchmark.enabled,
             config_.benchmark.frame_count,
-            renderer.frames_in_flight()
+            renderer.frames_in_flight(),
+            config_.benchmark.pick_script_path
         );
-        if (benchmark_pick_enabled) {
-            benchmark_session.configure_pick_script(
-                benchmark_pick_queries.size()
-            );
-        }
+        auto& benchmark_session = benchmark_controller.session();
+        const bool benchmark_pick_enabled = benchmark_controller.pick_enabled();
+        const auto& benchmark_pick_queries = benchmark_controller.queries();
+        auto& benchmark_pick_issue_cpu_ms = benchmark_controller.issue_cpu_ms();
+        auto& benchmark_pick_issue_metadata = benchmark_controller.issue_metadata();
+        auto& benchmark_pick_results = benchmark_controller.results();
+        auto& benchmark_pick_issue_index = benchmark_controller.issue_index();
 
         gs3d::camera::CameraControllerConfig controller_config;
         controller_config.rotate_speed =
