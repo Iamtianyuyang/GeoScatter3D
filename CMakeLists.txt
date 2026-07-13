@@ -458,6 +458,25 @@ if(BUILD_TESTING)
         COMMAND GeoScatter3DGs3dV2Tests
     )
 
+    add_executable(GeoScatter3DAppConfigTests
+        tests/AppConfigTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DAppConfigTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+    )
+
+    target_link_libraries(GeoScatter3DAppConfigTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.AppConfig
+        COMMAND GeoScatter3DAppConfigTests
+    )
+
     add_executable(GeoScatter3DDataTests
         tests/Gs3dFormatTests.cpp
     )
