@@ -748,41 +748,19 @@ int ViewerApp::run() {
             config_.lod.enabled
         );
 
-        const auto consume_ready_pick_frame_slot =
-            [&pick_system,
-             &runtime_points_by_id,
-             &runtime_points_valid_by_id,
-             &viewport_cameras,
-             &selected_focus_points,
-             &viewport_manager,
-             &bounds,
-             &viewport_pushes,
-             &streaming_viewport_index,
-             &tile_selection_dirty,
-             &benchmark_controller,
-             &resolve_hover_point_from_visible_tiles]
-            (std::uint32_t frame_slot) {
-                ViewerPickLookupContext pick_lookup{
-                    runtime_points_by_id,
-                    runtime_points_valid_by_id
-                };
-                ViewerPickCameraContext pick_camera{
-                    viewport_cameras.controllers(),
-                    selected_focus_points,
-                    viewport_manager,
-                    bounds,
-                    viewport_pushes,
-                    streaming_viewport_index,
-                    tile_selection_dirty
-                };
-                pick_system.consume_ready_frame(
-                    frame_slot,
-                    pick_lookup,
-                    pick_camera,
-                    benchmark_controller,
-                    resolve_hover_point_from_visible_tiles
-                );
-            };
+        ViewerPickFrameContext pick_frame_context{
+            runtime_points_by_id,
+            runtime_points_valid_by_id,
+            viewport_cameras.controllers(),
+            selected_focus_points,
+            viewport_manager,
+            bounds,
+            viewport_pushes,
+            streaming_viewport_index,
+            tile_selection_dirty,
+            benchmark_controller,
+            resolve_hover_point_from_visible_tiles
+        };
 
         // ponytail: screenshot staging — allocated on demand in post_pass, read
         // back after draw_frame. Only one screenshot at a time.
@@ -806,14 +784,7 @@ int ViewerApp::run() {
 
             previous_time = current_time;
 
-            for (std::uint32_t frame_slot = 0;
-                 frame_slot < renderer.frames_in_flight();
-                 ++frame_slot) {
-                if (!renderer.is_frame_slot_ready(frame_slot)) {
-                    continue;
-                }
-                consume_ready_pick_frame_slot(frame_slot);
-            }
+            pick_system.consume_ready_frames(renderer, pick_frame_context);
 
             // Pairs the level rendered last frame with its measured
             // duration, driving LodSelectorConfig::adaptive_interacting_level
@@ -1124,7 +1095,10 @@ int ViewerApp::run() {
                 window,
                 gs3d::render::VulkanRenderer::FrameDrawCallbacks{
                     .frame_ready = [&](std::uint32_t frame_slot) {
-                        consume_ready_pick_frame_slot(frame_slot);
+                        pick_system.consume_ready_frame_slot(
+                            frame_slot,
+                            pick_frame_context
+                        );
                     },
                     // pre_pass: all offscreen render passes execute here, before the
                     // swapchain render pass starts. Each viewport records its own

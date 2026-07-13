@@ -6,6 +6,7 @@
 #include "camera/BoxSelect.hpp"
 #include "camera/CameraController.hpp"
 #include "render/PointPipeline.hpp"
+#include "render/VulkanRenderer.hpp"
 #include "render/ViewportManager.hpp"
 #include "util/Log.hpp"
 #include "util/Stopwatch.hpp"
@@ -386,6 +387,45 @@ void ViewerPickSystem::consume_ready_frame(
         );
         camera.streaming_viewport_index = result.request.viewport_index;
         camera.tile_selection_dirty = true;
+    }
+}
+
+void ViewerPickSystem::consume_ready_frame_slot(
+    const std::uint32_t frame_slot,
+    ViewerPickFrameContext& context
+) {
+    const ViewerPickLookupContext lookup{
+        context.runtime_points_by_id,
+        context.runtime_points_valid_by_id
+    };
+    ViewerPickCameraContext camera{
+        context.controllers,
+        context.selected_focus_points,
+        context.viewport_manager,
+        context.bounds,
+        context.viewport_pushes,
+        context.streaming_viewport_index,
+        context.tile_selection_dirty
+    };
+    consume_ready_frame(
+        frame_slot,
+        lookup,
+        camera,
+        context.benchmark_controller,
+        context.resolve_hover_point_from_visible_tiles
+    );
+}
+
+void ViewerPickSystem::consume_ready_frames(
+    const gs3d::render::VulkanRenderer& renderer,
+    ViewerPickFrameContext& context
+) {
+    for (std::uint32_t frame_slot = 0;
+         frame_slot < renderer.frames_in_flight();
+         ++frame_slot) {
+        if (renderer.is_frame_slot_ready(frame_slot)) {
+            consume_ready_frame_slot(frame_slot, context);
+        }
     }
 }
 
