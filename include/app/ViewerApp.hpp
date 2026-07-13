@@ -60,14 +60,14 @@ struct ViewerOpenRequest {
 };
 
 struct ViewerAppConfig {
-    std::filesystem::path gs3d_path =
-        "/home/tianyy/project/GeoScatter3D/data/test.gs3d";
+    // The configured input path is resolved by AppConfigLoader. Leaving this
+    // empty keeps a default-constructed config portable instead of smuggling
+    // one developer machine's filesystem into every executable.
+    std::filesystem::path gs3d_path;
 
-    std::filesystem::path vertex_shader_path =
-        "/home/tianyy/project/GeoScatter3D/assets/shaders/point.vert.spv";
+    std::filesystem::path vertex_shader_path;
 
-    std::filesystem::path fragment_shader_path =
-        "/home/tianyy/project/GeoScatter3D/assets/shaders/point.frag.spv";
+    std::filesystem::path fragment_shader_path;
 
     unsigned int window_width = 1280;
     unsigned int window_height = 720;

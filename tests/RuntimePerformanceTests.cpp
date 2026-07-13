@@ -1,6 +1,7 @@
 #include "app/RecentProjects.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/UserPreferences.hpp"
+#include "app/ViewerApp.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "camera/BoxSelect.hpp"
 #include "camera/Camera.hpp"
@@ -191,6 +192,17 @@ void test_gpu_preference_is_user_scoped()
 
     std::error_code ec;
     std::filesystem::remove_all(test_root, ec);
+}
+
+void test_default_viewer_config_is_portable()
+{
+    const gs3d::app::ViewerAppConfig config;
+    expect(
+        config.gs3d_path.empty() &&
+            config.vertex_shader_path.empty() &&
+            config.fragment_shader_path.empty(),
+        "default viewer config does not embed machine-specific file paths"
+    );
 }
 
 float dot(
@@ -2967,6 +2979,7 @@ int main()
 {
     test_recent_projects_persist_and_dedupe();
     test_gpu_preference_is_user_scoped();
+    test_default_viewer_config_is_portable();
     test_resize_debounce();
     test_resize_batch();
     test_tile_cache_budget_and_lru();
