@@ -114,12 +114,13 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 2314 行，其中 `ViewerApp::run()` 独占 1946 行；它仍同时
+1. `ViewerApp.cpp` 当前有 2314 行，其中 `ViewerApp::run()` 独占 1945 行；它仍同时
    负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。逐视口输入映射、旋转手势历史和
    相机控制器已提取为可单测的 `ViewportCameraSystem`；benchmark 生命周期已提取为
    `BenchmarkSession`，逐视口渲染状态与首次显示时的状态复制已提取为
    `ViewportPresentationState`；空间/时间 LOD 合并与交互期冻结已提取为
    `ViewportLodController`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
+   CTest 的工程护栏会校验上述行数，避免风险清单再次悄然过期。
    `UiRoot.cpp` 仍有 2353 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`，但其余 ImGui 绘制代码仍需要继续分拆。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
@@ -131,7 +132,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
 5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算、视图局部
    相机输入与 LOD 策略；CTest 中的 C++ 单元测试使用 Catch2 并可按具体用例过滤，Linux/Windows
-   构建工作流执行这些无窗口测试。仍缺少 CSV、tile 选择和 Vulkan 生命周期集成测试。
+   构建工作流执行这些无窗口测试，并检查日志、仓库卫生和架构风险数字。仍缺少 CSV、tile
+   选择和 Vulkan 生命周期集成测试。
 6. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具与手动 benchmark 保留直接
    stdout 作为机器可读接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道可由
    `GS3D_LOG_BENCHMARK=0` 关闭。

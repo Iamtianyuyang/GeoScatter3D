@@ -1,4 +1,5 @@
 #include "data/Gs3dLodDataset.hpp"
+#include "util/Log.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <algorithm>
@@ -6,7 +7,6 @@
 #include <cmath>
 #include <cstddef>
 #include <future>
-#include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -585,7 +585,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
             build_full_copy_level(dataset);
 
         if (config.verbose) {
-            std::cout << "[LOD] level "
+            gs3d::util::log::info() << "[LOD] level "
                       << level.level_index
                       << " full: points="
                       << level.point_count()
@@ -625,7 +625,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
         );
 
     if (config.verbose) {
-        std::cout << "[LOD] auto-layer: finest_target="
+        gs3d::util::log::info() << "[LOD] auto-layer: finest_target="
                   << config.finest_target_points
                   << ", growth=" << config.growth_factor
                   << ", min_points=" << config.min_points_per_level
@@ -688,7 +688,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
         const auto actual_points = level.point_count();
 
         if (config.verbose) {
-            std::cout << "[LOD] level "
+            gs3d::util::log::info() << "[LOD] level "
                       << level.level_index
                       << ": mode="
                       << voxel_mode_name(level.voxel_mode)
@@ -707,7 +707,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
 
         if (actual_points < config.min_points_per_level) {
             if (config.verbose) {
-                std::cout << "[LOD] auto-layer: stopping at level "
+                gs3d::util::log::info() << "[LOD] auto-layer: stopping at level "
                           << level_index
                           << " (points=" << actual_points
                           << " < min=" << config.min_points_per_level
@@ -721,7 +721,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
         voxel_size *= config.growth_factor;
         if (voxel_size > max_extent * 2.0f) {
             if (config.verbose) {
-                std::cout << "[LOD] auto-layer: stopping — "
+                gs3d::util::log::info() << "[LOD] auto-layer: stopping — "
                           << "voxel_size=" << voxel_size
                           << " exceeds 2× max_extent=" << max_extent
                           << '\n';
@@ -733,7 +733,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
     }
 
     if (config.verbose) {
-        std::cout << "[LOD] auto-layer: built "
+        gs3d::util::log::info() << "[LOD] auto-layer: built "
                   << built_levels.size()
                   << " levels\n";
     }

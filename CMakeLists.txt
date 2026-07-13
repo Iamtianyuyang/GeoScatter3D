@@ -720,6 +720,12 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_include_deps.py
     )
 
+    add_test(
+        NAME GeoScatter3D.EngineeringGuardrails
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_engineering_guardrails.py
+    )
+
     # Fresh-clone smoke test: a tracked CSV is converted into an ignored
     # bundle, exercising config resolution and the standalone preprocessor
     # without requiring a window server or physical GPU.
