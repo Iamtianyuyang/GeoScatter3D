@@ -199,6 +199,7 @@ add_library(gs3d_app_support STATIC
     src/app/ViewportResizeScheduler.cpp
     src/app/ViewportInteractionState.cpp
     src/app/MeasurementManager.cpp
+    src/ui/WorkspaceManager.cpp
 )
 
 target_include_directories(gs3d_app_support PUBLIC
@@ -283,6 +284,7 @@ add_library(gs3d_app STATIC
     include/app/ViewportInteractionState.hpp
     include/app/ViewportCameraSystem.hpp
     include/app/MeasurementManager.hpp
+    include/ui/WorkspaceManager.hpp
 
     include/platform/Window.hpp
 
@@ -547,6 +549,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewportCameraSystem
         COMMAND GeoScatter3DViewportCameraSystemTests
+    )
+
+    add_executable(GeoScatter3DWorkspaceManagerTests
+        tests/WorkspaceManagerTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DWorkspaceManagerTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DWorkspaceManagerTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.WorkspaceManager
+        COMMAND GeoScatter3DWorkspaceManagerTests
     )
 
     add_executable(GeoScatter3DDataTests
