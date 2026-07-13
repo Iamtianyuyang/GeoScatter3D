@@ -795,14 +795,14 @@ int ViewerApp::run() {
         std::vector<BenchmarkPickObservedResult> benchmark_pick_results;
         benchmark_pick_results.reserve(benchmark_pick_queries.size());
         std::size_t benchmark_pick_issue_index = 0;
-        constexpr std::uint32_t kBenchmarkPickWarmupFrames = 80;
-        std::uint32_t benchmark_target_frame_count =
-            config_.benchmark_frame_count;
+        BenchmarkSession benchmark_session(
+            config_.benchmark_mode,
+            config_.benchmark_frame_count,
+            renderer.frames_in_flight()
+        );
         if (benchmark_pick_enabled) {
-            benchmark_target_frame_count = static_cast<std::uint32_t>(
-                kBenchmarkPickWarmupFrames +
-                benchmark_pick_queries.size() +
-                static_cast<std::size_t>(renderer.frames_in_flight()) + 1
+            benchmark_session.configure_pick_script(
+                benchmark_pick_queries.size()
             );
         }
 
@@ -913,19 +913,6 @@ int ViewerApp::run() {
             };
 
         ViewportResizeScheduler viewport_resize_scheduler(0.15);
-
-        // Benchmark-mode instrumentation (no-ops when benchmark_mode is false).
-        std::uint64_t app_frame_index = 0;
-        std::uint32_t benchmark_frame_index = 0;
-        ViewerAppBenchmarkFrameSamples benchmark_samples;
-        if (config_.benchmark_mode) {
-            benchmark_samples.reserve_frames(config_.benchmark_frame_count);
-        }
-        // Orbit for the first 2/3 of the run (measures interaction frame
-        // time), then hold still for the last 1/3 (measures tile/LOD
-        // settle/reload latency once the camera stops moving).
-        const std::uint32_t benchmark_orbit_frames =
-            config_.benchmark_frame_count * 2 / 3;
 
         gs3d::render::LodSelector lod_selector;
 
@@ -1326,8 +1313,7 @@ int ViewerApp::run() {
         ViewerAppScreenshotCaptureState screenshot_capture;
 
         while (!window.should_close() &&
-               (!config_.benchmark_mode ||
-                benchmark_frame_index < benchmark_target_frame_count)) {
+               benchmark_session.should_continue()) {
             gs3d::util::Stopwatch benchmark_frame_timer;
             double benchmark_cpu_frame_ms = 0.0;
             double benchmark_camera_update_ms_frame = 0.0;
@@ -1760,7 +1746,8 @@ int ViewerApp::run() {
                 const std::uint32_t benchmark_viewport_height =
                     std::max(config_.window_height, 1u);
                 const bool query_active =
-                    benchmark_frame_index >= kBenchmarkPickWarmupFrames &&
+                    benchmark_session.frame_index() >=
+                        BenchmarkSession::kPickWarmupFrames &&
                     benchmark_pick_issue_index <
                         benchmark_pick_queries.size();
                 const auto& query =
@@ -2070,9 +2057,8 @@ int ViewerApp::run() {
                 }
             }
 
-            if (config_.benchmark_mode &&
-                !benchmark_pick_enabled &&
-                benchmark_frame_index < benchmark_orbit_frames) {
+            if (!benchmark_pick_enabled &&
+                benchmark_session.should_orbit()) {
                 // Orbit + a slow zoom-in so the visible region actually
                 // shrinks — a pure yaw orbit at a fixed distance can leave
                 // the whole bbox in view the entire time, never forcing a
@@ -2179,7 +2165,7 @@ int ViewerApp::run() {
                     .cpu_cull_ms_frame = benchmark_cpu_cull_ms_frame,
                     .upload_record_ms_frame =
                         benchmark_upload_record_ms_frame,
-                    .reload_seconds = benchmark_samples.reload_seconds
+                    .reload_seconds = benchmark_session.samples().reload_seconds
                 };
                 update_tile_streaming(tile_stream, tile_ctx);
             }
@@ -2394,7 +2380,8 @@ int ViewerApp::run() {
                             .lod_level_for_frame = lod_level_for_frame,
                             .interacting = interacting,
                             .benchmark_pick_enabled = benchmark_pick_enabled,
-                            .app_frame_index = app_frame_index,
+                            .app_frame_index =
+                                benchmark_session.app_frame_index(),
                             .benchmark_pick_issue_cpu_ms =
                                 benchmark_pick_issue_cpu_ms,
                             .benchmark_pick_issue_metadata =
@@ -2462,52 +2449,30 @@ int ViewerApp::run() {
             }
             viewport_manager.resize_many(resize_requests);
 
-            if (config_.benchmark_mode) {
-                benchmark_samples.wall_frame_times_ms.push_back(
-                    benchmark_frame_timer.elapsed_milliseconds()
-                );
-                benchmark_samples.cpu_frame_times_ms.push_back(
-                    benchmark_cpu_frame_ms
-                );
-                benchmark_samples.camera_update_ms.push_back(
-                    benchmark_camera_update_ms_frame
-                );
-                benchmark_samples.lod_tile_select_ms.push_back(
-                    benchmark_lod_tile_select_ms_frame
-                );
-                benchmark_samples.cpu_cull_ms.push_back(
-                    benchmark_cpu_cull_ms_frame
-                );
-                benchmark_samples.upload_record_ms.push_back(
-                    benchmark_upload_record_ms_frame
-                );
-                benchmark_samples.draw_record_ms.push_back(
-                    benchmark_draw_record_ms_frame
-                );
-                benchmark_samples.acquire_wait_ms.push_back(
-                    benchmark_acquire_wait_ms_frame
-                );
-                benchmark_samples.frame_fence_wait_ms.push_back(
-                    benchmark_frame_fence_wait_ms_frame
-                );
-                benchmark_samples.upload_fence_wait_ms.push_back(
-                    benchmark_upload_fence_wait_ms_frame
-                );
-                if (renderer.has_last_gpu_frame_ms()) {
-                    benchmark_samples.gpu_frame_times_ms.push_back(
-                        renderer.last_gpu_frame_ms()
-                    );
-                }
-                ++benchmark_frame_index;
-            }
-            ++app_frame_index;
+            benchmark_session.record_frame(
+                {
+                    .wall_frame_ms = benchmark_frame_timer.elapsed_milliseconds(),
+                    .cpu_frame_ms = benchmark_cpu_frame_ms,
+                    .camera_update_ms = benchmark_camera_update_ms_frame,
+                    .lod_tile_select_ms = benchmark_lod_tile_select_ms_frame,
+                    .cpu_cull_ms = benchmark_cpu_cull_ms_frame,
+                    .upload_record_ms = benchmark_upload_record_ms_frame,
+                    .draw_record_ms = benchmark_draw_record_ms_frame,
+                    .acquire_wait_ms = benchmark_acquire_wait_ms_frame,
+                    .frame_fence_wait_ms = benchmark_frame_fence_wait_ms_frame,
+                    .upload_fence_wait_ms = benchmark_upload_fence_wait_ms_frame
+                },
+                renderer.has_last_gpu_frame_ms()
+                    ? std::optional<double>(renderer.last_gpu_frame_ms())
+                    : std::nullopt
+            );
         }
 
         vkDeviceWaitIdle(context.device());
 
-        if (config_.benchmark_mode) {
+        if (benchmark_session.enabled()) {
             print_benchmark_report(
-                benchmark_samples,
+                benchmark_session.samples(),
                 swapchain.present_mode()
             );
         }

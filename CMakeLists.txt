@@ -190,6 +190,7 @@ target_link_libraries(gs3d_render PUBLIC
 
 add_library(gs3d_app_support STATIC
     src/app/AppConfig.cpp
+    src/app/BenchmarkSession.cpp
     src/app/PreprocessedBundle.cpp
     src/app/RecentProjects.cpp
     src/app/ResourcePath.cpp
@@ -273,6 +274,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerApp.hpp
     include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
+    include/app/BenchmarkSession.hpp
     include/app/PreprocessedBundle.hpp
     include/app/RecentProjects.hpp
     include/app/ResourcePath.hpp
@@ -567,6 +569,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.WorkspaceManager
         COMMAND GeoScatter3DWorkspaceManagerTests
+    )
+
+    add_executable(GeoScatter3DBenchmarkSessionTests
+        tests/BenchmarkSessionTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DBenchmarkSessionTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DBenchmarkSessionTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.BenchmarkSession
+        COMMAND GeoScatter3DBenchmarkSessionTests
     )
 
     add_executable(GeoScatter3DDataTests

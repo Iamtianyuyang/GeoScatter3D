@@ -114,10 +114,10 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 2549 行，其中 `ViewerApp::run()` 独占 2182 行；它仍同时
+1. `ViewerApp.cpp` 当前有 2503 行，其中 `ViewerApp::run()` 独占 2135 行；它仍同时
    负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。逐视口输入映射、旋转手势历史和
-   相机控制器已提取为可单测的 `ViewportCameraSystem`，但主循环的其余职责边界仍不清晰，
-   修改任何功能都容易影响主循环。
+   相机控制器已提取为可单测的 `ViewportCameraSystem`；benchmark 生命周期已提取为
+   `BenchmarkSession`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
    `UiRoot.cpp` 仍有 2401 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`，但其余 ImGui 绘制代码仍需要继续分拆。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`

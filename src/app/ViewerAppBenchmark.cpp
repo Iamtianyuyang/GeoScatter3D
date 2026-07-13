@@ -142,7 +142,7 @@ void write_benchmark_pick_results(
 }
 
 void ViewerApp::print_benchmark_report(
-    const ViewerAppBenchmarkFrameSamples& samples,
+    const BenchmarkFrameSamples& samples,
     VkPresentModeKHR present_mode
 ) const {
     gs3d::util::log::benchmark() << "[BENCH] frame_count = "

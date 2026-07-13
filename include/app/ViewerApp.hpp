@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppState.hpp"
+#include "app/BenchmarkSession.hpp"
 #include "app/ViewerAppRunState.hpp"
 
 #include <array>
@@ -366,7 +367,7 @@ private:
     );
 
     void print_benchmark_report(
-        const ViewerAppBenchmarkFrameSamples& samples,
+        const BenchmarkFrameSamples& samples,
         VkPresentModeKHR present_mode
     ) const;
 

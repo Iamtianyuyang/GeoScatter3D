@@ -50,39 +50,6 @@ struct ViewerAppPickCameraContext {
     bool& tile_selection_dirty;
 };
 
-/*
- * Per-frame benchmark timing samples collected across the run and
- * summarized as percentiles by ViewerApp::print_benchmark_report().
- */
-struct ViewerAppBenchmarkFrameSamples {
-    std::vector<double> wall_frame_times_ms;
-    std::vector<double> cpu_frame_times_ms;
-    std::vector<double> gpu_frame_times_ms;
-    std::vector<double> camera_update_ms;
-    std::vector<double> lod_tile_select_ms;
-    std::vector<double> cpu_cull_ms;
-    std::vector<double> upload_record_ms;
-    std::vector<double> draw_record_ms;
-    std::vector<double> acquire_wait_ms;
-    std::vector<double> frame_fence_wait_ms;
-    std::vector<double> upload_fence_wait_ms;
-    std::vector<double> reload_seconds;
-
-    void reserve_frames(std::size_t frame_count) {
-        wall_frame_times_ms.reserve(frame_count);
-        cpu_frame_times_ms.reserve(frame_count);
-        gpu_frame_times_ms.reserve(frame_count);
-        camera_update_ms.reserve(frame_count);
-        lod_tile_select_ms.reserve(frame_count);
-        cpu_cull_ms.reserve(frame_count);
-        upload_record_ms.reserve(frame_count);
-        draw_record_ms.reserve(frame_count);
-        acquire_wait_ms.reserve(frame_count);
-        frame_fence_wait_ms.reserve(frame_count);
-        upload_fence_wait_ms.reserve(frame_count);
-    }
-};
-
 struct ViewerAppBenchmarkPickContext {
     bool enabled = false;
     const std::vector<double>& issue_cpu_ms;
