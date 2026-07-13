@@ -218,11 +218,6 @@ private:
         const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
     );
 
-    void apply_render_setting_commands(
-        const RenderSettingsCommand& command,
-        ViewerAppRenderSettingsContext& ctx
-    );
-
     void apply_reset_camera_command(
         const UiActions& gui_cmds,
         ViewerAppCameraCommandContext& ctx

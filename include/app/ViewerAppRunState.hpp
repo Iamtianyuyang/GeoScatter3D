@@ -36,15 +36,6 @@ struct ViewerAppRenderViewContext {
     int n_viewports = 0;
 };
 
-struct ViewerAppRenderSettingsContext {
-    gs3d::render::PointPushConstants& push;
-    gs3d::scene::SceneState& scene_state;
-    NavigationMapState& navigation_map;
-    const std::vector<AttrDescriptor>& attr_list;
-    const gs3d::data::Gs3dDataset& dataset;
-    float& height_exag;
-};
-
 struct ViewerAppCameraCommandContext {
     int n_viewports = 0;
     std::vector<gs3d::camera::CameraController>& controllers;

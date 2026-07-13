@@ -4,6 +4,7 @@
 #include "app/ViewerDatasetDescriptor.hpp"
 #include "app/ViewerBenchmarkController.hpp"
 #include "app/ViewerKeyboardShortcutSystem.hpp"
+#include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
@@ -646,6 +647,7 @@ int ViewerApp::run() {
             config_.input.z_field_name
         );
         ViewerKeyboardShortcutSystem keyboard_shortcuts;
+        ViewerRenderSettingsSystem render_settings;
         const auto& primary_value_name = attribute_mapping.primary_value_name();
         const auto& z_field_name = attribute_mapping.z_field_name();
         const auto& attr_list = attribute_mapping.descriptors();
@@ -1030,42 +1032,15 @@ int ViewerApp::run() {
                 };
                 apply_reset_camera_command(gui_cmds, cam_ctx);
             }
-            {
-                const auto main_targets = [&]() {
-                    std::vector<int> targets;
-                    targets.push_back(app_state.active_viewport_index);
-                    return targets;
-                };
-                for (const auto& command :
-                     gui_cmds.render_settings_commands) {
-                    const auto targets =
-                        !command.has_viewport_scope
-                        ? main_targets()
-                        : command.viewport_indices;
-                    for (const int viewport_index : targets) {
-                        if (viewport_index < 0 ||
-                            viewport_index >=
-                                static_cast<int>(viewport_pushes.size())) {
-                            continue;
-                        }
-                        const auto idx =
-                            static_cast<std::size_t>(viewport_index);
-                        ViewerAppRenderSettingsContext render_ctx{
-                            .push = viewport_pushes[idx],
-                            .scene_state = viewport_scene_states[idx],
-                            .navigation_map =
-                                navigation_map_for_view(
-                                    app_state,
-                                    viewport_index
-                                ),
-                            .attr_list = attr_list,
-                            .dataset = dataset,
-                            .height_exag = viewport_height_exags[idx]
-                        };
-                        apply_render_setting_commands(command, render_ctx);
-                    }
-                }
-            }
+            render_settings.apply_commands(
+                gui_cmds.render_settings_commands,
+                app_state,
+                viewport_pushes,
+                viewport_scene_states,
+                attr_list,
+                dataset,
+                viewport_height_exags
+            );
             if (gui_cmds.clear_cache_requested) {
                 tile_streaming.clear_cpu_cache();
             }
