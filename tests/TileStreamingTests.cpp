@@ -3,6 +3,8 @@
 #include "data/Gs3dFormat.hpp"
 #include "render/TileSelection.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -12,14 +14,10 @@
 
 namespace {
 
-int failures = 0;
-
 void expect(bool condition, std::string_view name)
 {
-    if (!condition) {
-        std::cerr << "[FAIL] " << name << '\n';
-        ++failures;
-    }
+    INFO(name);
+    CHECK(condition);
 }
 
 // ── build_gpu_required_tile_ids (production helper) ──────────────────
@@ -529,50 +527,45 @@ void test_stale_entry_is_first_lru_eviction()
 
 } // namespace
 
-int main()
-{
+#define LEGACY_TEST_CASE(test_function) \
+    TEST_CASE(#test_function, "[tile_streaming]") { test_function(); }
+
     // production helper tests
-    test_visible_tiles_ignore_resident_budget();
-    test_visible_tiles_allow_unlimited_resident_budget();
-    test_visible_tiles_preserve_all_candidates_below_budget();
-    test_empty_visible_candidates();
+    LEGACY_TEST_CASE(test_visible_tiles_ignore_resident_budget)
+    LEGACY_TEST_CASE(test_visible_tiles_allow_unlimited_resident_budget)
+    LEGACY_TEST_CASE(test_visible_tiles_preserve_all_candidates_below_budget)
+    LEGACY_TEST_CASE(test_empty_visible_candidates)
 
     // order sensitivity
-    test_reordering_changes_required_when_k_small();
-    test_reordering_no_change_when_first_k_stable();
-    test_no_spurious_update_when_stable();
+    LEGACY_TEST_CASE(test_reordering_changes_required_when_k_small)
+    LEGACY_TEST_CASE(test_reordering_no_change_when_first_k_stable)
+    LEGACY_TEST_CASE(test_no_spurious_update_when_stable)
 
     // viewport / spatial clip (pure logic)
-    test_viewport_is_required_intersect_resident();
-    test_spatial_clip_empty_required_fallback();
+    LEGACY_TEST_CASE(test_viewport_is_required_intersect_resident)
+    LEGACY_TEST_CASE(test_spatial_clip_empty_required_fallback)
 
     // GPU behaviour contracts
-    test_contract_pin_required_resident_with_cpu_miss();
-    test_contract_old_tile_lazy_replacement();
+    LEGACY_TEST_CASE(test_contract_pin_required_resident_with_cpu_miss)
+    LEGACY_TEST_CASE(test_contract_old_tile_lazy_replacement)
 
     // budget timing
-    test_budget_shrink_with_empty_cached();
+    LEGACY_TEST_CASE(test_budget_shrink_with_empty_cached)
 
     // lifecycle
-    test_disable_reenable_required_lifecycle();
-    test_runtime_k_change();
+    LEGACY_TEST_CASE(test_disable_reenable_required_lifecycle)
+    LEGACY_TEST_CASE(test_runtime_k_change)
 
     // commit_streaming_tile_load_result
-    test_commit_all_stale_retained_with_spare_capacity();
-    test_commit_partial_overlap();
-    test_commit_revision_expired_but_tile_needed();
-    test_commit_already_cached_no_reput();
-    test_commit_normal_accept();
-    test_commit_reuses_loaded_allocation();
-    test_commit_empty_required();
-    test_commit_invalid_entry();
-    test_stale_admission_never_evicts_hot_data();
-    test_stale_entry_is_first_lru_eviction();
+    LEGACY_TEST_CASE(test_commit_all_stale_retained_with_spare_capacity)
+    LEGACY_TEST_CASE(test_commit_partial_overlap)
+    LEGACY_TEST_CASE(test_commit_revision_expired_but_tile_needed)
+    LEGACY_TEST_CASE(test_commit_already_cached_no_reput)
+    LEGACY_TEST_CASE(test_commit_normal_accept)
+    LEGACY_TEST_CASE(test_commit_reuses_loaded_allocation)
+    LEGACY_TEST_CASE(test_commit_empty_required)
+    LEGACY_TEST_CASE(test_commit_invalid_entry)
+    LEGACY_TEST_CASE(test_stale_admission_never_evicts_hot_data)
+    LEGACY_TEST_CASE(test_stale_entry_is_first_lru_eviction)
 
-    if (failures) {
-        std::cerr << failures << " test(s) FAILED.\n";
-        return 1;
-    }
-    std::cout << "All TileStreaming tests passed.\n";
-    return 0;
-}
+#undef LEGACY_TEST_CASE

@@ -579,6 +579,7 @@ if(BUILD_TESTING)
 
     target_link_libraries(GeoScatter3DDataTests PRIVATE
         gs3d_preprocess
+        Catch2::Catch2WithMain
     )
 
     add_test(
@@ -598,6 +599,7 @@ if(BUILD_TESTING)
     target_link_libraries(GeoScatter3DRuntimeLogicTests PRIVATE
         gs3d_app_support
         gs3d_render
+        Catch2::Catch2WithMain
     )
 
     add_test(
@@ -616,6 +618,7 @@ if(BUILD_TESTING)
     target_link_libraries(GeoScatter3DTileStreamingTests PRIVATE
         gs3d_app_support
         gs3d_render
+        Catch2::Catch2WithMain
     )
 
     add_test(
@@ -633,6 +636,7 @@ if(BUILD_TESTING)
 
     target_link_libraries(GeoScatter3DGpuInfoTests PRIVATE
         gs3d_render
+        Catch2::Catch2WithMain
     )
 
     add_test(

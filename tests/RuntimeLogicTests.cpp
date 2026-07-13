@@ -17,6 +17,8 @@
 #include "scene/SceneState.hpp"
 #include "ui/UiRoot.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <cmath>
 #include <chrono>
 #include <cstdint>
@@ -32,14 +34,10 @@
 
 namespace {
 
-int failures = 0;
-
 void expect(bool condition, std::string_view name)
 {
-    if (!condition) {
-        std::cerr << "[FAIL] " << name << '\n';
-        ++failures;
-    }
+    INFO(name);
+    CHECK(condition);
 }
 
 bool set_environment_variable(
@@ -3008,82 +3006,79 @@ void test_hover_cleared_when_no_hit()
 
 } // namespace
 
-int main()
-{
-    test_recent_projects_persist_and_dedupe();
-    test_gpu_preference_is_user_scoped();
-    test_resource_path_resolves_assets_from_executable_directory();
-    test_default_viewer_config_is_portable();
-    test_resize_debounce();
-    test_resize_batch();
-    test_tile_cache_budget_and_lru();
-    test_oversized_tile_is_not_cached();
-    test_scene_state_is_constructible_without_dataset_io();
-    test_frame_upload_budget();
-    test_camera_uses_view_local_input();
-    test_zoom_keeps_cursor_anchor_fixed();
-    test_zoom_respects_max_distance_from_bounds();
-    test_fit_bounds_distance_is_orientation_independent();
-    test_fit_bounds_keeps_panorama_far_end_visible();
-    test_orthographic_fit_bounds_uses_true_top_down_view();
-    test_tile_selection_honors_full_z_range_config();
-    test_tile_selection_uses_mapped_height_space();
-    test_tile_selection_does_not_cap_visible_tiles();
-    test_zoom_caps_depth_ratio_for_close_large_scene();
-    test_rotate_refreshes_depth_ratio();
-    test_pan_refreshes_depth_ratio();
-    test_box_select_falls_back_at_grazing_pitch();
-    test_box_select_stays_within_scene_bounds_under_camera_tilt();
-    test_axis_ticks_returns_empty_for_degenerate_range();
-    test_axis_ticks_are_evenly_spaced_and_within_range();
-    test_axis_ticks_step_is_a_nice_round_number();
-    test_axis_ticks_huge_origin_with_tiny_step_terminates();
-    test_axis_ticks_huge_origin_with_tiny_step_is_capped();
-    test_mouse_mapping_without_map_axis_uses_canvas_rect();
-    test_mouse_mapping_with_map_axis_uses_plot_rect();
-    test_mouse_mapping_with_map_axis_rejects_axis_margin();
-    test_pick_11x11_neighborhood_hits_sparse_isolated_point();
-    test_pick_11x11_neighborhood_misses_point_outside_radius();
-    test_mouse_ray_to_screen_projects_target_near_center();
-    test_mouse_ray_to_screen_skips_points_behind_camera();
-    test_mouse_ray_to_screen_round_trips_with_from_screen();
-    test_box_select_returns_nullopt_for_degenerate_rect();
-    test_box_select_world_bounds_scales_with_screen_rect_size();
-    test_box_select_world_bounds_centers_near_camera_look_target();
-    test_nearest_point_query_returns_nullopt_for_no_candidates();
-    test_nearest_point_query_picks_screen_closest_candidate();
-    test_nearest_point_query_respects_max_screen_distance();
-    test_nearest_point_query_skips_points_behind_camera();
-    test_nearest_point_query_depth_tie_is_order_sensitive();
-    test_lod_adaptive_level_starts_at_lowest_while_interacting();
-    test_lod_adaptive_level_climbs_after_good_frame_streak();
-    test_lod_adaptive_level_drops_immediately_when_over_budget();
-    test_lod_adaptive_level_ignores_stale_feedback();
-    test_lod_non_adaptive_mode_still_pins_to_lowest();
-    test_spatial_select_picks_coarsest_covering();
-    test_zoom_in_selects_finer_level();
-    test_spatial_no_flicker_at_boundary();
-    test_spatial_frozen_during_interaction();
-    test_spatial_updates_after_interaction();
-    test_continuous_zoom_in_flies_forward_without_stalling();
-    test_idle_update_does_not_change_camera();
-    test_rotation_after_pan_keeps_panned_target();
-    test_rotation_does_not_undo_overlapping_pan();
-    test_screen_space_pan_tracks_mouse_pixels();
-    test_rotation_supports_nearly_full_pitch_range();
-    test_rotation_after_pan_keeps_scene_pivot_on_screen();
-    test_custom_orbit_pivot_and_focus();
-    test_rotation_orbits_current_target();
-    test_click_without_drag_does_not_move_camera();
-    test_rotate_release_does_not_move_camera();
-    test_rotation_pivot_is_screen_center();
-    test_pitch_never_exceeds_pole();
-    test_zoom_in_past_distance_floor_keeps_zooming_via_fov();
-    test_fov_clamped_at_min();
-    test_hover_cleared_when_no_hit();
+#define LEGACY_TEST_CASE(test_function) \
+    TEST_CASE(#test_function, "[runtime_logic]") { test_function(); }
 
-    if (failures == 0) {
-        std::cout << "[PASS] runtime logic tests\n";
-    }
-    return failures == 0 ? 0 : 1;
-}
+    LEGACY_TEST_CASE(test_recent_projects_persist_and_dedupe)
+    LEGACY_TEST_CASE(test_gpu_preference_is_user_scoped)
+    LEGACY_TEST_CASE(test_resource_path_resolves_assets_from_executable_directory)
+    LEGACY_TEST_CASE(test_default_viewer_config_is_portable)
+    LEGACY_TEST_CASE(test_resize_debounce)
+    LEGACY_TEST_CASE(test_resize_batch)
+    LEGACY_TEST_CASE(test_tile_cache_budget_and_lru)
+    LEGACY_TEST_CASE(test_oversized_tile_is_not_cached)
+    LEGACY_TEST_CASE(test_scene_state_is_constructible_without_dataset_io)
+    LEGACY_TEST_CASE(test_frame_upload_budget)
+    LEGACY_TEST_CASE(test_camera_uses_view_local_input)
+    LEGACY_TEST_CASE(test_zoom_keeps_cursor_anchor_fixed)
+    LEGACY_TEST_CASE(test_zoom_respects_max_distance_from_bounds)
+    LEGACY_TEST_CASE(test_fit_bounds_distance_is_orientation_independent)
+    LEGACY_TEST_CASE(test_fit_bounds_keeps_panorama_far_end_visible)
+    LEGACY_TEST_CASE(test_orthographic_fit_bounds_uses_true_top_down_view)
+    LEGACY_TEST_CASE(test_tile_selection_honors_full_z_range_config)
+    LEGACY_TEST_CASE(test_tile_selection_uses_mapped_height_space)
+    LEGACY_TEST_CASE(test_tile_selection_does_not_cap_visible_tiles)
+    LEGACY_TEST_CASE(test_zoom_caps_depth_ratio_for_close_large_scene)
+    LEGACY_TEST_CASE(test_rotate_refreshes_depth_ratio)
+    LEGACY_TEST_CASE(test_pan_refreshes_depth_ratio)
+    LEGACY_TEST_CASE(test_box_select_falls_back_at_grazing_pitch)
+    LEGACY_TEST_CASE(test_box_select_stays_within_scene_bounds_under_camera_tilt)
+    LEGACY_TEST_CASE(test_axis_ticks_returns_empty_for_degenerate_range)
+    LEGACY_TEST_CASE(test_axis_ticks_are_evenly_spaced_and_within_range)
+    LEGACY_TEST_CASE(test_axis_ticks_step_is_a_nice_round_number)
+    LEGACY_TEST_CASE(test_axis_ticks_huge_origin_with_tiny_step_terminates)
+    LEGACY_TEST_CASE(test_axis_ticks_huge_origin_with_tiny_step_is_capped)
+    LEGACY_TEST_CASE(test_mouse_mapping_without_map_axis_uses_canvas_rect)
+    LEGACY_TEST_CASE(test_mouse_mapping_with_map_axis_uses_plot_rect)
+    LEGACY_TEST_CASE(test_mouse_mapping_with_map_axis_rejects_axis_margin)
+    LEGACY_TEST_CASE(test_pick_11x11_neighborhood_hits_sparse_isolated_point)
+    LEGACY_TEST_CASE(test_pick_11x11_neighborhood_misses_point_outside_radius)
+    LEGACY_TEST_CASE(test_mouse_ray_to_screen_projects_target_near_center)
+    LEGACY_TEST_CASE(test_mouse_ray_to_screen_skips_points_behind_camera)
+    LEGACY_TEST_CASE(test_mouse_ray_to_screen_round_trips_with_from_screen)
+    LEGACY_TEST_CASE(test_box_select_returns_nullopt_for_degenerate_rect)
+    LEGACY_TEST_CASE(test_box_select_world_bounds_scales_with_screen_rect_size)
+    LEGACY_TEST_CASE(test_box_select_world_bounds_centers_near_camera_look_target)
+    LEGACY_TEST_CASE(test_nearest_point_query_returns_nullopt_for_no_candidates)
+    LEGACY_TEST_CASE(test_nearest_point_query_picks_screen_closest_candidate)
+    LEGACY_TEST_CASE(test_nearest_point_query_respects_max_screen_distance)
+    LEGACY_TEST_CASE(test_nearest_point_query_skips_points_behind_camera)
+    LEGACY_TEST_CASE(test_nearest_point_query_depth_tie_is_order_sensitive)
+    LEGACY_TEST_CASE(test_lod_adaptive_level_starts_at_lowest_while_interacting)
+    LEGACY_TEST_CASE(test_lod_adaptive_level_climbs_after_good_frame_streak)
+    LEGACY_TEST_CASE(test_lod_adaptive_level_drops_immediately_when_over_budget)
+    LEGACY_TEST_CASE(test_lod_adaptive_level_ignores_stale_feedback)
+    LEGACY_TEST_CASE(test_lod_non_adaptive_mode_still_pins_to_lowest)
+    LEGACY_TEST_CASE(test_spatial_select_picks_coarsest_covering)
+    LEGACY_TEST_CASE(test_zoom_in_selects_finer_level)
+    LEGACY_TEST_CASE(test_spatial_no_flicker_at_boundary)
+    LEGACY_TEST_CASE(test_spatial_frozen_during_interaction)
+    LEGACY_TEST_CASE(test_spatial_updates_after_interaction)
+    LEGACY_TEST_CASE(test_continuous_zoom_in_flies_forward_without_stalling)
+    LEGACY_TEST_CASE(test_idle_update_does_not_change_camera)
+    LEGACY_TEST_CASE(test_rotation_after_pan_keeps_panned_target)
+    LEGACY_TEST_CASE(test_rotation_does_not_undo_overlapping_pan)
+    LEGACY_TEST_CASE(test_screen_space_pan_tracks_mouse_pixels)
+    LEGACY_TEST_CASE(test_rotation_supports_nearly_full_pitch_range)
+    LEGACY_TEST_CASE(test_rotation_after_pan_keeps_scene_pivot_on_screen)
+    LEGACY_TEST_CASE(test_custom_orbit_pivot_and_focus)
+    LEGACY_TEST_CASE(test_rotation_orbits_current_target)
+    LEGACY_TEST_CASE(test_click_without_drag_does_not_move_camera)
+    LEGACY_TEST_CASE(test_rotate_release_does_not_move_camera)
+    LEGACY_TEST_CASE(test_rotation_pivot_is_screen_center)
+    LEGACY_TEST_CASE(test_pitch_never_exceeds_pole)
+    LEGACY_TEST_CASE(test_zoom_in_past_distance_floor_keeps_zooming_via_fov)
+    LEGACY_TEST_CASE(test_fov_clamped_at_min)
+    LEGACY_TEST_CASE(test_hover_cleared_when_no_hit)
+
+#undef LEGACY_TEST_CASE

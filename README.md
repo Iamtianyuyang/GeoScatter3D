@@ -43,8 +43,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 `ctest` 包含一个从仓库内样例 CSV 生成 bundle 的无窗口 smoke test，因此上述
-命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。新测试使用 Catch2，
-可直接按标签单独运行，例如 `./build/GeoScatter3DGs3dV2Tests "[gs3d]"`。
+命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。CTest 中的 C++ 单元测试使用
+Catch2，可按标签或原有测试函数名单独运行，例如
+`./build/GeoScatter3DGs3dV2Tests "[gs3d]"` 或
+`./build/GeoScatter3DRuntimeLogicTests test_resize_debounce`。
 
 Windows 可用 vcpkg 安装 `glfw3`、`vulkan-headers`、`vulkan-loader` 和
 `glslang[tools]`，再按 CI 传入 toolchain：
