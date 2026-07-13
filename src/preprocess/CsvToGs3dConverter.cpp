@@ -1,4 +1,5 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
+#include "util/Log.hpp"
 
 #include "data/CsvChunkPlanner.hpp"
 #include "data/CsvChunkReader.hpp"
@@ -264,7 +265,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert(
         return convert_sequential(csv_path, gs3d_path);
     }
 
-    std::cout << "[CSV] parallel convert: chunks="
+    gs3d::util::log::info() << "[CSV] parallel convert: chunks="
               << chunks.size()
               << ", threads="
               << worker_count

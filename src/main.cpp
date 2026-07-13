@@ -1,4 +1,5 @@
 #include "app/AppConfig.hpp"
+#include "util/Log.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
@@ -81,13 +82,13 @@ void preprocess_csv_input(
 
     gs3d::util::Stopwatch preprocess_timer;
 
-    std::cout << "[PREPROCESS] csv_path = "
+    gs3d::util::log::info() << "[PREPROCESS] csv_path = "
               << app_config.csv_input_path.string()
               << '\n';
-    std::cout << "[PREPROCESS] bundle_dir = "
+    gs3d::util::log::info() << "[PREPROCESS] bundle_dir = "
               << bundle_paths.bundle_dir.string()
               << '\n';
-    std::cout << "[PREPROCESS] gs3d_path = "
+    gs3d::util::log::info() << "[PREPROCESS] gs3d_path = "
               << app_config.viewer.gs3d_path.string()
               << '\n';
 
@@ -120,10 +121,10 @@ void preprocess_csv_input(
             app_config.viewer.gs3d_path
         );
 
-    std::cout << "[PREPROCESS] written_points = "
+    gs3d::util::log::info() << "[PREPROCESS] written_points = "
               << convert_result.written_points
               << '\n';
-    std::cout << "[TIME] preprocess.csv_convert_seconds = "
+    gs3d::util::log::info() << "[TIME] preprocess.csv_convert_seconds = "
               << convert_timer.elapsed_seconds()
               << '\n';
 
@@ -137,7 +138,7 @@ void preprocess_csv_input(
         if (lod_dataset.empty()) {
             app_config.viewer.lod_enabled = false;
             bundle_paths.lod_enabled = false;
-            std::cout
+            gs3d::util::log::info()
                 << "[PREPROCESS] LOD skipped: dataset is below "
                 << "the configured minimum point count.\n";
         } else {
@@ -146,11 +147,11 @@ void preprocess_csv_input(
                     app_config.viewer.lod_sidecar_path,
                     lod_dataset
                 );
-            std::cout << "[PREPROCESS] lod_levels = "
+            gs3d::util::log::info() << "[PREPROCESS] lod_levels = "
                       << lod_stats.level_count
                       << '\n';
         }
-        std::cout << "[TIME] preprocess.lod_write_seconds = "
+        gs3d::util::log::info() << "[TIME] preprocess.lod_write_seconds = "
                   << lod_timer.elapsed_seconds()
                   << '\n';
     }
@@ -169,10 +170,10 @@ void preprocess_csv_input(
                 tile_config
             );
 
-        std::cout << "[PREPROCESS] tile_count = "
+        gs3d::util::log::info() << "[PREPROCESS] tile_count = "
                   << tile_stats.tile_count
                   << '\n';
-        std::cout << "[TIME] preprocess.tile_write_seconds = "
+        gs3d::util::log::info() << "[TIME] preprocess.tile_write_seconds = "
                   << tile_timer.elapsed_seconds()
                   << '\n';
     }
@@ -183,7 +184,7 @@ void preprocess_csv_input(
         dataset
     );
 
-    std::cout << "[TIME] preprocess.total_seconds = "
+    gs3d::util::log::info() << "[TIME] preprocess.total_seconds = "
               << preprocess_timer.elapsed_seconds()
               << '\n';
 }
@@ -434,7 +435,7 @@ int main(int argc, char** argv) {
             apply_open_request(app_config, *app.open_request());
         }
     } catch (const std::exception& e) {
-        std::cerr << "[FAIL] " << e.what() << '\n';
+        gs3d::util::log::error() << "[FAIL] " << e.what() << '\n';
         return 1;
     }
 }

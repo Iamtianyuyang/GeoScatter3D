@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppRunState.hpp"
 
@@ -369,7 +370,7 @@ void ViewerApp::consume_ready_pick_frame_slot(
                         if (!hit_point.has_value()) {
                             pick_camera.controllers[view_index].clear_orbit_pivot();
                             pick_camera.selected_focus_points[view_index].reset();
-                            std::cout
+                            gs3d::util::log::info()
                                 << "[CAMERA] orbit pivot cleared"
                                 << " (double-clicked empty space)\n";
                             continue;
@@ -399,7 +400,7 @@ void ViewerApp::consume_ready_pick_frame_slot(
                         pick_camera.selected_focus_points[view_index] = selected_point;
                         pick_camera.streaming_viewport_index =
                             result.request.viewport_index;
-                        std::cout
+                        gs3d::util::log::info()
                             << "[CAMERA] orbit pivot selected at ["
                             << selected_point.x << ", "
                             << selected_point.y << ", "

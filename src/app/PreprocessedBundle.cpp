@@ -1,4 +1,5 @@
 #include "app/PreprocessedBundle.hpp"
+#include "util/Log.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -355,7 +356,7 @@ void save_analysis(
     const auto path = bundle_dir / kAnalysisFileName;
     std::ofstream out(path);
     if (!out.is_open()) {
-        std::cerr << "[WARN] save_analysis: failed to open "
+        gs3d::util::log::warning() << "[WARN] save_analysis: failed to open "
                   << path.string() << " for writing\n";
         return;
     }
@@ -409,7 +410,7 @@ void load_analysis(
     try {
         root = toml::parse_file(path.string());
     } catch (const toml::parse_error& e) {
-        std::cerr << "[WARN] load_analysis: failed to parse "
+        gs3d::util::log::warning() << "[WARN] load_analysis: failed to parse "
                   << path.string()
                   << "\nReason: " << e.description() << '\n';
         return;

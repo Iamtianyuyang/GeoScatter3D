@@ -1,4 +1,5 @@
 #include "app/ViewerAppInternal.hpp"
+#include "util/Log.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -403,11 +404,11 @@ void write_pick_debug_dump(
     meta << "resident_tile_ids="
          << join_uint64_list(dump.metadata.resident_tile_ids) << '\n';
 
-    std::cout << "[PICK_DEBUG] wrote color dump: "
+    gs3d::util::log::info() << "[PICK_DEBUG] wrote color dump: "
               << color_path.string() << '\n';
-    std::cout << "[PICK_DEBUG] wrote pick-id dump: "
+    gs3d::util::log::info() << "[PICK_DEBUG] wrote pick-id dump: "
               << pick_path.string() << '\n';
-    std::cout << "[PICK_DEBUG] wrote metadata: "
+    gs3d::util::log::info() << "[PICK_DEBUG] wrote metadata: "
               << meta_path.string() << '\n';
 }
 

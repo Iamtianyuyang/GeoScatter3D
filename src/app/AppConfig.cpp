@@ -1,4 +1,5 @@
 #include "app/AppConfig.hpp"
+#include "util/Log.hpp"
 #include "app/ResourcePath.hpp"
 
 #include <toml++/toml.hpp>
@@ -1103,196 +1104,196 @@ void AppConfigLoader::apply_command_line_overrides(
 }
 
 void AppConfigPrinter::print(const AppConfig& config) {
-    std::cout << "[CONFIG] input.gs3d_path = "
+    gs3d::util::log::info() << "[CONFIG] input.gs3d_path = "
               << config.viewer.gs3d_path.string() << '\n';
 
-    std::cout << "[CONFIG] input.mode = "
+    gs3d::util::log::info() << "[CONFIG] input.mode = "
               << config.input_mode << '\n';
 
-    std::cout << "[CONFIG] input.csv_path = "
+    gs3d::util::log::info() << "[CONFIG] input.csv_path = "
               << config.csv_input_path.string() << '\n';
 
-    std::cout << "[CONFIG] input.bundle_dir = "
+    gs3d::util::log::info() << "[CONFIG] input.bundle_dir = "
               << config.bundle_dir.string() << '\n';
 
-    std::cout << "[CONFIG] csv_convert.num_threads = "
+    gs3d::util::log::info() << "[CONFIG] csv_convert.num_threads = "
               << config.csv_convert.num_threads << '\n';
 
-    std::cout << "[CONFIG] preprocess.num_threads = "
+    gs3d::util::log::info() << "[CONFIG] preprocess.num_threads = "
               << config.tile_build.num_threads << '\n';
 
-    std::cout << "[CONFIG] csv_convert.chunk_bytes = "
+    gs3d::util::log::info() << "[CONFIG] csv_convert.chunk_bytes = "
               << config.csv_convert.chunk_bytes << '\n';
 
-    std::cout << "[CONFIG] csv_convert.min_parallel_file_bytes = "
+    gs3d::util::log::info() << "[CONFIG] csv_convert.min_parallel_file_bytes = "
               << config.csv_convert.min_parallel_file_bytes << '\n';
 
-    std::cout << "[CONFIG] shader.vertex_shader_path = "
+    gs3d::util::log::info() << "[CONFIG] shader.vertex_shader_path = "
               << config.viewer.vertex_shader_path.string() << '\n';
 
-    std::cout << "[CONFIG] shader.fragment_shader_path = "
+    gs3d::util::log::info() << "[CONFIG] shader.fragment_shader_path = "
               << config.viewer.fragment_shader_path.string() << '\n';
 
-    std::cout << "[CONFIG] window.width = "
+    gs3d::util::log::info() << "[CONFIG] window.width = "
               << config.viewer.window_width << '\n';
 
-    std::cout << "[CONFIG] window.height = "
+    gs3d::util::log::info() << "[CONFIG] window.height = "
               << config.viewer.window_height << '\n';
 
-    std::cout << "[CONFIG] window.title = "
+    gs3d::util::log::info() << "[CONFIG] window.title = "
               << config.viewer.window_title << '\n';
 
-    std::cout << "[CONFIG] window.resizable = "
+    gs3d::util::log::info() << "[CONFIG] window.resizable = "
               << (config.viewer.window_resizable ? "true" : "false") << '\n';
 
-    std::cout << "[CONFIG] window.ui_layout_ini_path = "
+    gs3d::util::log::info() << "[CONFIG] window.ui_layout_ini_path = "
               << config.viewer.ui_layout_ini_path.string() << '\n';
 
-    std::cout << "[CONFIG] window.ui_scale_multiplier = "
+    gs3d::util::log::info() << "[CONFIG] window.ui_scale_multiplier = "
               << config.viewer.ui_scale_multiplier << '\n';
 
-    std::cout << "[CONFIG] window.theme = "
+    gs3d::util::log::info() << "[CONFIG] window.theme = "
               << config.viewer.theme << '\n';
 
-    std::cout << "[CONFIG] window.multi_viewports = "
+    gs3d::util::log::info() << "[CONFIG] window.multi_viewports = "
               << (config.viewer.enable_multi_viewports ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] debug.pick_debug_dump_enabled = "
+    gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_enabled = "
               << (config.viewer.pick_debug_dump_enabled ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] debug.pick_debug_dump_dir = "
+    gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_dir = "
               << config.viewer.pick_debug_dump_dir.string() << '\n';
 
-    std::cout << "[CONFIG] debug.pick_debug_dump_once_on_hover = "
+    gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_once_on_hover = "
               << (config.viewer.pick_debug_dump_once_on_hover
                       ? "true"
                       : "false")
               << '\n';
 
-    std::cout << "[CONFIG] vulkan.validation_layers = "
+    gs3d::util::log::info() << "[CONFIG] vulkan.validation_layers = "
               << (config.viewer.enable_validation_layers ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] graphics.preferred_gpu = "
+    gs3d::util::log::info() << "[CONFIG] graphics.preferred_gpu = "
               << config.viewer.preferred_gpu
               << '\n';
 
-    std::cout << "[CONFIG] render.clear_color = ["
+    gs3d::util::log::info() << "[CONFIG] render.clear_color = ["
               << config.render.clear_color[0] << ", "
               << config.render.clear_color[1] << ", "
               << config.render.clear_color[2] << ", "
               << config.render.clear_color[3] << "]\n";
 
-    std::cout << "[CONFIG] render.initial_point_size = "
+    gs3d::util::log::info() << "[CONFIG] render.initial_point_size = "
               << config.render.initial_point_size << '\n';
 
-    std::cout << "[CONFIG] camera.mode = "
+    gs3d::util::log::info() << "[CONFIG] camera.mode = "
               << config.camera.mode << '\n';
 
-    std::cout << "[CONFIG] camera.position = ["
+    gs3d::util::log::info() << "[CONFIG] camera.position = ["
               << config.camera.position[0] << ", "
               << config.camera.position[1] << ", "
               << config.camera.position[2] << "]\n";
 
-    std::cout << "[CONFIG] camera.target = ["
+    gs3d::util::log::info() << "[CONFIG] camera.target = ["
               << config.camera.target[0] << ", "
               << config.camera.target[1] << ", "
               << config.camera.target[2] << "]\n";
 
-    std::cout << "[CONFIG] camera.up = ["
+    gs3d::util::log::info() << "[CONFIG] camera.up = ["
               << config.camera.up[0] << ", "
               << config.camera.up[1] << ", "
               << config.camera.up[2] << "]\n";
 
-    std::cout << "[CONFIG] camera.fov_y = "
+    gs3d::util::log::info() << "[CONFIG] camera.fov_y = "
               << config.camera.fov_y << '\n';
 
-    std::cout << "[CONFIG] camera.near = "
+    gs3d::util::log::info() << "[CONFIG] camera.near = "
               << config.camera.near_plane << '\n';
 
-    std::cout << "[CONFIG] camera.far = "
+    gs3d::util::log::info() << "[CONFIG] camera.far = "
               << config.camera.far_plane << '\n';
 
-    std::cout << "[CONFIG] controller.rotate_speed = "
+    gs3d::util::log::info() << "[CONFIG] controller.rotate_speed = "
               << config.controller.rotate_speed << '\n';
 
-    std::cout << "[CONFIG] controller.pan_speed = "
+    gs3d::util::log::info() << "[CONFIG] controller.pan_speed = "
               << config.controller.pan_speed << '\n';
 
-    std::cout << "[CONFIG] controller.zoom_speed = "
+    gs3d::util::log::info() << "[CONFIG] controller.zoom_speed = "
               << config.controller.zoom_speed << '\n';
 
-    std::cout << "[CONFIG] controller.invert_rotate_x = "
+    gs3d::util::log::info() << "[CONFIG] controller.invert_rotate_x = "
               << (config.controller.invert_rotate_x ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] controller.invert_rotate_y = "
+    gs3d::util::log::info() << "[CONFIG] controller.invert_rotate_y = "
               << (config.controller.invert_rotate_y ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] controller.invert_pan_x = "
+    gs3d::util::log::info() << "[CONFIG] controller.invert_pan_x = "
               << (config.controller.invert_pan_x ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] controller.invert_pan_y = "
+    gs3d::util::log::info() << "[CONFIG] controller.invert_pan_y = "
               << (config.controller.invert_pan_y ? "true" : "false")
               << '\n';
-    std::cout << "[CONFIG] lod.enabled = "
+    gs3d::util::log::info() << "[CONFIG] lod.enabled = "
               << (config.viewer.lod_enabled ? "true" : "false")
               << '\n';
-    std::cout << "[CONFIG] lod.keep_full_buffer = "
+    gs3d::util::log::info() << "[CONFIG] lod.keep_full_buffer = "
           << (config.viewer.lod_keep_full_buffer ? "true" : "false")
           << '\n';
-    std::cout << "[CONFIG] lod.sidecar_path = "
+    gs3d::util::log::info() << "[CONFIG] lod.sidecar_path = "
           << config.viewer.lod_sidecar_path.string()
           << '\n';
-    std::cout << "[CONFIG] lod.auto_load_sidecar = "
+    gs3d::util::log::info() << "[CONFIG] lod.auto_load_sidecar = "
             << (config.viewer.lod_auto_load_sidecar ? "true" : "false")
             << '\n';
 
-    std::cout << "[CONFIG] lod.auto_save_sidecar = "
+    gs3d::util::log::info() << "[CONFIG] lod.auto_save_sidecar = "
             << (config.viewer.lod_auto_save_sidecar ? "true" : "false")
             << '\n';
-    std::cout << "[CONFIG] lod.finest_target_points = "
+    gs3d::util::log::info() << "[CONFIG] lod.finest_target_points = "
               << config.viewer.lod_finest_target_points
               << '\n';
-    std::cout << "[CONFIG] lod.growth_factor = "
+    gs3d::util::log::info() << "[CONFIG] lod.growth_factor = "
               << config.viewer.lod_growth_factor
               << '\n';
-    std::cout << "[CONFIG] lod.min_points_per_level = "
+    gs3d::util::log::info() << "[CONFIG] lod.min_points_per_level = "
               << config.viewer.lod_min_points_per_level
               << '\n';
 
-    std::cout << "[CONFIG] lod.voxel_mode = "
+    gs3d::util::log::info() << "[CONFIG] lod.voxel_mode = "
               << config.viewer.lod_voxel_mode << '\n';
 
-    std::cout << "[CONFIG] lod.voxel_scale = "
+    gs3d::util::log::info() << "[CONFIG] lod.voxel_scale = "
               << config.viewer.lod_voxel_scale << '\n';
 
-    std::cout << "[CONFIG] lod.medium_delay_seconds = "
+    gs3d::util::log::info() << "[CONFIG] lod.medium_delay_seconds = "
               << config.viewer.lod_medium_delay_seconds << '\n';
 
-    std::cout << "[CONFIG] lod.high_delay_seconds = "
+    gs3d::util::log::info() << "[CONFIG] lod.high_delay_seconds = "
               << config.viewer.lod_high_delay_seconds << '\n';
 
-    std::cout << "[CONFIG] lod.use_lowest_while_interacting = "
+    gs3d::util::log::info() << "[CONFIG] lod.use_lowest_while_interacting = "
               << (config.viewer.lod_use_lowest_while_interacting
                     ? "true"
                     : "false")
               << '\n';
 
-    std::cout << "[CONFIG] lod.adaptive_interacting_level = "
+    gs3d::util::log::info() << "[CONFIG] lod.adaptive_interacting_level = "
               << (config.viewer.lod_adaptive_interacting_level
                     ? "true"
                     : "false")
               << '\n';
 
-    std::cout << "[CONFIG] lod.frame_time_budget_ms = "
+    gs3d::util::log::info() << "[CONFIG] lod.frame_time_budget_ms = "
               << config.viewer.lod_frame_time_budget_ms << '\n';
 
-    std::cout << "[CONFIG] lod.interactive_display_mode = "
+    gs3d::util::log::info() << "[CONFIG] lod.interactive_display_mode = "
               << (config.viewer.interactive_display_mode ==
                         gs3d::app::InteractiveDisplayMode::AllowCoarseLOD
                     ? "coarse"
@@ -1303,62 +1304,62 @@ void AppConfigPrinter::print(const AppConfig& config) {
                         : "keep_stable")
               << '\n';
 
-    std::cout << "[CONFIG] lod.verbose = "
+    gs3d::util::log::info() << "[CONFIG] lod.verbose = "
               << (config.viewer.lod_verbose ? "true" : "false")
               << '\n';
-        std::cout << "[CONFIG] tile.enabled = "
+        gs3d::util::log::info() << "[CONFIG] tile.enabled = "
               << (config.viewer.tile_enabled ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] tile.index_path = "
+    gs3d::util::log::info() << "[CONFIG] tile.index_path = "
               << config.viewer.tile_index_path.string()
               << '\n';
 
-    std::cout << "[CONFIG] tile.data_path = "
+    gs3d::util::log::info() << "[CONFIG] tile.data_path = "
               << config.viewer.tile_data_path.string()
               << '\n';
 
-    std::cout << "[CONFIG] tile.min_tile_pixel_size = "
+    gs3d::util::log::info() << "[CONFIG] tile.min_tile_pixel_size = "
               << config.viewer.tile_min_pixel_size
               << '\n';
 
-    std::cout << "[CONFIG] tile.max_visible_tiles = "
+    gs3d::util::log::info() << "[CONFIG] tile.max_visible_tiles = "
               << config.viewer.tile_max_visible_tiles
               << '\n';
 
-    std::cout << "[CONFIG] tile.use_full_z_range = "
+    gs3d::util::log::info() << "[CONFIG] tile.use_full_z_range = "
               << (config.viewer.tile_use_full_z_range ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] tile.verbose = "
+    gs3d::util::log::info() << "[CONFIG] tile.verbose = "
               << (config.viewer.tile_verbose ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] tile.gpu_cache_max_tiles = "
+    gs3d::util::log::info() << "[CONFIG] tile.gpu_cache_max_tiles = "
               << config.viewer.tile_gpu_cache_max_tiles
               << '\n';
 
-    std::cout << "[CONFIG] tile.gpu_upload_budget_bytes = "
+    gs3d::util::log::info() << "[CONFIG] tile.gpu_upload_budget_bytes = "
               << config.viewer.tile_gpu_upload_budget_bytes
               << '\n';
 
-    std::cout << "[CONFIG] tile.cpu_cache_max_bytes = "
+    gs3d::util::log::info() << "[CONFIG] tile.cpu_cache_max_bytes = "
               << config.viewer.tile_cpu_cache_max_bytes
               << '\n';
 
-    std::cout << "[CONFIG] tile.preload_all = "
+    gs3d::util::log::info() << "[CONFIG] tile.preload_all = "
               << (config.viewer.tile_preload_all ? "true" : "false")
               << '\n';
 
-    std::cout << "[CONFIG] tile.preload_max_bytes = "
+    gs3d::util::log::info() << "[CONFIG] tile.preload_max_bytes = "
               << config.viewer.tile_preload_max_bytes
               << '\n';
 
-    std::cout << "[CONFIG] tile.preload_upload_budget_bytes = "
+    gs3d::util::log::info() << "[CONFIG] tile.preload_upload_budget_bytes = "
               << config.viewer.tile_preload_upload_budget_bytes
               << '\n';
 
-    std::cout << "[CONFIG] viewport.count = "
+    gs3d::util::log::info() << "[CONFIG] viewport.count = "
               << config.viewer.viewport_count
               << '\n';
 }

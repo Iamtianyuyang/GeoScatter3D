@@ -1,4 +1,5 @@
 #include "preprocess/Gs3dWriter.hpp"
+#include "util/Log.hpp"
 
 #include "data/CsvChunkPlanner.hpp"
 #include "data/CsvChunkReader.hpp"
@@ -65,7 +66,7 @@ Gs3dWriteResult Gs3dWriter::write(
         return write_sequential(csv_path, output_path, statistics);
     }
 
-    std::cout << "[CSV] parallel write: chunks="
+    gs3d::util::log::info() << "[CSV] parallel write: chunks="
               << chunks.size()
               << ", threads="
               << worker_count

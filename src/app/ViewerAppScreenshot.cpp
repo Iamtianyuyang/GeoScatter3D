@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppRunState.hpp"
 
 #include "app/AppState.hpp"
@@ -88,7 +89,7 @@ void ViewerApp::record_screenshot_copy(
         buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         if (vkCreateBuffer(context.device(), &buf_info,
                            nullptr, &capture.staging_buf) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] buffer create failed\n";
+            gs3d::util::log::error() << "[SCREENSHOT] buffer create failed\n";
             capture.pending = false;
             return;
         }
@@ -118,7 +119,7 @@ void ViewerApp::record_screenshot_copy(
         alloc_info.memoryTypeIndex = mem_type_idx;
         if (vkAllocateMemory(context.device(), &alloc_info,
                              nullptr, &capture.staging_mem) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] memory alloc failed\n";
+            gs3d::util::log::error() << "[SCREENSHOT] memory alloc failed\n";
             vkDestroyBuffer(context.device(), capture.staging_buf, nullptr);
             capture.staging_buf = VK_NULL_HANDLE;
             capture.pending = false;
@@ -127,7 +128,7 @@ void ViewerApp::record_screenshot_copy(
         if (vkBindBufferMemory(context.device(),
                                capture.staging_buf,
                                capture.staging_mem, 0) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] bind memory failed\n";
+            gs3d::util::log::error() << "[SCREENSHOT] bind memory failed\n";
             vkFreeMemory(context.device(), capture.staging_mem, nullptr);
             vkDestroyBuffer(context.device(), capture.staging_buf, nullptr);
             capture.staging_buf = VK_NULL_HANDLE;
@@ -267,13 +268,13 @@ void ViewerApp::write_pending_screenshot(
                    ts + ".png";
     }
     if (user_cancelled || out_path.empty()) {
-        std::cout << "[SCREENSHOT] cancelled.\n";
+        gs3d::util::log::info() << "[SCREENSHOT] cancelled.\n";
     } else if (!stbi_write_png(out_path.c_str(), w, h, 4,
                                pixels, w * 4)) {
-        std::cerr << "[SCREENSHOT] stbi_write_png failed: "
+        gs3d::util::log::error() << "[SCREENSHOT] stbi_write_png failed: "
                   << out_path << '\n';
     } else {
-        std::cout << "[SCREENSHOT] saved: " << out_path << '\n';
+        gs3d::util::log::info() << "[SCREENSHOT] saved: " << out_path << '\n';
     }
 
     vkUnmapMemory(context.device(), capture.staging_mem);

@@ -128,7 +128,10 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算和视图局部
    相机输入，并由 Linux/Windows 构建工作流执行；仍缺少 CSV、LOD、tile 选择和 Vulkan
    生命周期集成测试。
-6. 仓库跟踪约 500 MiB 的 `data/test.gs3d`，Git 对象目录接近 900 MiB。大型样例
+6. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具和测试二进制保留直接 stdout
+   作为它们的机器可读/测试报告接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道
+   可由 `GS3D_LOG_BENCHMARK=0` 关闭。
+7. 仓库跟踪约 500 MiB 的 `data/test.gs3d`，Git 对象目录接近 900 MiB。大型样例
    应迁移到 release artifact、Git LFS 或可重复生成的小型 fixture。
 
 ## 后续拆分方向

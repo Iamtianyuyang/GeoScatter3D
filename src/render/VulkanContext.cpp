@@ -1,4 +1,5 @@
 #include "render/VulkanContext.hpp"
+#include "util/Log.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -97,7 +98,7 @@ std::string VulkanContext::physical_device_name() const {
 
 void VulkanContext::create_instance() {
     if (config_.enable_validation_layers && !validation_layers_supported()) {
-        std::cerr
+        gs3d::util::log::error()
             << "[WARN] VulkanContext: validation layers requested but not "
                "available, disabling validation layers.\n";
         config_.enable_validation_layers = false;
@@ -186,7 +187,7 @@ void VulkanContext::pick_physical_device() {
         active_gpu_is_preferred_ = true;
     }
 
-    std::cerr
+    gs3d::util::log::error()
         << "[VULKAN] Selected GPU:\n"
         << "  name=" << gpu.name << '\n'
         << "  uuid=" << gpu.device_uuid << '\n'
@@ -195,7 +196,7 @@ void VulkanContext::pick_physical_device() {
         << "  selection=" << selection_summary_ << '\n';
 
     if (selection.fallback_to_auto) {
-        std::cerr
+        gs3d::util::log::error()
             << "[VULKAN] Preferred GPU unavailable:\n"
             << "  preferred=" << config_.preferred_gpu << '\n'
             << "  reason=" << selection.fallback_reason << '\n'

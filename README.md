@@ -76,6 +76,17 @@ GS3D 文件。
 （默认 `~/.config/geoscatter3d/`）或 Windows 的
 `%APPDATA%\\geoscatter3d\\preferences.toml`。这样在新机器上运行不会弄脏仓库。
 
+## 日志
+
+应用、预处理和 Vulkan 诊断统一按级别写日志。`GS3D_LOG_LEVEL` 可设为
+`trace`、`debug`、`info`（默认）、`warning`、`error` 或 `off`；性能报告走独立
+benchmark 通道，可用 `GS3D_LOG_BENCHMARK=0` 静默。例如：
+
+```bash
+GS3D_LOG_LEVEL=warning GS3D_LOG_BENCHMARK=0 \
+  ./build/GeoScatter3D --config config/sample-viewer.toml
+```
+
 ## 多窗口使用
 
 - `viewport.count` 设置启动时显示的视图数量，范围为 1-4，默认是 1。
@@ -98,7 +109,7 @@ include/ + src/
   render/      Vulkan 资源、点管线、LOD/tile GPU 数据和离屏视口
   gui/ + ui/   ImGui 生命周期与界面绘制
   platform/    GLFW 窗口
-  util/        线程池与计时
+  util/        线程池、计时与统一日志
 ```
 
 更完整的启动流程、逐帧流程、资源所有权和主要缺陷见

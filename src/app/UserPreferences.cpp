@@ -1,4 +1,5 @@
 #include "app/UserPreferences.hpp"
+#include "util/Log.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -109,7 +110,7 @@ std::optional<std::string> load_preferred_gpu_preference()
         }
         return (*graphics)["preferred_gpu"].value<std::string>();
     } catch (const std::exception& error) {
-        std::cerr << "[WARN] Ignoring invalid user preferences at "
+        gs3d::util::log::warning() << "[WARN] Ignoring invalid user preferences at "
                   << path << ": " << error.what() << '\n';
         return std::nullopt;
     }
@@ -121,7 +122,7 @@ bool save_preferred_gpu_preference(std::string_view preferred_gpu)
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     if (ec) {
-        std::cerr << "[WARN] Failed to create user preferences directory "
+        gs3d::util::log::warning() << "[WARN] Failed to create user preferences directory "
                   << path.parent_path() << ": " << ec.message() << '\n';
         return false;
     }
@@ -131,7 +132,7 @@ bool save_preferred_gpu_preference(std::string_view preferred_gpu)
     {
         std::ofstream output(temporary_path, std::ios::trunc);
         if (!output) {
-            std::cerr << "[WARN] Failed to write user preferences at "
+            gs3d::util::log::warning() << "[WARN] Failed to write user preferences at "
                       << temporary_path << '\n';
             return false;
         }
@@ -140,7 +141,7 @@ bool save_preferred_gpu_preference(std::string_view preferred_gpu)
                << escape_toml_string(preferred_gpu)
                << "\"\n";
         if (!output.good()) {
-            std::cerr << "[WARN] Failed while writing user preferences at "
+            gs3d::util::log::warning() << "[WARN] Failed while writing user preferences at "
                       << temporary_path << '\n';
             return false;
         }
@@ -160,7 +161,7 @@ bool save_preferred_gpu_preference(std::string_view preferred_gpu)
         return true;
     }
 
-    std::cerr << "[WARN] Failed to finalize user preferences at "
+    gs3d::util::log::warning() << "[WARN] Failed to finalize user preferences at "
               << path << ": " << ec.message() << '\n';
     return false;
 }

@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
@@ -206,8 +207,8 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
             read_config
         );
 
-    std::cout << "[OK] LOD sidecar loaded.\n";
-    std::cout << "path = "
+    gs3d::util::log::info() << "[OK] LOD sidecar loaded.\n";
+    gs3d::util::log::info() << "path = "
               << sidecar_path.string()
               << '\n';
 
@@ -245,25 +246,25 @@ gs3d::render::PointCloudLodSource build_lod_source(
 void print_dataset_info(
     const gs3d::data::Gs3dDataset& dataset
 ) {
-    std::cout << "[OK] Dataset loaded.\n";
-    std::cout << "point_count = " << dataset.point_count() << '\n';
-    std::cout << "loaded_point_bytes = "
+    gs3d::util::log::info() << "[OK] Dataset loaded.\n";
+    gs3d::util::log::info() << "point_count = " << dataset.point_count() << '\n';
+    gs3d::util::log::info() << "loaded_point_bytes = "
               << dataset.point_bytes() << '\n';
-    std::cout << "metadata_only = "
+    gs3d::util::log::info() << "metadata_only = "
               << (dataset.metadata_only() ? "true" : "false")
               << '\n';
 
-    std::cout << "bbox_min = ["
+    gs3d::util::log::info() << "bbox_min = ["
               << dataset.bbox_min_x() << ", "
               << dataset.bbox_min_y() << ", "
               << dataset.bbox_min_z() << "]\n";
 
-    std::cout << "bbox_max = ["
+    gs3d::util::log::info() << "bbox_max = ["
               << dataset.bbox_max_x() << ", "
               << dataset.bbox_max_y() << ", "
               << dataset.bbox_max_z() << "]\n";
 
-    std::cout << "value_range = ["
+    gs3d::util::log::info() << "value_range = ["
               << dataset.value_min() << ", "
               << dataset.value_max() << "]\n";
 }
@@ -272,23 +273,23 @@ void print_controls(
     bool lod_enabled,
     bool tile_enabled
 ){
-    std::cout << "[OK] Entering render loop.\n";
-    std::cout << "操作说明：\n";
-    std::cout << "  左键拖动：轨道旋转\n";
-    std::cout << "  右键拖动：视角平移\n";
-    std::cout << "  滚轮：缩放到光标位置\n";
-    std::cout << "  Ctrl+左键拖动：框选\n";
-    std::cout << "  双击点：选择并设置旋转中心\n";
-    std::cout << "  F：聚焦选中点\n";
-    std::cout << "  + / -：调整点大小\n";
-    std::cout << "  R：恢复全局视图\n";
-    std::cout << "  Tab：切换着色属性\n";
-    std::cout << "  Esc：退出\n";
-    std::cout << "渲染模式：\n";
-    std::cout << "  LOD         : "
+    gs3d::util::log::info() << "[OK] Entering render loop.\n";
+    gs3d::util::log::info() << "操作说明：\n";
+    gs3d::util::log::info() << "  左键拖动：轨道旋转\n";
+    gs3d::util::log::info() << "  右键拖动：视角平移\n";
+    gs3d::util::log::info() << "  滚轮：缩放到光标位置\n";
+    gs3d::util::log::info() << "  Ctrl+左键拖动：框选\n";
+    gs3d::util::log::info() << "  双击点：选择并设置旋转中心\n";
+    gs3d::util::log::info() << "  F：聚焦选中点\n";
+    gs3d::util::log::info() << "  + / -：调整点大小\n";
+    gs3d::util::log::info() << "  R：恢复全局视图\n";
+    gs3d::util::log::info() << "  Tab：切换着色属性\n";
+    gs3d::util::log::info() << "  Esc：退出\n";
+    gs3d::util::log::info() << "渲染模式：\n";
+    gs3d::util::log::info() << "  LOD         : "
               << (lod_enabled ? "启用" : "关闭")
               << '\n';
-    std::cout << "  全分辨率瓦片："
+    gs3d::util::log::info() << "  全分辨率瓦片："
               << (tile_enabled ? "启用" : "关闭")
               << '\n';
 }
@@ -381,17 +382,17 @@ int ViewerApp::run() {
             : gs3d::data::Gs3dDatasetLoader::load(
                 config_.gs3d_path
             );
-        std::cout << "[TIME] viewer.dataset_load_seconds = "
+        gs3d::util::log::info() << "[TIME] viewer.dataset_load_seconds = "
                   << dataset_load_timer.elapsed_seconds()
                   << '\n';
 
         if (!dataset.is_consistent()) {
-            std::cerr << "[FAIL] dataset is inconsistent.\n";
+            gs3d::util::log::error() << "[FAIL] dataset is inconsistent.\n";
             return 1;
         }
 
         if (dataset.point_count() == 0) {
-            std::cerr << "[FAIL] dataset is empty.\n";
+            gs3d::util::log::error() << "[FAIL] dataset is empty.\n";
             return 1;
         }
 
@@ -412,26 +413,26 @@ int ViewerApp::run() {
                     config_.tile_data_path,
                     dataset.header()
                 );
-            std::cout << "[TIME] viewer.tile_reader_open_seconds = "
+            gs3d::util::log::info() << "[TIME] viewer.tile_reader_open_seconds = "
                       << tile_reader_timer.elapsed_seconds()
                       << '\n';
 
             if (!tile_reader->valid()) {
-                std::cerr << "[FAIL] TileReader is invalid.\n";
+                gs3d::util::log::error() << "[FAIL] TileReader is invalid.\n";
                 return 1;
             }
 
             const auto tile_stats =
                 tile_reader->stats();
 
-            std::cout << "[OK] TileReader opened.\n";
-            std::cout << "tile_count = "
+            gs3d::util::log::info() << "[OK] TileReader opened.\n";
+            gs3d::util::log::info() << "tile_count = "
                       << tile_stats.tile_count
                       << '\n';
-            std::cout << "tile_total_point_count = "
+            gs3d::util::log::info() << "tile_total_point_count = "
                       << tile_stats.total_point_count
                       << '\n';
-            std::cout << "tile_total_point_bytes = "
+            gs3d::util::log::info() << "tile_total_point_bytes = "
                       << tile_stats.total_point_bytes
                       << '\n';
 
@@ -442,11 +443,11 @@ int ViewerApp::run() {
                 tile_reader->has_embedded_point_ids();
 
             if (tile_has_embedded_ids) {
-                std::cout
+                gs3d::util::log::info()
                     << "[OK] Tile format v2 — embedded point IDs. "
                     << "Fast startup (no source point scan needed).\n";
             } else {
-                std::cout
+                gs3d::util::log::info()
                     << "[INFO] Tile format v1 — no embedded point IDs. "
                     << "Using slow startup path.\n";
 
@@ -457,14 +458,14 @@ int ViewerApp::run() {
                     // metadata-only startup path the dataset has no points
                     // resident, so fall back to loading the full GS3D
                     // before building tile ids.
-                    std::cout
+                    gs3d::util::log::info()
                         << "[WARN] Metadata-only startup cannot build "
                         << "tile runtime ids; loading full GS3D data.\n";
                     gs3d::util::Stopwatch fallback_load_timer;
                     dataset = gs3d::data::Gs3dDatasetLoader::load(
                         config_.gs3d_path
                     );
-                    std::cout
+                    gs3d::util::log::info()
                         << "[TIME] viewer.dataset_fallback_load_seconds = "
                         << fallback_load_timer.elapsed_seconds()
                         << '\n';
@@ -486,14 +487,14 @@ int ViewerApp::run() {
          * now if we're still in metadata-only mode.
          */
         if (config_.lod_enabled && dataset.metadata_only()) {
-            std::cout
+            gs3d::util::log::info()
                 << "[INFO] LOD enabled — loading full GS3D data "
                 << "for point-id mapping.\n";
             gs3d::util::Stopwatch lod_load_timer;
             dataset = gs3d::data::Gs3dDatasetLoader::load(
                 config_.gs3d_path
             );
-            std::cout
+            gs3d::util::log::info()
                 << "[TIME] viewer.lod_dataset_load_seconds = "
                 << lod_load_timer.elapsed_seconds()
                 << '\n';
@@ -509,7 +510,7 @@ int ViewerApp::run() {
                     dataset,
                     config_
                 );
-            std::cout << "[TIME] viewer.lod_prepare_seconds = "
+            gs3d::util::log::info() << "[TIME] viewer.lod_prepare_seconds = "
                       << lod_timer.elapsed_seconds()
                       << '\n';
 
@@ -565,12 +566,12 @@ int ViewerApp::run() {
         vk_config.preferred_gpu = config_.preferred_gpu;
 
         gs3d::render::VulkanContext context(window, vk_config);
-        std::cout << "[TIME] viewer.startup_seconds = "
+        gs3d::util::log::info() << "[TIME] viewer.startup_seconds = "
                   << startup_timer.elapsed_seconds()
                   << '\n';
 
-        std::cout << "[OK] VulkanContext created.\n";
-        std::cout << "Physical device: "
+        gs3d::util::log::info() << "[OK] VulkanContext created.\n";
+        gs3d::util::log::info() << "Physical device: "
                   << context.physical_device_name() << '\n';
 
         gs3d::render::VulkanSwapchain swapchain(
@@ -662,7 +663,7 @@ int ViewerApp::run() {
             "assets/icon.svg",
             128
         );
-        std::cout << "[OK] SvgLogoTexture loaded.\n";
+        gs3d::util::log::info() << "[OK] SvgLogoTexture loaded.\n";
 
         std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud;
         std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud;
@@ -679,8 +680,8 @@ int ViewerApp::run() {
                     lod_source
                 );
 
-            std::cout << "[OK] PointCloudLodGpu uploaded.\n";
-            std::cout << lod_gpu_cloud->summary();
+            gs3d::util::log::info() << "[OK] PointCloudLodGpu uploaded.\n";
+            gs3d::util::log::info() << lod_gpu_cloud->summary();
 
         } else {
             full_gpu_cloud =
@@ -694,8 +695,8 @@ int ViewerApp::run() {
                     )
                 );
 
-            std::cout << "[OK] PointCloudGpu uploaded.\n";
-            std::cout << "gpu point_count = "
+            gs3d::util::log::info() << "[OK] PointCloudGpu uploaded.\n";
+            gs3d::util::log::info() << "gpu point_count = "
                       << full_gpu_cloud->point_count()
                       << '\n';
         }
@@ -742,7 +743,7 @@ int ViewerApp::run() {
             pipeline_config
         );
 
-        std::cout << "[OK] PointPipeline created.\n";
+        gs3d::util::log::info() << "[OK] PointPipeline created.\n";
 
         GpuPickReadback gpu_pick_readback(
             context,
@@ -847,18 +848,18 @@ int ViewerApp::run() {
             );
         }
 
-        std::cout << "[OK] CameraController initialized.\n";
-        std::cout << "camera position = ["
+        gs3d::util::log::info() << "[OK] CameraController initialized.\n";
+        gs3d::util::log::info() << "camera position = ["
                   << viewport_manager.camera(0).position().x << ", "
                   << viewport_manager.camera(0).position().y << ", "
                   << viewport_manager.camera(0).position().z << "]\n";
 
-        std::cout << "camera target = ["
+        gs3d::util::log::info() << "camera target = ["
                   << viewport_manager.camera(0).target().x << ", "
                   << viewport_manager.camera(0).target().y << ", "
                   << viewport_manager.camera(0).target().z << "]\n";
 
-        std::cout << "camera distance = "
+        gs3d::util::log::info() << "camera distance = "
                   << viewport_manager.camera(0).distance() << '\n';
 
         gs3d::render::PointPushConstants push{};
@@ -966,7 +967,7 @@ int ViewerApp::run() {
                 config_.tile_gpu_cache_max_tiles
             );
 
-            std::cout << "[OK] TileSelection initialized.\n";
+            gs3d::util::log::info() << "[OK] TileSelection initialized.\n";
         }
 
         bool r_was_pressed = false;
@@ -1977,11 +1978,11 @@ int ViewerApp::run() {
                     );
                     camera_hub.propagate(streaming_viewport_index);
                     tile_selection_dirty = true;
-                    std::cout
+                    gs3d::util::log::info()
                         << "[CAMERA] focused selected point in viewport "
                         << streaming_viewport_index << '\n';
                 } else {
-                    std::cout
+                    gs3d::util::log::info()
                         << "[CAMERA] focus skipped: no selected point in viewport "
                         << streaming_viewport_index << '\n';
                 }
@@ -2026,7 +2027,7 @@ int ViewerApp::run() {
                     attr_list[new_idx],
                     active_height_exag
                 );
-                std::cout << "[HEIGHT] switched to: " << attr_list[new_idx].name << '\n';
+                gs3d::util::log::info() << "[HEIGHT] switched to: " << attr_list[new_idx].name << '\n';
             } else if (!tab_was_pressed) {
                 tab_was_pressed = true;
                 const auto active_render_index =
@@ -2056,7 +2057,7 @@ int ViewerApp::run() {
                     app_state,
                     static_cast<int>(active_render_index)
                 ).dirty = true;
-                std::cout << "[COLOR] switched to: " << a.name << '\n';
+                gs3d::util::log::info() << "[COLOR] switched to: " << a.name << '\n';
             }
 
             sync_camera_link_groups(app_state, camera_hub);
@@ -2278,7 +2279,7 @@ int ViewerApp::run() {
                     resolved_lod = requested;
                 } else {
                     resolved_lod = last_valid_lod_level;
-                    std::cerr << "[WARN] LOD level out of range: "
+                    gs3d::util::log::warning() << "[WARN] LOD level out of range: "
                               << requested << " >= " << level_count
                               << ", falling back to "
                               << last_valid_lod_level << '\n';
@@ -2315,7 +2316,7 @@ int ViewerApp::run() {
                     if (config_.lod_verbose) {
                         const auto& level =
                             lod_gpu_cloud->level(lod_level_for_frame);
-                        std::cout << "[LOD] active level = "
+                        gs3d::util::log::info() << "[LOD] active level = "
                                   << lod_level_for_frame
                                   << ", points = "
                                   << level.gpu_point_count
@@ -2549,19 +2550,19 @@ int ViewerApp::run() {
                 config_.benchmark_pick_result_path,
                 benchmark_pick_results
             );
-            std::cout << "[BENCH] pick_result_path = "
+            gs3d::util::log::benchmark() << "[BENCH] pick_result_path = "
                       << config_.benchmark_pick_result_path.string()
                       << '\n';
-            std::cout << "[BENCH] pick_result_count = "
+            gs3d::util::log::benchmark() << "[BENCH] pick_result_count = "
                       << benchmark_pick_results.size()
                       << '\n';
         }
 
-        std::cout << "[PASS] ViewerApp finished.\n";
+        gs3d::util::log::info() << "[PASS] ViewerApp finished.\n";
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "[FAIL] " << e.what() << '\n';
+        gs3d::util::log::error() << "[FAIL] " << e.what() << '\n';
         return 1;
     }
 }

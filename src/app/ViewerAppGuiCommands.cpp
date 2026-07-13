@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppRunState.hpp"
 
 #include "app/AppState.hpp"
@@ -53,7 +54,7 @@ void ViewerApp::apply_render_setting_commands(
         ctx.push.color_min    = a.min_val;
         ctx.push.color_range  = a.range();
         if (ctx.push.color_range <= 0.0f) ctx.push.color_range = 1.0f;
-        std::cout << "[COLOR] switched to: " << a.name << '\n';
+        gs3d::util::log::info() << "[COLOR] switched to: " << a.name << '\n';
         ctx.navigation_map.dirty = true;
     }
     if (command.height_by_changed) {
@@ -63,7 +64,7 @@ void ViewerApp::apply_render_setting_commands(
         );
         ctx.scene_state.active_height_index = new_idx;
         apply_height_attr(ctx.attr_list[static_cast<std::size_t>(new_idx)], ctx.height_exag);
-        std::cout << "[HEIGHT] switched to: "
+        gs3d::util::log::info() << "[HEIGHT] switched to: "
                   << ctx.attr_list[static_cast<std::size_t>(new_idx)].name << '\n';
     }
     if (command.height_exag_changed) {
@@ -144,12 +145,12 @@ void ViewerApp::apply_project_open_commands(
     } else if (gui_cmds.open_bundle_requested) {
         const auto result = gs3d::platform::choose_project_directory();
         if (!result.error.empty()) {
-            std::cerr << "[OPEN] " << result.error << '\n';
+            gs3d::util::log::error() << "[OPEN] " << result.error << '\n';
         } else if (result.path.has_value()) {
             std::error_code ec;
             const auto manifest_path = *result.path / "manifest.toml";
             if (!std::filesystem::is_regular_file(manifest_path, ec)) {
-                std::cerr
+                gs3d::util::log::error()
                     << "[OPEN] 请选择包含 manifest.toml 的 "
                     << ".gs3d.bundle 项目目录。\n";
             } else {
@@ -163,7 +164,7 @@ void ViewerApp::apply_project_open_commands(
     } else if (gui_cmds.open_requested) {
         const auto result = gs3d::platform::choose_raw_data_file();
         if (!result.error.empty()) {
-            std::cerr << "[OPEN] " << result.error << '\n';
+            gs3d::util::log::error() << "[OPEN] " << result.error << '\n';
         } else if (result.path.has_value()) {
             open_request_ = ViewerOpenRequest{
                 .kind = ViewerOpenRequestKind::RawData,

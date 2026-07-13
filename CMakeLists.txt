@@ -326,6 +326,7 @@ add_library(gs3d_app STATIC
     include/scene/SceneState.hpp
 
     include/util/ThreadPool.hpp
+    include/util/Log.hpp
     include/util/Stopwatch.hpp
     include/util/PercentileStats.hpp
 )
@@ -495,6 +496,23 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ViewportInteraction
         COMMAND GeoScatter3DViewportInteractionTests
+    )
+
+    add_executable(GeoScatter3DLogTests
+        tests/LogTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DLogTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DLogTests PRIVATE
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.Log
+        COMMAND GeoScatter3DLogTests
     )
 
     add_executable(GeoScatter3DDataTests

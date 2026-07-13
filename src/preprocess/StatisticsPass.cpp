@@ -1,4 +1,5 @@
 #include "preprocess/StatisticsPass.hpp"
+#include "util/Log.hpp"
 
 #include "data/CsvChunkReader.hpp"
 #include "data/CsvChunkPlanner.hpp"
@@ -103,7 +104,7 @@ StatisticsResult StatisticsPass::run_parallel(
         return run_sequential(csv_path);
     }
 
-    std::cout << "[CSV] parallel statistics: chunks="
+    gs3d::util::log::info() << "[CSV] parallel statistics: chunks="
               << chunks.size()
               << ", threads="
               << worker_count
