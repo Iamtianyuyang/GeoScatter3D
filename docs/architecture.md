@@ -138,7 +138,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    CTest 的工程护栏会校验上述行数，避免风险清单再次悄然过期。
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
    benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
-   `ViewerApp` 重新成为配置耦合中心。
+   `ViewerApp` 重新成为配置耦合中心。`AppConfigValidation` 会在创建渲染资源前拒绝
+   无效的窗口、相机、LOD、tile 预算和 UNORM 清屏色配置。
    `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`；大坐标/极小步长的 minor tick 生成已提取为可单测的
    `ViewportAxisTicks`，但其余 ImGui 绘制代码仍需要继续分拆。

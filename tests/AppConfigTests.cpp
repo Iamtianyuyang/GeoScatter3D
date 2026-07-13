@@ -159,6 +159,38 @@ TEST_CASE("AppConfig rejects negative unsigned values", "[app_config][validation
     );
 }
 
+TEST_CASE("AppConfig rejects invalid runtime domain values", "[app_config][validation]")
+{
+    TemporaryDirectory fixture;
+
+    const auto expect_rejected = [&fixture](
+        const std::string& name,
+        const std::string& toml
+    ) {
+        const auto path = fixture.path() / name;
+        write_file(path, toml);
+        CHECK_THROWS_AS(
+            gs3d::app::AppConfigLoader::load_from_file(path),
+            std::runtime_error
+        );
+    };
+
+    expect_rejected("zero-window.toml", "[window]\nwidth = 0\n");
+    expect_rejected(
+        "clear-color.toml",
+        "[render]\nclear_color = [0.0, 0.0, 0.0, 1.1]\n"
+    );
+    expect_rejected(
+        "camera-depth.toml",
+        "[camera]\nnear = 10.0\nfar = 1.0\n"
+    );
+    expect_rejected("lod-growth.toml", "[lod]\ngrowth_factor = 1.0\n");
+    expect_rejected(
+        "tile-budget.toml",
+        "[tile]\ngpu_upload_budget_bytes = 0\n"
+    );
+}
+
 TEST_CASE("AppConfig keeps runtime domains independent", "[app_config][domains]")
 {
     TemporaryDirectory fixture;

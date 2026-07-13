@@ -1,4 +1,5 @@
 #include "app/AppConfig.hpp"
+#include "app/AppConfigValidation.hpp"
 #include "util/Log.hpp"
 #include "app/ResourcePath.hpp"
 
@@ -967,6 +968,7 @@ AppConfig AppConfigLoader::load_from_file(
             config.viewer.pick_debug.dump_once_on_hover
         );
     }
+    validate_app_config(config);
     return config;
 }
 
