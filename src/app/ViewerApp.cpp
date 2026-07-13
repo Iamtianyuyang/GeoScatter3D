@@ -2,6 +2,7 @@
 #include "util/Log.hpp"
 #include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerAttributeMapping.hpp"
+#include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
@@ -843,6 +844,11 @@ int ViewerApp::run() {
         visible_viewports.reserve(
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
+        const ViewerFrameStateSynchronizer frame_state_synchronizer(
+            dataset.origin_z(),
+            config_.tile.gpu_cache_max_tiles,
+            config_.lod.enabled
+        );
 
         const auto consume_ready_pick_frame_slot =
             [this,
@@ -1024,128 +1030,34 @@ int ViewerApp::run() {
                 }
             }
 
-            app_state.dataset.point_count = dataset.point_count();
-            app_state.dataset.loaded_points = gpu_resident_points;
             const auto tile_cache_stats = tile_stream.point_cache.stats();
-            const auto tile_cache_requests =
-                tile_cache_stats.hits + tile_cache_stats.misses;
-            const auto sync_render_settings_state =
-                [&](gs3d::app::RenderSettingsState& settings,
-                    int viewport_index) {
-                    if (viewport_index < 0 ||
-                        viewport_index >=
-                            static_cast<int>(viewport_pushes.size())) {
-                        viewport_index = 0;
-                    }
-                    const auto idx =
-                        static_cast<std::size_t>(viewport_index);
-                    const auto& view_push = viewport_pushes[idx];
-                    const auto& view_scene = viewport_scene_states[idx];
-                    settings.point_size = view_push.point_size;
-                    settings.color_attr_index =
-                        view_scene.active_attribute_index;
-                    settings.height_attr_index =
-                        view_scene.active_height_index;
-                    settings.height_exaggeration =
-                        viewport_height_exags[idx];
-                    settings.colormap_index = static_cast<int>(
-                        (view_push.flags &
-                         gs3d::render::PointFlags::kColormapMask) >> 1
-                    );
-                    settings.point_shape = static_cast<int>(
-                        (view_push.flags &
-                         gs3d::render::PointFlags::kPointShapeMask) >>
-                            gs3d::render::PointFlags::kPointShapeShift
-                    );
-                    settings.value_clip_enabled =
-                        (view_push.flags &
-                         gs3d::render::PointFlags::kValueClip) != 0;
-
-                    float display_min = view_push.color_min;
-                    if (view_push.color_source ==
-                        static_cast<std::uint32_t>(
-                            gs3d::app::AttrPhysicalSource::Z)) {
-                        display_min +=
-                            static_cast<float>(dataset.origin_z());
-                    }
-                    settings.data_value_min = display_min;
-                    settings.data_value_max =
-                        display_min + view_push.color_range;
-                    settings.loaded_tiles = loaded_tiles;
-                    settings.pending_tiles = pending_tiles;
-                    settings.cache_usage =
-                        std::to_string(loaded_tiles) + " / " +
-                        std::to_string(config_.tile.gpu_cache_max_tiles);
-                    settings.cpu_cache_usage =
-                        std::to_string(
-                            tile_cache_stats.resident_bytes /
-                            (1024ull * 1024ull)
-                        ) + " / " +
-                        std::to_string(
-                            tile_cache_stats.max_bytes /
-                            (1024ull * 1024ull)
-                        ) + " MB";
-                    // < 0 ⇒ 尚无任何缓存请求（预加载快路径或未流式），
-                    // UI 显示为 "—" 而不是误导性的 0%。
-                    settings.cache_hit_rate =
-                        tile_cache_requests > 0
-                            ? 100.0f * static_cast<float>(
-                                tile_cache_stats.hits
-                            ) /
-                                static_cast<float>(tile_cache_requests)
-                            : -1.0f;
-                };
-            for (std::size_t i = 0;
-                 i < app_state.render_settings_by_view.size();
-                 ++i) {
-                sync_render_settings_state(
-                    app_state.render_settings_by_view[i],
-                    static_cast<int>(i)
-                );
-            }
-            app_state.render_settings = render_settings_for_view(
+            const ViewerFrameTileCacheMetrics tile_cache_metrics{
+                .resident_bytes = tile_cache_stats.resident_bytes,
+                .max_bytes = tile_cache_stats.max_bytes,
+                .hits = tile_cache_stats.hits,
+                .misses = tile_cache_stats.misses
+            };
+            const ViewerFrameStateMetrics frame_state_metrics{
+                .dataset_point_count = dataset.point_count(),
+                .gpu_resident_points = gpu_resident_points,
+                .visible_points = visible_points,
+                .gpu_buffer_bytes = gpu_buffer_bytes,
+                .loaded_tiles = loaded_tiles,
+                .pending_tiles = pending_tiles,
+                .fps = fps_smooth,
+                .frame_time_ms = delta_seconds > 0.0
+                    ? static_cast<float>(delta_seconds * 1000.0)
+                    : 0.0f,
+                .camera_position = format_vec3_text(primary_camera.position())
+            };
+            frame_state_synchronizer.synchronize(
                 app_state,
-                app_state.active_viewport_index
+                viewport_pushes,
+                viewport_scene_states,
+                viewport_height_exags,
+                tile_cache_metrics,
+                frame_state_metrics
             );
-            for (auto& workspace : app_state.workspace_windows) {
-                if (!workspace.viewport_indices.empty()) {
-                    const int workspace_view_index =
-                        std::find(
-                            workspace.viewport_indices.begin(),
-                            workspace.viewport_indices.end(),
-                            app_state.active_viewport_index
-                        ) != workspace.viewport_indices.end()
-                            ? app_state.active_viewport_index
-                            : workspace.viewport_indices.front();
-                    workspace.components.render_settings =
-                        render_settings_for_view(
-                            app_state,
-                            workspace_view_index
-                        );
-                }
-            }
-
-            app_state.performance.fps = fps_smooth;
-            app_state.performance.frame_time_ms =
-                delta_seconds > 0.0 ? static_cast<float>(delta_seconds * 1000.0) : 0.0f;
-            app_state.performance.visible_points = visible_points;
-            app_state.performance.total_points = dataset.point_count();
-            app_state.performance.loaded_tiles = loaded_tiles;
-            app_state.performance.pending_tiles = pending_tiles;
-            app_state.performance.gpu_memory_bytes = gpu_buffer_bytes;
-            app_state.performance.lod_mode =
-                config_.lod.enabled
-                    ? "已启用细节层级"
-                    : "全分辨率";
-
-            app_state.status_bar.fps = fps_smooth;
-            app_state.status_bar.visible_points = visible_points;
-            app_state.status_bar.loaded_tiles = loaded_tiles;
-            app_state.status_bar.pending_tiles = pending_tiles;
-            app_state.status_bar.gpu_memory_bytes = gpu_buffer_bytes;
-            app_state.status_bar.camera_position = format_vec3_text(primary_camera.position());
-            app_state.status_bar.crs = "本地坐标 / 未知";
-            app_state.status_bar.ready_state = "就绪";
 
             {
                 ViewerAppRenderViewContext render_ctx{
