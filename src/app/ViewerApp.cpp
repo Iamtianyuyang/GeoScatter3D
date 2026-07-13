@@ -6,6 +6,7 @@
 #include "app/ViewerKeyboardShortcutSystem.hpp"
 #include "app/ViewerCameraFrameSystem.hpp"
 #include "app/ViewerRenderSettingsSystem.hpp"
+#include "app/ViewerRuntimeConfiguration.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameClock.hpp"
@@ -140,22 +141,6 @@ gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
     );
 }
 
-gs3d::render::TileSelectionConfig make_tile_selection_config(
-    const ViewerAppConfig& config
-) {
-    gs3d::render::TileSelectionConfig tile_config;
-
-    tile_config.min_tile_pixel_size =
-        config.tile.min_pixel_size;
-    tile_config.max_visible_tiles =
-        config.tile.max_visible_tiles;
-
-    tile_config.use_full_z_range =
-        config.tile.use_full_z_range;
-
-    return tile_config;
-}
-
 gs3d::render::PointCloudLodSource build_lod_source(
     const gs3d::data::Gs3dLodDataset& lod_dataset,
     const std::vector<std::vector<std::uint32_t>>& lod_point_ids
@@ -288,19 +273,12 @@ int ViewerApp::run() {
         auto& runtime_points_valid_by_id =
             dataset_session->runtime_points_valid_by_id;
 
-        gs3d::platform::WindowConfig window_config;
-        window_config.width = config_.window.width;
-        window_config.height = config_.window.height;
-        window_config.title = config_.window.title;
-        window_config.resizable = config_.window.resizable;
+        gs3d::platform::Window window(
+            make_window_config(config_.window)
+        );
 
-        gs3d::platform::Window window(window_config);
-
-        gs3d::render::VulkanContextConfig vk_config;
-        vk_config.enable_validation_layers =
-            config_.graphics.enable_validation_layers;
-        vk_config.application_name = "GeoScatter3D";
-        vk_config.preferred_gpu = config_.graphics.preferred_gpu;
+        const auto vk_config =
+            make_vulkan_context_config(config_.graphics);
 
         gs3d::render::VulkanContext context(window, vk_config);
         gs3d::util::log::info() << "[TIME] viewer.startup_seconds = "
@@ -385,11 +363,7 @@ int ViewerApp::run() {
 
         // 交换链是 UNORM 格式——配置里的 clear_color 按 sRGB 语义书写，
         // 直接使用，无需颜色空间转换。
-        gs3d::render::ClearColor clear_color;
-        clear_color.r = config_.graphics.clear_color[0];
-        clear_color.g = config_.graphics.clear_color[1];
-        clear_color.b = config_.graphics.clear_color[2];
-        clear_color.a = config_.graphics.clear_color[3];
+        const auto clear_color = make_clear_color(config_.graphics);
         renderer.set_clear_color(clear_color);
 
         gs3d::ui::SvgLogoTexture logo_texture(
@@ -468,16 +442,10 @@ int ViewerApp::run() {
         );
         viewport_manager.set_clear_color(clear_color);
 
-        gs3d::render::PointPipelineConfig pipeline_config;
-        pipeline_config.vertex_shader_path =
-            config_.graphics.vertex_shader_path;
-        pipeline_config.fragment_shader_path =
-            config_.graphics.fragment_shader_path;
-
         gs3d::render::PointPipeline point_pipeline(
             context,
             viewport_manager.render_pass(),
-            pipeline_config
+            make_point_pipeline_config(config_.graphics)
         );
 
         gs3d::util::log::info() << "[OK] PointPipeline created.\n";
@@ -502,24 +470,8 @@ int ViewerApp::run() {
         auto& benchmark_pick_issue_metadata = benchmark_controller.issue_metadata();
         auto& benchmark_pick_results = benchmark_controller.results();
 
-        gs3d::camera::CameraControllerConfig controller_config;
-        controller_config.rotate_speed =
-            config_.controller.rotate_speed;
-        controller_config.pan_speed =
-            config_.controller.pan_speed;
-        controller_config.zoom_speed =
-            config_.controller.zoom_speed;
-        controller_config.invert_rotate_x =
-            config_.controller.invert_rotate_x;
-        controller_config.invert_rotate_y =
-            config_.controller.invert_rotate_y;
-        controller_config.invert_pan_x =
-            config_.controller.invert_pan_x;
-        controller_config.invert_pan_y =
-            config_.controller.invert_pan_y;
-
         ViewportCameraSystem viewport_cameras(
-            controller_config,
+            make_camera_controller_config(config_.controller),
             bounds,
             static_cast<std::size_t>(viewport_manager.viewport_count())
         );
@@ -598,19 +550,7 @@ int ViewerApp::run() {
         gs3d::render::LodSelector lod_selector;
 
         if (config_.lod.enabled) {
-            gs3d::render::LodSelectorConfig lod_selector_config;
-            lod_selector_config.medium_delay_seconds =
-                config_.lod.medium_delay_seconds;
-            lod_selector_config.high_delay_seconds =
-                config_.lod.high_delay_seconds;
-            lod_selector_config.use_lowest_while_interacting =
-                config_.lod.use_lowest_while_interacting;
-            lod_selector_config.adaptive_interacting_level =
-                config_.lod.adaptive_interacting_level;
-            lod_selector_config.frame_time_budget_ms =
-                config_.lod.frame_time_budget_ms;
-
-            lod_selector.set_config(lod_selector_config);
+            lod_selector.set_config(make_lod_selector_config(config_.lod));
         }
 
         gs3d::render::TileSelection tile_selection;
@@ -620,7 +560,7 @@ int ViewerApp::run() {
 
         if (config_.tile.enabled && tile_reader.has_value()) {
             tile_selection.set_config(
-                make_tile_selection_config(config_)
+                make_tile_selection_config(config_.tile)
             );
 
             tile_gpu_cloud =
@@ -996,7 +936,7 @@ int ViewerApp::run() {
 
             if (config_.tile.enabled && tile_reader.has_value()) {
                 auto tile_config =
-                    make_tile_selection_config(config_);
+                    make_tile_selection_config(config_.tile);
                 const auto stream_index =
                     static_cast<std::size_t>(
                         std::clamp(
