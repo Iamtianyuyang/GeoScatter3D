@@ -7,6 +7,7 @@
 #include "app/AppState.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
+#include "app/ViewportInteractionState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
@@ -832,29 +833,8 @@ int ViewerApp::run() {
                 static_cast<std::size_t>(viewport_manager.viewport_count())
             );
 
-        // Per-viewport previous-frame rotate state for rotate_begin detection.
-        std::vector<bool> prev_rotate(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
-        );
-
-        // Per-viewport click-vs-drag tracking: rotation pivot is only locked
-        // after the cursor moves ≥ kRotateActivationPx from the button-down
-        // position.  Pure clicks (press + release without drag) skip rotation
-        // entirely — leaves camera unchanged and reserves left-click for
-        // future point-selection features.
-        constexpr float kRotateActivationPx = 5.0f;
-        std::vector<float> mouse_down_x(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0.0f
-        );
-        std::vector<float> mouse_down_y(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            0.0f
-        );
-        std::vector<bool> rotation_activated(
-            static_cast<std::size_t>(viewport_manager.viewport_count()),
-            false
+        ViewportInteractionState viewport_interaction(
+            static_cast<std::size_t>(viewport_manager.viewport_count())
         );
 
         // Views start independent. The per-view UI can opt into sync group 0.
@@ -2107,43 +2087,7 @@ int ViewerApp::run() {
                 input.rotate = frame.rotate;
                 input.pan = frame.pan;
 
-                // rotate_begin: deferred until cursor moves ≥ kRotateActivationPx
-                // from the button-down position.  Pure clicks skip rotation.
-                {
-                    const auto idx =
-                        static_cast<std::size_t>(frame.index);
-                    if (idx < prev_rotate.size()) {
-                        const bool pressed =
-                            frame.rotate && !prev_rotate[idx];
-                        if (pressed) {
-                            mouse_down_x[idx] = frame.mouse_local_x;
-                            mouse_down_y[idx] = frame.mouse_local_y;
-                            rotation_activated[idx] = false;
-                        }
-
-                        if (frame.rotate) {
-                            if (!rotation_activated[idx]) {
-                                const float dx =
-                                    frame.mouse_local_x - mouse_down_x[idx];
-                                const float dy =
-                                    frame.mouse_local_y - mouse_down_y[idx];
-                                if (dx * dx + dy * dy >=
-                                    kRotateActivationPx * kRotateActivationPx) {
-                                    rotation_activated[idx] = true;
-                                    input.rotate_begin = true;
-                                } else {
-                                    // Not yet a drag — suppress rotation.
-                                    input.delta_x = 0.0f;
-                                    input.delta_y = 0.0f;
-                                }
-                            }
-                        } else {
-                            rotation_activated[idx] = false;
-                        }
-
-                        prev_rotate[idx] = frame.rotate;
-                    }
-                }
+                viewport_interaction.apply_rotation_gate(frame, input);
 
                 interacting = interacting || input.interacting();
                 if (controllers[static_cast<std::size_t>(frame.index)]

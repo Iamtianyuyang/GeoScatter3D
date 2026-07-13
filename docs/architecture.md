@@ -114,8 +114,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 2625 行，其中 `ViewerApp::run()` 独占 2261 行；它同时
-   负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。职责边界不清晰，修改任何功能
+1. `ViewerApp.cpp` 当前有 2569 行，其中 `ViewerApp::run()` 独占 2204 行；它仍同时
+   负责数据加载、缓存、GPU 上传、输入、UI 映射和渲染。逐视口旋转手势历史已提取为
+   可单测的 `ViewportInteractionState`，但主循环的其余职责边界仍不清晰，修改任何功能
    都容易影响主循环。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
    大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
@@ -125,7 +126,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按
    frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
 5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算和视图局部
-   相机输入；仍缺少 CSV、LOD、tile 选择和 Vulkan 生命周期集成测试，也没有 CI。
+   相机输入，并由 Linux/Windows 构建工作流执行；仍缺少 CSV、LOD、tile 选择和 Vulkan
+   生命周期集成测试。
 6. 仓库跟踪约 500 MiB 的 `data/test.gs3d`，Git 对象目录接近 900 MiB。大型样例
    应迁移到 release artifact、Git LFS 或可重复生成的小型 fixture。
 
