@@ -254,16 +254,4 @@ void ViewerApp::fill_render_views(
 
 }
 
-void ViewerApp::build_visible_viewports(
-    std::vector<int>& visible_viewports,
-    const std::vector<RenderViewState>& render_views
-) {
-    visible_viewports.clear();
-    for (const auto& view : render_views) {
-        if (view.render_requested) {
-            visible_viewports.push_back(view.viewport_index);
-        }
-    }
-}
-
 } // namespace gs3d::app

@@ -218,11 +218,6 @@ private:
         const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
     );
 
-    void build_visible_viewports(
-        std::vector<int>& visible_viewports,
-        const std::vector<RenderViewState>& render_views
-    );
-
     void apply_render_setting_commands(
         const RenderSettingsCommand& command,
         ViewerAppRenderSettingsContext& ctx

@@ -135,4 +135,56 @@ void ViewportPresentationState::copy_newly_visible_views(
     initialize_visibility(app_state);
 }
 
+ViewportPresentationRuntimeState
+ViewportPresentationState::reconcile_runtime_viewports(
+    const AppState& app_state,
+    const int viewport_capacity,
+    const int streaming_viewport_index,
+    std::vector<int>& visible_viewports
+) const {
+    visible_viewports.clear();
+
+    int active_viewport_count = 1;
+    int first_visible_viewport_index = 0;
+    bool has_visible_viewport = false;
+    for (const auto& view : app_state.render_views) {
+        if (view.render_requested) {
+            visible_viewports.push_back(view.viewport_index);
+        }
+        if (!view.visible) {
+            continue;
+        }
+        active_viewport_count = std::max(
+            active_viewport_count,
+            view.viewport_index + 1
+        );
+        if (!has_visible_viewport) {
+            first_visible_viewport_index = view.viewport_index;
+            has_visible_viewport = true;
+        }
+    }
+
+    const int safe_viewport_capacity = std::max(1, viewport_capacity);
+    active_viewport_count = std::clamp(
+        active_viewport_count,
+        1,
+        safe_viewport_capacity
+    );
+    const bool streaming_viewport_is_visible =
+        streaming_viewport_index >= 0 &&
+        streaming_viewport_index <
+            static_cast<int>(app_state.render_views.size()) &&
+        app_state.render_views[
+            static_cast<std::size_t>(streaming_viewport_index)
+        ].visible;
+
+    return {
+        .active_viewport_count = active_viewport_count,
+        .streaming_viewport_index = streaming_viewport_is_visible
+            ? streaming_viewport_index
+            : (has_visible_viewport ? first_visible_viewport_index : 0),
+        .streaming_viewport_changed = !streaming_viewport_is_visible
+    };
+}
+
 } // namespace gs3d::app

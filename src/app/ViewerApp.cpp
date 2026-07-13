@@ -984,40 +984,19 @@ int ViewerApp::run() {
                 app_state,
                 default_view_source
             );
-            int runtime_active_count = 1;
-            for (const auto& view : app_state.render_views) {
-                if (view.visible) {
-                    runtime_active_count = std::max(
-                        runtime_active_count,
-                        view.viewport_index + 1
-                    );
-                }
-            }
-            runtime_active_count = std::clamp(
-                runtime_active_count,
-                1,
-                viewport_manager.viewport_count()
-            );
-            viewport_manager.set_active_count(runtime_active_count);
-            if (streaming_viewport_index < 0 ||
-                streaming_viewport_index >=
-                    static_cast<int>(app_state.render_views.size()) ||
-                !app_state
-                     .render_views[
-                         static_cast<std::size_t>(streaming_viewport_index)
-                     ]
-                     .visible) {
-                const auto first_visible = std::find_if(
-                    app_state.render_views.begin(),
-                    app_state.render_views.end(),
-                    [](const auto& view) {
-                        return view.visible;
-                    }
+            const auto runtime_viewports =
+                viewport_presentation.reconcile_runtime_viewports(
+                    app_state,
+                    viewport_manager.viewport_count(),
+                    streaming_viewport_index,
+                    visible_viewports
                 );
+            viewport_manager.set_active_count(
+                runtime_viewports.active_viewport_count
+            );
+            if (runtime_viewports.streaming_viewport_changed) {
                 streaming_viewport_index =
-                    first_visible != app_state.render_views.end()
-                        ? first_visible->viewport_index
-                        : 0;
+                    runtime_viewports.streaming_viewport_index;
                 tile_selection_dirty = true;
             }
             apply_project_open_commands(gui_cmds, window);
@@ -1032,8 +1011,6 @@ int ViewerApp::run() {
             );
             observe_viewport_resize_requests(
                 gui_cmds, viewport_resize_scheduler, now_seconds);
-
-            build_visible_viewports(visible_viewports, app_state.render_views);
 
             const bool imgui_wants_keyboard =
                 ImGui::GetIO().WantCaptureKeyboard;

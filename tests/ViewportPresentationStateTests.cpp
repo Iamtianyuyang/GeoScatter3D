@@ -109,3 +109,44 @@ TEST_CASE(
     CHECK_FALSE(state.navigation_maps[2].view_rect_valid);
     CHECK(state.region_stats_by_view[2].point_count == 42);
 }
+
+TEST_CASE(
+    "ViewportPresentationState reconciles draw requests and streaming focus",
+    "[viewport_presentation]"
+)
+{
+    auto state = make_app_state();
+    state.render_views[0].render_requested = true;
+    state.render_views[1].visible = true;
+    state.render_views[2].render_requested = true;
+
+    gs3d::render::PointPushConstants push;
+    gs3d::scene::SceneState scene;
+    gs3d::app::ViewportPresentationState presentation(3, push, scene, 1.0f);
+    std::vector<int> visible_viewports;
+    visible_viewports.reserve(3);
+
+    const auto stable = presentation.reconcile_runtime_viewports(
+        state,
+        3,
+        1,
+        visible_viewports
+    );
+    CHECK(stable.active_viewport_count == 2);
+    CHECK(stable.streaming_viewport_index == 1);
+    CHECK_FALSE(stable.streaming_viewport_changed);
+    REQUIRE(visible_viewports.size() == 2);
+    CHECK(visible_viewports[0] == 0);
+    CHECK(visible_viewports[1] == 2);
+
+    state.render_views[1].visible = false;
+    const auto fallback = presentation.reconcile_runtime_viewports(
+        state,
+        3,
+        1,
+        visible_viewports
+    );
+    CHECK(fallback.active_viewport_count == 1);
+    CHECK(fallback.streaming_viewport_index == 0);
+    CHECK(fallback.streaming_viewport_changed);
+}

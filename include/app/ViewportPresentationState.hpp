@@ -9,6 +9,12 @@
 
 namespace gs3d::app {
 
+struct ViewportPresentationRuntimeState {
+    int active_viewport_count = 1;
+    int streaming_viewport_index = 0;
+    bool streaming_viewport_changed = false;
+};
+
 /*
  * Owns render-facing state that must stay aligned for every allocated
  * viewport.  The AppState mirrors UI-facing pieces of this state; when a
@@ -39,6 +45,13 @@ public:
         AppState& app_state,
         int default_source_view
     );
+    [[nodiscard]] ViewportPresentationRuntimeState
+    reconcile_runtime_viewports(
+        const AppState& app_state,
+        int viewport_capacity,
+        int streaming_viewport_index,
+        std::vector<int>& visible_viewports
+    ) const;
 
 private:
     std::vector<gs3d::render::PointPushConstants> pushes_;
