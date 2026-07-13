@@ -506,6 +506,12 @@ void ImGuiLayer::init(
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     if (enable_multi_viewports) {
         io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        // Keep detached ImGui windows and their fonts scaled consistently
+        // when they move between monitors with different DPI settings.
+        io.ConfigDpiScaleViewports = true;
+#if defined(_WIN32)
+        io.ConfigDpiScaleFonts = true;
+#endif
         // Use native OS decorations for detached viewports so moving a
         // torn-out window does not depend on ImGui's self-drawn title-bar
         // hit testing.
@@ -537,6 +543,16 @@ void ImGuiLayer::init(
     const float final_ui_scale = clamp_ui_scale(
         ppi_ui_scale * ui_scale_multiplier);
     const float ui_scale = final_ui_scale;
+
+#if defined(_WIN32)
+    float initial_platform_dpi_scale = 1.0f;
+    if (enable_multi_viewports) {
+        glfwGetWindowContentScale(window, &initial_platform_dpi_scale, nullptr);
+        if (initial_platform_dpi_scale <= 0.0f) {
+            initial_platform_dpi_scale = 1.0f;
+        }
+    }
+#endif
 
     // Set a minimum window size proportional to ui_scale so the UI can't be
     // shrunk below a usable layout. Computed from the actual space budget:
@@ -572,6 +588,16 @@ void ImGuiLayer::init(
     // palette:: 语义色，并做 sRGB→linear 预转换（交换链是 B8G8R8A8_SRGB）。
     // 启动主题来自 viewer.toml，运行期可经 视图→主题 菜单随时切换。
     gs3d::ui::apply_theme(gs3d::ui::active_theme(), ui_scale);
+
+#if defined(_WIN32)
+    if (enable_multi_viewports) {
+        // ConfigDpiScaleFonts uses the monitor's raw Windows DPI scale. The
+        // base font atlas already includes our PPI-derived scale, so normalize
+        // the startup monitor here and let later monitor changes apply only
+        // their relative DPI ratio.
+        style.FontScaleMain = 1.0f / initial_platform_dpi_scale;
+    }
+#endif
 
     if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
         ImGui::DestroyContext();

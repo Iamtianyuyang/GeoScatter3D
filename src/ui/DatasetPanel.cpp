@@ -35,16 +35,33 @@ void draw_dataset_panel(
     }
     auto& dataset_state = dataset != nullptr ? *dataset : state.dataset;
 
-    ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f), ImGuiCond_FirstUseEver);
+    const float scale = ImGui::GetFontSize() / 13.0f;
+    ImGui::SetNextWindowSize(
+        ImVec2(360.0f * scale, 520.0f * scale),
+        ImGuiCond_FirstUseEver
+    );
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(280.0f * scale, 360.0f * scale),
+        ImVec2(100000.0f, 100000.0f)
+    );
     if (ImGui::Begin(window_name, open)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 5.0f));
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_FramePadding,
+            ImVec2(6.0f * scale, 3.0f * scale)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_ItemSpacing,
+            ImVec2(6.0f * scale, 5.0f * scale)
+        );
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2(LayoutMetrics::kPanelInsetX, 8.0f));
+                            ImVec2(
+                                LayoutMetrics::kPanelInsetX * scale,
+                                8.0f * scale
+                            ));
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PushFont(font);
         }
-        ImGui::TextUnformatted(dataset_state.active_dataset.c_str());
+        ImGui::TextWrapped("%s", dataset_state.active_dataset.c_str());
         if (auto* font = gs3d::gui::ui_fonts().panel_title) {
             ImGui::PopFont();
         }
@@ -67,12 +84,13 @@ void draw_dataset_panel(
         ImGui::Spacing();
 
         draw_panel_section_label("场景");
-        if (ImGui::BeginChild("##DatasetSceneList", ImVec2(0.0f, 0.0f), false)) {
+        ImGui::BeginChild("##DatasetSceneList", ImVec2(0.0f, 0.0f), false);
+        {
             if (ImGui::TreeNodeEx("当前数据集",
                                   ImGuiTreeNodeFlags_DefaultOpen |
                                       ImGuiTreeNodeFlags_SpanAvailWidth)) {
                 for (const auto& item : dataset_state.dataset_tree) {
-                    ImGui::Selectable(item.c_str(), false);
+                    ImGui::TextWrapped("%s", item.c_str());
                 }
                 ImGui::TreePop();
             }
@@ -81,19 +99,41 @@ void draw_dataset_panel(
             draw_panel_section_label("数据属性");
             for (const auto& attribute : dataset_state.attributes) {
                 ImGui::Bullet();
-                ImGui::SameLine(0.0f, 6.0f);
-                ImGui::TextUnformatted(attribute.c_str());
+                ImGui::SameLine(0.0f, 6.0f * scale);
+                ImGui::TextWrapped("%s", attribute.c_str());
             }
             ImGui::Spacing();
             draw_panel_section_label("文件信息");
-            ImGui::TextWrapped("路径：%s", dataset_state.path.c_str());
-            ImGui::Text("格式：%s", dataset_state.format.c_str());
-            ImGui::TextWrapped(
-                "包围盒：%s",
-                dataset_state.bounding_box.c_str()
-            );
-            ImGui::EndChild();
+            if (ImGui::BeginTable(
+                    "##DatasetFileInfo",
+                    2,
+                    ImGuiTableFlags_SizingStretchProp |
+                        ImGuiTableFlags_NoPadOuterX
+                )) {
+                ImGui::TableSetupColumn(
+                    "label",
+                    ImGuiTableColumnFlags_WidthFixed,
+                    4.0f * ImGui::GetFontSize()
+                );
+                ImGui::TableSetupColumn(
+                    "value",
+                    ImGuiTableColumnFlags_WidthStretch
+                );
+                const auto info_row = [](const char* label,
+                                         const std::string& value) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextDisabled("%s", label);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextWrapped("%s", value.c_str());
+                };
+                info_row("路径", dataset_state.path);
+                info_row("格式", dataset_state.format);
+                info_row("包围盒", dataset_state.bounding_box);
+                ImGui::EndTable();
+            }
         }
+        ImGui::EndChild();
         ImGui::PopStyleVar(3);
     }
     ImGui::End();

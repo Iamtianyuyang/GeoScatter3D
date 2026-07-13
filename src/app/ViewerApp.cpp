@@ -1052,7 +1052,7 @@ int ViewerApp::run() {
         }
         apply_height_attr_to(push, attr_list[1], height_exag);
 
-        // 初始化默认色标 Rainbow256 (索引 8)
+        // 初始化默认色标：Rainbow256 (索引 8)
         push.flags &= ~gs3d::render::PointFlags::kColormapMask;
         push.flags |= (8u << 1) & gs3d::render::PointFlags::kColormapMask;
 

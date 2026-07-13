@@ -1610,7 +1610,7 @@ void draw_viewport_window(
     frame.mouse_on_image = mouse_mapping.mouse_on_image;
 
     if (frame.hovered || frame.active) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
 
     // Tooltip: shown whenever we have valid hover data and the cursor is on the image.
