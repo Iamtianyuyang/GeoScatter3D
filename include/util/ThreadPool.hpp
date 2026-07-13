@@ -25,6 +25,10 @@ namespace gs3d::util {
  *   ThreadPool pool(4);
  *   auto f = pool.submit([] { return expensive_work(); });
  *   auto result = f.get();
+ *
+ * shutdown() cancels queued work but lets tasks that a worker already started
+ * finish. This keeps application exit bounded by active work, not by an
+ * unbounded backlog of stale requests.
  */
 class ThreadPool {
 public:
@@ -39,16 +43,38 @@ public:
     }
 
     ~ThreadPool() {
+        shutdown();
+        join_workers();
+    }
+
+    // Reject future submissions and cancel tasks that no worker has started.
+    // Futures for cancelled packaged tasks become ready with broken_promise.
+    void shutdown() {
+        std::queue<std::function<void()>> cancelled_tasks;
         {
             std::unique_lock<std::mutex> lock(mutex_);
+            if (shutdown_) {
+                return;
+            }
             shutdown_ = true;
+            tasks_.swap(cancelled_tasks);
         }
         cv_.notify_all();
+    }
+
+    [[nodiscard]]
+    std::size_t thread_count() const noexcept {
+        return workers_.size();
+    }
+
+private:
+    void join_workers() {
         for (auto& w : workers_) {
             if (w.joinable()) w.join();
         }
     }
 
+public:
     ThreadPool(const ThreadPool&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
     ThreadPool(ThreadPool&&) = delete;
@@ -72,11 +98,6 @@ public:
         }
         cv_.notify_one();
         return future;
-    }
-
-    [[nodiscard]]
-    std::size_t thread_count() const noexcept {
-        return workers_.size();
     }
 
 private:

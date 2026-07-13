@@ -15,6 +15,7 @@
 #include "render/TileSelection.hpp"
 #include "scene/SceneState.hpp"
 #include "ui/UiRoot.hpp"
+#include "util/ThreadPool.hpp"
 
 #include <cmath>
 #include <chrono>
@@ -192,6 +193,66 @@ void test_gpu_preference_is_user_scoped()
 
     std::error_code ec;
     std::filesystem::remove_all(test_root, ec);
+}
+
+void test_thread_pool_shutdown_cancels_queued_work()
+{
+    std::promise<void> active_task_started;
+    const auto active_task_started_future =
+        active_task_started.get_future();
+    std::promise<void> release_active_task;
+    const auto release_active_task_future =
+        release_active_task.get_future().share();
+
+    gs3d::util::ThreadPool pool(1);
+    auto active_task = pool.submit([&] {
+        active_task_started.set_value();
+        release_active_task_future.wait();
+        return 7;
+    });
+    expect(
+        active_task_started_future.wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready,
+        "thread pool starts the active task"
+    );
+
+    auto cancelled_task = pool.submit([] { return 11; });
+    pool.shutdown();
+
+    bool submit_after_shutdown_rejected = false;
+    try {
+        static_cast<void>(pool.submit([] {}));
+    } catch (const std::runtime_error&) {
+        submit_after_shutdown_rejected = true;
+    }
+    expect(
+        submit_after_shutdown_rejected,
+        "thread pool rejects submissions after shutdown"
+    );
+
+    release_active_task.set_value();
+    expect(
+        active_task.get() == 7,
+        "thread pool lets an already active task finish"
+    );
+    expect(
+        cancelled_task.wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready,
+        "thread pool resolves a cancelled queued task"
+    );
+
+    bool queued_task_was_cancelled = false;
+    try {
+        static_cast<void>(cancelled_task.get());
+    } catch (const std::future_error& error) {
+        queued_task_was_cancelled =
+            error.code() ==
+                std::make_error_code(std::future_errc::broken_promise);
+    }
+    expect(
+        queued_task_was_cancelled,
+        "thread pool cancels queued work instead of draining it at shutdown"
+    );
 }
 
 void test_default_viewer_config_is_portable()
@@ -2979,6 +3040,7 @@ int main()
 {
     test_recent_projects_persist_and_dedupe();
     test_gpu_preference_is_user_scoped();
+    test_thread_pool_shutdown_cancels_queued_work();
     test_default_viewer_config_is_portable();
     test_resize_debounce();
     test_resize_batch();
