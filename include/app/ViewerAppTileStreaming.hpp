@@ -26,6 +26,9 @@ namespace gs3d::render { class VulkanRenderer; }
 
 namespace gs3d::app {
 
+struct ViewerTileConfig;
+struct ViewerAppTileStreamFrameContext;
+
 /*
  * 单 tile 磁盘加载结果：tile ID + 已加载的点数据（不携带缓存状态）。
  * 后台 lambda 填充，主线程通过 commit_streaming_tile_load_result 验证后
@@ -149,8 +152,33 @@ struct ViewerAppTileStreamState {
     gs3d::util::Stopwatch preload_timer;
 };
 
+// Owns all mutable tile streaming state, including async read futures and the
+// CPU cache. Worker lambdas only return data; this class commits it on the
+// main thread through update().
+class TileStreamingSystem {
+public:
+    TileStreamingSystem(
+        const ViewerTileConfig& config,
+        bool benchmark_enabled,
+        const std::optional<gs3d::data::Gs3dTileReader>& tile_reader
+    );
+
+    [[nodiscard]] ViewerAppTileStreamState& state() noexcept;
+    [[nodiscard]] const ViewerAppTileStreamState& state() const noexcept;
+
+    void clear_cpu_cache();
+    void update(
+        const ViewerAppTileStreamFrameContext& context,
+        const ViewerTileConfig& config,
+        bool benchmark_enabled
+    );
+
+private:
+    ViewerAppTileStreamState state_;
+};
+
 /*
- * Per-frame inputs for ViewerApp::update_tile_streaming(). References
+ * Per-frame inputs for TileStreamingSystem::update(). References
  * point at run() locals; the context itself is rebuilt every frame.
  */
 struct ViewerAppTileStreamFrameContext {

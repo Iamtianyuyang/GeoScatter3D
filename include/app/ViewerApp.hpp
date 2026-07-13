@@ -13,8 +13,6 @@
 #include <string>
 #include <vector>
 
-namespace gs3d::app { struct ViewerAppTileStreamState; }
-namespace gs3d::app { struct ViewerAppTileStreamFrameContext; }
 namespace gs3d::app { class ViewerBenchmarkController; }
 namespace gs3d::render { class ViewportManager; }
 namespace gs3d::app { struct UiActions; }
@@ -261,13 +259,6 @@ private:
         const BenchmarkFrameSamples& samples,
         VkPresentModeKHR present_mode
     ) const;
-
-    void clear_tile_cpu_cache(ViewerAppTileStreamState& tiles);
-
-    void update_tile_streaming(
-        ViewerAppTileStreamState& tiles,
-        const ViewerAppTileStreamFrameContext& ctx
-    );
 
     void record_viewport_passes(
         VkCommandBuffer cmd,

@@ -848,6 +848,24 @@ if(BUILD_TESTING)
         COMMAND GeoScatter3DViewerBenchmarkControllerTests
     )
 
+    add_executable(GeoScatter3DTileStreamingSystemTests
+        tests/TileStreamingSystemTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DTileStreamingSystemTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DTileStreamingSystemTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.TileStreamingSystem
+        COMMAND GeoScatter3DTileStreamingSystemTests
+    )
+
     add_executable(GeoScatter3DTileStreamingTests
         tests/TileStreamingTests.cpp
     )

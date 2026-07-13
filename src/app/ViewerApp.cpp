@@ -560,17 +560,12 @@ int ViewerApp::run() {
          * 声明在 tile_reader / tile_point_ids_by_tile 之后（后台 future
          * 引用它们，析构时先 join future）。
          */
-        ViewerAppTileStreamState tile_stream(
-            config_.tile.cpu_cache_max_bytes
+        TileStreamingSystem tile_streaming(
+            config_.tile,
+            config_.benchmark.enabled,
+            tile_reader
         );
-        tile_stream.preload_enabled =
-            config_.tile.enabled &&
-            config_.tile.preload_all &&
-            !config_.benchmark.enabled &&
-            tile_reader.has_value() &&
-            !tile_reader->records().empty() &&
-            tile_reader->stats().total_point_bytes <=
-                config_.tile.preload_max_bytes;
+        auto& tile_stream = tile_streaming.state();
 
         // Debounce interacting so rapid scroll zoom doesn't cause
         // frame-by-frame toggling (tiles pop in/out, LOD clip flicker).
@@ -1098,7 +1093,7 @@ int ViewerApp::run() {
                 }
             }
             if (gui_cmds.clear_cache_requested) {
-                clear_tile_cpu_cache(tile_stream);
+                tile_streaming.clear_cpu_cache();
             }
             screenshot_service.request(gui_cmds, app_state, swapchain);
 
@@ -1402,7 +1397,11 @@ int ViewerApp::run() {
                         benchmark_upload_record_ms_frame,
                     .reload_seconds = benchmark_session.samples().reload_seconds
                 };
-                update_tile_streaming(tile_stream, tile_ctx);
+                tile_streaming.update(
+                    tile_ctx,
+                    config_.tile,
+                    config_.benchmark.enabled
+                );
             }
             // Select LOD level once per frame (not per-viewport) so all views
             // use the same level and the verbose log fires at most once.
