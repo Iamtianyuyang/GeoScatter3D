@@ -71,6 +71,14 @@ struct TileLoadCommitStats {
  * 异步读取 future、全量预加载进度。生命周期与 run() 相同；必须在
  * tile_reader / tile_point_ids_by_tile 之后声明——后台 future 引用
  * 它们，析构时按声明逆序先 join future 再销毁被引用对象。
+ *
+ * Threading contract:
+ * - The main thread exclusively owns every member except point_cache.
+ * - Worker lambdas may capture only immutable tile_reader / point-id inputs
+ *   and return loaded data through futures; they never mutate this state.
+ * - TilePointCache is the sole cross-thread object and synchronizes its own
+ *   access. Future results are committed to the remaining state on the main
+ *   thread in update_tile_streaming().
  */
 struct ViewerAppTileStreamState {
     explicit ViewerAppTileStreamState(std::uint64_t cpu_cache_max_bytes)
