@@ -427,23 +427,23 @@ if(BUILD_TESTING)
         COMMAND GeoScatter3DDataTests
     )
 
-    add_executable(GeoScatter3DRuntimeTests
-        tests/RuntimePerformanceTests.cpp
+    add_executable(GeoScatter3DRuntimeLogicTests
+        tests/RuntimeLogicTests.cpp
     )
 
-    target_include_directories(GeoScatter3DRuntimeTests PRIVATE
+    target_include_directories(GeoScatter3DRuntimeLogicTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
     )
 
-    target_link_libraries(GeoScatter3DRuntimeTests PRIVATE
+    target_link_libraries(GeoScatter3DRuntimeLogicTests PRIVATE
         gs3d_app_support
         gs3d_render
     )
 
     add_test(
-        NAME GeoScatter3D.RuntimePerformance
-        COMMAND GeoScatter3DRuntimeTests
+        NAME GeoScatter3D.RuntimeLogic
+        COMMAND GeoScatter3DRuntimeLogicTests
     )
 
     add_executable(GeoScatter3DTileStreamingTests

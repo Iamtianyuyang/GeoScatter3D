@@ -3049,7 +3049,7 @@ int main()
     test_hover_cleared_when_no_hit();
 
     if (failures == 0) {
-        std::cout << "[PASS] runtime performance tests\n";
+        std::cout << "[PASS] runtime logic tests\n";
     }
     return failures == 0 ? 0 : 1;
 }
