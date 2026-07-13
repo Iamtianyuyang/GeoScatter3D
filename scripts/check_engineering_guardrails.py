@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
 import subprocess
@@ -40,6 +41,56 @@ LINE_BUDGETS = {
     "src/ui/UiRoot.cpp": 2250,
     "src/app/AppConfig.cpp": 763,
 }
+
+
+def line_budgets_at_parent(root: pathlib.Path) -> dict[str, int] | None:
+    """Return the committed budgets immediately preceding the checked tree.
+
+    A line-budget ratchet is only useful if a code change cannot increase its
+    allowance in the same commit.  CI therefore checks this working tree
+    against HEAD^; workflows must fetch that parent commit.
+    """
+    parent = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD^"],
+        cwd=root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if parent.returncode != 0:
+        return None
+
+    previous = subprocess.run(
+        ["git", "show", "HEAD^:scripts/check_engineering_guardrails.py"],
+        cwd=root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if previous.returncode != 0:
+        return None
+
+    try:
+        module = ast.parse(previous.stdout)
+        assignment = next(
+            node for node in module.body
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "LINE_BUDGETS"
+                for target in node.targets
+            )
+        )
+        parsed = ast.literal_eval(assignment.value)
+    except (StopIteration, SyntaxError, ValueError):
+        return None
+
+    if not isinstance(parsed, dict) or not all(
+        isinstance(subject, str) and isinstance(budget, int)
+        for subject, budget in parsed.items()
+    ):
+        return None
+    return parsed
 
 
 def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
@@ -124,6 +175,24 @@ def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
     tracked = tracked_files(root)
     violations: list[str] = []
+
+    parent_budgets = line_budgets_at_parent(root)
+    if parent_budgets is None:
+        violations.append(
+            "cannot verify historical line budgets; fetch the parent commit"
+        )
+    else:
+        for subject, budget in LINE_BUDGETS.items():
+            parent_budget = parent_budgets.get(subject)
+            if parent_budget is None:
+                violations.append(
+                    f"historical line budget missing: {subject}"
+                )
+            elif budget > parent_budget:
+                violations.append(
+                    "line budget increased: "
+                    f"{subject}={budget}, parent={parent_budget}"
+                )
 
     for path in tracked:
         path_string = path.as_posix()

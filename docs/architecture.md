@@ -114,47 +114,14 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 912 行，其中 `ViewerApp::run()` 独占 716 行；它仍同时
-   负责缓存、GPU 上传、输入、UI 映射和渲染。数据加载、瓦片/LOD 准备和运行时点 ID
-   索引已提取为可独立验证的 `ViewerDatasetSession`；UI 初始数据摘要、每视图状态和
-   benchmark 面板策略已提取为 `ViewerAppStateInitialization`；属性通道与 push constant 映射
-   已提取为 `ViewerAttributeMapping`；每帧 UI/性能状态同步已提取为
-   `ViewerFrameStateSynchronizer`；逐视口输入映射、旋转手势历史和
-   相机控制器已提取为可单测的 `ViewportCameraSystem`；benchmark 生命周期已提取为
-   `BenchmarkSession`，GPU pick 请求/readback、hover 去抖和 debug dump 已提取为
-   `ViewerPickSystem`；逐视口渲染状态与首次显示时的状态复制已提取为
-   `ViewportPresentationState`；空间/时间 LOD 合并与交互期冻结已提取为
-   `ViewportLodController`；导航缩略图的 framebuffer 生命周期、脏重绘和坐标映射已提取为
-   `NavigationMapSystem`；异步 tile 读取、CPU 缓存和预加载状态机已提取为
-   `TileStreamingSystem`；键盘边沿检测和相机/属性快捷键已提取为
-   `ViewerKeyboardShortcutSystem`；渲染请求、运行时活跃视口和流式主视口回退已提取为
-   `ViewportPresentationState`；渲染设置命令的目标视口路由和 push constant 更新已提取为
-   `ViewerRenderSettingsSystem`；手势、基准轨道、相机链接传播和交互期防抖已提取为
-   `ViewerCameraFrameSystem`；GPU/瓦片驻留、可见点、缓存和帧时序遥测已提取为
-   `ViewerFrameMetricsCollector`；跨帧 LOD 显示层级、相机空间分辨率和选层诊断已提取为
-   `ViewerLodFrameSystem`；pick 就绪帧轮询及其查找/相机桥接已收归
-   `ViewerPickSystem`；帧间隔、FPS 平滑和排除 present acquire 等待后的 LOD 时间估算已
-   提取为 `ViewerFrameClock`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
-   CTest 的工程护栏会校验上述行数，并以 912 / 716 / 2250 / 763 行分别作为
-   `ViewerApp.cpp` / `run()` / `UiRoot.cpp` / `AppConfig.cpp` 的非回归上限；
-   后续重构只能压低这些上限，不能靠改风险数字掩盖增长。
-   `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
-   benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
-   `ViewerApp` 重新成为配置耦合中心。`ViewerRuntimeConfiguration` 将窗口、Vulkan、
-   管线、相机、LOD 和 tile 域转换为窄运行时配置；相机初始化、重置和快捷键只接收
-   `ViewerCameraConfig`；`ViewerRenderRuntime` 按依赖顺序拥有 Vulkan、ImGui、点云 GPU、
-   视口和管线资源，并只接收它需要的配置域；首启工作台窗口几何已由可测的
-   `ViewerWorkbenchLayout` 计算；`AppConfigViewerToml` 已按 TOML section 解析
-   viewer/runtime 域，loader 只编排输入、CSV 与路径解析；
-   每视口离屏绘制、GPU pick 记录和 pick 调试策略已收归
-   `ViewerViewportRenderSystem`，不再由 `ViewerApp` 直接读取 LOD 或 pick-debug 配置。
-   `ViewerFrameRenderer` 则统一执行离屏 pass、ImGui、截图读回和帧等待测量，避免主循环
-   手写跨 pass 回调和在 draw-frame 早退时遗漏 ImGui 收尾。
-   `AppConfigValidation` 会在创建渲染资源前拒绝无效的窗口、相机、LOD、tile 预算和
-   UNORM 清屏色配置。
-   `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
-   `WorkspaceManager`；大坐标/极小步长的 minor tick 生成已提取为可单测的
-   `ViewportAxisTicks`，但其余 ImGui 绘制代码仍需要继续分拆。
+1. `ViewerApp.cpp` 当前有 912 行，其中 `ViewerApp::run()` 独占 716 行。运行时资源、
+   tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
+   `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
+   帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
+   调度与错误边界。`UiRoot.cpp` 仍有 2250 行，剩余的 docking 编排、菜单与面板绘制
+   仍集中在一个文件；下一刀按 UI 边界拆出菜单/工作台编排和独立 panel，且每次拆分都
+   降低对应预算。工程护栏以 912 / 716 / 2250 / 763 行分别约束 `ViewerApp.cpp`、
+   `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；预算与上一个提交相比只能下降，不能上调。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
    大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
    已有 v1 数据应重建为 v2，LOD/tile sidecar 也需要独立评估相同的可移植性问题。
@@ -175,10 +142,10 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 后续拆分方向
 
-1. **Tile 运行时服务**：从 `ViewerApp` 提取 tile 后台任务、CPU 缓存和 GPU 同步。
-   对外只提供相机更新和可渲染结果，让异步状态机可以独立测试。
+1. **UiRoot panel 边界**：先分离 docking/菜单编排，再把仍内嵌的 panel 绘制按数据集、
+   测量和渲染设置职责迁出；每个切片都附带交互烟测并压低 `UiRoot.cpp` 预算。
 2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
-   逐项复制 UI 字段。
+   逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
 3. **稳定的文件格式层**：用明确的小端字段编码替代 C++ struct 原样写盘，把版本、
    校验和兼容策略集中管理。
 4. **Swapchain 变更接口**：明确通知 ImGui 和依赖 render pass 的管线重建，而不是

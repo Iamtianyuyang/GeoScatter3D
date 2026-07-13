@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 2
 
       # glfw3 + Vulkan headers/loader + glslangValidator via vcpkg.
       - name: Cache vcpkg packages
@@ -56,6 +57,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 2
 
       - name: Install dependencies
         run: |
