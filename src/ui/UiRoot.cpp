@@ -168,7 +168,6 @@ namespace AxisStyle {
     // 两级刻度
     constexpr float kMajorTickLen   = 8.0f;
     constexpr float kMinorTickLen   = 4.0f;
-    constexpr int   kMinorPerMajor  = 4;
     constexpr int   kMajorCountMin  = 4;
     constexpr int   kMajorCountMax  = 6;
 
@@ -823,31 +822,24 @@ void draw_viewport_window(
                 std::max(x_range, y_range) > 0.0f ? 5.0f : 4.0f)),
             AxisStyle::kMajorCountMin, AxisStyle::kMajorCountMax);
 
-        // ---- 辅助 lambda：根据刻度步长选择小数位数 ----
-        const auto fmt_label = [](char* buf, std::size_t buf_size,
-                                  float tick, double origin_offset,
-                                  float major_step) {
-            // Choose precision based on step magnitude so that
-            // zoomed-in views show decimals and zoomed-out views
-            // stay compact.
-            int prec = 0;
-            if (major_step < 1.0f) {
-                prec = static_cast<int>(
-                    std::ceil(-std::log10(std::max(major_step, 1.0e-6f))));
-                if (prec < 0) prec = 0;
-                if (prec > 6) prec = 6;
-            }
-            std::snprintf(buf, buf_size, "%.*f", prec,
-                static_cast<double>(tick) + origin_offset);
-        };
+        std::vector<float> x_major;
+        if (x_range > 0.0f) {
+            x_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
+        }
+        const float x_major_step = (x_major.size() >= 2)
+            ? (x_major[1] - x_major[0]) : 1.0f;
+
+        std::vector<float> y_major;
+        if (y_range > 0.0f) {
+            y_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
+        }
+        const float y_major_step = (y_major.size() >= 2)
+            ? (y_major[1] - y_major[0]) : 1.0f;
 
         // ---- X 轴（顶部）----
         if (x_range > 0.0f) {
-            const auto x_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
-            const float x_major_step = (x_major.size() >= 2)
-                ? (x_major[1] - x_major[0]) : 1.0f;
-
             // 弱网格线（仅 major 位置）
             for (const float tick : x_major) {
                 const float t = (tick - view.map_axis_x_min) / x_range;
@@ -871,7 +863,7 @@ void draw_viewport_window(
                     AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
-                fmt_label(label, sizeof(label), tick,
+                format_axis_tick_label(label, sizeof(label), tick,
                     view.map_axis_origin_x, x_major_step);
                 if (axis_font() != nullptr) {
                     ImGui::PushFont(axis_font());
@@ -913,11 +905,6 @@ void draw_viewport_window(
 
         // ---- Y 轴（左侧）----
         if (y_range > 0.0f) {
-            const auto y_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
-            const float y_major_step = (y_major.size() >= 2)
-                ? (y_major[1] - y_major[0]) : 1.0f;
-
             // 网格线：只在 major 位置画
             for (const float tick : y_major) {
                 const float t = (tick - view.map_axis_y_min) / y_range;
@@ -941,7 +928,7 @@ void draw_viewport_window(
                     AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
-                fmt_label(label, sizeof(label), tick,
+                format_axis_tick_label(label, sizeof(label), tick,
                     view.map_axis_origin_y, y_major_step);
                 if (axis_font() != nullptr) {
                     ImGui::PushFont(axis_font());
@@ -1005,29 +992,12 @@ void draw_viewport_window(
             dl->AddLine(ImVec2(cx, plot_min.y), ImVec2(cx, plot_max.y),
                         kCrosshairLine, kCrosshairWidth);
 
-            // Precision from axis major-step estimate, same family as
-            // fmt_label used by tick labels.
-            const auto hover_prec = [](float step) -> int {
-                if (step <= 0.0f || step >= 1.0f) return 0;
-                int p = static_cast<int>(
-                    std::ceil(-std::log10(
-                        static_cast<double>(std::max(step, 1.0e-6f)))));
-                return std::clamp(p, 0, 6);
-            };
-
-            const float x_step = (x_range > 0.0f)
-                ? x_range / static_cast<float>(std::max(major_cnt, 1))
-                : 1.0f;
-            const float y_step = (y_range > 0.0f)
-                ? y_range / static_cast<float>(std::max(major_cnt, 1))
-                : 1.0f;
-
             char label_x[32], label_y[32];
             std::snprintf(label_x, sizeof(label_x), "%.*f",
-                hover_prec(x_step),
+                axis_label_precision(x_major_step),
                 static_cast<double>(view.hover_x));
             std::snprintf(label_y, sizeof(label_y), "%.*f",
-                hover_prec(y_step),
+                axis_label_precision(y_major_step),
                 static_cast<double>(view.hover_y));
 
             if (axis_font() != nullptr) {

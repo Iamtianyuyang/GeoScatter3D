@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 TEST_CASE("ViewportAxisTicks fills intervals between major ticks", "[viewport_axis]")
@@ -51,4 +52,19 @@ TEST_CASE("ViewportAxisTicks rejects invalid major steps", "[viewport_axis]")
         -1.0f,
         1.0f
     ).empty());
+}
+
+TEST_CASE("ViewportAxisTicks uses one precision policy for labels", "[viewport_axis]")
+{
+    CHECK(gs3d::ui::axis_label_precision(10.0f) == 0);
+    CHECK(gs3d::ui::axis_label_precision(0.1f) == 1);
+    CHECK(gs3d::ui::axis_label_precision(0.008f) == 3);
+    CHECK(gs3d::ui::axis_label_precision(0.00000001f) == 6);
+    CHECK(gs3d::ui::axis_label_precision(-1.0f) == 0);
+
+    char label[32]{};
+    gs3d::ui::format_axis_tick_label(
+        label, sizeof(label), 1.2345f, 100.0, 0.01f
+    );
+    CHECK(std::strcmp(label, "101.23") == 0);
 }

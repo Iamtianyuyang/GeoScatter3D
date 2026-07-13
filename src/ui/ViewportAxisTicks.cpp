@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace gs3d::ui {
 
@@ -64,6 +65,44 @@ std::vector<float> compute_minor_axis_ticks(
         minors.resize(kMaxMinorCount);
     }
     return minors;
+}
+
+int axis_label_precision(const float major_step) noexcept
+{
+    if (major_step <= 0.0f || major_step >= 1.0f) {
+        return 0;
+    }
+
+    // Exact decimal powers such as 0.01f are not represented exactly. Without
+    // the small tolerance, log10 can land just above 2 and ceil would format
+    // a two-decimal axis using three digits.
+    constexpr double kPrecisionTolerance = 1.0e-6;
+    const int precision = static_cast<int>(std::ceil(
+        -std::log10(static_cast<double>(std::max(major_step, 1.0e-6f))) -
+        kPrecisionTolerance
+    ));
+    return std::clamp(precision, 0, 6);
+}
+
+void format_axis_tick_label(
+    char* const buffer,
+    const std::size_t buffer_size,
+    const float tick,
+    const double origin_offset,
+    const float major_step
+) noexcept
+{
+    if (buffer == nullptr || buffer_size == 0) {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        buffer_size,
+        "%.*f",
+        axis_label_precision(major_step),
+        static_cast<double>(tick) + origin_offset
+    );
 }
 
 } // namespace gs3d::ui

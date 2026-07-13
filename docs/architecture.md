@@ -138,7 +138,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
    benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
    `ViewerApp` 重新成为配置耦合中心。
-   `UiRoot.cpp` 仍有 2280 行；其中工作区所有权、视图分配与清理已移至可单测的
+   `UiRoot.cpp` 仍有 2250 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`；大坐标/极小步长的 minor tick 生成已提取为可单测的
    `ViewportAxisTicks`，但其余 ImGui 绘制代码仍需要继续分拆。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
