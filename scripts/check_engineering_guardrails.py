@@ -28,6 +28,12 @@ RAW_LOG_PATTERNS = (
 ABSOLUTE_MACHINE_PATH = re.compile(
     r"(?:/[Hh]ome/|/[Uu]sers/|[A-Za-z]:[\\/](?:Users|home)[\\/])"
 )
+IGNORE_SCOPE_PROBES = (
+    "docs/guardrail-screenshot.png",
+    "docs/guardrail-report.html",
+    "examples/guardrail-session.log",
+    "src/data/guardrail-new-source.cpp",
+)
 
 
 def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
@@ -99,6 +105,15 @@ def function_line_count(path: pathlib.Path, signature: str) -> int:
     raise ValueError(f"closing brace not found for: {signature}")
 
 
+def is_ignored(root: pathlib.Path, candidate: str) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "--quiet", "--no-index", candidate],
+        cwd=root,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
     tracked = tracked_files(root)
@@ -128,6 +143,10 @@ def main() -> int:
                         f"raw runtime diagnostic bypasses util::log: {path_string}"
                     )
                     break
+
+    for candidate in IGNORE_SCOPE_PROBES:
+        if is_ignored(root, candidate):
+            violations.append(f"overly broad ignore rule: {candidate}")
 
     viewer_path = root / "src/app/ViewerApp.cpp"
     ui_path = root / "src/ui/UiRoot.cpp"
