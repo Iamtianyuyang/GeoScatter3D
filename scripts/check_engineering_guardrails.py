@@ -34,6 +34,12 @@ IGNORE_SCOPE_PROBES = (
     "examples/guardrail-session.log",
     "src/data/guardrail-new-source.cpp",
 )
+LINE_BUDGETS = {
+    "src/app/ViewerApp.cpp": 1240,
+    "ViewerApp::run()": 969,
+    "src/ui/UiRoot.cpp": 2250,
+    "src/app/AppConfig.cpp": 1369,
+}
 
 
 def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
@@ -150,6 +156,7 @@ def main() -> int:
 
     viewer_path = root / "src/app/ViewerApp.cpp"
     ui_path = root / "src/ui/UiRoot.cpp"
+    app_config_path = root / "src/app/AppConfig.cpp"
     architecture_path = root / "docs/architecture.md"
     architecture = architecture_path.read_text(encoding="utf-8")
     viewer_match = re.search(
@@ -171,6 +178,22 @@ def main() -> int:
                 "stale architecture metrics: "
                 f"documented={documented}, actual={actual}"
             )
+
+        line_counts = {
+            "src/app/ViewerApp.cpp": viewer_lines,
+            "ViewerApp::run()": run_lines,
+            "src/ui/UiRoot.cpp": ui_lines,
+            "src/app/AppConfig.cpp": len(
+                app_config_path.read_text(encoding="utf-8").splitlines()
+            ),
+        }
+        for subject, line_count in line_counts.items():
+            budget = LINE_BUDGETS[subject]
+            if line_count > budget:
+                violations.append(
+                    "source line budget exceeded: "
+                    f"{subject}={line_count}, budget={budget}"
+                )
 
     print("GeoScatter3D engineering guardrails")
     if not violations:
