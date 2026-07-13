@@ -114,7 +114,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 1841 行，其中 `ViewerApp::run()` 独占 1558 行；它仍同时
+1. `ViewerApp.cpp` 当前有 1804 行，其中 `ViewerApp::run()` 独占 1533 行；它仍同时
    负责缓存、GPU 上传、输入、UI 映射和渲染。数据加载、瓦片/LOD 准备和运行时点 ID
    索引已提取为可独立验证的 `ViewerDatasetSession`；UI 初始数据摘要、每视图状态和
    benchmark 面板策略已提取为 `ViewerAppStateInitialization`；属性通道与 push constant 映射

@@ -1,6 +1,7 @@
 #include "app/ViewerApp.hpp"
 #include "util/Log.hpp"
 #include "app/ViewerDatasetSession.hpp"
+#include "app/ViewerDatasetDescriptor.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
@@ -99,19 +100,6 @@ gs3d::camera::CameraBounds make_camera_bounds(
     };
 
     return bounds;
-}
-
-gs3d::core::Bounds3f make_dataset_bounds(
-    const gs3d::data::Gs3dDataset& dataset
-) {
-    return {
-        dataset.bbox_min_x(),
-        dataset.bbox_min_y(),
-        dataset.bbox_min_z(),
-        dataset.bbox_max_x(),
-        dataset.bbox_max_y(),
-        dataset.bbox_max_z()
-    };
 }
 
 gs3d::render::SwapchainPresentModeHint benchmark_present_mode_hint(
@@ -730,36 +718,11 @@ int ViewerApp::run() {
                         config_.tile.enabled
                     );
 
-        gs3d::core::DatasetDescriptor dataset_descriptor;
-        dataset_descriptor.display_name =
-            config_.input.gs3d_path.filename().string();
-        dataset_descriptor.path = config_.input.gs3d_path.string();
-        dataset_descriptor.format = "GS3D";
-        dataset_descriptor.point_count = dataset.point_count();
-        dataset_descriptor.bounds = make_dataset_bounds(dataset);
-        dataset_descriptor.dataset_tree = {
-            dataset_descriptor.display_name,
-            "瓦片",
-            "细节层级",
-            "属性"
-        };
-        dataset_descriptor.attributes.clear();
-        for (const auto& attr : attr_list) {
-            dataset_descriptor.attributes.push_back(
-                gs3d::core::AttributeDescriptor{attr.name});
-        }
-        {
-            std::error_code ec;
-            const auto file_bytes = std::filesystem::file_size(config_.input.gs3d_path, ec);
-            if (!ec) {
-                const double mb = static_cast<double>(file_bytes) / (1024.0 * 1024.0);
-                std::ostringstream oss;
-                oss.setf(std::ios::fixed);
-                oss.precision(2);
-                oss << mb << " MB";
-                dataset_descriptor.file_size = oss.str();
-            }
-        }
+        auto dataset_descriptor = make_viewer_dataset_descriptor(
+            dataset,
+            config_.input.gs3d_path,
+            attr_list
+        );
         gs3d::scene::SceneState scene_state;
         scene_state.active_dataset = &dataset_descriptor;
         scene_state.active_attribute_index = 0;  // 颜色=fold (attr_list[0])

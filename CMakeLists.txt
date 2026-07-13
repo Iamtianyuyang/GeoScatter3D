@@ -270,6 +270,7 @@ add_library(gs3d_app STATIC
 
     src/app/ViewerApp.cpp
     src/app/ViewerDatasetSession.cpp
+    src/app/ViewerDatasetDescriptor.cpp
     src/app/ViewerAttributeMapping.cpp
     src/app/ViewerFrameStateSynchronizer.cpp
     src/app/ViewerAppStateInitialization.cpp
@@ -301,6 +302,7 @@ add_library(gs3d_app STATIC
 
     include/app/ViewerApp.hpp
     include/app/ViewerDatasetSession.hpp
+    include/app/ViewerDatasetDescriptor.hpp
     include/app/ViewerAttributeMapping.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
     include/app/ScreenshotService.hpp
