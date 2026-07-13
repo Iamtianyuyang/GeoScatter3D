@@ -255,6 +255,7 @@ add_library(gs3d_app STATIC
     src/ui/SvgLogoTexture.cpp
 
     src/app/ViewerApp.cpp
+    src/app/ViewerDatasetSession.cpp
     src/app/ViewerAppViewport.cpp
     src/app/ViewerAppPicking.cpp
     src/app/ViewerAppRenderView.cpp
@@ -285,6 +286,7 @@ add_library(gs3d_app STATIC
     include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp
+    include/app/ViewerDatasetSession.hpp
     include/app/ViewerAppInternal.hpp
     include/app/AppConfig.hpp
     include/app/BenchmarkSession.hpp
@@ -675,6 +677,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.RuntimeLogic
         COMMAND GeoScatter3DRuntimeLogicTests
+    )
+
+    add_executable(GeoScatter3DViewerDatasetSessionTests
+        tests/ViewerDatasetSessionTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DViewerDatasetSessionTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DViewerDatasetSessionTests PRIVATE
+        gs3d_app
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ViewerDatasetSession
+        COMMAND GeoScatter3DViewerDatasetSessionTests
     )
 
     add_executable(GeoScatter3DTileStreamingTests

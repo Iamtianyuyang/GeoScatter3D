@@ -1,5 +1,6 @@
 #include "app/ViewerApp.hpp"
 #include "util/Log.hpp"
+#include "app/ViewerDatasetSession.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
@@ -168,59 +169,6 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
     return tile_config;
 }
 
-gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
-    const gs3d::data::Gs3dDataset& dataset,
-    const ViewerAppConfig& config
-) {
-    if (!config.lod.enabled) {
-        return {};
-    }
-
-    const auto& sidecar_path =
-        config.lod.sidecar_path;
-
-    if (!config.lod.auto_load_sidecar) {
-        throw std::runtime_error(
-            "ViewerApp: lod.enabled is true but runtime LOD build is "
-            "disabled and lod.auto_load_sidecar is false"
-        );
-    }
-
-    if (sidecar_path.empty()) {
-        throw std::runtime_error(
-            "ViewerApp: lod.enabled is true but lod.sidecar_path is empty"
-        );
-    }
-
-    if (!std::filesystem::exists(sidecar_path)) {
-        throw std::runtime_error(
-            "ViewerApp: required LOD sidecar not found: " +
-            sidecar_path.string()
-        );
-    }
-
-    gs3d::data::Gs3dLodReadConfig read_config;
-    read_config.validate_against_source = true;
-    read_config.verbose = config.lod.verbose;
-
-    const auto read_result =
-        gs3d::data::Gs3dLodReader::read(
-            sidecar_path,
-            dataset.header(),
-            read_config
-        );
-
-    gs3d::util::log::info() << "[OK] LOD sidecar loaded.\n";
-    gs3d::util::log::info() << "path = "
-              << sidecar_path.string()
-              << '\n';
-
-    return read_result.dataset;
-}
-
-
-
-
 gs3d::render::PointCloudLodSource build_lod_source(
     const gs3d::data::Gs3dLodDataset& lod_dataset,
     const std::vector<std::vector<std::uint32_t>>& lod_point_ids
@@ -245,32 +193,6 @@ gs3d::render::PointCloudLodSource build_lod_source(
     return source;
 }
 
-
-void print_dataset_info(
-    const gs3d::data::Gs3dDataset& dataset
-) {
-    gs3d::util::log::info() << "[OK] Dataset loaded.\n";
-    gs3d::util::log::info() << "point_count = " << dataset.point_count() << '\n';
-    gs3d::util::log::info() << "loaded_point_bytes = "
-              << dataset.point_bytes() << '\n';
-    gs3d::util::log::info() << "metadata_only = "
-              << (dataset.metadata_only() ? "true" : "false")
-              << '\n';
-
-    gs3d::util::log::info() << "bbox_min = ["
-              << dataset.bbox_min_x() << ", "
-              << dataset.bbox_min_y() << ", "
-              << dataset.bbox_min_z() << "]\n";
-
-    gs3d::util::log::info() << "bbox_max = ["
-              << dataset.bbox_max_x() << ", "
-              << dataset.bbox_max_y() << ", "
-              << dataset.bbox_max_z() << "]\n";
-
-    gs3d::util::log::info() << "value_range = ["
-              << dataset.value_min() << ", "
-              << dataset.value_max() << "]\n";
-}
 
 void print_controls(
     bool lod_enabled,
@@ -370,190 +292,22 @@ int ViewerApp::run() {
         open_request_.reset();
         gs3d::util::Stopwatch startup_timer;
 
-        const bool can_start_from_metadata =
-            config_.lod.enabled &&
-            !config_.lod.keep_full_buffer &&
-            config_.lod.auto_load_sidecar &&
-            !config_.lod.sidecar_path.empty() &&
-            std::filesystem::exists(config_.lod.sidecar_path);
-
-        gs3d::util::Stopwatch dataset_load_timer;
-        auto dataset = can_start_from_metadata
-            ? gs3d::data::Gs3dDatasetLoader::load_header_only(
-                config_.input.gs3d_path
-            )
-            : gs3d::data::Gs3dDatasetLoader::load(
-                config_.input.gs3d_path
-            );
-        gs3d::util::log::info() << "[TIME] viewer.dataset_load_seconds = "
-                  << dataset_load_timer.elapsed_seconds()
-                  << '\n';
-
-        if (!dataset.is_consistent()) {
-            gs3d::util::log::error() << "[FAIL] dataset is inconsistent.\n";
+        auto dataset_session = prepare_viewer_dataset(config_);
+        if (!dataset_session.has_value()) {
             return 1;
         }
 
-        if (dataset.point_count() == 0) {
-            gs3d::util::log::error() << "[FAIL] dataset is empty.\n";
-            return 1;
-        }
+        auto& dataset = dataset_session->dataset;
+        const auto& full_point_ids = dataset_session->full_point_ids;
+        auto& tile_reader = dataset_session->tile_reader;
+        auto& tile_index_view = dataset_session->tile_index_view;
+        auto& tile_point_ids_by_tile = dataset_session->tile_point_ids_by_tile;
+        auto& lod_dataset = dataset_session->lod_dataset;
+        auto& lod_point_ids = dataset_session->lod_point_ids;
+        auto& runtime_points_by_id = dataset_session->runtime_points_by_id;
+        auto& runtime_points_valid_by_id =
+            dataset_session->runtime_points_valid_by_id;
 
-        print_dataset_info(dataset);
-        const auto full_point_ids =
-            make_runtime_point_ids(dataset.point_count());
-
-        std::optional<gs3d::data::Gs3dTileReader> tile_reader;
-        gs3d::core::TileIndexView tile_index_view;
-        std::unordered_map<std::uint64_t, std::vector<std::uint32_t>>
-            tile_point_ids_by_tile;
-
-        if (config_.tile.enabled) {
-            gs3d::util::Stopwatch tile_reader_timer;
-            tile_reader =
-                gs3d::data::Gs3dTileReader::open(
-                    config_.tile.index_path,
-                    config_.tile.data_path,
-                    dataset.header()
-                );
-            gs3d::util::log::info() << "[TIME] viewer.tile_reader_open_seconds = "
-                      << tile_reader_timer.elapsed_seconds()
-                      << '\n';
-
-            if (!tile_reader->valid()) {
-                gs3d::util::log::error() << "[FAIL] TileReader is invalid.\n";
-                return 1;
-            }
-
-            const auto tile_stats =
-                tile_reader->stats();
-
-            gs3d::util::log::info() << "[OK] TileReader opened.\n";
-            gs3d::util::log::info() << "tile_count = "
-                      << tile_stats.tile_count
-                      << '\n';
-            gs3d::util::log::info() << "tile_total_point_count = "
-                      << tile_stats.total_point_count
-                      << '\n';
-            gs3d::util::log::info() << "tile_total_point_bytes = "
-                      << tile_stats.total_point_bytes
-                      << '\n';
-
-            tile_index_view =
-                gs3d::data::make_tile_index_view(*tile_reader);
-
-            const bool tile_has_embedded_ids =
-                tile_reader->has_embedded_point_ids();
-
-            if (tile_has_embedded_ids) {
-                gs3d::util::log::info()
-                    << "[OK] Tile format v2 — embedded point IDs. "
-                    << "Fast startup (no source point scan needed).\n";
-            } else {
-                gs3d::util::log::info()
-                    << "[INFO] Tile format v1 — no embedded point IDs. "
-                    << "Using slow startup path.\n";
-
-                if (dataset.metadata_only()) {
-                    // tile runtime-id reconstruction needs to scan the
-                    // full point buffer (map_subsequence_point_ids does an
-                    // exact point match against dataset.points()); in the
-                    // metadata-only startup path the dataset has no points
-                    // resident, so fall back to loading the full GS3D
-                    // before building tile ids.
-                    gs3d::util::log::info()
-                        << "[WARN] Metadata-only startup cannot build "
-                        << "tile runtime ids; loading full GS3D data.\n";
-                    gs3d::util::Stopwatch fallback_load_timer;
-                    dataset = gs3d::data::Gs3dDatasetLoader::load(
-                        config_.input.gs3d_path
-                    );
-                    gs3d::util::log::info()
-                        << "[TIME] viewer.dataset_fallback_load_seconds = "
-                        << fallback_load_timer.elapsed_seconds()
-                        << '\n';
-                }
-
-                tile_point_ids_by_tile =
-                    build_runtime_tile_point_ids(
-                        dataset,
-                        *tile_reader,
-                        full_point_ids
-                    );
-            }
-        }
-
-        /*
-         * Even with v2 tile-embedded IDs, LOD point-id mapping
-         * still needs the full source point buffer for exact
-         * point matching (map_subsequence_point_ids).  Load it
-         * now if we're still in metadata-only mode.
-         */
-        if (config_.lod.enabled && dataset.metadata_only()) {
-            gs3d::util::log::info()
-                << "[INFO] LOD enabled — loading full GS3D data "
-                << "for point-id mapping.\n";
-            gs3d::util::Stopwatch lod_load_timer;
-            dataset = gs3d::data::Gs3dDatasetLoader::load(
-                config_.input.gs3d_path
-            );
-            gs3d::util::log::info()
-                << "[TIME] viewer.lod_dataset_load_seconds = "
-                << lod_load_timer.elapsed_seconds()
-                << '\n';
-        }
-
-        gs3d::data::Gs3dLodDataset lod_dataset;
-        std::vector<std::vector<std::uint32_t>> lod_point_ids;
-
-        if (config_.lod.enabled) {
-            gs3d::util::Stopwatch lod_timer;
-            lod_dataset =
-                load_or_build_lod_dataset(
-                    dataset,
-                    config_
-                );
-            gs3d::util::log::info() << "[TIME] viewer.lod_prepare_seconds = "
-                      << lod_timer.elapsed_seconds()
-                      << '\n';
-
-            lod_point_ids.reserve(lod_dataset.level_count());
-            for (const auto& level : lod_dataset.levels()) {
-                lod_point_ids.push_back(
-                    map_subsequence_point_ids(
-                        dataset.points(),
-                        full_point_ids,
-                        level.points,
-                        "LOD level"
-                    )
-                );
-            }
-        }
-
-        std::vector<gs3d::data::Gs3dPoint> runtime_points_by_id(
-            full_point_ids.size() + 1
-        );
-        std::vector<std::uint8_t> runtime_points_valid_by_id(
-            full_point_ids.size() + 1,
-            0
-        );
-        if (dataset.has_point_data()) {
-            register_runtime_point_lookup(
-                dataset.points(),
-                full_point_ids,
-                runtime_points_by_id,
-                runtime_points_valid_by_id
-            );
-        }
-        for (std::size_t i = 0; i < lod_dataset.level_count(); ++i) {
-            register_runtime_point_lookup(
-                lod_dataset.level(i).points,
-                lod_point_ids[i],
-                runtime_points_by_id,
-                runtime_points_valid_by_id
-            );
-        }
-        
         gs3d::platform::WindowConfig window_config;
         window_config.width = config_.window.width;
         window_config.height = config_.window.height;
