@@ -114,10 +114,11 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 1660 行，`ViewerApp::run()` 同时负责数据加载、缓存、
+1. `ViewerApp.cpp` 当前有 2625 行，`ViewerApp::run()` 同时负责数据加载、缓存、
    GPU 上传、输入、UI 映射和渲染。职责边界不清晰，修改任何功能都容易影响主循环。
-2. GS3D v1 直接序列化 C++ struct，依赖本机字节序、浮点表示和 ABI padding。
-   当前校验能防截断和整数溢出，但格式还不是跨平台稳定协议。
+2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
+   大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
+   已有 v1 数据应重建为 v2，LOD/tile sidecar 也需要独立评估相同的可移植性问题。
 3. swapchain 重建假设颜色格式和 image count 不变。显示模式或 surface 能力变化时，
    ImGui pipeline/render pass 以及 image-count 配置可能失配。
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按

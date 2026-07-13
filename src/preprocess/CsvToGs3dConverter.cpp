@@ -164,7 +164,7 @@ Gs3dHeader build_header(
     auto header = Gs3dFormat::create_empty_header();
 
     header.point_count       = point_count;
-    header.point_data_offset = sizeof(Gs3dHeader);
+    header.point_data_offset = gs3d::data::GS3D_HEADER_V2_SIZE;
 
     header.origin_x = origin_x;
     header.origin_y = origin_y;
@@ -208,28 +208,16 @@ void write_gs3d(
         );
     }
 
-    out.write(
-        reinterpret_cast<const char*>(&header),
-        static_cast<std::streamsize>(sizeof(Gs3dHeader))
-    );
-
-    if (!out.good()) {
+    if (!Gs3dFormat::write_header(out, header)) {
         throw std::runtime_error(
             "CsvToGs3dConverter: failed to write .gs3d header"
         );
     }
 
-    if (!points.empty()) {
-        out.write(
-            reinterpret_cast<const char*>(points.data()),
-            static_cast<std::streamsize>(points.size() * sizeof(Gs3dPoint))
+    if (!Gs3dFormat::write_points(out, points)) {
+        throw std::runtime_error(
+            "CsvToGs3dConverter: failed to write .gs3d point data"
         );
-
-        if (!out.good()) {
-            throw std::runtime_error(
-                "CsvToGs3dConverter: failed to write .gs3d point data"
-            );
-        }
     }
 
     out.flush();
@@ -369,8 +357,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     write_gs3d(gs3d_path, header, points);
 
     const std::uint64_t output_bytes =
-        sizeof(Gs3dHeader) +
-        static_cast<std::uint64_t>(points.size()) * sizeof(Gs3dPoint);
+        Gs3dFormat::expected_file_size(header);
 
     CsvConvertResult result;
     result.written_points  = static_cast<std::uint64_t>(points.size());
@@ -517,9 +504,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     CsvConvertResult result;
     result.written_points = static_cast<std::uint64_t>(points.size());
     result.invalid_records = invalid_records;
-    result.output_file_size =
-        sizeof(Gs3dHeader) +
-        static_cast<std::uint64_t>(points.size()) * sizeof(Gs3dPoint);
+    result.output_file_size = Gs3dFormat::expected_file_size(header);
 
     Gs3dDataset dataset(header, std::move(points), gs3d_path);
     return {result, std::move(dataset)};

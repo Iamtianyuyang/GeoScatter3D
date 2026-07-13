@@ -15,13 +15,7 @@ Gs3dHeader Gs3dReader::read_header(const std::filesystem::path& path) {
     }
 
     Gs3dHeader header{};
-
-    in.read(
-        reinterpret_cast<char*>(&header),
-        static_cast<std::streamsize>(sizeof(Gs3dHeader))
-    );
-
-    if (!in.good()) {
+    if (!Gs3dFormat::read_header(in, header)) {
         throw std::runtime_error("Gs3dReader: failed to read GS3D header");
     }
 
@@ -29,6 +23,12 @@ Gs3dHeader Gs3dReader::read_header(const std::filesystem::path& path) {
         throw std::runtime_error(
             "Gs3dReader: invalid GS3D header: " +
             Gs3dFormat::describe_header_error(header)
+        );
+    }
+
+    if (std::filesystem::file_size(path) < header.point_data_offset) {
+        throw std::runtime_error(
+            "Gs3dReader: file is shorter than the GS3D header"
         );
     }
 
@@ -45,12 +45,7 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
 
     Gs3dReadResult result;
 
-    in.read(
-        reinterpret_cast<char*>(&result.header),
-        static_cast<std::streamsize>(sizeof(Gs3dHeader))
-    );
-
-    if (!in.good()) {
+    if (!Gs3dFormat::read_header(in, result.header)) {
         throw std::runtime_error("Gs3dReader: failed to read GS3D header");
     }
 
@@ -81,7 +76,7 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
 
     const auto point_bytes_u64 =
         result.header.point_count *
-        static_cast<std::uint64_t>(sizeof(Gs3dPoint));
+        static_cast<std::uint64_t>(GS3D_POINT_SIZE);
     if (point_bytes_u64 >
         static_cast<std::uint64_t>(
             std::numeric_limits<std::streamsize>::max()
@@ -102,18 +97,8 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
 
     result.points.resize(static_cast<std::size_t>(result.header.point_count));
 
-    const auto point_bytes =
-        static_cast<std::streamsize>(point_bytes_u64);
-
-    if (point_bytes > 0) {
-        in.read(
-            reinterpret_cast<char*>(result.points.data()),
-            point_bytes
-        );
-
-        if (!in.good()) {
-            throw std::runtime_error("Gs3dReader: failed to read GS3D point data");
-        }
+    if (!Gs3dFormat::read_points(in, result.header, result.points)) {
+        throw std::runtime_error("Gs3dReader: failed to read GS3D point data");
     }
 
     return result;
