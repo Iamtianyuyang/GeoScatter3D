@@ -19,6 +19,69 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 
+# Shader sources are the canonical inputs. Generated SPIR-V lives only in the
+# build tree, so a source edit is always visible to the build graph.
+set(
+    GS3D_GLSLANG_VALIDATOR
+    ""
+    CACHE FILEPATH
+    "Path to glslangValidator used to compile GeoScatter3D shaders"
+)
+
+if(NOT GS3D_GLSLANG_VALIDATOR)
+    find_program(
+        GS3D_GLSLANG_VALIDATOR_DISCOVERED
+        NAMES glslangValidator
+        HINTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}
+    )
+    set(
+        GS3D_GLSLANG_VALIDATOR
+        ${GS3D_GLSLANG_VALIDATOR_DISCOVERED}
+        CACHE FILEPATH
+        "Path to glslangValidator used to compile GeoScatter3D shaders"
+        FORCE
+    )
+endif()
+
+if(NOT GS3D_GLSLANG_VALIDATOR)
+    message(FATAL_ERROR
+        "glslangValidator is required to compile GLSL shaders. Install the "
+        "Vulkan SDK or glslang tools, or set GS3D_GLSLANG_VALIDATOR."
+    )
+endif()
+
+set(GS3D_GENERATED_ASSETS_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/generated-assets
+)
+set(GS3D_GENERATED_SHADER_DIR
+    ${GS3D_GENERATED_ASSETS_DIR}/shaders
+)
+
+set(GS3D_SHADER_OUTPUTS)
+foreach(shader_source
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/point.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/point.frag)
+    get_filename_component(shader_name ${shader_source} NAME)
+    set(shader_output
+        ${GS3D_GENERATED_SHADER_DIR}/${shader_name}.spv
+    )
+    add_custom_command(
+        OUTPUT ${shader_output}
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                ${GS3D_GENERATED_SHADER_DIR}
+        COMMAND ${GS3D_GLSLANG_VALIDATOR}
+                -V
+                ${shader_source}
+                -o ${shader_output}
+        DEPENDS ${shader_source}
+        COMMENT "Compiling ${shader_name} to SPIR-V"
+        VERBATIM
+    )
+    list(APPEND GS3D_SHADER_OUTPUTS ${shader_output})
+endforeach()
+
+add_custom_target(gs3d_shaders ALL DEPENDS ${GS3D_SHADER_OUTPUTS})
+
 add_library(gs3d_data STATIC
     src/data/CsvStreamReader.cpp
     src/data/CsvSniffer.cpp
@@ -278,10 +341,14 @@ add_executable(GeoScatter3D
 )
 
 function(copy_runtime_assets target_name)
+    add_dependencies(${target_name} gs3d_shaders)
     add_custom_command(TARGET ${target_name} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 ${CMAKE_CURRENT_SOURCE_DIR}/assets
                 $<TARGET_FILE_DIR:${target_name}>/assets
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${GS3D_GENERATED_SHADER_DIR}
+                $<TARGET_FILE_DIR:${target_name}>/assets/shaders
     )
 endfunction()
 

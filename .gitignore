@@ -13,6 +13,7 @@ data/
 bench/
 tools/__pycache__/
 config/imgui_layout.ini
+/assets/shaders/*.spv
 
 # Local IDE and debugging state
 /.idea/

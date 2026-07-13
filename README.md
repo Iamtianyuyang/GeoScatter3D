@@ -33,6 +33,7 @@ LOD 和 tile 文件支持分级与局部加载。
 - pthreads
 - Git submodule 中的 Dear ImGui
 - Python 3（仅用于 include 依赖检查）
+- `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
 
 ```bash
 git submodule update --init --recursive
