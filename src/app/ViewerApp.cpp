@@ -15,6 +15,7 @@
 #include "gui/UiFonts.hpp"
 #include "ui/SvgLogoTexture.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/WorkspaceManager.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
@@ -1527,25 +1528,13 @@ int ViewerApp::run() {
                                 static_cast<float>(tile_cache_requests)
                             : -1.0f;
                 };
-            const auto view_owned_by_workspace = [&](int viewport_index) {
-                for (const auto& workspace : app_state.workspace_windows) {
-                    if (!workspace.visible) {
-                        continue;
-                    }
-                    if (std::find(
-                            workspace.viewport_indices.begin(),
-                            workspace.viewport_indices.end(),
-                            viewport_index
-                        ) != workspace.viewport_indices.end()) {
-                        return true;
-                    }
-                }
-                return false;
-            };
             auto first_main_view = 0;
             for (const auto& view : app_state.render_views) {
                 if (view.visible &&
-                    !view_owned_by_workspace(view.viewport_index)) {
+                    !gs3d::ui::view_is_owned_by_workspace(
+                        app_state,
+                        view.viewport_index
+                    )) {
                     first_main_view = view.viewport_index;
                     break;
                 }
