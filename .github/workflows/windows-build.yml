@@ -19,8 +19,7 @@ jobs:
         with:
           submodules: recursive
 
-      # glfw3 + Vulkan headers/loader via the runner's preinstalled vcpkg.
-      # Shaders are committed as prebuilt .spv, so no glslc is needed.
+      # glfw3 + Vulkan headers/loader + glslangValidator via vcpkg.
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:

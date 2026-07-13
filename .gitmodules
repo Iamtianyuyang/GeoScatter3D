@@ -2,3 +2,6 @@
 	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
+[submodule "third_party/catch2"]
+	path = third_party/catch2
+	url = https://github.com/catchorg/Catch2.git

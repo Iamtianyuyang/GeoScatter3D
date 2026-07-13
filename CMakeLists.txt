@@ -417,6 +417,47 @@ target_link_libraries(gs3d_groundtruth PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(CATCH_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/catch2 EXCLUDE_FROM_ALL)
+
+    add_executable(GeoScatter3DThreadPoolTests
+        tests/ThreadPoolTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DThreadPoolTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DThreadPoolTests PRIVATE
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ThreadPool
+        COMMAND GeoScatter3DThreadPoolTests
+    )
+
+    add_executable(GeoScatter3DGs3dV2Tests
+        tests/Gs3dV2Tests.cpp
+    )
+
+    target_include_directories(GeoScatter3DGs3dV2Tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DGs3dV2Tests PRIVATE
+        gs3d_data
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.Gs3dV2
+        COMMAND GeoScatter3DGs3dV2Tests
+    )
+
     add_executable(GeoScatter3DDataTests
         tests/Gs3dFormatTests.cpp
     )

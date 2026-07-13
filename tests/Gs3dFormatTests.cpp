@@ -8,7 +8,6 @@
 #include "data/Gs3dTileFormat.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -100,142 +99,6 @@ void test_valid_dataset_round_trip()
     const auto result = gs3d::data::Gs3dReader::read_all(file.path());
     expect(result.points.size() == 1, "valid dataset point count");
     expect(result.points[0].value == 4.0f, "valid dataset point value");
-}
-
-void test_v2_wire_format_is_little_endian()
-{
-    TemporaryFile file;
-    auto header = gs3d::data::Gs3dFormat::create_empty_header();
-    header.point_count = 1;
-    header.bbox_max_x = 1.0f;
-    header.bbox_max_y = 2.0f;
-    header.bbox_max_z = 3.0f;
-    header.value_max = 4.0f;
-    const gs3d::data::Gs3dPoint point{1.0f, 2.0f, 3.0f, 4.0f};
-    write_dataset(file.path(), header, &point);
-
-    std::array<unsigned char, gs3d::data::GS3D_HEADER_V2_SIZE +
-                                   gs3d::data::GS3D_POINT_SIZE> bytes{};
-    std::ifstream in(file.path(), std::ios::binary);
-    in.read(
-        reinterpret_cast<char*>(bytes.data()),
-        static_cast<std::streamsize>(bytes.size())
-    );
-
-    expect(static_cast<bool>(in), "v2 wire-format fixture can be read");
-    expect(
-        std::filesystem::file_size(file.path()) == bytes.size(),
-        "v2 file size uses wire header size instead of native struct padding"
-    );
-    expect(
-        bytes[4] == 2 && bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0,
-        "v2 version is encoded as little-endian uint32"
-    );
-    expect(
-        bytes[8] == 108 && bytes[9] == 0 && bytes[10] == 0 && bytes[11] == 0,
-        "v2 header size is encoded as little-endian uint32"
-    );
-    expect(
-        bytes[gs3d::data::GS3D_HEADER_V2_SIZE] == 0 &&
-            bytes[gs3d::data::GS3D_HEADER_V2_SIZE + 1] == 0 &&
-            bytes[gs3d::data::GS3D_HEADER_V2_SIZE + 2] == 128 &&
-            bytes[gs3d::data::GS3D_HEADER_V2_SIZE + 3] == 63,
-        "v2 point float fields are encoded as little-endian IEEE-754"
-    );
-}
-
-void test_v2_header_extensions_are_forward_compatible()
-{
-    TemporaryFile file;
-    auto header = gs3d::data::Gs3dFormat::create_empty_header();
-    header.header_size = gs3d::data::GS3D_HEADER_V2_SIZE + 8;
-    header.point_data_offset = header.header_size;
-    header.point_count = 1;
-    header.bbox_max_x = 1.0f;
-    header.bbox_max_y = 2.0f;
-    header.bbox_max_z = 3.0f;
-    header.value_max = 4.0f;
-    const gs3d::data::Gs3dPoint point{1.0f, 2.0f, 3.0f, 4.0f};
-
-    std::ofstream out(file.path(), std::ios::binary | std::ios::trunc);
-    const std::array<char, 8> extension_bytes{};
-    const bool wrote =
-        gs3d::data::Gs3dFormat::write_header(out, header) &&
-        static_cast<bool>(out.write(
-            extension_bytes.data(),
-            static_cast<std::streamsize>(extension_bytes.size())
-        )) &&
-        gs3d::data::Gs3dFormat::write_points(
-            out,
-            std::span<const gs3d::data::Gs3dPoint>(&point, 1)
-        );
-    out.close();
-
-    expect(wrote, "v2 extended header fixture is written");
-    const auto result = gs3d::data::Gs3dReader::read_all(file.path());
-    expect(
-        result.header.header_size == gs3d::data::GS3D_HEADER_V2_SIZE + 8,
-        "v2 reader accepts and preserves a larger header"
-    );
-    expect(
-        result.points.size() == 1 && result.points[0].value == 4.0f,
-        "v2 reader seeks past future header bytes to point data"
-    );
-}
-
-void test_truncated_v2_header_extension_is_rejected()
-{
-    TemporaryFile file;
-    auto header = gs3d::data::Gs3dFormat::create_empty_header();
-    header.header_size = gs3d::data::GS3D_HEADER_V2_SIZE + 8;
-    header.point_data_offset = header.header_size;
-
-    std::ofstream out(file.path(), std::ios::binary | std::ios::trunc);
-    const bool wrote = gs3d::data::Gs3dFormat::write_header(out, header);
-    out.close();
-    expect(wrote, "truncated extended header fixture is written");
-    expect_throws(
-        [&] { static_cast<void>(gs3d::data::Gs3dReader::read_header(file.path())); },
-        "metadata reader rejects a truncated v2 header extension"
-    );
-}
-
-void test_legacy_v1_dataset_remains_readable()
-{
-    TemporaryFile file;
-    auto header = gs3d::data::Gs3dFormat::create_empty_header();
-    header.version = gs3d::data::GS3D_LEGACY_VERSION;
-    header.header_size = sizeof(gs3d::data::Gs3dHeader);
-    header.point_data_offset = sizeof(gs3d::data::Gs3dHeader);
-    header.point_count = 1;
-    header.bbox_max_x = 1.0f;
-    header.bbox_max_y = 2.0f;
-    header.bbox_max_z = 3.0f;
-    header.value_max = 4.0f;
-    const gs3d::data::Gs3dPoint point{1.0f, 2.0f, 3.0f, 4.0f};
-
-    // Deliberately construct the native-layout v1 fixture that old writers
-    // emitted; new code only writes the portable v2 representation.
-    std::ofstream out(file.path(), std::ios::binary | std::ios::trunc);
-    out.write(
-        reinterpret_cast<const char*>(&header),
-        static_cast<std::streamsize>(sizeof(header))
-    );
-    out.write(
-        reinterpret_cast<const char*>(&point),
-        static_cast<std::streamsize>(sizeof(point))
-    );
-    out.close();
-
-    const auto result = gs3d::data::Gs3dReader::read_all(file.path());
-    expect(
-        result.header.version == gs3d::data::GS3D_LEGACY_VERSION,
-        "legacy v1 header is detected"
-    );
-    expect(
-        result.points.size() == 1 && result.points[0].z == 3.0f,
-        "legacy v1 point data remains readable"
-    );
 }
 
 void test_truncated_dataset_is_rejected()
@@ -717,10 +580,6 @@ void test_tile_format_stride_for_unknown_version_throws()
 int main()
 {
     test_valid_dataset_round_trip();
-    test_v2_wire_format_is_little_endian();
-    test_v2_header_extensions_are_forward_compatible();
-    test_truncated_v2_header_extension_is_rejected();
-    test_legacy_v1_dataset_remains_readable();
     test_truncated_dataset_is_rejected();
     test_overflowing_header_is_rejected();
     test_metadata_only_dataset();

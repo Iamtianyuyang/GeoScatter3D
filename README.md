@@ -31,7 +31,7 @@ LOD 和 tile 文件支持分级与局部加载。
 - Vulkan SDK/开发包
 - GLFW 3
 - pthreads
-- Git submodule 中的 Dear ImGui
+- Git submodule 中的 Dear ImGui 与 Catch2
 - Python 3（仅用于 include 依赖检查）
 - `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
 
@@ -43,7 +43,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 `ctest` 包含一个从仓库内样例 CSV 生成 bundle 的无窗口 smoke test，因此上述
-命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。
+命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。新测试使用 Catch2，
+可直接按标签单独运行，例如 `./build/GeoScatter3DGs3dV2Tests "[gs3d]"`。
 
 ## 从干净克隆打开样例
 
