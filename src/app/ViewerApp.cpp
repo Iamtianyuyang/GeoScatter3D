@@ -9,6 +9,7 @@
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameMetricsCollector.hpp"
+#include "app/ViewerLodFrameSystem.hpp"
 #include "app/ViewerFrameStateSynchronizer.hpp"
 #include "app/ScreenshotService.hpp"
 #include "app/ViewerAppStateInitialization.hpp"
@@ -21,7 +22,6 @@
 #include "app/PreprocessedBundle.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewportCameraSystem.hpp"
-#include "app/ViewportLodController.hpp"
 #include "app/ViewportPresentationState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
 #include "gui/ImGuiLayer.hpp"
@@ -651,12 +651,11 @@ int ViewerApp::run() {
             height_exag
         );
 
-        ViewportLodController viewport_lod;
-        // Hoisted out of the loop body so report_frame_time() can pair the
-        // level rendered in frame N-1 with frame N-1's measured duration
-        // (delta_seconds, computed at the top of frame N) before this
-        // frame reassigns it.
-        std::size_t lod_level_for_frame = 0;
+        ViewerLodFrameSystem lod_frame_system;
+        // The system retains the level rendered in frame N-1 so
+        // report_frame_time() can pair it with frame N-1's measured duration
+        // (delta_seconds, computed at the top of frame N) before selecting
+        // this frame's level.
 
         auto previous_time =
             std::chrono::steady_clock::now();
@@ -834,7 +833,7 @@ int ViewerApp::run() {
                 const double report_ms =
                     (delta_seconds * 1000.0) - present_wait_ms;
                 lod_selector.report_frame_time(
-                    lod_level_for_frame,
+                    lod_frame_system.current_level(),
                     report_ms > 0.0 ? report_ms : 0.0
                 );
             }
@@ -1091,82 +1090,21 @@ int ViewerApp::run() {
                     config_.benchmark.enabled
                 );
             }
-            // Select LOD level once per frame (not per-viewport) so all views
-            // use the same level and the verbose log fires at most once.
-            if (config_.lod.enabled && lod_gpu_cloud) {
-                const auto voxel_sizes = lod_gpu_cloud->voxel_sizes();
-                float world_per_pixel = 0.0f;
-                float spatial_ortho_h = 0.0f;
-                {
-                    const auto& cam =
-                        viewport_manager.camera(streaming_viewport_index);
-                    spatial_ortho_h = cam.ortho_height();
-                    const float vp_h =
-                        static_cast<float>(cam.viewport_height());
-                    if (vp_h > 0.0f) {
-                        world_per_pixel = spatial_ortho_h / vp_h;
-                    }
+            const auto lod_level_for_frame = lod_frame_system.update({
+                .lod_gpu_cloud = lod_gpu_cloud.get(),
+                .lod_selector = lod_selector,
+                .viewport_manager = viewport_manager,
+                .streaming_viewport_index = streaming_viewport_index,
+                .interacting = interacting,
+                .options = {
+                    .enabled = config_.lod.enabled,
+                    .allow_coarse_while_interacting =
+                        config_.lod.interactive_display_mode ==
+                            InteractiveDisplayMode::AllowCoarseLOD,
+                    .high_delay_seconds = config_.lod.high_delay_seconds,
+                    .verbose = config_.lod.verbose
                 }
-
-                const auto selection = viewport_lod.select(
-                    lod_selector,
-                    voxel_sizes,
-                    world_per_pixel,
-                    interacting,
-                    config_.lod.interactive_display_mode ==
-                        gs3d::app::InteractiveDisplayMode::AllowCoarseLOD,
-                    config_.lod.high_delay_seconds
-                );
-                if (selection) {
-                    lod_level_for_frame = selection->level;
-                    if (selection->used_fallback) {
-                        gs3d::util::log::warning()
-                            << "[WARN] LOD level out of range: "
-                            << selection->requested_level
-                            << " >= " << voxel_sizes.size()
-                            << ", falling back to "
-                            << selection->fallback_level << "\n";
-                    }
-
-                    if (selection->changed) {
-                        if (config_.lod.verbose) {
-                            const auto& level =
-                                lod_gpu_cloud->level(lod_level_for_frame);
-                            gs3d::util::log::info() << "[LOD] active level = "
-                                      << lod_level_for_frame
-                                      << ", points = "
-                                      << level.gpu_point_count
-                                      << ", idle_seconds = "
-                                      << lod_selector.idle_seconds()
-                                      << ", ortho_h = "
-                                      << world_per_pixel
-                                      << " m/px\n";
-                        }
-
-                        if (const char* env =
-                                std::getenv("GS3D_LOD_DEBUG")) {
-                            if (env[0] == '1') {
-                                gs3d::util::log::info()
-                                    << "[LODDBG] ortho_h="
-                                    << spatial_ortho_h
-                                    << " wpix=" << world_per_pixel
-                                    << " spatial="
-                                    << selection->spatial_level
-                                    << (interacting ? "(frozen)" : "")
-                                    << " temporal="
-                                    << selection->temporal_level
-                                    << " -> level="
-                                    << lod_level_for_frame
-                                    << " frozen="
-                                    << selection->frozen_display_level
-                                    << (interacting
-                                            ? " (interacting)\n"
-                                            : " (idle)\n");
-                            }
-                        }
-                    }
-                }
-            }
+            });
 
             flush_benchmark_lod_tile_stage();
             std::vector<float> viewport_point_sizes;
