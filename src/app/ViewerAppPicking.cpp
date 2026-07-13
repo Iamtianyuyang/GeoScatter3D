@@ -92,8 +92,8 @@ void ViewerApp::prepare_gpu_pick_requests(
     const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
 ) {
     const bool benchmark_pick_enabled =
-        config_.benchmark_mode &&
-        !config_.benchmark_pick_script_path.empty();
+        config_.benchmark.enabled &&
+        !config_.benchmark.pick_script_path.empty();
 
     for (auto& request : pick.requests) {
         request = {};
@@ -227,12 +227,12 @@ void ViewerApp::consume_ready_pick_frame_slot(
     const VisibleTilePickResolver& resolve_hover_point_from_visible_tiles
 ) {
                 pick.frame_slot = frame_slot;
-                if (config_.pick_debug_dump_enabled) {
+                if (config_.pick_debug.dump_enabled) {
                     const auto debug_dump =
                         pick_debug_frame_dumper.collect_ready_frame(frame_slot);
                     if (debug_dump) {
                         write_pick_debug_dump(
-                            config_.pick_debug_dump_dir,
+                            config_.pick_debug.dump_dir,
                             *debug_dump
                         );
                     }

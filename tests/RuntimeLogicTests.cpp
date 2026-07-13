@@ -229,9 +229,9 @@ void test_default_viewer_config_is_portable()
 {
     const gs3d::app::ViewerAppConfig config;
     expect(
-        config.gs3d_path.empty() &&
-            config.vertex_shader_path.empty() &&
-            config.fragment_shader_path.empty(),
+        config.input.gs3d_path.empty() &&
+            config.graphics.vertex_shader_path.empty() &&
+            config.graphics.fragment_shader_path.empty(),
         "default viewer config does not embed machine-specific file paths"
     );
 }

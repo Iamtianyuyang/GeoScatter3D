@@ -36,19 +36,19 @@ void initialize_camera_from_config(
     // fit_bounds() sets ortho_height, near/far, position, target, up.
     camera.set_orthographic(10.0f, 0.01f, 10000.0f);
 
-    if (config.camera_mode == "fit") {
+    if (config.camera.mode == "fit") {
         camera.fit_bounds(bounds);
         return;
     }
 
     // Explicit camera overrides: still use ortho by default.
     camera.look_at(
-        to_vec3(config.camera_position),
-        to_vec3(config.camera_target),
-        to_vec3(config.camera_up)
+        to_vec3(config.camera.position),
+        to_vec3(config.camera.target),
+        to_vec3(config.camera.up)
     );
     // Derive ortho_height from distance and FOV for backwards compat.
-    const float fov_rad = config.camera_fov_y * 3.14159265f / 180.0f;
+    const float fov_rad = config.camera.fov_y * 3.14159265f / 180.0f;
     const float view_h =
         2.0f * camera.distance() * std::tan(fov_rad * 0.5f);
     // Ortho near/far: small near, huge far — covers any practical depth.

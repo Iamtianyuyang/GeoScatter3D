@@ -209,9 +209,9 @@ void resolve_viewer_resource_paths(
         }
 
     } else if (!input_mode_is_csv(config)) {
-        config.viewer.gs3d_path =
+        config.viewer.input.gs3d_path =
             ResourcePath::resolve_existing_file(
-                config.viewer.gs3d_path,
+                config.viewer.input.gs3d_path,
                 context
             );
     } else {
@@ -222,15 +222,15 @@ void resolve_viewer_resource_paths(
             );
     }
 
-    config.viewer.vertex_shader_path =
+    config.viewer.graphics.vertex_shader_path =
         ResourcePath::resolve_existing_file(
-            config.viewer.vertex_shader_path,
+            config.viewer.graphics.vertex_shader_path,
             context
         );
 
-    config.viewer.fragment_shader_path =
+    config.viewer.graphics.fragment_shader_path =
         ResourcePath::resolve_existing_file(
-            config.viewer.fragment_shader_path,
+            config.viewer.graphics.fragment_shader_path,
             context
         );
 
@@ -239,24 +239,24 @@ void resolve_viewer_resource_paths(
      * 所以不能用 resolve_existing_file。
      */
     if (!input_mode_is_bundle(config)) {
-        config.viewer.lod_sidecar_path = resolve_non_existing_path(
-            config.viewer.lod_sidecar_path,
+        config.viewer.lod.sidecar_path = resolve_non_existing_path(
+            config.viewer.lod.sidecar_path,
             config_path
         );
     }
 
     if (!input_mode_is_csv(config) &&
         !input_mode_is_bundle(config) &&
-        config.viewer.tile_enabled) {
-            config.viewer.tile_index_path =
+        config.viewer.tile.enabled) {
+            config.viewer.tile.index_path =
                 ResourcePath::resolve_existing_file(
-                    config.viewer.tile_index_path,
+                    config.viewer.tile.index_path,
                     context
                 );
 
-            config.viewer.tile_data_path =
+            config.viewer.tile.data_path =
                 ResourcePath::resolve_existing_file(
-                    config.viewer.tile_data_path,
+                    config.viewer.tile.data_path,
                     context
                 );
     }
@@ -469,10 +469,10 @@ AppConfig AppConfigLoader::load_from_file(
             config.input_mode
         );
 
-        config.viewer.gs3d_path = path_or_default(
+        config.viewer.input.gs3d_path = path_or_default(
             *input,
             "gs3d_path",
-            config.viewer.gs3d_path
+            config.viewer.input.gs3d_path
         );
 
         config.csv_input_path = path_or_default(
@@ -538,86 +538,86 @@ AppConfig AppConfigLoader::load_from_file(
     validate_input_mode(config.input_mode);
 
     if (const auto* shader = root["shader"].as_table()) {
-        config.viewer.vertex_shader_path = path_or_default(
+        config.viewer.graphics.vertex_shader_path = path_or_default(
             *shader,
             "vertex_shader_path",
-            config.viewer.vertex_shader_path
+            config.viewer.graphics.vertex_shader_path
         );
 
-        config.viewer.fragment_shader_path = path_or_default(
+        config.viewer.graphics.fragment_shader_path = path_or_default(
             *shader,
             "fragment_shader_path",
-            config.viewer.fragment_shader_path
+            config.viewer.graphics.fragment_shader_path
         );
     }
 
     if (const auto* window = root["window"].as_table()) {
-        config.viewer.window_width = uint_or_default(
+        config.viewer.window.width = uint_or_default(
             *window,
             "width",
-            config.viewer.window_width
+            config.viewer.window.width
         );
 
-        config.viewer.window_height = uint_or_default(
+        config.viewer.window.height = uint_or_default(
             *window,
             "height",
-            config.viewer.window_height
+            config.viewer.window.height
         );
 
-        config.viewer.window_title = string_or_default(
+        config.viewer.window.title = string_or_default(
             *window,
             "title",
-            config.viewer.window_title
+            config.viewer.window.title
         );
 
-        config.viewer.window_resizable = bool_or_default(
+        config.viewer.window.resizable = bool_or_default(
             *window,
             "resizable",
-            config.viewer.window_resizable
+            config.viewer.window.resizable
         );
 
         /*
          * ImGui docking 布局持久化文件路径；留空字符串表示不持久化
          * （每次启动都用默认布局，不写不读 .ini）。
          */
-        config.viewer.ui_layout_ini_path = path_or_default(
+        config.viewer.window.ui_layout_ini_path = path_or_default(
             *window,
             "ui_layout_ini_path",
-            config.viewer.ui_layout_ini_path
+            config.viewer.window.ui_layout_ini_path
         );
 
-        config.viewer.ui_scale_multiplier = float_or_default(
+        config.viewer.window.ui_scale_multiplier = float_or_default(
             *window,
             "ui_scale_multiplier",
-            config.viewer.ui_scale_multiplier
+            config.viewer.window.ui_scale_multiplier
         );
 
-        config.viewer.theme = string_or_default(
+        config.viewer.window.theme = string_or_default(
             *window,
             "theme",
-            config.viewer.theme
+            config.viewer.window.theme
         );
 
-        config.viewer.enable_multi_viewports = bool_or_default(
+        config.viewer.window.enable_multi_viewports = bool_or_default(
             *window,
             "multi_viewports",
-            config.viewer.enable_multi_viewports
+            config.viewer.window.enable_multi_viewports
         );
     }
 
     if (const auto* vulkan = root["vulkan"].as_table()) {
-        config.viewer.enable_validation_layers = bool_or_default(
+        config.viewer.graphics.enable_validation_layers = bool_or_default(
             *vulkan,
             "validation_layers",
-            config.viewer.enable_validation_layers
+            config.viewer.graphics.enable_validation_layers
         );
     }
 
     if (const auto* graphics = root["graphics"].as_table()) {
-        config.viewer.preferred_gpu = string_or_default(
+        config.viewer.graphics.preferred_gpu = string_or_default(
             *graphics,
             "preferred_gpu",
-            config.viewer.preferred_gpu
+            config.viewer.graphics.preferred_gpu
         );
     }
 
@@ -724,33 +724,33 @@ AppConfig AppConfigLoader::load_from_file(
     }
 
         if (const auto* lod = root["lod"].as_table()) {
-        config.viewer.lod_enabled = bool_or_default(
+        config.viewer.lod.enabled = bool_or_default(
             *lod,
             "enabled",
-            config.viewer.lod_enabled
+            config.viewer.lod.enabled
         );
 
-        config.viewer.lod_keep_full_buffer = bool_or_default(
+        config.viewer.lod.keep_full_buffer = bool_or_default(
             *lod,
             "keep_full_buffer",
-            config.viewer.lod_keep_full_buffer
+            config.viewer.lod.keep_full_buffer
         );
-        config.viewer.lod_sidecar_path = path_or_default(
+        config.viewer.lod.sidecar_path = path_or_default(
             *lod,
             "sidecar_path",
-            config.viewer.lod_sidecar_path
+            config.viewer.lod.sidecar_path
         );
 
-        config.viewer.lod_auto_load_sidecar = bool_or_default(
+        config.viewer.lod.auto_load_sidecar = bool_or_default(
             *lod,
             "auto_load_sidecar",
-            config.viewer.lod_auto_load_sidecar
+            config.viewer.lod.auto_load_sidecar
         );
 
-        config.viewer.lod_auto_save_sidecar = bool_or_default(
+        config.viewer.lod.auto_save_sidecar = bool_or_default(
             *lod,
             "auto_save_sidecar",
-            config.viewer.lod_auto_save_sidecar
+            config.viewer.lod.auto_save_sidecar
         );
         
         /*
@@ -758,77 +758,77 @@ AppConfig AppConfigLoader::load_from_file(
          * 最精细层由 finest_target_points 锚定，然后每层 voxel_size ×= growth_factor，
          * 层数由数据自然决定。
          */
-        config.viewer.lod_finest_target_points = uint64_or_default(
+        config.viewer.lod.finest_target_points = uint64_or_default(
             *lod,
             "finest_target_points",
-            config.viewer.lod_finest_target_points
+            config.viewer.lod.finest_target_points
         );
 
-        config.viewer.lod_growth_factor = float_or_default(
+        config.viewer.lod.growth_factor = float_or_default(
             *lod,
             "growth_factor",
-            config.viewer.lod_growth_factor
+            config.viewer.lod.growth_factor
         );
 
-        config.viewer.lod_min_points_per_level = uint64_or_default(
+        config.viewer.lod.min_points_per_level = uint64_or_default(
             *lod,
             "min_points_per_level",
-            config.viewer.lod_min_points_per_level
+            config.viewer.lod.min_points_per_level
         );
 
-        config.viewer.lod_voxel_mode = string_or_default(
+        config.viewer.lod.voxel_mode = string_or_default(
             *lod,
             "voxel_mode",
-            config.viewer.lod_voxel_mode
+            config.viewer.lod.voxel_mode
         );
 
-        config.viewer.lod_voxel_scale = float_or_default(
+        config.viewer.lod.voxel_scale = float_or_default(
             *lod,
             "voxel_scale",
-            config.viewer.lod_voxel_scale
+            config.viewer.lod.voxel_scale
         );
 
-        config.viewer.lod_medium_delay_seconds =
+        config.viewer.lod.medium_delay_seconds =
             static_cast<double>(
                 float_or_default(
                     *lod,
                     "medium_delay_seconds",
                     static_cast<float>(
-                        config.viewer.lod_medium_delay_seconds
+                        config.viewer.lod.medium_delay_seconds
                     )
                 )
             );
 
-        config.viewer.lod_high_delay_seconds =
+        config.viewer.lod.high_delay_seconds =
             static_cast<double>(
                 float_or_default(
                     *lod,
                     "high_delay_seconds",
                     static_cast<float>(
-                        config.viewer.lod_high_delay_seconds
+                        config.viewer.lod.high_delay_seconds
                     )
                 )
             );
 
-        config.viewer.lod_use_lowest_while_interacting = bool_or_default(
+        config.viewer.lod.use_lowest_while_interacting = bool_or_default(
             *lod,
             "use_lowest_while_interacting",
-            config.viewer.lod_use_lowest_while_interacting
+            config.viewer.lod.use_lowest_while_interacting
         );
 
-        config.viewer.lod_adaptive_interacting_level = bool_or_default(
+        config.viewer.lod.adaptive_interacting_level = bool_or_default(
             *lod,
             "adaptive_interacting_level",
-            config.viewer.lod_adaptive_interacting_level
+            config.viewer.lod.adaptive_interacting_level
         );
 
-        config.viewer.lod_frame_time_budget_ms =
+        config.viewer.lod.frame_time_budget_ms =
             static_cast<double>(
                 float_or_default(
                     *lod,
                     "frame_time_budget_ms",
                     static_cast<float>(
-                        config.viewer.lod_frame_time_budget_ms
+                        config.viewer.lod.frame_time_budget_ms
                     )
                 )
             );
@@ -844,127 +844,127 @@ AppConfig AppConfigLoader::load_from_file(
             if (mode_str == "coarse" ||
                 mode_str == "allow_coarse" ||
                 mode_str == "AllowCoarseLOD") {
-                config.viewer.interactive_display_mode =
+                config.viewer.lod.interactive_display_mode =
                     gs3d::app::InteractiveDisplayMode::AllowCoarseLOD;
             } else if (mode_str == "freeze_texture" ||
                        mode_str == "FreezeLastFrameTexture") {
-                config.viewer.interactive_display_mode =
+                config.viewer.lod.interactive_display_mode =
                     gs3d::app::InteractiveDisplayMode::FreezeLastFrameTexture;
             } else {
-                config.viewer.interactive_display_mode =
+                config.viewer.lod.interactive_display_mode =
                     gs3d::app::InteractiveDisplayMode::KeepStableHighQuality;
             }
         }
 
-        config.viewer.lod_verbose = bool_or_default(
+        config.viewer.lod.verbose = bool_or_default(
             *lod,
             "verbose",
-            config.viewer.lod_verbose
+            config.viewer.lod.verbose
         );
     }
     if (const auto* viewport = root["viewport"].as_table()) {
-        config.viewer.viewport_count = static_cast<int>(
+        config.viewer.window.viewport_count = static_cast<int>(
             uint_or_default(*viewport, "count",
-                static_cast<unsigned int>(config.viewer.viewport_count))
+                static_cast<unsigned int>(config.viewer.window.viewport_count))
         );
     }
 
     if (const auto* tile = root["tile"].as_table()) {
-        config.viewer.tile_enabled = bool_or_default(
+        config.viewer.tile.enabled = bool_or_default(
             *tile,
             "enabled",
-            config.viewer.tile_enabled
+            config.viewer.tile.enabled
         );
 
-        config.viewer.tile_index_path = path_or_default(
+        config.viewer.tile.index_path = path_or_default(
             *tile,
             "index_path",
-            config.viewer.tile_index_path
+            config.viewer.tile.index_path
         );
 
-        config.viewer.tile_data_path = path_or_default(
+        config.viewer.tile.data_path = path_or_default(
             *tile,
             "data_path",
-            config.viewer.tile_data_path
+            config.viewer.tile.data_path
         );
 
-        config.viewer.tile_min_pixel_size = float_or_default(
+        config.viewer.tile.min_pixel_size = float_or_default(
             *tile,
             "min_tile_pixel_size",
-            config.viewer.tile_min_pixel_size
+            config.viewer.tile.min_pixel_size
         );
 
-        config.viewer.tile_max_visible_tiles = uint_or_default(
+        config.viewer.tile.max_visible_tiles = uint_or_default(
             *tile,
             "max_visible_tiles",
-            config.viewer.tile_max_visible_tiles
+            config.viewer.tile.max_visible_tiles
         );
 
-        config.viewer.tile_use_full_z_range = bool_or_default(
+        config.viewer.tile.use_full_z_range = bool_or_default(
             *tile,
             "use_full_z_range",
-            config.viewer.tile_use_full_z_range
+            config.viewer.tile.use_full_z_range
         );
 
-        config.viewer.tile_verbose = bool_or_default(
+        config.viewer.tile.verbose = bool_or_default(
             *tile,
             "verbose",
-            config.viewer.tile_verbose
+            config.viewer.tile.verbose
         );
 
-        config.viewer.tile_gpu_cache_max_tiles = uint_or_default(
+        config.viewer.tile.gpu_cache_max_tiles = uint_or_default(
             *tile,
             "gpu_cache_max_tiles",
-            config.viewer.tile_gpu_cache_max_tiles
+            config.viewer.tile.gpu_cache_max_tiles
         );
 
-        config.viewer.tile_gpu_upload_budget_bytes = uint64_or_default(
+        config.viewer.tile.gpu_upload_budget_bytes = uint64_or_default(
             *tile,
             "gpu_upload_budget_bytes",
-            config.viewer.tile_gpu_upload_budget_bytes
+            config.viewer.tile.gpu_upload_budget_bytes
         );
 
-        config.viewer.tile_cpu_cache_max_bytes = uint64_or_default(
+        config.viewer.tile.cpu_cache_max_bytes = uint64_or_default(
             *tile,
             "cpu_cache_max_bytes",
-            config.viewer.tile_cpu_cache_max_bytes
+            config.viewer.tile.cpu_cache_max_bytes
         );
 
-        config.viewer.tile_preload_all = bool_or_default(
+        config.viewer.tile.preload_all = bool_or_default(
             *tile,
             "preload_all",
-            config.viewer.tile_preload_all
+            config.viewer.tile.preload_all
         );
 
-        config.viewer.tile_preload_max_bytes = uint64_or_default(
+        config.viewer.tile.preload_max_bytes = uint64_or_default(
             *tile,
             "preload_max_bytes",
-            config.viewer.tile_preload_max_bytes
+            config.viewer.tile.preload_max_bytes
         );
 
-        config.viewer.tile_preload_upload_budget_bytes = uint64_or_default(
+        config.viewer.tile.preload_upload_budget_bytes = uint64_or_default(
             *tile,
             "preload_upload_budget_bytes",
-            config.viewer.tile_preload_upload_budget_bytes
+            config.viewer.tile.preload_upload_budget_bytes
         );
 
     }
 
     if (const auto* debug = root["debug"].as_table()) {
-        config.viewer.pick_debug_dump_enabled = bool_or_default(
+        config.viewer.pick_debug.dump_enabled = bool_or_default(
             *debug,
             "pick_debug_dump_enabled",
-            config.viewer.pick_debug_dump_enabled
+            config.viewer.pick_debug.dump_enabled
         );
-        config.viewer.pick_debug_dump_dir = path_or_default(
+        config.viewer.pick_debug.dump_dir = path_or_default(
             *debug,
             "pick_debug_dump_dir",
-            config.viewer.pick_debug_dump_dir
+            config.viewer.pick_debug.dump_dir
         );
-        config.viewer.pick_debug_dump_once_on_hover = bool_or_default(
+        config.viewer.pick_debug.dump_once_on_hover = bool_or_default(
             *debug,
             "pick_debug_dump_once_on_hover",
-            config.viewer.pick_debug_dump_once_on_hover
+            config.viewer.pick_debug.dump_once_on_hover
         );
     }
     return config;
@@ -1043,11 +1043,11 @@ void AppConfigLoader::apply_command_line_overrides(
     char** argv
 ) {
     if (has_flag(argc, argv, "--no-validation")) {
-        config.viewer.enable_validation_layers = false;
+        config.viewer.graphics.enable_validation_layers = false;
     }
 
     if (has_flag(argc, argv, "--validation")) {
-        config.viewer.enable_validation_layers = true;
+        config.viewer.graphics.enable_validation_layers = true;
     }
 
     for (int i = 1; i < argc; ++i) {
@@ -1061,7 +1061,7 @@ void AppConfigLoader::apply_command_line_overrides(
             }
 
             config.input_mode = "gs3d";
-            config.viewer.gs3d_path =
+            config.viewer.input.gs3d_path =
                 argument_at(argc, argv, i + 1);
         }
 
@@ -1105,7 +1105,7 @@ void AppConfigLoader::apply_command_line_overrides(
 
 void AppConfigPrinter::print(const AppConfig& config) {
     gs3d::util::log::info() << "[CONFIG] input.gs3d_path = "
-              << config.viewer.gs3d_path.string() << '\n';
+              << config.viewer.input.gs3d_path.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] input.mode = "
               << config.input_mode << '\n';
@@ -1129,55 +1129,55 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << config.csv_convert.min_parallel_file_bytes << '\n';
 
     gs3d::util::log::info() << "[CONFIG] shader.vertex_shader_path = "
-              << config.viewer.vertex_shader_path.string() << '\n';
+              << config.viewer.graphics.vertex_shader_path.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] shader.fragment_shader_path = "
-              << config.viewer.fragment_shader_path.string() << '\n';
+              << config.viewer.graphics.fragment_shader_path.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.width = "
-              << config.viewer.window_width << '\n';
+              << config.viewer.window.width << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.height = "
-              << config.viewer.window_height << '\n';
+              << config.viewer.window.height << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.title = "
-              << config.viewer.window_title << '\n';
+              << config.viewer.window.title << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.resizable = "
-              << (config.viewer.window_resizable ? "true" : "false") << '\n';
+              << (config.viewer.window.resizable ? "true" : "false") << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.ui_layout_ini_path = "
-              << config.viewer.ui_layout_ini_path.string() << '\n';
+              << config.viewer.window.ui_layout_ini_path.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.ui_scale_multiplier = "
-              << config.viewer.ui_scale_multiplier << '\n';
+              << config.viewer.window.ui_scale_multiplier << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.theme = "
-              << config.viewer.theme << '\n';
+              << config.viewer.window.theme << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.multi_viewports = "
-              << (config.viewer.enable_multi_viewports ? "true" : "false")
+              << (config.viewer.window.enable_multi_viewports ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_enabled = "
-              << (config.viewer.pick_debug_dump_enabled ? "true" : "false")
+              << (config.viewer.pick_debug.dump_enabled ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_dir = "
-              << config.viewer.pick_debug_dump_dir.string() << '\n';
+              << config.viewer.pick_debug.dump_dir.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_once_on_hover = "
-              << (config.viewer.pick_debug_dump_once_on_hover
+              << (config.viewer.pick_debug.dump_once_on_hover
                       ? "true"
                       : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] vulkan.validation_layers = "
-              << (config.viewer.enable_validation_layers ? "true" : "false")
+              << (config.viewer.graphics.enable_validation_layers ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] graphics.preferred_gpu = "
-              << config.viewer.preferred_gpu
+              << config.viewer.graphics.preferred_gpu
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] render.clear_color = ["
@@ -1241,63 +1241,63 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << (config.controller.invert_pan_y ? "true" : "false")
               << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.enabled = "
-              << (config.viewer.lod_enabled ? "true" : "false")
+              << (config.viewer.lod.enabled ? "true" : "false")
               << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.keep_full_buffer = "
-          << (config.viewer.lod_keep_full_buffer ? "true" : "false")
+          << (config.viewer.lod.keep_full_buffer ? "true" : "false")
           << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.sidecar_path = "
-          << config.viewer.lod_sidecar_path.string()
+          << config.viewer.lod.sidecar_path.string()
           << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.auto_load_sidecar = "
-            << (config.viewer.lod_auto_load_sidecar ? "true" : "false")
+            << (config.viewer.lod.auto_load_sidecar ? "true" : "false")
             << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.auto_save_sidecar = "
-            << (config.viewer.lod_auto_save_sidecar ? "true" : "false")
+            << (config.viewer.lod.auto_save_sidecar ? "true" : "false")
             << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.finest_target_points = "
-              << config.viewer.lod_finest_target_points
+              << config.viewer.lod.finest_target_points
               << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.growth_factor = "
-              << config.viewer.lod_growth_factor
+              << config.viewer.lod.growth_factor
               << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.min_points_per_level = "
-              << config.viewer.lod_min_points_per_level
+              << config.viewer.lod.min_points_per_level
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.voxel_mode = "
-              << config.viewer.lod_voxel_mode << '\n';
+              << config.viewer.lod.voxel_mode << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.voxel_scale = "
-              << config.viewer.lod_voxel_scale << '\n';
+              << config.viewer.lod.voxel_scale << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.medium_delay_seconds = "
-              << config.viewer.lod_medium_delay_seconds << '\n';
+              << config.viewer.lod.medium_delay_seconds << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.high_delay_seconds = "
-              << config.viewer.lod_high_delay_seconds << '\n';
+              << config.viewer.lod.high_delay_seconds << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.use_lowest_while_interacting = "
-              << (config.viewer.lod_use_lowest_while_interacting
+              << (config.viewer.lod.use_lowest_while_interacting
                     ? "true"
                     : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.adaptive_interacting_level = "
-              << (config.viewer.lod_adaptive_interacting_level
+              << (config.viewer.lod.adaptive_interacting_level
                     ? "true"
                     : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.frame_time_budget_ms = "
-              << config.viewer.lod_frame_time_budget_ms << '\n';
+              << config.viewer.lod.frame_time_budget_ms << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.interactive_display_mode = "
-              << (config.viewer.interactive_display_mode ==
+              << (config.viewer.lod.interactive_display_mode ==
                         gs3d::app::InteractiveDisplayMode::AllowCoarseLOD
                     ? "coarse"
-                    : config.viewer.interactive_display_mode ==
+                    : config.viewer.lod.interactive_display_mode ==
                             gs3d::app::InteractiveDisplayMode::
                                 FreezeLastFrameTexture
                         ? "freeze_texture"
@@ -1305,62 +1305,62 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] lod.verbose = "
-              << (config.viewer.lod_verbose ? "true" : "false")
+              << (config.viewer.lod.verbose ? "true" : "false")
               << '\n';
         gs3d::util::log::info() << "[CONFIG] tile.enabled = "
-              << (config.viewer.tile_enabled ? "true" : "false")
+              << (config.viewer.tile.enabled ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.index_path = "
-              << config.viewer.tile_index_path.string()
+              << config.viewer.tile.index_path.string()
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.data_path = "
-              << config.viewer.tile_data_path.string()
+              << config.viewer.tile.data_path.string()
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.min_tile_pixel_size = "
-              << config.viewer.tile_min_pixel_size
+              << config.viewer.tile.min_pixel_size
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.max_visible_tiles = "
-              << config.viewer.tile_max_visible_tiles
+              << config.viewer.tile.max_visible_tiles
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.use_full_z_range = "
-              << (config.viewer.tile_use_full_z_range ? "true" : "false")
+              << (config.viewer.tile.use_full_z_range ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.verbose = "
-              << (config.viewer.tile_verbose ? "true" : "false")
+              << (config.viewer.tile.verbose ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.gpu_cache_max_tiles = "
-              << config.viewer.tile_gpu_cache_max_tiles
+              << config.viewer.tile.gpu_cache_max_tiles
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.gpu_upload_budget_bytes = "
-              << config.viewer.tile_gpu_upload_budget_bytes
+              << config.viewer.tile.gpu_upload_budget_bytes
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.cpu_cache_max_bytes = "
-              << config.viewer.tile_cpu_cache_max_bytes
+              << config.viewer.tile.cpu_cache_max_bytes
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.preload_all = "
-              << (config.viewer.tile_preload_all ? "true" : "false")
+              << (config.viewer.tile.preload_all ? "true" : "false")
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.preload_max_bytes = "
-              << config.viewer.tile_preload_max_bytes
+              << config.viewer.tile.preload_max_bytes
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] tile.preload_upload_budget_bytes = "
-              << config.viewer.tile_preload_upload_budget_bytes
+              << config.viewer.tile.preload_upload_budget_bytes
               << '\n';
 
     gs3d::util::log::info() << "[CONFIG] viewport.count = "
-              << config.viewer.viewport_count
+              << config.viewer.window.viewport_count
               << '\n';
 }
 

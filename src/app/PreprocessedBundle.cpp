@@ -139,14 +139,14 @@ void apply_bundle_paths(
     ViewerAppConfig& viewer,
     const PreprocessedBundlePaths& paths
 ) {
-    viewer.gs3d_path = paths.gs3d_path;
-    viewer.lod_enabled = paths.lod_enabled;
-    viewer.tile_enabled = paths.tile_enabled;
-    viewer.lod_sidecar_path =
+    viewer.input.gs3d_path = paths.gs3d_path;
+    viewer.lod.enabled = paths.lod_enabled;
+    viewer.tile.enabled = paths.tile_enabled;
+    viewer.lod.sidecar_path =
         paths.lod_enabled ? paths.lod_path : std::filesystem::path{};
-    viewer.tile_data_path =
+    viewer.tile.data_path =
         paths.tile_enabled ? paths.tile_data_path : std::filesystem::path{};
-    viewer.tile_index_path =
+    viewer.tile.index_path =
         paths.tile_enabled ? paths.tile_index_path : std::filesystem::path{};
 }
 
@@ -225,25 +225,25 @@ void write_bundle_manifest(
     out << "\n";
 
     out << "[lod]\n";
-    out << "enabled = " << (config.viewer.lod_enabled ? "true" : "false")
+    out << "enabled = " << (config.viewer.lod.enabled ? "true" : "false")
         << "\n";
     out << "finest_target_points = "
-        << config.viewer.lod_finest_target_points << "\n";
-    out << "growth_factor = " << config.viewer.lod_growth_factor << "\n";
+        << config.viewer.lod.finest_target_points << "\n";
+    out << "growth_factor = " << config.viewer.lod.growth_factor << "\n";
     out << "min_points_per_level = "
-        << config.viewer.lod_min_points_per_level << "\n";
-    out << "voxel_mode = " << toml_string(config.viewer.lod_voxel_mode)
+        << config.viewer.lod.min_points_per_level << "\n";
+    out << "voxel_mode = " << toml_string(config.viewer.lod.voxel_mode)
         << "\n";
-    out << "voxel_scale = " << config.viewer.lod_voxel_scale << "\n";
+    out << "voxel_scale = " << config.viewer.lod.voxel_scale << "\n";
     out << "\n";
 
     out << "[tile]\n";
-    out << "enabled = " << (config.viewer.tile_enabled ? "true" : "false")
+    out << "enabled = " << (config.viewer.tile.enabled ? "true" : "false")
         << "\n";
     out << "num_threads = " << config.tile_build.num_threads << "\n";
-    out << "min_tile_pixel_size = " << config.viewer.tile_min_pixel_size
+    out << "min_tile_pixel_size = " << config.viewer.tile.min_pixel_size
         << "\n";
-    out << "max_visible_tiles = " << config.viewer.tile_max_visible_tiles
+    out << "max_visible_tiles = " << config.viewer.tile.max_visible_tiles
         << "\n";
 }
 

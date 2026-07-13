@@ -124,14 +124,14 @@ gpu_cache_max_tiles = 288
     CHECK(config.input_mode == "csv");
     CHECK(config.csv_input_path == csv_path);
     CHECK(config.bundle_dir == root / "data" / "output.gs3d.bundle");
-    CHECK(config.viewer.vertex_shader_path == vertex_shader);
-    CHECK(config.viewer.fragment_shader_path == fragment_shader);
-    CHECK(config.viewer.window_width == 1024);
-    CHECK(config.viewer.window_height == 768);
-    CHECK(config.viewer.enable_multi_viewports);
-    CHECK(config.viewer.preferred_gpu == "auto");
-    CHECK(config.viewer.tile_gpu_cache_max_tiles == 288);
-    CHECK_FALSE(config.viewer.enable_validation_layers);
+    CHECK(config.viewer.graphics.vertex_shader_path == vertex_shader);
+    CHECK(config.viewer.graphics.fragment_shader_path == fragment_shader);
+    CHECK(config.viewer.window.width == 1024);
+    CHECK(config.viewer.window.height == 768);
+    CHECK(config.viewer.window.enable_multi_viewports);
+    CHECK(config.viewer.graphics.preferred_gpu == "auto");
+    CHECK(config.viewer.tile.gpu_cache_max_tiles == 288);
+    CHECK_FALSE(config.viewer.graphics.enable_validation_layers);
     CHECK(read_file(config_path) == toml);
 }
 
@@ -266,14 +266,14 @@ pick_debug_dump_once_on_hover = false
     CHECK(config.csv_convert.chunk_bytes == 4096);
     CHECK(config.csv_convert.x_field == "east");
     CHECK(config.csv_convert.primary_value_field == "grade");
-    CHECK(config.viewer.window_width == 1600);
-    CHECK(config.viewer.window_height == 900);
-    CHECK(config.viewer.window_title == "portable test");
-    CHECK_FALSE(config.viewer.window_resizable);
-    CHECK(config.viewer.theme == "instrument-amber");
-    CHECK_FALSE(config.viewer.enable_multi_viewports);
-    CHECK_FALSE(config.viewer.enable_validation_layers);
-    CHECK(config.viewer.preferred_gpu ==
+    CHECK(config.viewer.window.width == 1600);
+    CHECK(config.viewer.window.height == 900);
+    CHECK(config.viewer.window.title == "portable test");
+    CHECK_FALSE(config.viewer.window.resizable);
+    CHECK(config.viewer.window.theme == "instrument-amber");
+    CHECK_FALSE(config.viewer.window.enable_multi_viewports);
+    CHECK_FALSE(config.viewer.graphics.enable_validation_layers);
+    CHECK(config.viewer.graphics.preferred_gpu ==
           "uuid:0123456789abcdef0123456789abcdef");
     CHECK(config.render.clear_color == std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.4f});
     CHECK(config.render.initial_point_size == 2.5f);
@@ -283,17 +283,17 @@ pick_debug_dump_once_on_hover = false
     CHECK(config.controller.rotate_speed == 1.5f);
     CHECK(config.controller.invert_rotate_x);
     CHECK_FALSE(config.controller.invert_pan_y);
-    CHECK(config.viewer.lod_enabled);
-    CHECK(config.viewer.lod_finest_target_points == 123456);
-    CHECK(config.viewer.lod_voxel_mode == "XYZ");
-    CHECK(config.viewer.interactive_display_mode ==
+    CHECK(config.viewer.lod.enabled);
+    CHECK(config.viewer.lod.finest_target_points == 123456);
+    CHECK(config.viewer.lod.voxel_mode == "XYZ");
+    CHECK(config.viewer.lod.interactive_display_mode ==
           gs3d::app::InteractiveDisplayMode::AllowCoarseLOD);
-    CHECK(config.viewer.viewport_count == 3);
-    CHECK(config.viewer.tile_enabled);
-    CHECK(config.viewer.tile_max_visible_tiles == 42);
-    CHECK(config.viewer.tile_gpu_cache_max_tiles == 320);
-    CHECK(config.viewer.tile_cpu_cache_max_bytes == 131072);
-    CHECK(config.viewer.pick_debug_dump_enabled);
-    CHECK(config.viewer.pick_debug_dump_dir == "diagnostics");
-    CHECK_FALSE(config.viewer.pick_debug_dump_once_on_hover);
+    CHECK(config.viewer.window.viewport_count == 3);
+    CHECK(config.viewer.tile.enabled);
+    CHECK(config.viewer.tile.max_visible_tiles == 42);
+    CHECK(config.viewer.tile.gpu_cache_max_tiles == 320);
+    CHECK(config.viewer.tile.cpu_cache_max_bytes == 131072);
+    CHECK(config.viewer.pick_debug.dump_enabled);
+    CHECK(config.viewer.pick_debug.dump_dir == "diagnostics");
+    CHECK_FALSE(config.viewer.pick_debug.dump_once_on_hover);
 }

@@ -158,12 +158,12 @@ gs3d::render::TileSelectionConfig make_tile_selection_config(
     gs3d::render::TileSelectionConfig tile_config;
 
     tile_config.min_tile_pixel_size =
-        config.tile_min_pixel_size;
+        config.tile.min_pixel_size;
     tile_config.max_visible_tiles =
-        config.tile_max_visible_tiles;
+        config.tile.max_visible_tiles;
 
     tile_config.use_full_z_range =
-        config.tile_use_full_z_range;
+        config.tile.use_full_z_range;
 
     return tile_config;
 }
@@ -172,14 +172,14 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
     const gs3d::data::Gs3dDataset& dataset,
     const ViewerAppConfig& config
 ) {
-    if (!config.lod_enabled) {
+    if (!config.lod.enabled) {
         return {};
     }
 
     const auto& sidecar_path =
-        config.lod_sidecar_path;
+        config.lod.sidecar_path;
 
-    if (!config.lod_auto_load_sidecar) {
+    if (!config.lod.auto_load_sidecar) {
         throw std::runtime_error(
             "ViewerApp: lod.enabled is true but runtime LOD build is "
             "disabled and lod.auto_load_sidecar is false"
@@ -201,7 +201,7 @@ gs3d::data::Gs3dLodDataset load_or_build_lod_dataset(
 
     gs3d::data::Gs3dLodReadConfig read_config;
     read_config.validate_against_source = true;
-    read_config.verbose = config.lod_verbose;
+    read_config.verbose = config.lod.verbose;
 
     const auto read_result =
         gs3d::data::Gs3dLodReader::read(
@@ -371,19 +371,19 @@ int ViewerApp::run() {
         gs3d::util::Stopwatch startup_timer;
 
         const bool can_start_from_metadata =
-            config_.lod_enabled &&
-            !config_.lod_keep_full_buffer &&
-            config_.lod_auto_load_sidecar &&
-            !config_.lod_sidecar_path.empty() &&
-            std::filesystem::exists(config_.lod_sidecar_path);
+            config_.lod.enabled &&
+            !config_.lod.keep_full_buffer &&
+            config_.lod.auto_load_sidecar &&
+            !config_.lod.sidecar_path.empty() &&
+            std::filesystem::exists(config_.lod.sidecar_path);
 
         gs3d::util::Stopwatch dataset_load_timer;
         auto dataset = can_start_from_metadata
             ? gs3d::data::Gs3dDatasetLoader::load_header_only(
-                config_.gs3d_path
+                config_.input.gs3d_path
             )
             : gs3d::data::Gs3dDatasetLoader::load(
-                config_.gs3d_path
+                config_.input.gs3d_path
             );
         gs3d::util::log::info() << "[TIME] viewer.dataset_load_seconds = "
                   << dataset_load_timer.elapsed_seconds()
@@ -408,12 +408,12 @@ int ViewerApp::run() {
         std::unordered_map<std::uint64_t, std::vector<std::uint32_t>>
             tile_point_ids_by_tile;
 
-        if (config_.tile_enabled) {
+        if (config_.tile.enabled) {
             gs3d::util::Stopwatch tile_reader_timer;
             tile_reader =
                 gs3d::data::Gs3dTileReader::open(
-                    config_.tile_index_path,
-                    config_.tile_data_path,
+                    config_.tile.index_path,
+                    config_.tile.data_path,
                     dataset.header()
                 );
             gs3d::util::log::info() << "[TIME] viewer.tile_reader_open_seconds = "
@@ -466,7 +466,7 @@ int ViewerApp::run() {
                         << "tile runtime ids; loading full GS3D data.\n";
                     gs3d::util::Stopwatch fallback_load_timer;
                     dataset = gs3d::data::Gs3dDatasetLoader::load(
-                        config_.gs3d_path
+                        config_.input.gs3d_path
                     );
                     gs3d::util::log::info()
                         << "[TIME] viewer.dataset_fallback_load_seconds = "
@@ -489,13 +489,13 @@ int ViewerApp::run() {
          * point matching (map_subsequence_point_ids).  Load it
          * now if we're still in metadata-only mode.
          */
-        if (config_.lod_enabled && dataset.metadata_only()) {
+        if (config_.lod.enabled && dataset.metadata_only()) {
             gs3d::util::log::info()
                 << "[INFO] LOD enabled — loading full GS3D data "
                 << "for point-id mapping.\n";
             gs3d::util::Stopwatch lod_load_timer;
             dataset = gs3d::data::Gs3dDatasetLoader::load(
-                config_.gs3d_path
+                config_.input.gs3d_path
             );
             gs3d::util::log::info()
                 << "[TIME] viewer.lod_dataset_load_seconds = "
@@ -506,7 +506,7 @@ int ViewerApp::run() {
         gs3d::data::Gs3dLodDataset lod_dataset;
         std::vector<std::vector<std::uint32_t>> lod_point_ids;
 
-        if (config_.lod_enabled) {
+        if (config_.lod.enabled) {
             gs3d::util::Stopwatch lod_timer;
             lod_dataset =
                 load_or_build_lod_dataset(
@@ -555,18 +555,18 @@ int ViewerApp::run() {
         }
         
         gs3d::platform::WindowConfig window_config;
-        window_config.width = config_.window_width;
-        window_config.height = config_.window_height;
-        window_config.title = config_.window_title;
-        window_config.resizable = config_.window_resizable;
+        window_config.width = config_.window.width;
+        window_config.height = config_.window.height;
+        window_config.title = config_.window.title;
+        window_config.resizable = config_.window.resizable;
 
         gs3d::platform::Window window(window_config);
 
         gs3d::render::VulkanContextConfig vk_config;
         vk_config.enable_validation_layers =
-            config_.enable_validation_layers;
+            config_.graphics.enable_validation_layers;
         vk_config.application_name = "GeoScatter3D";
-        vk_config.preferred_gpu = config_.preferred_gpu;
+        vk_config.preferred_gpu = config_.graphics.preferred_gpu;
 
         gs3d::render::VulkanContext context(window, vk_config);
         gs3d::util::log::info() << "[TIME] viewer.startup_seconds = "
@@ -581,7 +581,7 @@ int ViewerApp::run() {
             context,
             window,
             benchmark_present_mode_hint(
-                config_.benchmark_present_mode
+                config_.benchmark.present_mode
             )
         );
         gs3d::render::VulkanRenderer renderer(context, swapchain);
@@ -592,9 +592,9 @@ int ViewerApp::run() {
             context,
             renderer,
             swapchain.image_count(),
-            config_.ui_layout_ini_path,
-            config_.ui_scale_multiplier,
-            config_.enable_multi_viewports
+            config_.window.ui_layout_ini_path,
+            config_.window.ui_scale_multiplier,
+            config_.window.enable_multi_viewports
         );
 
         // Size the window adaptively to the monitor, mirroring the welcome
@@ -652,10 +652,10 @@ int ViewerApp::run() {
         // 交换链是 UNORM 格式——配置里的 clear_color 按 sRGB 语义书写，
         // 直接使用，无需颜色空间转换。
         gs3d::render::ClearColor clear_color;
-        clear_color.r = config_.clear_color[0];
-        clear_color.g = config_.clear_color[1];
-        clear_color.b = config_.clear_color[2];
-        clear_color.a = config_.clear_color[3];
+        clear_color.r = config_.graphics.clear_color[0];
+        clear_color.g = config_.graphics.clear_color[1];
+        clear_color.b = config_.graphics.clear_color[2];
+        clear_color.a = config_.graphics.clear_color[3];
         renderer.set_clear_color(clear_color);
 
         gs3d::ui::SvgLogoTexture logo_texture(
@@ -672,7 +672,7 @@ int ViewerApp::run() {
         std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud;
         std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud;
 
-        if (config_.lod_enabled) {
+        if (config_.lod.enabled) {
             const auto lod_source =
                 build_lod_source(lod_dataset, lod_point_ids);
             lod_gpu_cloud =
@@ -730,15 +730,15 @@ int ViewerApp::run() {
             initial_camera
         );
         viewport_manager.set_active_count(
-            std::clamp(config_.viewport_count, 1, kMaxViewportCount)
+            std::clamp(config_.window.viewport_count, 1, kMaxViewportCount)
         );
         viewport_manager.set_clear_color(clear_color);
 
         gs3d::render::PointPipelineConfig pipeline_config;
         pipeline_config.vertex_shader_path =
-            config_.vertex_shader_path;
+            config_.graphics.vertex_shader_path;
         pipeline_config.fragment_shader_path =
-            config_.fragment_shader_path;
+            config_.graphics.fragment_shader_path;
 
         gs3d::render::PointPipeline point_pipeline(
             context,
@@ -778,12 +778,12 @@ int ViewerApp::run() {
             pick.requests.resize(n);
         }
         const bool benchmark_pick_enabled =
-            config_.benchmark_mode &&
-            !config_.benchmark_pick_script_path.empty();
+            config_.benchmark.enabled &&
+            !config_.benchmark.pick_script_path.empty();
         const auto benchmark_pick_queries =
             benchmark_pick_enabled
                 ? load_benchmark_pick_script(
-                      config_.benchmark_pick_script_path
+                      config_.benchmark.pick_script_path
                   )
                 : std::vector<BenchmarkPickScriptQuery>{};
         std::vector<double> benchmark_pick_issue_cpu_ms(
@@ -797,8 +797,8 @@ int ViewerApp::run() {
         benchmark_pick_results.reserve(benchmark_pick_queries.size());
         std::size_t benchmark_pick_issue_index = 0;
         BenchmarkSession benchmark_session(
-            config_.benchmark_mode,
-            config_.benchmark_frame_count,
+            config_.benchmark.enabled,
+            config_.benchmark.frame_count,
             renderer.frames_in_flight()
         );
         if (benchmark_pick_enabled) {
@@ -809,19 +809,19 @@ int ViewerApp::run() {
 
         gs3d::camera::CameraControllerConfig controller_config;
         controller_config.rotate_speed =
-            config_.controller_rotate_speed;
+            config_.controller.rotate_speed;
         controller_config.pan_speed =
-            config_.controller_pan_speed;
+            config_.controller.pan_speed;
         controller_config.zoom_speed =
-            config_.controller_zoom_speed;
+            config_.controller.zoom_speed;
         controller_config.invert_rotate_x =
-            config_.controller_invert_rotate_x;
+            config_.controller.invert_rotate_x;
         controller_config.invert_rotate_y =
-            config_.controller_invert_rotate_y;
+            config_.controller.invert_rotate_y;
         controller_config.invert_pan_x =
-            config_.controller_invert_pan_x;
+            config_.controller.invert_pan_x;
         controller_config.invert_pan_y =
-            config_.controller_invert_pan_y;
+            config_.controller.invert_pan_y;
 
         ViewportCameraSystem viewport_cameras(
             controller_config,
@@ -858,7 +858,7 @@ int ViewerApp::run() {
                   << viewport_manager.camera(0).distance() << '\n';
 
         gs3d::render::PointPushConstants push{};
-        push.point_size  = config_.initial_point_size;
+        push.point_size  = config_.graphics.initial_point_size;
         // Channel attributes set below after attr_list is built.
         // MVP is set per-viewport inside render_all; flags is zero-initialized.
 
@@ -869,16 +869,16 @@ int ViewerApp::run() {
          * 引用它们，析构时先 join future）。
          */
         ViewerAppTileStreamState tile_stream(
-            config_.tile_cpu_cache_max_bytes
+            config_.tile.cpu_cache_max_bytes
         );
         tile_stream.preload_enabled =
-            config_.tile_enabled &&
-            config_.tile_preload_all &&
-            !config_.benchmark_mode &&
+            config_.tile.enabled &&
+            config_.tile.preload_all &&
+            !config_.benchmark.enabled &&
             tile_reader.has_value() &&
             !tile_reader->records().empty() &&
             tile_reader->stats().total_point_bytes <=
-                config_.tile_preload_max_bytes;
+                config_.tile.preload_max_bytes;
 
         // Debounce interacting so rapid scroll zoom doesn't cause
         // frame-by-frame toggling (tiles pop in/out, LOD clip flicker).
@@ -917,18 +917,18 @@ int ViewerApp::run() {
 
         gs3d::render::LodSelector lod_selector;
 
-        if (config_.lod_enabled) {
+        if (config_.lod.enabled) {
             gs3d::render::LodSelectorConfig lod_selector_config;
             lod_selector_config.medium_delay_seconds =
-                config_.lod_medium_delay_seconds;
+                config_.lod.medium_delay_seconds;
             lod_selector_config.high_delay_seconds =
-                config_.lod_high_delay_seconds;
+                config_.lod.high_delay_seconds;
             lod_selector_config.use_lowest_while_interacting =
-                config_.lod_use_lowest_while_interacting;
+                config_.lod.use_lowest_while_interacting;
             lod_selector_config.adaptive_interacting_level =
-                config_.lod_adaptive_interacting_level;
+                config_.lod.adaptive_interacting_level;
             lod_selector_config.frame_time_budget_ms =
-                config_.lod_frame_time_budget_ms;
+                config_.lod.frame_time_budget_ms;
 
             lod_selector.set_config(lod_selector_config);
         }
@@ -938,7 +938,7 @@ int ViewerApp::run() {
         bool tile_selection_dirty = true;
         int streaming_viewport_index = 0;
 
-        if (config_.tile_enabled && tile_reader.has_value()) {
+        if (config_.tile.enabled && tile_reader.has_value()) {
             tile_selection.set_config(
                 make_tile_selection_config(config_)
             );
@@ -946,7 +946,7 @@ int ViewerApp::run() {
             tile_gpu_cloud =
                 std::make_unique<gs3d::render::PointCloudTileGpu>();
             tile_gpu_cloud->set_resident_tile_budget(
-                config_.tile_gpu_cache_max_tiles
+                config_.tile.gpu_cache_max_tiles
             );
 
             gs3d::util::log::info() << "[OK] TileSelection initialized.\n";
@@ -958,13 +958,13 @@ int ViewerApp::run() {
         bool shift_tab_was_pressed = false;
 
         const std::string primary_value_name =
-            config_.primary_value_field_name.empty()
+            config_.input.primary_value_field_name.empty()
                 ? "value"
-                : config_.primary_value_field_name;
+                : config_.input.primary_value_field_name;
         const std::string z_field_name =
-            config_.z_field_name.empty()
+            config_.input.z_field_name.empty()
                 ? "z"
-                : config_.z_field_name;
+                : config_.input.z_field_name;
 
         // Logical names come from preprocessing; physical slots stay Value/Z.
         const std::vector<gs3d::app::AttrDescriptor> attr_list = {
@@ -1033,14 +1033,14 @@ int ViewerApp::run() {
         float fps_smooth = 0.0f;
 
         print_controls(
-                        config_.lod_enabled,
-                        config_.tile_enabled
+                        config_.lod.enabled,
+                        config_.tile.enabled
                     );
 
         gs3d::core::DatasetDescriptor dataset_descriptor;
         dataset_descriptor.display_name =
-            config_.gs3d_path.filename().string();
-        dataset_descriptor.path = config_.gs3d_path.string();
+            config_.input.gs3d_path.filename().string();
+        dataset_descriptor.path = config_.input.gs3d_path.string();
         dataset_descriptor.format = "GS3D";
         dataset_descriptor.point_count = dataset.point_count();
         dataset_descriptor.bounds = make_dataset_bounds(dataset);
@@ -1057,7 +1057,7 @@ int ViewerApp::run() {
         }
         {
             std::error_code ec;
-            const auto file_bytes = std::filesystem::file_size(config_.gs3d_path, ec);
+            const auto file_bytes = std::filesystem::file_size(config_.input.gs3d_path, ec);
             if (!ec) {
                 const double mb = static_cast<double>(file_bytes) / (1024.0 * 1024.0);
                 std::ostringstream oss;
@@ -1146,7 +1146,7 @@ int ViewerApp::run() {
             viewport_state_count
         );
         const int startup_view_count =
-            std::clamp(config_.viewport_count, 1, kMaxViewportCount);
+            std::clamp(config_.window.viewport_count, 1, kMaxViewportCount);
         for (int i = 0; i < viewport_manager.viewport_count(); ++i) {
             auto& view =
                 app_state.render_views[static_cast<std::size_t>(i)];
@@ -1155,7 +1155,7 @@ int ViewerApp::run() {
             view.camera_linked = false;
         }
         viewport_presentation.initialize_visibility(app_state);
-        if (config_.benchmark_mode) {
+        if (config_.benchmark.enabled) {
             app_state.panels.dataset = false;
             app_state.panels.render_settings = false;
             app_state.panels.debug_log = false;
@@ -1167,7 +1167,7 @@ int ViewerApp::run() {
         app_state.logo_texture = logo_texture.descriptor();
 
         // ── analysis.toml persistence ──────────────────────────────────
-        app_state.bundle_dir = config_.bundle_dir;
+        app_state.bundle_dir = config_.input.bundle_dir;
         auto& persisted_measurement =
             app_state.measurements.empty()
                 ? app_state.measurement
@@ -1300,7 +1300,7 @@ int ViewerApp::run() {
             // duration, driving LodSelectorConfig::adaptive_interacting_level
             // (no-op otherwise). Must run before lod_level_for_frame is
             // reassigned for *this* frame, further down.
-            if (config_.lod_enabled && delta_seconds > 0.0) {
+            if (config_.lod.enabled && delta_seconds > 0.0) {
                 /*
                  * On VK_PRESENT_MODE_FIFO_KHR the total wall-clock frame
                  * time includes vsync present-wait inside vkAcquireNextImageKHR
@@ -1338,7 +1338,7 @@ int ViewerApp::run() {
             // Pending = required GPU working-set tiles not yet resident.
             // Stages 1/2 fall back to the full candidate set.
             std::size_t pending_tile_count = 0;
-            if (config_.tile_enabled && tile_gpu_cloud &&
+            if (config_.tile.enabled && tile_gpu_cloud &&
                 tile_result.enabled) {
                 const auto& pending_source =
                     tile_stream.gpu_required_tile_ids.empty()
@@ -1365,7 +1365,7 @@ int ViewerApp::run() {
             std::uint64_t gpu_buffer_bytes = 0;
             std::uint64_t gpu_resident_points = 0;
 
-            if (config_.tile_enabled && tile_gpu_cloud) {
+            if (config_.tile.enabled && tile_gpu_cloud) {
                 const auto& ts = tile_gpu_cloud->stats();
                 loaded_tiles =
                     static_cast<std::uint32_t>(
@@ -1451,7 +1451,7 @@ int ViewerApp::run() {
                     settings.pending_tiles = pending_tiles;
                     settings.cache_usage =
                         std::to_string(loaded_tiles) + " / " +
-                        std::to_string(config_.tile_gpu_cache_max_tiles);
+                        std::to_string(config_.tile.gpu_cache_max_tiles);
                     settings.cpu_cache_usage =
                         std::to_string(
                             tile_cache_stats.resident_bytes /
@@ -1510,7 +1510,7 @@ int ViewerApp::run() {
             app_state.performance.pending_tiles = pending_tiles;
             app_state.performance.gpu_memory_bytes = gpu_buffer_bytes;
             app_state.performance.lod_mode =
-                config_.lod_enabled
+                config_.lod.enabled
                     ? "已启用细节层级"
                     : "全分辨率";
 
@@ -1613,9 +1613,9 @@ int ViewerApp::run() {
                 // the offscreen framebuffer, camera projection, and query
                 // coordinates stay in the same space.
                 const std::uint32_t benchmark_viewport_width =
-                    std::max(config_.window_width, 1u);
+                    std::max(config_.window.width, 1u);
                 const std::uint32_t benchmark_viewport_height =
-                    std::max(config_.window_height, 1u);
+                    std::max(config_.window.height, 1u);
                 const bool query_active =
                     benchmark_session.frame_index() >=
                         BenchmarkSession::kPickWarmupFrames &&
@@ -1986,14 +1986,14 @@ int ViewerApp::run() {
                 interacting = true;
             }
 
-            if (config_.lod_enabled) {
+            if (config_.lod.enabled) {
                 lod_selector.update(
                     interacting,
                     delta_seconds
                 );
             }
 
-            if (config_.tile_enabled && tile_reader.has_value()) {
+            if (config_.tile.enabled && tile_reader.has_value()) {
                 auto tile_config =
                     make_tile_selection_config(config_);
                 const auto stream_index =
@@ -2042,7 +2042,7 @@ int ViewerApp::run() {
             }
             // Select LOD level once per frame (not per-viewport) so all views
             // use the same level and the verbose log fires at most once.
-            if (config_.lod_enabled && lod_gpu_cloud) {
+            if (config_.lod.enabled && lod_gpu_cloud) {
                 const auto voxel_sizes = lod_gpu_cloud->voxel_sizes();
                 float world_per_pixel = 0.0f;
                 float spatial_ortho_h = 0.0f;
@@ -2062,9 +2062,9 @@ int ViewerApp::run() {
                     voxel_sizes,
                     world_per_pixel,
                     interacting,
-                    config_.interactive_display_mode ==
+                    config_.lod.interactive_display_mode ==
                         gs3d::app::InteractiveDisplayMode::AllowCoarseLOD,
-                    config_.lod_high_delay_seconds
+                    config_.lod.high_delay_seconds
                 );
                 if (selection) {
                     lod_level_for_frame = selection->level;
@@ -2078,7 +2078,7 @@ int ViewerApp::run() {
                     }
 
                     if (selection->changed) {
-                        if (config_.lod_verbose) {
+                        if (config_.lod.verbose) {
                             const auto& level =
                                 lod_gpu_cloud->level(lod_level_for_frame);
                             gs3d::util::log::info() << "[LOD] active level = "
@@ -2289,13 +2289,13 @@ int ViewerApp::run() {
         }
 
         if (benchmark_pick_enabled &&
-            !config_.benchmark_pick_result_path.empty()) {
+            !config_.benchmark.pick_result_path.empty()) {
             write_benchmark_pick_results(
-                config_.benchmark_pick_result_path,
+                config_.benchmark.pick_result_path,
                 benchmark_pick_results
             );
             gs3d::util::log::benchmark() << "[BENCH] pick_result_path = "
-                      << config_.benchmark_pick_result_path.string()
+                      << config_.benchmark.pick_result_path.string()
                       << '\n';
             gs3d::util::log::benchmark() << "[BENCH] pick_result_count = "
                       << benchmark_pick_results.size()

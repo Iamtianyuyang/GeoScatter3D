@@ -85,7 +85,7 @@ void ViewerApp::record_viewport_passes(
             }
         }
         const bool tile_will_render =
-            (config_.interactive_display_mode !=
+            (config_.lod.interactive_display_mode !=
                  gs3d::app::InteractiveDisplayMode::
                      AllowCoarseLOD ||
              !ctx.interacting) &&
@@ -171,7 +171,7 @@ void ViewerApp::record_viewport_passes(
         // --- LOD safety net: coarsest level, always drawn ---
         // spatial_clip=0 so it is never clipped
         // — guarantees no clear-colour holes.
-        if (config_.lod_enabled) {
+        if (config_.lod.enabled) {
             gs3d::render::PointPushConstants safety_push =
                 lod_push;
             safety_push.flags &= ~gs3d::render::PointFlags::kSpatialClip;
@@ -182,7 +182,7 @@ void ViewerApp::record_viewport_passes(
             );
         }
 
-        if (config_.lod_enabled) {
+        if (config_.lod.enabled) {
             ctx.point_pipeline.draw_per_tile(
                 c,
                 ctx.lod_gpu_cloud->gpu_cloud(ctx.lod_level_for_frame),
@@ -246,11 +246,11 @@ void ViewerApp::record_viewport_passes(
                 }
             }
             const bool should_dump_pick_debug =
-                config_.pick_debug_dump_enabled &&
+                config_.pick_debug.dump_enabled &&
                 pick_request.kind ==
                     GpuPickRequestKind::Hover &&
                 !pick_debug_dump_recorded_this_frame &&
-                (!config_.pick_debug_dump_once_on_hover ||
+                (!config_.pick_debug.dump_once_on_hover ||
                  !ctx.pick_debug_dump_completed ||
                  ctx.pending_hover_miss_dump[viewport_index]);
             if (should_dump_pick_debug) {
@@ -363,7 +363,7 @@ void ViewerApp::record_viewport_passes(
                     ctx.pending_hover_miss_dump[viewport_index] =
                         false;
                     if (config_
-                            .pick_debug_dump_once_on_hover) {
+                            .pick_debug.dump_once_on_hover) {
                         ctx.pick_debug_dump_completed = true;
                     }
                 }

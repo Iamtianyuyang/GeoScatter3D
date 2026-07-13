@@ -121,6 +121,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    `ViewportPresentationState`；空间/时间 LOD 合并与交互期冻结已提取为
    `ViewportLodController`，但主循环的其余职责边界仍不清晰，修改任何功能都容易影响主循环。
    CTest 的工程护栏会校验上述行数，避免风险清单再次悄然过期。
+   `ViewerAppConfig` 已按 input、window、graphics、camera、controller、LOD、tile、
+   benchmark 和 pick-debug 分域；各域仍应继续以窄配置或运行时上下文传入子系统，避免
+   `ViewerApp` 重新成为配置耦合中心。
    `UiRoot.cpp` 仍有 2353 行；其中工作区所有权、视图分配与清理已移至可单测的
    `WorkspaceManager`，但其余 ImGui 绘制代码仍需要继续分拆。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
