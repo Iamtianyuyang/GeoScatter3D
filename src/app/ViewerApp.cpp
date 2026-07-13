@@ -520,11 +520,9 @@ int ViewerApp::run() {
         );
         auto& benchmark_session = benchmark_controller.session();
         const bool benchmark_pick_enabled = benchmark_controller.pick_enabled();
-        const auto& benchmark_pick_queries = benchmark_controller.queries();
         auto& benchmark_pick_issue_cpu_ms = benchmark_controller.issue_cpu_ms();
         auto& benchmark_pick_issue_metadata = benchmark_controller.issue_metadata();
         auto& benchmark_pick_results = benchmark_controller.results();
-        auto& benchmark_pick_issue_index = benchmark_controller.issue_index();
 
         gs3d::camera::CameraControllerConfig controller_config;
         controller_config.rotate_speed =
@@ -1090,66 +1088,11 @@ int ViewerApp::run() {
                 std::chrono::duration<double>(
                     current_time.time_since_epoch()
                 ).count();
-            if (benchmark_pick_enabled) {
-                // Benchmark queries are authored against the requested
-                // benchmark viewport size, not whatever persisted ImGui
-                // layout happened to leave in the current framebuffer.
-                // Force the scripted viewport frame to that target size so
-                // the offscreen framebuffer, camera projection, and query
-                // coordinates stay in the same space.
-                const std::uint32_t benchmark_viewport_width =
-                    std::max(config_.window.width, 1u);
-                const std::uint32_t benchmark_viewport_height =
-                    std::max(config_.window.height, 1u);
-                const bool query_active =
-                    benchmark_session.frame_index() >=
-                        BenchmarkSession::kPickWarmupFrames &&
-                    benchmark_pick_issue_index <
-                        benchmark_pick_queries.size();
-                const auto& query =
-                    query_active
-                        ? benchmark_pick_queries[benchmark_pick_issue_index]
-                        : BenchmarkPickScriptQuery{};
-                bool frame_found = false;
-                for (auto& frame : gui_cmds.viewport_frames) {
-                    if (frame.index != 0) {
-                        continue;
-                    }
-                    frame_found = true;
-                    frame.hovered = query_active;
-                    frame.active = false;
-                    frame.width = benchmark_viewport_width;
-                    frame.height = benchmark_viewport_height;
-                    frame.mouse_local_x = query.mouse_x;
-                    frame.mouse_local_y = query.mouse_y;
-                    frame.mouse_on_image = query_active;
-                    frame.rotate = false;
-                    frame.pan = false;
-                    frame.mouse_delta_x = 0.0f;
-                    frame.mouse_delta_y = 0.0f;
-                    frame.mouse_wheel = 0.0f;
-                    frame.box_select_completed = false;
-                    break;
-                }
-                if (!frame_found) {
-                    gui_cmds.viewport_frames.push_back({
-                        .index = 0,
-                        .hovered = query_active,
-                        .active = false,
-                        .width = benchmark_viewport_width,
-                        .height = benchmark_viewport_height,
-                        .mouse_delta_x = 0.0f,
-                        .mouse_delta_y = 0.0f,
-                        .mouse_wheel = 0.0f,
-                        .mouse_local_x = query.mouse_x,
-                        .mouse_local_y = query.mouse_y,
-                        .mouse_on_image = query_active,
-                        .rotate = false,
-                        .pan = false,
-                        .box_select_completed = false
-                    });
-                }
-            }
+            benchmark_controller.apply_scripted_viewport(
+                gui_cmds,
+                config_.window.width,
+                config_.window.height
+            );
             observe_viewport_resize_requests(
                 gui_cmds, viewport_resize_scheduler, now_seconds);
 
@@ -1605,8 +1548,7 @@ int ViewerApp::run() {
                 app_state,
                 gui_cmds,
                 viewport_point_sizes,
-                benchmark_pick_issue_index,
-                benchmark_pick_queries
+                benchmark_controller
             );
 
             renderer.draw_frame(
@@ -1763,12 +1705,9 @@ int ViewerApp::run() {
             );
         }
 
-        if (benchmark_pick_enabled &&
-            !config_.benchmark.pick_result_path.empty()) {
-            write_benchmark_pick_results(
-                config_.benchmark.pick_result_path,
-                benchmark_pick_results
-            );
+        if (benchmark_controller.write_pick_results(
+                config_.benchmark.pick_result_path
+            )) {
             gs3d::util::log::benchmark() << "[BENCH] pick_result_path = "
                       << config_.benchmark.pick_result_path.string()
                       << '\n';

@@ -15,6 +15,7 @@
 
 namespace gs3d::app { struct ViewerAppTileStreamState; }
 namespace gs3d::app { struct ViewerAppTileStreamFrameContext; }
+namespace gs3d::app { class ViewerBenchmarkController; }
 namespace gs3d::data { class Gs3dDataset; }
 namespace gs3d::render { class OffscreenFramebuffer; }
 namespace gs3d::render { class ViewportManager; }
@@ -222,8 +223,7 @@ private:
         gs3d::app::AppState& app_state,
         const gs3d::app::UiActions& gui_cmds,
         const std::vector<float>& viewport_point_sizes,
-        std::size_t& benchmark_pick_issue_index,
-        const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
+        ViewerBenchmarkController& benchmark_controller
     );
 
     void consume_ready_pick_frame_slot(

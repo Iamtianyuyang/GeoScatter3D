@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "app/ViewerBenchmarkController.hpp"
 #include "util/Log.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppRunState.hpp"
@@ -88,13 +89,8 @@ void ViewerApp::prepare_gpu_pick_requests(
     gs3d::app::AppState& app_state,
     const gs3d::app::UiActions& gui_cmds,
     const std::vector<float>& viewport_point_sizes,
-    std::size_t& benchmark_pick_issue_index,
-    const std::vector<BenchmarkPickScriptQuery>& benchmark_pick_queries
+    ViewerBenchmarkController& benchmark_controller
 ) {
-    const bool benchmark_pick_enabled =
-        config_.benchmark.enabled &&
-        !config_.benchmark.pick_script_path.empty();
-
     for (auto& request : pick.requests) {
         request = {};
     }
@@ -202,14 +198,12 @@ void ViewerApp::prepare_gpu_pick_requests(
                     frame.index
                 )
             );
-        if (benchmark_pick_enabled &&
-            frame.index == 0 &&
-            benchmark_pick_issue_index < benchmark_pick_queries.size()) {
-            request.benchmark_query_index = static_cast<int>(
-                benchmark_pick_queries[benchmark_pick_issue_index]
-                    .query_index
-            );
-            ++benchmark_pick_issue_index;
+        if (const auto query_index =
+                benchmark_controller.take_active_query_for_viewport(
+                    frame.index
+                )) {
+            request.benchmark_query_index =
+                static_cast<int>(*query_index);
         }
         request.mouse_x = frame.mouse_local_x;
         request.mouse_y = frame.mouse_local_y;
