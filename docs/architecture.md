@@ -134,8 +134,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 6. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具与手动 benchmark 保留直接
    stdout 作为机器可读接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道可由
    `GS3D_LOG_BENCHMARK=0` 关闭。
-7. 仓库跟踪约 500 MiB 的 `data/test.gs3d`，Git 对象目录接近 900 MiB。大型样例
-   应迁移到 release artifact、Git LFS 或可重复生成的小型 fixture。
+7. 当前 HEAD 的可追踪 blob 约为 28 MiB，其中两个 CJK 字体约占 25 MiB；历史中仍
+   保留已删除的调试资源和多个字体字重。要真正缩小克隆历史，需要以 `git filter-repo`
+   重写历史并协调一次强制推送；在完成团队协调前，不应静默执行该操作。
 
 ## 后续拆分方向
 

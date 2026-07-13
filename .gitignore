@@ -20,6 +20,7 @@ config/imgui_layout.ini
 /.vscode/
 /.cursor/
 /.dbg/
+/.tools/
 
 # Generated / temporary
 Testing/
