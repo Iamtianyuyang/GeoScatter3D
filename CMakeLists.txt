@@ -19,56 +19,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 
-# Shared by GeoScatter3D (interactive) and GeoScatter3DBenchmark (manual
-# performance harness, see tests/BenchmarkSuite.cpp) — both drive the same
-# ViewerApp render loop, just with a different entry point.
-set(GEOSCATTER3D_CORE_SOURCES
-    src/gui/ImGuiLayer.cpp
-    src/ui/Theme.cpp
-    src/ui/Widgets.cpp
-    src/ui/UiRoot.cpp
-    src/ui/RegionStatsPanel.cpp
-    src/ui/DatasetPanel.cpp
-    src/ui/NavigationMapPanel.cpp
-    src/ui/MeasurementPanel.cpp
-    src/ui/AuxiliaryPanels.cpp
-    src/ui/RenderSettingsPanel.cpp
-    src/ui/SvgLogoTexture.cpp
-
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
-
-    src/app/ViewerApp.cpp
-    src/app/ViewerAppViewport.cpp
-    src/app/ViewerAppPicking.cpp
-    src/app/ViewerAppRenderView.cpp
-    src/app/ViewerAppGuiCommands.cpp
-    src/app/ViewerAppCameraCommands.cpp
-    src/app/ViewerAppScreenshot.cpp
-    src/app/ViewerAppRegionStats.cpp
-    src/app/ViewerAppBenchmark.cpp
-    src/app/ViewerAppNavigationMap.cpp
-    src/app/ViewerAppPickDebugDump.cpp
-    src/app/ViewerAppPointIds.cpp
-    src/app/ViewerAppTileStreaming.cpp
-    src/app/TileLoadCommit.cpp
-    src/app/ViewerAppRenderPass.cpp
-    src/app/AppConfig.cpp
-    src/app/PreprocessedBundle.cpp
-    src/app/RecentProjects.cpp
-    src/app/ResourcePath.cpp
-    src/app/UserPreferences.cpp
-    src/app/TilePointCache.cpp
-    src/app/ViewportResizeScheduler.cpp
-    src/app/MeasurementManager.cpp
-
-    src/platform/Window.cpp
-    src/platform/NativeFileDialog.cpp
-
+add_library(gs3d_data STATIC
     src/data/CsvStreamReader.cpp
     src/data/CsvSniffer.cpp
     src/data/CsvChunkUtils.cpp
@@ -85,18 +36,57 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/data/Gs3dLodReader.cpp
     src/data/Gs3dTileFormat.cpp
     src/data/Gs3dTileReader.cpp
+)
 
-    src/camera/BoxSelect.cpp
-    src/camera/Camera.cpp
-    src/camera/CameraController.cpp
-    src/camera/CameraHub.cpp
-    src/camera/MouseRay.cpp
+target_include_directories(gs3d_data PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
+target_link_libraries(gs3d_data PUBLIC
+    Threads::Threads
+)
+
+add_library(gs3d_preprocess STATIC
     src/preprocess/StatisticsPass.cpp
     src/preprocess/Gs3dWriter.cpp
     src/preprocess/CsvToGs3dConverter.cpp
     src/preprocess/Gs3dLodWriter.cpp
     src/preprocess/Gs3dTileWriter.cpp
+)
+
+target_include_directories(gs3d_preprocess PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_preprocess PUBLIC
+    gs3d_data
+)
+
+add_library(gs3d_imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+)
+
+target_include_directories(gs3d_imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+
+target_link_libraries(gs3d_imgui PUBLIC
+    Vulkan::Vulkan
+    glfw
+)
+
+add_library(gs3d_render STATIC
+    src/camera/BoxSelect.cpp
+    src/camera/Camera.cpp
+    src/camera/CameraController.cpp
+    src/camera/CameraHub.cpp
+    src/camera/MouseRay.cpp
 
     src/render/VulkanContext.cpp
     src/render/VulkanSwapchain.cpp
@@ -115,6 +105,72 @@ set(GEOSCATTER3D_CORE_SOURCES
     src/render/ViewportManager.cpp
     src/render/NearestPointQuery.cpp
     src/render/AxisGrid.cpp
+)
+
+target_include_directories(gs3d_render PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(gs3d_render PUBLIC
+    gs3d_data
+    gs3d_imgui
+    Vulkan::Vulkan
+    Threads::Threads
+)
+
+add_library(gs3d_app_support STATIC
+    src/app/AppConfig.cpp
+    src/app/PreprocessedBundle.cpp
+    src/app/RecentProjects.cpp
+    src/app/ResourcePath.cpp
+    src/app/UserPreferences.cpp
+    src/app/TileLoadCommit.cpp
+    src/app/TilePointCache.cpp
+    src/app/ViewportResizeScheduler.cpp
+    src/app/MeasurementManager.cpp
+)
+
+target_include_directories(gs3d_app_support PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+)
+
+target_link_libraries(gs3d_app_support PUBLIC
+    gs3d_preprocess
+)
+
+# Viewer-specific orchestration and UI. The executable and benchmark both
+# link this target, so these sources compile once per build.
+add_library(gs3d_app STATIC
+    src/gui/ImGuiLayer.cpp
+    src/ui/Theme.cpp
+    src/ui/Widgets.cpp
+    src/ui/UiRoot.cpp
+    src/ui/RegionStatsPanel.cpp
+    src/ui/DatasetPanel.cpp
+    src/ui/NavigationMapPanel.cpp
+    src/ui/MeasurementPanel.cpp
+    src/ui/AuxiliaryPanels.cpp
+    src/ui/RenderSettingsPanel.cpp
+    src/ui/SvgLogoTexture.cpp
+
+    src/app/ViewerApp.cpp
+    src/app/ViewerAppViewport.cpp
+    src/app/ViewerAppPicking.cpp
+    src/app/ViewerAppRenderView.cpp
+    src/app/ViewerAppGuiCommands.cpp
+    src/app/ViewerAppCameraCommands.cpp
+    src/app/ViewerAppScreenshot.cpp
+    src/app/ViewerAppRegionStats.cpp
+    src/app/ViewerAppBenchmark.cpp
+    src/app/ViewerAppNavigationMap.cpp
+    src/app/ViewerAppPickDebugDump.cpp
+    src/app/ViewerAppPointIds.cpp
+    src/app/ViewerAppTileStreaming.cpp
+    src/app/ViewerAppRenderPass.cpp
+
+    src/platform/Window.cpp
+    src/platform/NativeFileDialog.cpp
 
     include/gui/ImGuiLayer.hpp
     include/ui/Theme.hpp
@@ -202,14 +258,23 @@ set(GEOSCATTER3D_CORE_SOURCES
     include/util/PercentileStats.hpp
 )
 
+target_include_directories(gs3d_app PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg
+)
+
+target_link_libraries(gs3d_app PUBLIC
+    gs3d_app_support
+    gs3d_render
+    gs3d_imgui
+    glfw
+)
+
 add_executable(GeoScatter3D
     src/main.cpp
     src/app/WelcomeWindow.cpp
     src/ui/WelcomePage.cpp
-    include/app/WelcomeWindow.hpp
-    include/platform/NativeFileDialog.hpp
-    include/ui/WelcomePage.hpp
-    ${GEOSCATTER3D_CORE_SOURCES}
 )
 
 function(copy_runtime_assets target_name)
@@ -230,13 +295,11 @@ target_include_directories(GeoScatter3D PRIVATE
 )
 
 target_link_libraries(GeoScatter3D PRIVATE
-    Vulkan::Vulkan
-    glfw
-    Threads::Threads
+    gs3d_app
 )
 
 if(WIN32)
-    target_link_libraries(GeoScatter3D PRIVATE comdlg32 ole32 shell32)
+    target_link_libraries(gs3d_app PRIVATE comdlg32 ole32 shell32)
 endif()
 
 copy_runtime_assets(GeoScatter3D)
@@ -248,29 +311,6 @@ set(GEOSCATTER3D_PREPROCESS_SOURCES
     src/app/AppConfig.cpp
     src/app/PreprocessedBundle.cpp
     src/app/ResourcePath.cpp
-
-    src/data/CsvStreamReader.cpp
-    src/data/CsvSniffer.cpp
-    src/data/CsvChunkUtils.cpp
-    src/data/CsvChunkPlanner.cpp
-    src/data/CsvChunkReader.cpp
-    src/data/DataSchema.cpp
-    src/data/Delimiter.cpp
-    src/data/Gs3dFormat.cpp
-    src/data/Gs3dReader.cpp
-    src/data/Gs3dVerifier.cpp
-    src/data/Gs3dDataset.cpp
-    src/data/Gs3dLodDataset.cpp
-    src/data/Gs3dLodFormat.cpp
-    src/data/Gs3dLodReader.cpp
-    src/data/Gs3dTileFormat.cpp
-    src/data/Gs3dTileReader.cpp
-
-    src/preprocess/StatisticsPass.cpp
-    src/preprocess/Gs3dWriter.cpp
-    src/preprocess/CsvToGs3dConverter.cpp
-    src/preprocess/Gs3dLodWriter.cpp
-    src/preprocess/Gs3dTileWriter.cpp
 )
 
 add_executable(GeoScatter3DPreprocess
@@ -283,20 +323,13 @@ target_include_directories(GeoScatter3DPreprocess PRIVATE
 )
 
 target_link_libraries(GeoScatter3DPreprocess PRIVATE
-    Threads::Threads
+    gs3d_app_support
 )
 
 # Standalone ground-truth CLI — reads raw .gs3d, no LOD/tiles/Vulkan/GLFW.
 # Used to verify the viewer's pick accuracy, region coverage, and dataset stats.
 add_executable(gs3d_groundtruth
     tools/gs3d_groundtruth.cpp
-    src/data/Gs3dFormat.cpp
-    src/data/Gs3dReader.cpp
-    src/data/Gs3dDataset.cpp
-    src/data/CsvStreamReader.cpp
-    src/data/CsvSniffer.cpp
-    src/data/DataSchema.cpp
-    src/data/Delimiter.cpp
 )
 
 target_include_directories(gs3d_groundtruth PRIVATE
@@ -304,7 +337,7 @@ target_include_directories(gs3d_groundtruth PRIVATE
 )
 
 target_link_libraries(gs3d_groundtruth PRIVATE
-    Threads::Threads
+    gs3d_data
 )
 
 include(CTest)
@@ -312,18 +345,6 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(GeoScatter3DDataTests
         tests/Gs3dFormatTests.cpp
-        src/data/CsvChunkReader.cpp
-        src/data/CsvChunkPlanner.cpp
-        src/data/CsvChunkUtils.cpp
-        src/data/CsvSniffer.cpp
-        src/data/CsvStreamReader.cpp
-        src/data/DataSchema.cpp
-        src/data/Delimiter.cpp
-        src/data/Gs3dFormat.cpp
-        src/data/Gs3dReader.cpp
-        src/data/Gs3dDataset.cpp
-        src/data/Gs3dTileFormat.cpp
-        src/preprocess/CsvToGs3dConverter.cpp
     )
 
     target_include_directories(GeoScatter3DDataTests PRIVATE
@@ -331,7 +352,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(GeoScatter3DDataTests PRIVATE
-        Threads::Threads
+        gs3d_preprocess
     )
 
     add_test(
@@ -341,18 +362,6 @@ if(BUILD_TESTING)
 
     add_executable(GeoScatter3DRuntimeTests
         tests/RuntimePerformanceTests.cpp
-        src/app/RecentProjects.cpp
-        src/app/UserPreferences.cpp
-        src/app/TilePointCache.cpp
-        src/app/ViewportResizeScheduler.cpp
-        src/camera/BoxSelect.cpp
-        src/camera/Camera.cpp
-        src/camera/CameraController.cpp
-        src/camera/MouseRay.cpp
-        src/render/LodSelector.cpp
-        src/render/NearestPointQuery.cpp
-        src/render/TileSelection.cpp
-        src/render/AxisGrid.cpp
     )
 
     target_include_directories(GeoScatter3DRuntimeTests PRIVATE
@@ -361,7 +370,8 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(GeoScatter3DRuntimeTests PRIVATE
-        Threads::Threads
+        gs3d_app_support
+        gs3d_render
     )
 
     add_test(
@@ -371,12 +381,6 @@ if(BUILD_TESTING)
 
     add_executable(GeoScatter3DTileStreamingTests
         tests/TileStreamingTests.cpp
-        src/app/TileLoadCommit.cpp
-        src/app/TilePointCache.cpp
-        src/camera/Camera.cpp
-        src/camera/MouseRay.cpp
-        src/data/Gs3dFormat.cpp
-        src/render/TileSelection.cpp
     )
 
     target_include_directories(GeoScatter3DTileStreamingTests PRIVATE
@@ -384,7 +388,8 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(GeoScatter3DTileStreamingTests PRIVATE
-        Threads::Threads
+        gs3d_app_support
+        gs3d_render
     )
 
     add_test(
@@ -394,7 +399,6 @@ if(BUILD_TESTING)
 
     add_executable(GeoScatter3DGpuInfoTests
         tests/VulkanGpuInfoTests.cpp
-        src/render/VulkanGpuInfo.cpp
     )
 
     target_include_directories(GeoScatter3DGpuInfoTests PRIVATE
@@ -402,7 +406,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(GeoScatter3DGpuInfoTests PRIVATE
-        Vulkan::Vulkan
+        gs3d_render
     )
 
     add_test(
@@ -439,7 +443,6 @@ if(BUILD_TESTING)
     #   ./build/GeoScatter3DBenchmark --config config/viewer.toml [frame_count]
     add_executable(GeoScatter3DBenchmark
         tests/BenchmarkSuite.cpp
-        ${GEOSCATTER3D_CORE_SOURCES}
     )
 
     target_include_directories(GeoScatter3DBenchmark PRIVATE
@@ -452,9 +455,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(GeoScatter3DBenchmark PRIVATE
-        Vulkan::Vulkan
-        glfw
-        Threads::Threads
+        gs3d_app
     )
 
     copy_runtime_assets(GeoScatter3DBenchmark)
