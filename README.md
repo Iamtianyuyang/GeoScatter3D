@@ -46,6 +46,19 @@ ctest --test-dir build --output-on-failure
 命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。新测试使用 Catch2，
 可直接按标签单独运行，例如 `./build/GeoScatter3DGs3dV2Tests "[gs3d]"`。
 
+Windows 可用 vcpkg 安装 `glfw3`、`vulkan-headers`、`vulkan-loader` 和
+`glslang[tools]`，再按 CI 传入 toolchain：
+
+```powershell
+vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows glslang[tools]:x64-windows
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DGS3D_GLSLANG_VALIDATOR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/tools/glslang/glslangValidator.exe"
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+详细的 Windows 状态和仍需手工验证的桌面路径见
+[Windows portability report](docs/windows-portability-report.md)。
+
 ## 从干净克隆打开样例
 
 仓库提供了 25 行的 [样例 CSV](examples/sample-points.csv) 和可直接运行的
