@@ -1,5 +1,10 @@
 #include "app/ResourcePath.hpp"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+#include <array>
 #include <sstream>
 #include <stdexcept>
 
@@ -72,6 +77,29 @@ std::filesystem::path ResourcePath::resolve_optional_file(
 
 std::filesystem::path ResourcePath::current_working_directory() {
     return normalize(std::filesystem::current_path());
+}
+
+std::filesystem::path ResourcePath::current_executable_path() {
+#if defined(_WIN32)
+    std::array<wchar_t, 32768> buffer{};
+    const auto length = GetModuleFileNameW(
+        nullptr,
+        buffer.data(),
+        static_cast<DWORD>(buffer.size())
+    );
+    if (length == 0 || length == buffer.size()) {
+        return {};
+    }
+    return normalize(
+        std::filesystem::path(std::wstring(buffer.data(), length))
+    );
+#elif defined(__linux__)
+    std::error_code ec;
+    const auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    return ec ? std::filesystem::path{} : normalize(path);
+#else
+    return {};
+#endif
 }
 
 std::filesystem::path ResourcePath::config_directory(

@@ -1,4 +1,5 @@
 #include "app/RecentProjects.hpp"
+#include "app/ResourcePath.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/UserPreferences.hpp"
 #include "app/ViewerApp.hpp"
@@ -22,6 +23,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -253,6 +255,37 @@ void test_thread_pool_shutdown_cancels_queued_work()
         queued_task_was_cancelled,
         "thread pool cancels queued work instead of draining it at shutdown"
     );
+}
+
+void test_resource_path_resolves_assets_from_executable_directory()
+{
+    const auto nonce =
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count();
+    const auto test_root =
+        std::filesystem::temp_directory_path() /
+        ("gs3d-resource-path-" + std::to_string(nonce));
+    const auto executable_path = test_root / "bin" / "GeoScatter3D";
+    const auto asset_path =
+        executable_path.parent_path() / "assets" / "fonts" /
+        "test-font.otf";
+    std::filesystem::create_directories(asset_path.parent_path());
+    std::ofstream(asset_path) << "test";
+
+    gs3d::app::ResourcePathContext context;
+    context.executable_path = executable_path;
+    const auto resolved = gs3d::app::ResourcePath::resolve_optional_file(
+        "assets/fonts/test-font.otf",
+        context
+    );
+    expect(
+        resolved == std::filesystem::absolute(asset_path).lexically_normal(),
+        "resource paths resolve relative to the executable directory"
+    );
+
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
 }
 
 void test_default_viewer_config_is_portable()
@@ -3041,6 +3074,7 @@ int main()
     test_recent_projects_persist_and_dedupe();
     test_gpu_preference_is_user_scoped();
     test_thread_pool_shutdown_cancels_queued_work();
+    test_resource_path_resolves_assets_from_executable_directory();
     test_default_viewer_config_is_portable();
     test_resize_debounce();
     test_resize_batch();

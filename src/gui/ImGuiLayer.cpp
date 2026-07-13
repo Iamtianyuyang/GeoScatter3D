@@ -246,18 +246,7 @@ ImFontConfig make_font_config(float size_pixels)
 std::vector<std::filesystem::path> bundled_font_candidates()
 {
     return {
-        "assets/fonts/SourceHanSansSC-Regular.otf",
-        "assets/fonts/NotoSansSC-Regular.otf",
-        "assets/fonts/NotoSansCJKsc-Regular.otf",
-        "../assets/fonts/SourceHanSansSC-Regular.otf",
-        "../assets/fonts/NotoSansSC-Regular.otf",
-        "../assets/fonts/NotoSansCJKsc-Regular.otf",
-        "../../assets/fonts/SourceHanSansSC-Regular.otf",
-        "../../assets/fonts/NotoSansSC-Regular.otf",
-        "../../assets/fonts/NotoSansCJKsc-Regular.otf",
-        "resources/fonts/SourceHanSansSC-Regular.otf",
-        "resources/fonts/NotoSansSC-Regular.otf",
-        "resources/fonts/NotoSansCJKsc-Regular.otf"
+        "assets/fonts/NotoSansCJKsc-Regular.otf"
     };
 }
 
@@ -326,6 +315,8 @@ std::filesystem::path resolve_bundled_font_path(
 {
     gs3d::app::ResourcePathContext context;
     context.config_path = ini_path;
+    context.executable_path =
+        gs3d::app::ResourcePath::current_executable_path();
 
     for (const auto& candidate : bundled_font_candidates()) {
         const auto resolved =
@@ -384,45 +375,27 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     if (!selected_font_path.empty()) {
         const std::string font_path = selected_font_path.string();
         fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize * ui_scale, glyph_ranges);
-        const auto medium_path = resolve_font_weight(
-            selected_font_path,
-            {
-                "SourceHanSansSC-Medium.otf",
-                "NotoSansCJKsc-Medium.otf",
-                "NotoSansSC-Medium.otf"
-            }
-        );
         const auto bold_path = resolve_font_weight(
             selected_font_path,
             {
-                "SourceHanSansSC-Bold.otf",
-                "NotoSansCJKsc-Bold.otf",
-                "NotoSansSC-Bold.otf"
+                "NotoSansCJKsc-Bold.otf"
             }
         );
-        if (!medium_path.empty()) {
-            const auto path = medium_path.string();
+        if (!bold_path.empty()) {
+            const auto path = bold_path.string();
             fonts.medium = load_font(
                 io,
                 path.c_str(),
                 kRegularFontSize * ui_scale,
                 glyph_ranges
             );
-        }
-        if (!bold_path.empty()) {
-            const auto path = bold_path.string();
-            fonts.bold = load_font(
-                io,
-                path.c_str(),
-                kRegularFontSize * ui_scale,
-                glyph_ranges
-            );
+            fonts.bold = fonts.medium;
         }
         fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
-        // Panel titles use medium weight for visual hierarchy.
-        if (!medium_path.empty()) {
+        // The bundled set intentionally contains only regular and bold.
+        if (!bold_path.empty()) {
             fonts.panel_title = load_font(
-                io, medium_path.string().c_str(),
+                io, bold_path.string().c_str(),
                 kPanelTitleFontSize * ui_scale, glyph_ranges);
         } else {
             fonts.panel_title = load_font(
