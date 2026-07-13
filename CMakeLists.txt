@@ -299,7 +299,7 @@ add_library(gs3d_app STATIC
     src/app/ViewerAppPickDebugDump.cpp
     src/app/ViewerAppPointIds.cpp
     src/app/ViewerAppTileStreaming.cpp
-    src/app/ViewerAppRenderPass.cpp
+    src/app/ViewerViewportRenderSystem.cpp
 
     include/gui/ImGuiLayer.hpp
     include/ui/Theme.hpp
@@ -328,6 +328,7 @@ add_library(gs3d_app STATIC
     include/app/ViewerLodFrameSystem.hpp
     include/app/ViewerRuntimeConfiguration.hpp
     include/app/ViewerRenderRuntime.hpp
+    include/app/ViewerViewportRenderSystem.hpp
     include/app/ViewerFrameStateSynchronizer.hpp
     include/app/ScreenshotService.hpp
     include/app/ViewerAppStateInitialization.hpp

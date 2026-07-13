@@ -35,8 +35,8 @@ IGNORE_SCOPE_PROBES = (
     "src/data/guardrail-new-source.cpp",
 )
 LINE_BUDGETS = {
-    "src/app/ViewerApp.cpp": 970,
-    "ViewerApp::run()": 772,
+    "src/app/ViewerApp.cpp": 966,
+    "ViewerApp::run()": 771,
     "src/ui/UiRoot.cpp": 2250,
     "src/app/AppConfig.cpp": 763,
 }

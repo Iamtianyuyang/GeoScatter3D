@@ -54,7 +54,7 @@ struct ViewerAppCameraCommandContext {
  * LOD level or full cloud + resident tile overlay) plus GPU pick
  * request recording and the optional pick debug dump.
  */
-struct ViewerAppViewportDrawContext {
+struct ViewerViewportDrawContext {
     const std::vector<int>& visible_viewports;
     gs3d::render::ViewportManager& viewport_manager;
     gs3d::render::PointPipeline& point_pipeline;

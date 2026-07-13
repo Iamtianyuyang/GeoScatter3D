@@ -7,8 +7,8 @@
 #include "app/ViewerCameraFrameSystem.hpp"
 #include "app/ViewerRenderSettingsSystem.hpp"
 #include "app/ViewerRenderRuntime.hpp"
+#include "app/ViewerViewportRenderSystem.hpp"
 #include "app/ViewerRuntimeConfiguration.hpp"
-#include "app/ViewerWorkbenchLayout.hpp"
 #include "app/NavigationMapSystem.hpp"
 #include "app/ViewerAttributeMapping.hpp"
 #include "app/ViewerFrameClock.hpp"
@@ -28,9 +28,6 @@
 #include "app/ViewportCameraSystem.hpp"
 #include "app/ViewportPresentationState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
-#include "gui/ImGuiLayer.hpp"
-#include "gui/UiFonts.hpp"
-#include "ui/SvgLogoTexture.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/WorkspaceManager.hpp"
 #include "render/ViewportManager.hpp"
@@ -54,13 +51,6 @@
 #include "platform/Window.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/LodSelector.hpp"
-#include "render/PointCloudGpu.hpp"
-#include "render/PointCloudLodGpu.hpp"
-#include "render/PointPipeline.hpp"
-#include "render/VulkanContext.hpp"
-#include "render/VulkanRenderer.hpp"
-#include "render/VulkanSwapchain.hpp"
-#include "render/PointCloudTileGpu.hpp"
 #include "render/TileSelection.hpp"
 #include "render/VulkanBuffer.hpp"
 
@@ -68,7 +58,6 @@
 #include "util/Stopwatch.hpp"
 #include "scene/SceneState.hpp"
 
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
@@ -76,17 +65,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
-#include <filesystem>
-#include <future>
-#include <iostream>
-#include <limits>
-#include <memory>
 #include <string>
 #include <optional>
 #include <sstream>
-#include <unordered_map>
 
 namespace gs3d::app {
 
@@ -106,6 +88,21 @@ gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
     throw std::runtime_error(
         "ViewerApp: unsupported LOD voxel_mode: " + mode
     );
+}
+
+ViewerViewportRenderOptions make_viewport_render_options(
+    const ViewerLodConfig& lod_config,
+    const ViewerPickDebugConfig& pick_debug_config
+) {
+    return {
+        .lod_enabled = lod_config.enabled,
+        .render_tiles_while_interacting =
+            lod_config.interactive_display_mode !=
+                InteractiveDisplayMode::AllowCoarseLOD,
+        .pick_debug_dump_enabled = pick_debug_config.dump_enabled,
+        .pick_debug_dump_once_on_hover =
+            pick_debug_config.dump_once_on_hover,
+    };
 }
 
 void print_controls(
@@ -247,6 +244,9 @@ int ViewerApp::run() {
         auto* full_gpu_cloud = render_runtime.full_gpu_cloud();
         auto* lod_gpu_cloud = render_runtime.lod_gpu_cloud();
         auto* tile_gpu_cloud = render_runtime.tile_gpu_cloud();
+        ViewerViewportRenderSystem viewport_render_system(
+            make_viewport_render_options(config_.lod, config_.pick_debug)
+        );
 
         ViewerPickSystem pick_system(
             context,
@@ -432,7 +432,7 @@ int ViewerApp::run() {
             make_initial_viewer_app_state(initial_state_input);
         viewport_presentation.initialize_visibility(app_state);
 
-        app_state.logo_texture = render_runtime.logo_texture().descriptor();
+        app_state.logo_texture = render_runtime.logo_descriptor();
 
         // ── analysis.toml persistence ──────────────────────────────────
         app_state.bundle_dir = config_.input.bundle_dir;
@@ -561,19 +561,17 @@ int ViewerApp::run() {
                 frame_metrics.frame_state
             );
 
-            {
-                ViewerAppRenderViewContext render_ctx{
-                    viewport_manager,
-                    dataset,
-                    bounds,
-                    viewport_pushes,
-                    primary_value_name,
-                    z_field_name,
-                    frame_metrics.frame_state.visible_points,
-                    n_viewports
-                };
-                fill_render_views(app_state, render_ctx, pick, selected_focus_points);
-            }
+            ViewerAppRenderViewContext render_ctx{
+                viewport_manager,
+                dataset,
+                bounds,
+                viewport_pushes,
+                primary_value_name,
+                z_field_name,
+                frame_metrics.frame_state.visible_points,
+                n_viewports
+            };
+            fill_render_views(app_state, render_ctx, pick, selected_focus_points);
 
             navigation_maps.synchronize_view_rects(app_state);
             app_state.measurement = measurement_for_view(
@@ -626,19 +624,17 @@ int ViewerApp::run() {
                 !ImGui::GetIO().WantTextInput;
             gs3d::util::Stopwatch benchmark_camera_timer;
 
-            {
-                ViewerAppCameraCommandContext cam_ctx{
-                    .n_viewports = n_viewports,
-                    .controllers = viewport_cameras.controllers(),
-                    .viewport_manager = viewport_manager,
-                    .camera_hub = camera_hub,
-                    .camera_config = config_.camera,
-                    .bounds = bounds,
-                    .streaming_viewport_index = streaming_viewport_index,
-                    .tile_selection_dirty = tile_selection_dirty
-                };
-                apply_reset_camera_command(gui_cmds, cam_ctx);
-            }
+            ViewerAppCameraCommandContext cam_ctx{
+                .n_viewports = n_viewports,
+                .controllers = viewport_cameras.controllers(),
+                .viewport_manager = viewport_manager,
+                .camera_hub = camera_hub,
+                .camera_config = config_.camera,
+                .bounds = bounds,
+                .streaming_viewport_index = streaming_viewport_index,
+                .tile_selection_dirty = tile_selection_dirty
+            };
+            apply_reset_camera_command(gui_cmds, cam_ctx);
             render_settings.apply_commands(
                 gui_cmds.render_settings_commands,
                 app_state,
@@ -828,7 +824,7 @@ int ViewerApp::run() {
                             dataset.bbox_max_z()
                         );
 
-                        ViewerAppViewportDrawContext draw_ctx{
+                        ViewerViewportDrawContext draw_ctx{
                             .visible_viewports = visible_viewports,
                             .viewport_manager = viewport_manager,
                             .point_pipeline = point_pipeline,
@@ -858,7 +854,7 @@ int ViewerApp::run() {
                             .benchmark_pick_issue_metadata =
                                 benchmark_pick_issue_metadata
                         };
-                        record_viewport_passes(cmd, draw_ctx);
+                        viewport_render_system.record(cmd, draw_ctx);
                     },
                     // in_pass: only ImGui runs in the swapchain render pass.
                     // Each ImGui::Image() samples its viewport's offscreen texture.

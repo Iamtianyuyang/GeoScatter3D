@@ -73,7 +73,7 @@ public:
     [[nodiscard]] gs3d::render::ViewportManager& viewport_manager() noexcept;
     [[nodiscard]] gs3d::render::PointPipeline& point_pipeline() noexcept;
     [[nodiscard]] const gs3d::camera::CameraBounds& bounds() const noexcept;
-    [[nodiscard]] const gs3d::ui::SvgLogoTexture& logo_texture() const noexcept;
+    [[nodiscard]] VkDescriptorSet logo_descriptor() const noexcept;
     [[nodiscard]] gs3d::render::PointCloudGpu* full_gpu_cloud() noexcept;
     [[nodiscard]] gs3d::render::PointCloudLodGpu* lod_gpu_cloud() noexcept;
     [[nodiscard]] gs3d::render::PointCloudTileGpu* tile_gpu_cloud() noexcept;

@@ -1,8 +1,8 @@
-#include "app/ViewerApp.hpp"
 #include "app/ViewerAppGpuPick.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
 #include "app/ViewerAppTileStreaming.hpp"
+#include "app/ViewerViewportRenderSystem.hpp"
 
 #include "camera/Camera.hpp"
 #include "render/OffscreenFramebuffer.hpp"
@@ -43,9 +43,9 @@ void fill_push_constants(
  * 永不裁剪,保证无空洞)、当前 LOD 层(或全量点云)、已驻留的全分辨率
  * tile 叠加；随后录制该视口的 GPU pick 请求和(可选的) pick 调试 dump。
  */
-void ViewerApp::record_viewport_passes(
+void ViewerViewportRenderSystem::record(
     VkCommandBuffer cmd,
-    const ViewerAppViewportDrawContext& ctx
+    const ViewerViewportDrawContext& ctx
 ) {
     bool pick_debug_dump_recorded_this_frame = false;
     for (const int viewport_index :
@@ -85,10 +85,7 @@ void ViewerApp::record_viewport_passes(
             }
         }
         const bool tile_will_render =
-            (config_.lod.interactive_display_mode !=
-                 gs3d::app::InteractiveDisplayMode::
-                     AllowCoarseLOD ||
-             !ctx.interacting) &&
+            (options_.render_tiles_while_interacting || !ctx.interacting) &&
             any_tile_resident;
         framebuffer.render(
             cmd,
@@ -171,7 +168,7 @@ void ViewerApp::record_viewport_passes(
         // --- LOD safety net: coarsest level, always drawn ---
         // spatial_clip=0 so it is never clipped
         // — guarantees no clear-colour holes.
-        if (config_.lod.enabled) {
+        if (options_.lod_enabled) {
             gs3d::render::PointPushConstants safety_push =
                 lod_push;
             safety_push.flags &= ~gs3d::render::PointFlags::kSpatialClip;
@@ -182,7 +179,7 @@ void ViewerApp::record_viewport_passes(
             );
         }
 
-        if (config_.lod.enabled) {
+        if (options_.lod_enabled) {
             ctx.point_pipeline.draw_per_tile(
                 c,
                 ctx.lod_gpu_cloud->gpu_cloud(ctx.lod_level_for_frame),
@@ -246,11 +243,11 @@ void ViewerApp::record_viewport_passes(
                 }
             }
             const bool should_dump_pick_debug =
-                config_.pick_debug.dump_enabled &&
+                options_.pick_debug_dump_enabled &&
                 pick_request.kind ==
                     GpuPickRequestKind::Hover &&
                 !pick_debug_dump_recorded_this_frame &&
-                (!config_.pick_debug.dump_once_on_hover ||
+                (!options_.pick_debug_dump_once_on_hover ||
                  !ctx.pick_debug_dump_completed ||
                  ctx.pending_hover_miss_dump[viewport_index]);
             if (should_dump_pick_debug) {
@@ -362,8 +359,7 @@ void ViewerApp::record_viewport_passes(
                         true;
                     ctx.pending_hover_miss_dump[viewport_index] =
                         false;
-                    if (config_
-                            .pick_debug.dump_once_on_hover) {
+                    if (options_.pick_debug_dump_once_on_hover) {
                         ctx.pick_debug_dump_completed = true;
                     }
                 }

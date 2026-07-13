@@ -266,9 +266,9 @@ const gs3d::camera::CameraBounds& ViewerRenderRuntime::bounds() const noexcept
     return bounds_;
 }
 
-const gs3d::ui::SvgLogoTexture& ViewerRenderRuntime::logo_texture() const noexcept
+VkDescriptorSet ViewerRenderRuntime::logo_descriptor() const noexcept
 {
-    return *logo_texture_;
+    return logo_texture_->descriptor();
 }
 
 gs3d::render::PointCloudGpu* ViewerRenderRuntime::full_gpu_cloud() noexcept
