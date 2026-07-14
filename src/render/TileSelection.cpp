@@ -173,13 +173,9 @@ TileSelectionResult TileSelection::update(
         }
     );
 
-    // Keep the highest-priority full-resolution tiles within the explicit
-    // active-set cap. The renderer leaves LOD unclipped when this trims the
-    // candidate set, so non-selected areas remain covered instead of holes.
-    if (config_.max_visible_tiles > 0 &&
-        candidates.size() > config_.max_visible_tiles) {
-        candidates.resize(config_.max_visible_tiles);
-    }
+    // Every tile that intersects the current view is part of the active
+    // selection. A hard cap produces block artifacts in the detail layer;
+    // ordering remains useful for incremental streaming priority.
 
     float sel_min_x = std::numeric_limits<float>::max();
     float sel_min_y = std::numeric_limits<float>::max();

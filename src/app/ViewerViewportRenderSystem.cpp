@@ -125,17 +125,12 @@ void ViewerViewportRenderSystem::record(
          * During incremental upload the clip stays off
          * (LOD + tiles may overdraw, but no holes).
          */
-        // Stage 3 uses the active full-resolution set; stages 1/2 use the
-        // full candidate set. If max_visible_tiles truncated the latter,
-        // the LOD base must remain unclipped outside the selected tiles.
+        // Stage 3 uses every visible full-resolution tile; stages 1/2 use the
+        // same complete candidate set.
         const auto& desired_for_clip =
             ctx.tile_stream.gpu_required_tile_ids.empty()
                 ? ctx.tile_result.tile_ids
                 : ctx.tile_stream.gpu_required_tile_ids;
-        const bool selected_set_covers_candidates =
-            selected_tiles_cover_candidates(
-                desired_for_clip.size(),
-                ctx.tile_result.total_candidate_tiles);
         bool all_desired_resident =
             !desired_for_clip.empty();
         if (all_desired_resident) {
@@ -148,7 +143,6 @@ void ViewerViewportRenderSystem::record(
             }
         }
         if (tile_will_render &&
-            selected_set_covers_candidates &&
             all_desired_resident &&
             ctx.tile_stream.viewport_tile_query_boxes[view_index]
                 .has_value()) {

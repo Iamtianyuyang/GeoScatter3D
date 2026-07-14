@@ -61,18 +61,6 @@ void test_empty_visible_candidates()
     expect(required.empty(), "empty candidates → empty result");
 }
 
-void test_lod_clip_requires_complete_candidate_coverage()
-{
-    expect(
-        gs3d::app::selected_tiles_cover_candidates(3, 3),
-        "complete selected set permits LOD spatial clipping"
-    );
-    expect(
-        !gs3d::app::selected_tiles_cover_candidates(2, 3),
-        "capped selected set keeps LOD coverage outside selected tiles"
-    );
-}
-
 // ── Order sensitivity ────────────────────────────────────────────────
 
 void test_reordering_changes_required_when_k_small()
@@ -547,7 +535,6 @@ void test_stale_entry_is_first_lru_eviction()
     LEGACY_TEST_CASE(test_visible_tiles_allow_unlimited_resident_budget)
     LEGACY_TEST_CASE(test_visible_tiles_preserve_all_candidates_below_budget)
     LEGACY_TEST_CASE(test_empty_visible_candidates)
-    LEGACY_TEST_CASE(test_lod_clip_requires_complete_candidate_coverage)
 
     // order sensitivity
     LEGACY_TEST_CASE(test_reordering_changes_required_when_k_small)

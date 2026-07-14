@@ -719,7 +719,7 @@ void AppConfigPrinter::print(const AppConfig& config) {
               << config.viewer.tile.min_pixel_size
               << '\n';
 
-    gs3d::util::log::info() << "[CONFIG] tile.max_visible_tiles = "
+    gs3d::util::log::info() << "[CONFIG] tile.max_visible_tiles (deprecated, ignored) = "
               << config.viewer.tile.max_visible_tiles
               << '\n';
 

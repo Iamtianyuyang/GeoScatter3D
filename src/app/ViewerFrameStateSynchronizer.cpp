@@ -59,7 +59,7 @@ void ViewerFrameStateSynchronizer::synchronize(
         settings.loaded_tiles = metrics.loaded_tiles;
         settings.pending_tiles = metrics.pending_tiles;
         settings.cache_usage = std::to_string(metrics.loaded_tiles) + " / " +
-            std::to_string(resident_tile_budget_) + " (budget)";
+            std::to_string(resident_tile_budget_) + " (soft budget)";
         settings.cpu_cache_usage = std::to_string(
             cache.resident_bytes / (1024ull * 1024ull)
         ) + " / " + std::to_string(

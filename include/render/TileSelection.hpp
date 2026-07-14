@@ -20,9 +20,8 @@ struct TileSelectionConfig {
      * 推荐范围：20–100。
      */
     float min_tile_pixel_size = 50.0f;
-    // Hard cap for the active full-resolution set (0 = unlimited). The LOD
-    // base remains visible outside a capped set, so this bounds resources
-    // without leaving viewport holes.
+    // Retained only for backwards-compatible configuration parsing. Visible
+    // tiles are never truncated: a hard cap produces obvious block artifacts.
     std::uint32_t max_visible_tiles = 0;
 
     /*

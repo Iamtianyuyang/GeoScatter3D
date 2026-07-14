@@ -533,8 +533,8 @@ void TileStreamingSystem::update(
             config.gpu_cache_max_tiles;
 
         // Keep the GPU eviction budget synchronised with the cache limit.
-        // A bounded active selection fits this budget by validation; only an
-        // explicit unlimited selection can pin more tiles than it.
+        // Current visible tiles are pinned by sync_from_cached_tiles, so the
+        // budget can be exceeded temporarily when the viewport needs it.
         if (resident_tile_budget != tiles.last_resident_tile_budget) {
             tiles.last_resident_tile_budget = resident_tile_budget;
             ctx.tile_gpu_cloud->set_resident_tile_budget(

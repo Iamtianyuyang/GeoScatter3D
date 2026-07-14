@@ -52,7 +52,7 @@ count = 1
 [tile]
 enabled = true
 min_tile_pixel_size = 8
-max_visible_tiles = 16
+max_visible_tiles = 0
 use_full_z_range = true
 verbose = false
 gpu_cache_max_tiles = 32

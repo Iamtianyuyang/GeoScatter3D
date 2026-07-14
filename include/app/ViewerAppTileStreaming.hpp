@@ -120,9 +120,9 @@ struct ViewerAppTileStreamState {
     gs3d::util::Stopwatch async_cycle_timer;
 
     /*
-     * Stage 3 active GPU working set: every sorted selected candidate from
-     * tile_result.tile_ids. Selection enforces max_visible_tiles; a nonzero
-     * tile_gpu_cache_max_tiles must cover that bounded active set.
+     * Stage 3 active GPU working set: every sorted visible candidate from
+     * tile_result.tile_ids. tile_gpu_cache_max_tiles is a soft resident
+     * budget: active tiles are pinned and may exceed it.
      * Empty in Stage 1 (preload) and Stage 2 (fast path).
      * Rebuilt when the tile selection changes or the budget limit changes.
      */
@@ -227,13 +227,13 @@ std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
 );
 
 /*
- * Build the Stage-3 GPU working set from sorted selected candidates.
+ * Build the Stage-3 GPU working set from sorted visible candidates.
  *
  *  sorted_candidates — tile IDs in priority order (projected_pixels DESC,
  *                       center_distance_sq ASC, tile_id ASC).
- *  resident_tile_budget — cache capacity. It does not truncate the selected
- *                         active set; max_visible_tiles is enforced earlier
- *                         by TileSelection.
+ *  resident_tile_budget — soft cache capacity target. It does not truncate
+ *                         the active viewport: visible tiles must all be
+ *                         resident.
  *
  * Returns every visible candidate in priority order.
  */
@@ -244,17 +244,6 @@ inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
 ) {
     (void)resident_tile_budget;
     return sorted_candidates;
-}
-
-// LOD can be spatially clipped only when selected full-resolution tiles cover
-// every raw candidate. A capped selection must retain the LOD base elsewhere.
-[[nodiscard]]
-inline bool selected_tiles_cover_candidates(
-    const std::size_t selected_tile_count,
-    const std::uint32_t total_candidate_tiles
-) noexcept {
-    return selected_tile_count == static_cast<std::size_t>(
-        total_candidate_tiles);
 }
 
 /*

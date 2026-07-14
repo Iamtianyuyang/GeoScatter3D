@@ -71,12 +71,6 @@ void validate_app_config(const AppConfig& config)
 
     require(is_positive_finite(config.viewer.tile.min_pixel_size),
             "tile.min_tile_pixel_size must be finite and positive");
-    require(!config.viewer.tile.enabled ||
-                config.viewer.tile.max_visible_tiles == 0 ||
-                config.viewer.tile.gpu_cache_max_tiles == 0 ||
-                config.viewer.tile.gpu_cache_max_tiles >=
-                    config.viewer.tile.max_visible_tiles,
-            "tile.gpu_cache_max_tiles must be zero (unlimited) or at least tile.max_visible_tiles");
     require(config.viewer.tile.gpu_upload_budget_bytes > 0,
             "tile.gpu_upload_budget_bytes must be positive");
     require(config.viewer.tile.cpu_cache_max_bytes > 0,
