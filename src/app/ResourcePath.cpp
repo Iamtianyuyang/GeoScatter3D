@@ -1,5 +1,10 @@
 #include "app/ResourcePath.hpp"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+#include <array>
 #include <sstream>
 #include <stdexcept>
 
@@ -74,6 +79,29 @@ std::filesystem::path ResourcePath::current_working_directory() {
     return normalize(std::filesystem::current_path());
 }
 
+std::filesystem::path ResourcePath::current_executable_path() {
+#if defined(_WIN32)
+    std::array<wchar_t, 32768> buffer{};
+    const auto length = GetModuleFileNameW(
+        nullptr,
+        buffer.data(),
+        static_cast<DWORD>(buffer.size())
+    );
+    if (length == 0 || length == buffer.size()) {
+        return {};
+    }
+    return normalize(
+        std::filesystem::path(std::wstring(buffer.data(), length))
+    );
+#elif defined(__linux__)
+    std::error_code ec;
+    const auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    return ec ? std::filesystem::path{} : normalize(path);
+#else
+    return {};
+#endif
+}
+
 std::filesystem::path ResourcePath::config_directory(
     const std::filesystem::path& config_path
 ) {
@@ -117,21 +145,7 @@ std::vector<std::filesystem::path> ResourcePath::search_roots(
 ) {
     std::vector<std::filesystem::path> roots;
 
-    const auto cwd = current_working_directory();
-    if (!cwd.empty()) {
-        roots.push_back(cwd);
-    }
-
     const auto config_dir = config_directory(context.config_path);
-    if (!config_dir.empty()) {
-        roots.push_back(config_dir);
-    }
-
-    const auto executable_dir = executable_directory(context.executable_path);
-    if (!executable_dir.empty()) {
-        roots.push_back(executable_dir);
-    }
-
     /*
      * 常见发布结构：
      *
@@ -149,6 +163,23 @@ std::vector<std::filesystem::path> ResourcePath::search_roots(
         roots.push_back(
             normalize(config_dir.parent_path())
         );
+    }
+
+    const auto executable_dir = executable_directory(context.executable_path);
+    if (!executable_dir.empty()) {
+        roots.push_back(executable_dir);
+    }
+
+    if (!config_dir.empty()) {
+        roots.push_back(config_dir);
+    }
+
+    // The working directory is only a compatibility fallback. Configured or
+    // packaged assets must win so launching from a development build tree
+    // cannot silently mix assets from a different checkout or release.
+    const auto cwd = current_working_directory();
+    if (!cwd.empty()) {
+        roots.push_back(cwd);
     }
 
     /*

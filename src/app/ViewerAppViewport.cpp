@@ -268,11 +268,6 @@ void compute_map_axis_overlay(
         {scr_w,    scr_h}       // bottom-right
     };
 
-    // ── diagnostic: map-axis update trace (rate-limited, off by default) ──
-    constexpr bool kMapAxisDiag = false;  // set true to enable
-    static int diag_frame_count = 0;
-    const bool diag_now = kMapAxisDiag && (++diag_frame_count % 30 == 0);
-
     float xs[4], ys[4];
     int valid = 0;
 
@@ -294,25 +289,6 @@ void compute_map_axis_overlay(
             ++valid;
         }
 
-        if (diag_now) {
-            std::fprintf(stderr,
-                "[MAPAXIS] frame=%d corner[%d] scr=(%.0f,%.0f) "
-                "ray_org=(%.2f,%.2f,%.2f) ray_dir=(%.4f,%.4f,%.4f) "
-                "hit_z0=%s hit_xyz=(%.2f,%.2f,%.2f)\n",
-                diag_frame_count, i,
-                static_cast<double>(corners[i][0]),
-                static_cast<double>(corners[i][1]),
-                static_cast<double>(ray.origin.x),
-                static_cast<double>(ray.origin.y),
-                static_cast<double>(ray.origin.z),
-                static_cast<double>(ray.direction.x),
-                static_cast<double>(ray.direction.y),
-                static_cast<double>(ray.direction.z),
-                hit ? "YES" : "NO",
-                hit ? static_cast<double>(hit->x) : 0.0,
-                hit ? static_cast<double>(hit->y) : 0.0,
-                hit ? static_cast<double>(hit->z) : 0.0);
-        }
     }
 
     if (valid == 0) {
@@ -357,30 +333,6 @@ void compute_map_axis_overlay(
     view.map_axis_origin_x = origin_x;
     view.map_axis_origin_y = origin_y;
 
-    if (diag_now) {
-        std::fprintf(stderr,
-            "[MAPAXIS] frame=%d vp=%d &cam=%p valid=%d fallback=%s "
-            "cam_target=(%.2f,%.2f,%.2f) cam_pos=(%.2f,%.2f,%.2f) "
-            "ortho_h=%.2f vp=%ux%u "
-            "axis_xy=[%.2f,%.2f]x[%.2f,%.2f]\n",
-            diag_frame_count,
-            view.viewport_index,
-            static_cast<const void*>(&camera),
-            valid,
-            (valid == 0) ? "YES" : "NO",
-            static_cast<double>(camera.target().x),
-            static_cast<double>(camera.target().y),
-            static_cast<double>(camera.target().z),
-            static_cast<double>(camera.position().x),
-            static_cast<double>(camera.position().y),
-            static_cast<double>(camera.position().z),
-            static_cast<double>(camera.ortho_height()),
-            vp.width, vp.height,
-            static_cast<double>(view.map_axis_x_min),
-            static_cast<double>(view.map_axis_x_max),
-            static_cast<double>(view.map_axis_y_min),
-            static_cast<double>(view.map_axis_y_max));
-    }
 }
 
 void ViewerApp::observe_viewport_resize_requests(

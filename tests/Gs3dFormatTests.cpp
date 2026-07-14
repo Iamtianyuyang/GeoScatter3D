@@ -8,26 +8,25 @@
 #include "data/Gs3dTileFormat.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
 
 namespace {
 
-int failures = 0;
-
 void expect(bool condition, std::string_view name)
 {
-    if (!condition) {
-        std::cerr << "[FAIL] " << name << '\n';
-        ++failures;
-    }
+    INFO(name);
+    CHECK(condition);
 }
 
 template <typename Function>
@@ -35,8 +34,8 @@ void expect_throws(Function&& function, std::string_view name)
 {
     try {
         function();
-        std::cerr << "[FAIL] " << name << " did not throw\n";
-        ++failures;
+        INFO(name);
+        FAIL_CHECK("expected std::runtime_error");
     } catch (const std::runtime_error&) {
     }
 }
@@ -73,15 +72,12 @@ void write_dataset(
 )
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out.write(
-        reinterpret_cast<const char*>(&header),
-        static_cast<std::streamsize>(sizeof(header))
-    );
-    if (point != nullptr) {
-        out.write(
-            reinterpret_cast<const char*>(point),
-            static_cast<std::streamsize>(sizeof(*point))
-        );
+    if (!gs3d::data::Gs3dFormat::write_header(out, header) ||
+        (point != nullptr && !gs3d::data::Gs3dFormat::write_points(
+            out,
+            std::span<const gs3d::data::Gs3dPoint>(point, 1)
+        ))) {
+        throw std::runtime_error("failed to write test GS3D dataset");
     }
 }
 
@@ -571,7 +567,7 @@ void test_tile_format_stride_for_unknown_version_throws()
     using gs3d::data::Gs3dTileFormat;
     expect_throws(
         [] {
-            Gs3dTileFormat::point_stride_for_version(99);
+            static_cast<void>(Gs3dTileFormat::point_stride_for_version(99));
         },
         "point_stride_for_version(99) throws"
     );
@@ -579,32 +575,29 @@ void test_tile_format_stride_for_unknown_version_throws()
 
 } // namespace
 
-int main()
-{
-    test_valid_dataset_round_trip();
-    test_truncated_dataset_is_rejected();
-    test_overflowing_header_is_rejected();
-    test_metadata_only_dataset();
-    test_chunk_plan_has_no_overlap_at_record_boundary();
-    test_dat_schema_maps_field_statics();
-    test_csv_and_dat_conversion_preserve_field_semantics_and_precision();
-    test_lod_ratios_empty_falls_back_to_explicit_counts();
-    test_lod_ratios_scale_with_source_point_count();
-    test_lod_ratios_same_ratios_give_different_counts_for_smaller_source();
-    test_lod_ratios_negative_ratio_clamped_to_zero();
-    test_lod_ratios_tiny_ratio_floors_to_one_point();
-    test_tile_format_v2_has_embedded_point_ids();
-    test_tile_format_v1_no_embedded_point_ids();
-    test_point_with_id_struct_size();
-    test_tile_format_v2_stride_is_20();
-    test_tile_format_v1_stride_is_16();
-    test_tile_format_accepts_both_strides();
-    test_tile_format_v1_and_v2_are_supported_versions();
-    test_tile_record_validates_both_strides();
-    test_tile_format_stride_for_unknown_version_throws();
+#define LEGACY_TEST_CASE(test_function) \
+    TEST_CASE(#test_function, "[data_format]") { test_function(); }
 
-    if (failures == 0) {
-        std::cout << "[PASS] GS3D format tests\n";
-    }
-    return failures == 0 ? 0 : 1;
-}
+    LEGACY_TEST_CASE(test_valid_dataset_round_trip)
+    LEGACY_TEST_CASE(test_truncated_dataset_is_rejected)
+    LEGACY_TEST_CASE(test_overflowing_header_is_rejected)
+    LEGACY_TEST_CASE(test_metadata_only_dataset)
+    LEGACY_TEST_CASE(test_chunk_plan_has_no_overlap_at_record_boundary)
+    LEGACY_TEST_CASE(test_dat_schema_maps_field_statics)
+    LEGACY_TEST_CASE(test_csv_and_dat_conversion_preserve_field_semantics_and_precision)
+    LEGACY_TEST_CASE(test_lod_ratios_empty_falls_back_to_explicit_counts)
+    LEGACY_TEST_CASE(test_lod_ratios_scale_with_source_point_count)
+    LEGACY_TEST_CASE(test_lod_ratios_same_ratios_give_different_counts_for_smaller_source)
+    LEGACY_TEST_CASE(test_lod_ratios_negative_ratio_clamped_to_zero)
+    LEGACY_TEST_CASE(test_lod_ratios_tiny_ratio_floors_to_one_point)
+    LEGACY_TEST_CASE(test_tile_format_v2_has_embedded_point_ids)
+    LEGACY_TEST_CASE(test_tile_format_v1_no_embedded_point_ids)
+    LEGACY_TEST_CASE(test_point_with_id_struct_size)
+    LEGACY_TEST_CASE(test_tile_format_v2_stride_is_20)
+    LEGACY_TEST_CASE(test_tile_format_v1_stride_is_16)
+    LEGACY_TEST_CASE(test_tile_format_accepts_both_strides)
+    LEGACY_TEST_CASE(test_tile_format_v1_and_v2_are_supported_versions)
+    LEGACY_TEST_CASE(test_tile_record_validates_both_strides)
+    LEGACY_TEST_CASE(test_tile_format_stride_for_unknown_version_throws)
+
+#undef LEGACY_TEST_CASE

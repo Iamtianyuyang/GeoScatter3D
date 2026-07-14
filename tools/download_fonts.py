@@ -14,6 +14,10 @@ FONT_SOURCES = [
         "NotoSansCJKsc-Regular.otf",
         "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
     ),
+    (
+        "NotoSansCJKsc-Bold.otf",
+        "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
+    ),
 ]
 
 

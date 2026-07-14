@@ -1,4 +1,5 @@
 #include "preprocess/Gs3dWriter.hpp"
+#include "util/Log.hpp"
 
 #include "data/CsvChunkPlanner.hpp"
 #include "data/CsvChunkReader.hpp"
@@ -65,7 +66,7 @@ Gs3dWriteResult Gs3dWriter::write(
         return write_sequential(csv_path, output_path, statistics);
     }
 
-    std::cout << "[CSV] parallel write: chunks="
+    gs3d::util::log::info() << "[CSV] parallel write: chunks="
               << chunks.size()
               << ", threads="
               << worker_count
@@ -88,12 +89,7 @@ Gs3dWriteResult Gs3dWriter::write_sequential(
 
     const auto header = build_header(statistics);
 
-    out.write(
-        reinterpret_cast<const char*>(&header),
-        static_cast<std::streamsize>(sizeof(gs3d::data::Gs3dHeader))
-    );
-
-    if (!out.good()) {
+    if (!gs3d::data::Gs3dFormat::write_header(out, header)) {
         throw std::runtime_error("Gs3dWriter: failed to write GS3D header");
     }
 
@@ -113,13 +109,10 @@ Gs3dWriteResult Gs3dWriter::write_sequential(
             write_buf.push_back(make_point(record, statistics));
 
             if (write_buf.size() >= kWriteBufferSize) {
-                out.write(
-                    reinterpret_cast<const char*>(write_buf.data()),
-                    static_cast<std::streamsize>(
-                        write_buf.size() * sizeof(gs3d::data::Gs3dPoint)
-                    )
-                );
-                if (!out.good()) {
+                if (!gs3d::data::Gs3dFormat::write_points(
+                        out,
+                        write_buf
+                    )) {
                     throw std::runtime_error(
                         "Gs3dWriter: failed to write GS3D points"
                     );
@@ -132,13 +125,7 @@ Gs3dWriteResult Gs3dWriter::write_sequential(
 
     // Flush remaining points
     if (!write_buf.empty()) {
-        out.write(
-            reinterpret_cast<const char*>(write_buf.data()),
-            static_cast<std::streamsize>(
-                write_buf.size() * sizeof(gs3d::data::Gs3dPoint)
-            )
-        );
-        if (!out.good()) {
+        if (!gs3d::data::Gs3dFormat::write_points(out, write_buf)) {
             throw std::runtime_error(
                 "Gs3dWriter: failed to write GS3D points"
             );
@@ -189,12 +176,7 @@ Gs3dWriteResult Gs3dWriter::write_parallel(
     }
 
     const auto header = build_header(statistics);
-    out.write(
-        reinterpret_cast<const char*>(&header),
-        static_cast<std::streamsize>(sizeof(gs3d::data::Gs3dHeader))
-    );
-
-    if (!out.good()) {
+    if (!gs3d::data::Gs3dFormat::write_header(out, header)) {
         throw std::runtime_error("Gs3dWriter: failed to write GS3D header");
     }
 
@@ -229,15 +211,10 @@ Gs3dWriteResult Gs3dWriter::write_parallel(
 
     for (const auto& chunk_result : chunk_results) {
         if (!chunk_result.points.empty()) {
-            out.write(
-                reinterpret_cast<const char*>(chunk_result.points.data()),
-                static_cast<std::streamsize>(
-                    chunk_result.points.size() *
-                    sizeof(gs3d::data::Gs3dPoint)
-                )
-            );
-
-            if (!out.good()) {
+            if (!gs3d::data::Gs3dFormat::write_points(
+                    out,
+                    chunk_result.points
+                )) {
                 throw std::runtime_error(
                     "Gs3dWriter: failed to write GS3D point chunk"
                 );
@@ -271,7 +248,7 @@ gs3d::data::Gs3dHeader Gs3dWriter::build_header(
     auto header = gs3d::data::Gs3dFormat::create_empty_header();
 
     header.point_count = statistics.point_count;
-    header.point_data_offset = sizeof(gs3d::data::Gs3dHeader);
+    header.point_data_offset = gs3d::data::GS3D_HEADER_V2_SIZE;
 
     header.origin_x = statistics.origin_x;
     header.origin_y = statistics.origin_y;

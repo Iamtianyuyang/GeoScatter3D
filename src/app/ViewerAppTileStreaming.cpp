@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppTileStreaming.hpp"
 
 #include "app/ViewerAppInternal.hpp"
@@ -170,22 +171,22 @@ void log_tile_upload(
         return;
     }
 
-    std::cout << "[TILE] upload complete (all desired tiles resident).\n";
-    std::cout << "tile_count = "
+    gs3d::util::log::info() << "[TILE] upload complete (all desired tiles resident).\n";
+    gs3d::util::log::info() << "tile_count = "
               << stats.tile_count << '\n';
-    std::cout << "point_count = "
+    gs3d::util::log::info() << "point_count = "
               << stats.point_count << '\n';
-    std::cout << "gpu_buffer_bytes = "
+    gs3d::util::log::info() << "gpu_buffer_bytes = "
               << stats.gpu_buffer_bytes << '\n';
-    std::cout << "resident_tile_count = "
+    gs3d::util::log::info() << "resident_tile_count = "
               << stats.resident_tile_count << '\n';
-    std::cout << "uploaded_tile_count = "
+    gs3d::util::log::info() << "uploaded_tile_count = "
               << sync.uploaded_tile_count << '\n';
-    std::cout << "uploaded_point_count = "
+    gs3d::util::log::info() << "uploaded_point_count = "
               << sync.uploaded_point_count << '\n';
-    std::cout << "uploaded_bytes = "
+    gs3d::util::log::info() << "uploaded_bytes = "
               << sync.uploaded_bytes << '\n';
-    std::cout << "[TIME] tile.async_total_seconds = "
+    gs3d::util::log::info() << "[TIME] tile.async_total_seconds = "
               << total_seconds << '\n';
 }
 
@@ -239,17 +240,48 @@ std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
     return views;
 }
 
+TileStreamingSystem::TileStreamingSystem(
+    const ViewerTileConfig& config,
+    bool benchmark_enabled,
+    const std::optional<gs3d::data::Gs3dTileReader>& tile_reader
+)
+    : state_(config.cpu_cache_max_bytes)
+{
+    state_.preload_enabled =
+        config.enabled &&
+        config.preload_all &&
+        !benchmark_enabled &&
+        tile_reader.has_value() &&
+        !tile_reader->records().empty() &&
+        tile_reader->stats().total_point_bytes <=
+            config.preload_max_bytes;
+}
+
+ViewerAppTileStreamState& TileStreamingSystem::state() noexcept
+{
+    return state_;
+}
+
+const ViewerAppTileStreamState& TileStreamingSystem::state() const noexcept
+{
+    return state_;
+}
+
 // gui_cmds.clear_cache_requested: cancel a still-running preload first so
 // clear() isn't immediately defeated by the background thread re-inserting
-// tiles, then drop the CPU cache.
-void ViewerApp::clear_tile_cpu_cache(ViewerAppTileStreamState& tiles) {
+// tiles, then release both CPU and GPU tile caches.
+void TileStreamingSystem::clear_cache(
+    gs3d::render::VulkanRenderer& renderer,
+    gs3d::render::PointCloudTileGpu* tile_gpu_cloud
+) {
+    auto& tiles = state_;
     if (tiles.preload_enabled && !tiles.tiles_fully_resident &&
         !tiles.preload_failed) {
         tiles.preload_failed = true;
         if (tiles.preload_future.valid()) {
             tiles.preload_future.wait();
         }
-        std::cout << "[TILE] preload cancelled for cache clear.\n";
+        gs3d::util::log::info() << "[TILE] preload cancelled for cache clear.\n";
     }
     // A running Stage-3 read cannot be cancelled safely. Drain and discard it
     // before clearing so its late result cannot immediately refill the cache.
@@ -258,7 +290,7 @@ void ViewerApp::clear_tile_cpu_cache(ViewerAppTileStreamState& tiles) {
         try {
             (void)tiles.load_future.get();
         } catch (const std::exception& e) {
-            std::cerr
+            gs3d::util::log::error()
                 << "[TILE] pending load discarded after error: "
                 << e.what() << '\n';
         }
@@ -269,7 +301,11 @@ void ViewerApp::clear_tile_cpu_cache(ViewerAppTileStreamState& tiles) {
     tiles.cache_requested_tile_ids.clear();
     tiles.completed_gpu_required_revision.reset();
     tiles.point_cache.clear();
-    std::cout << "[TILE] CPU cache cleared.\n";
+    if (tile_gpu_cloud != nullptr) {
+        renderer.wait_for_in_flight_fences();
+        tile_gpu_cloud->clear();
+    }
+    gs3d::util::log::info() << "[TILE] tile caches cleared.\n";
 }
 
 /*
@@ -282,10 +318,12 @@ void ViewerApp::clear_tile_cpu_cache(ViewerAppTileStreamState& tiles) {
  *   3. 按需流式(预加载未启用或失败时):停手后去抖选择、异步磁盘读、
  *      逐帧预算上传、增量更新可见集。
  */
-void ViewerApp::update_tile_streaming(
-    ViewerAppTileStreamState& tiles,
-    const ViewerAppTileStreamFrameContext& ctx
+void TileStreamingSystem::update(
+    const ViewerAppTileStreamFrameContext& ctx,
+    const ViewerTileConfig& config,
+    bool benchmark_enabled
 ) {
+    auto& tiles = state_;
     const auto flush_lod_tile_stage = [&ctx]() {
         ctx.lod_tile_select_ms_frame +=
             ctx.lod_tile_timer.elapsed_milliseconds();
@@ -343,7 +381,7 @@ void ViewerApp::update_tile_streaming(
                     ctx.runtime_points_valid_by_id
                 );
             } catch (const std::exception& e) {
-                std::cerr
+                gs3d::util::log::error()
                     << "[TILE] preload failed: " << e.what()
                     << " — falling back to streaming mode.\n";
                 tiles.preload_failed = true;
@@ -361,10 +399,10 @@ void ViewerApp::update_tile_streaming(
                     ctx.context.graphics_queue(),
                     preload_views,
                     {},  // preload: no bounded working set
-                    config_.tile_preload_upload_budget_bytes
+                    config.preload_upload_budget_bytes
                 );
-            if (config_.tile_verbose && sync.uploaded_bytes > 0) {
-                std::cout
+            if (config.verbose && sync.uploaded_bytes > 0) {
+                gs3d::util::log::info()
                     << "[TILE] preload upload: bytes="
                     << sync.uploaded_bytes
                     << ", resident="
@@ -377,7 +415,7 @@ void ViewerApp::update_tile_streaming(
             if (sync.complete) {
                 tiles.tiles_fully_resident = true;
                 ctx.tile_selection_dirty = true;
-                std::cout
+                gs3d::util::log::info()
                     << "[TILE] preload complete: "
                     << sync.resident_tile_count
                     << " tiles resident on GPU ("
@@ -388,12 +426,12 @@ void ViewerApp::update_tile_streaming(
             } else if (sync.uploaded_bytes == 0) {
                 ++tiles.preload_stall_frames;
                 if (tiles.preload_stall_frames >= 3) {
-                    std::cerr
+                    gs3d::util::log::error()
                         << "[TILE] preload stalled ("
                         << sync.resident_tile_count << "/"
                         << tiles.preload_tiles.size()
                         << " tiles uploaded, budget="
-                        << config_.tile_preload_upload_budget_bytes
+                        << config.preload_upload_budget_bytes
                         << " bytes/frame)"
                         << " — falling back to streaming.\n";
                     tiles.preload_failed = true;
@@ -439,7 +477,7 @@ void ViewerApp::update_tile_streaming(
     }
 
     // ── 阶段 3:按需流式 ──────────────────────────────────────────
-    if (!config_.tile_enabled ||
+    if (!config.enabled ||
         ctx.tile_reader == nullptr ||
         !ctx.tile_gpu_cloud ||
         (tiles.preload_enabled && !tiles.preload_failed)) {
@@ -481,8 +519,9 @@ void ViewerApp::update_tile_streaming(
     }
 
     /*
-     * (Re)build the Stage 3 bounded GPU working set from sorted
-     * candidates.  K = tile_gpu_cache_max_tiles (0 = unlimited).
+     * (Re)build the Stage 3 GPU working set from sorted visible candidates.
+     * Every visible tile is required. tile_gpu_cache_max_tiles remains a
+     * residency budget for tiles outside the active viewport.
      *
      * The working set is recomputed every frame so that priority-order
      * changes (which TileSelection::same_tile_ids ignores — it uses a
@@ -490,24 +529,23 @@ void ViewerApp::update_tile_streaming(
      * without special-case flags.
      */
     {
-        const auto working_set_limit =
-            config_.tile_gpu_cache_max_tiles;
+        const auto resident_tile_budget =
+            config.gpu_cache_max_tiles;
 
-        // Keep the GPU eviction budget synchronised with the
-        // working-set limit so that shrinking K also shrinks the
-        // resident set (via evict_to_budget inside the next
-        // sync_from_cached_tiles call).
-        if (working_set_limit != tiles.last_working_set_limit) {
-            tiles.last_working_set_limit = working_set_limit;
+        // Keep the GPU eviction budget synchronised with the cache limit.
+        // Current visible tiles are pinned by sync_from_cached_tiles, so the
+        // budget can be exceeded temporarily when the viewport needs it.
+        if (resident_tile_budget != tiles.last_resident_tile_budget) {
+            tiles.last_resident_tile_budget = resident_tile_budget;
             ctx.tile_gpu_cloud->set_resident_tile_budget(
-                working_set_limit);
+                resident_tile_budget);
         }
 
         if (ctx.tile_result.enabled &&
             !ctx.tile_result.tile_ids.empty()) {
             auto next_required = build_gpu_required_tile_ids(
                 ctx.tile_result.tile_ids,
-                working_set_limit);
+                resident_tile_budget);
 
             if (next_required != tiles.gpu_required_tile_ids) {
                 tiles.gpu_required_tile_ids =
@@ -546,8 +584,8 @@ void ViewerApp::update_tile_streaming(
         tiles.loading_ids.clear();
         // Accepted tiles are now in CPU cache; the per-frame
         // upload loop below picks them up incrementally.
-        if (config_.tile_verbose) {
-            std::cout
+        if (config.verbose) {
+            gs3d::util::log::info()
                 << "[TILE] async load completed: "
                 << "requested=" << loaded.loaded_tiles.size()
                 << ", accepted=" << commit_stats.accepted
@@ -621,7 +659,7 @@ void ViewerApp::update_tile_streaming(
                     ctx.context.graphics_queue(),
                     upload_views,
                     tiles.gpu_required_tile_ids,
-                    config_.tile_gpu_upload_budget_bytes
+                    config.gpu_upload_budget_bytes
                 );
             ctx.upload_record_ms_frame +=
                 upload_timer.elapsed_milliseconds();
@@ -638,9 +676,9 @@ void ViewerApp::update_tile_streaming(
                 tiles.pending_load_ids.empty() &&
                 !tiles.load_future.valid();
 
-            if (config_.tile_verbose &&
+            if (config.verbose &&
                 sync.uploaded_bytes > 0) {
-                std::cout
+                gs3d::util::log::info()
                     << "[TILE] upload slice: bytes="
                     << sync.uploaded_bytes
                     << ", resident="
@@ -658,15 +696,20 @@ void ViewerApp::update_tile_streaming(
                 const double reload_total_seconds =
                     tiles.async_cycle_timer.elapsed_seconds();
                 log_tile_upload(
-                    config_.tile_verbose,
+                    config.verbose,
                     ctx.tile_gpu_cloud->stats(),
                     sync,
                     reload_total_seconds
                 );
-                if (config_.benchmark_mode) {
-                    ctx.reload_seconds.push_back(
-                        reload_total_seconds
-                    );
+                if (benchmark_enabled) {
+                    ctx.reload_samples.push_back({
+                        .seconds = reload_total_seconds,
+                        .selected_tile_count = ctx.tile_result.tile_ids.size(),
+                        .required_tile_count =
+                            tiles.gpu_required_tile_ids.size(),
+                        .resident_tile_count = static_cast<std::size_t>(
+                            sync.resident_tile_count)
+                    });
                 }
                 tiles.completed_gpu_required_revision =
                     tiles.gpu_required_revision;
@@ -756,8 +799,8 @@ void ViewerApp::update_tile_streaming(
             }
 
             if (tiles.pending_load_ids.empty() &&
-                config_.tile_verbose) {
-                std::cout
+                config.verbose) {
+                gs3d::util::log::info()
                     << "[TILE] no disk reads needed for "
                     << tiles.debounced_tile_ids.size()
                     << " desired tiles (CPU-cached or GPU-resident)"
@@ -831,8 +874,8 @@ void ViewerApp::update_tile_streaming(
                     return loaded;
                 });
 
-            if (config_.tile_verbose) {
-                std::cout
+            if (config.verbose) {
+                gs3d::util::log::info()
                     << "[TILE] async load dispatched: batch="
                     << tiles.loading_ids.size()
                     << ", remaining="

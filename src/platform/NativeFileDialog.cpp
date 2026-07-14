@@ -72,7 +72,8 @@ NativeFileDialogResult choose_windows_raw_file()
 {
     wchar_t path_buffer[32768]{};
     static constexpr wchar_t kFilter[] =
-        L"散点数据 (*.csv;*.dat)\0*.csv;*.dat\0"
+        L"散点数据 (*.csv;*.dat;*.gs3d)\0*.csv;*.dat;*.gs3d\0"
+        L"GS3D 文件 (*.gs3d)\0*.gs3d\0"
         L"CSV 文件 (*.csv)\0*.csv\0"
         L"DAT 文件 (*.dat)\0*.dat\0"
         L"所有文件 (*.*)\0*.*\0\0";
@@ -83,7 +84,7 @@ NativeFileDialogResult choose_windows_raw_file()
     dialog.nMaxFile = static_cast<DWORD>(std::size(path_buffer));
     dialog.lpstrFilter = kFilter;
     dialog.nFilterIndex = 1;
-    dialog.lpstrTitle = L"加载原始数据";
+    dialog.lpstrTitle = L"打开散点数据";
     dialog.Flags =
         OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
         OFN_NOCHANGEDIR | OFN_EXPLORER;
@@ -236,21 +237,21 @@ NativeFileDialogResult choose_raw_data_file()
 #elif defined(__APPLE__)
     return run_dialog_command(
         "osascript -e 'POSIX path of (choose file with prompt "
-        "\"加载 DAT / CSV 原始数据\")' 2>/dev/null"
+        "\"打开 CSV / DAT / GS3D 数据\")' 2>/dev/null"
     );
 #else
     if (command_available("zenity")) {
         return run_dialog_command(
-            "zenity --file-selection --title='加载原始数据' "
-            "--file-filter='散点数据 | *.csv *.CSV *.dat *.DAT' "
+            "zenity --file-selection --title='打开散点数据' "
+            "--file-filter='散点数据 | *.csv *.CSV *.dat *.DAT *.gs3d *.GS3D' "
             "--file-filter='所有文件 | *' 2>/dev/null"
         );
     }
     if (command_available("kdialog")) {
         return run_dialog_command(
             "kdialog --getopenfilename . "
-            "'散点数据 (*.csv *.CSV *.dat *.DAT)' "
-            "--title '加载原始数据' 2>/dev/null"
+            "'散点数据 (*.csv *.CSV *.dat *.DAT *.gs3d *.GS3D)' "
+            "--title '打开散点数据' 2>/dev/null"
         );
     }
     return {

@@ -13,7 +13,6 @@
 
 #include <GLFW/glfw3.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <vector>
@@ -246,18 +245,7 @@ ImFontConfig make_font_config(float size_pixels)
 std::vector<std::filesystem::path> bundled_font_candidates()
 {
     return {
-        "assets/fonts/SourceHanSansSC-Regular.otf",
-        "assets/fonts/NotoSansSC-Regular.otf",
-        "assets/fonts/NotoSansCJKsc-Regular.otf",
-        "../assets/fonts/SourceHanSansSC-Regular.otf",
-        "../assets/fonts/NotoSansSC-Regular.otf",
-        "../assets/fonts/NotoSansCJKsc-Regular.otf",
-        "../../assets/fonts/SourceHanSansSC-Regular.otf",
-        "../../assets/fonts/NotoSansSC-Regular.otf",
-        "../../assets/fonts/NotoSansCJKsc-Regular.otf",
-        "resources/fonts/SourceHanSansSC-Regular.otf",
-        "resources/fonts/NotoSansSC-Regular.otf",
-        "resources/fonts/NotoSansCJKsc-Regular.otf"
+        "assets/fonts/NotoSansCJKsc-Regular.otf"
     };
 }
 
@@ -326,6 +314,8 @@ std::filesystem::path resolve_bundled_font_path(
 {
     gs3d::app::ResourcePathContext context;
     context.config_path = ini_path;
+    context.executable_path =
+        gs3d::app::ResourcePath::current_executable_path();
 
     for (const auto& candidate : bundled_font_candidates()) {
         const auto resolved =
@@ -384,45 +374,27 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     if (!selected_font_path.empty()) {
         const std::string font_path = selected_font_path.string();
         fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize * ui_scale, glyph_ranges);
-        const auto medium_path = resolve_font_weight(
-            selected_font_path,
-            {
-                "SourceHanSansSC-Medium.otf",
-                "NotoSansCJKsc-Medium.otf",
-                "NotoSansSC-Medium.otf"
-            }
-        );
         const auto bold_path = resolve_font_weight(
             selected_font_path,
             {
-                "SourceHanSansSC-Bold.otf",
-                "NotoSansCJKsc-Bold.otf",
-                "NotoSansSC-Bold.otf"
+                "NotoSansCJKsc-Bold.otf"
             }
         );
-        if (!medium_path.empty()) {
-            const auto path = medium_path.string();
+        if (!bold_path.empty()) {
+            const auto path = bold_path.string();
             fonts.medium = load_font(
                 io,
                 path.c_str(),
                 kRegularFontSize * ui_scale,
                 glyph_ranges
             );
-        }
-        if (!bold_path.empty()) {
-            const auto path = bold_path.string();
-            fonts.bold = load_font(
-                io,
-                path.c_str(),
-                kRegularFontSize * ui_scale,
-                glyph_ranges
-            );
+            fonts.bold = fonts.medium;
         }
         fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
-        // Panel titles use medium weight for visual hierarchy.
-        if (!medium_path.empty()) {
+        // The bundled set intentionally contains only regular and bold.
+        if (!bold_path.empty()) {
             fonts.panel_title = load_font(
-                io, medium_path.string().c_str(),
+                io, bold_path.string().c_str(),
                 kPanelTitleFontSize * ui_scale, glyph_ranges);
         } else {
             fonts.panel_title = load_font(
@@ -506,6 +478,12 @@ void ImGuiLayer::init(
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     if (enable_multi_viewports) {
         io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        // Keep detached ImGui windows and their fonts scaled consistently
+        // when they move between monitors with different DPI settings.
+        io.ConfigDpiScaleViewports = true;
+#if defined(_WIN32)
+        io.ConfigDpiScaleFonts = true;
+#endif
         // Use native OS decorations for detached viewports so moving a
         // torn-out window does not depend on ImGui's self-drawn title-bar
         // hit testing.
@@ -538,6 +516,16 @@ void ImGuiLayer::init(
         ppi_ui_scale * ui_scale_multiplier);
     const float ui_scale = final_ui_scale;
 
+#if defined(_WIN32)
+    float initial_platform_dpi_scale = 1.0f;
+    if (enable_multi_viewports) {
+        glfwGetWindowContentScale(window, &initial_platform_dpi_scale, nullptr);
+        if (initial_platform_dpi_scale <= 0.0f) {
+            initial_platform_dpi_scale = 1.0f;
+        }
+    }
+#endif
+
     // Set a minimum window size proportional to ui_scale so the UI can't be
     // shrunk below a usable layout. Computed from the actual space budget:
     //   min_w = left_min(180) + center_min(scales with font for viewport
@@ -568,10 +556,20 @@ void ImGuiLayer::init(
     style.ScrollbarSize = 11.0f * ui_scale;
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
-    // 主题（颜色 + 圆角）统一由 Theme 模块落地：重写 ImGuiStyle 颜色表、
-    // palette:: 语义色，并做 sRGB→linear 预转换（交换链是 B8G8R8A8_SRGB）。
+    // 主题（颜色 + 圆角）统一由 Theme 模块落地：重写 ImGuiStyle 颜色表与
+    // palette:: 语义色；当前 UNORM 交换链直接使用主题定义的显示色。
     // 启动主题来自 viewer.toml，运行期可经 视图→主题 菜单随时切换。
     gs3d::ui::apply_theme(gs3d::ui::active_theme(), ui_scale);
+
+#if defined(_WIN32)
+    if (enable_multi_viewports) {
+        // ConfigDpiScaleFonts uses the monitor's raw Windows DPI scale. The
+        // base font atlas already includes our PPI-derived scale, so normalize
+        // the startup monitor here and let later monitor changes apply only
+        // their relative DPI ratio.
+        style.FontScaleMain = 1.0f / initial_platform_dpi_scale;
+    }
+#endif
 
     if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
         ImGui::DestroyContext();
@@ -634,64 +632,6 @@ void ImGuiLayer::init(
         throw std::runtime_error("ImGuiLayer: failed to init ImGui Vulkan backend");
     }
 
-    // Gather diagnostics. Note: io.DisplayFramebufferScale is the ImGui
-    // default (1,1) here because the GLFW backend only updates it during
-    // ImGui_ImplGlfw_NewFrame(); we also compute the live framebuffer/window
-    // ratio so the real (upcoming) value is visible at startup.
-    const MonitorInfo monitor_info = get_window_monitor_info(window);
-    int win_w = 0;
-    int win_h = 0;
-    int fb_w = 0;
-    int fb_h = 0;
-    glfwGetWindowSize(window, &win_w, &win_h);
-    glfwGetFramebufferSize(window, &fb_w, &fb_h);
-    float glfw_content_scale = 1.0f;
-    glfwGetWindowContentScale(window, &glfw_content_scale, nullptr);
-    if (glfw_content_scale <= 0.0f) {
-        glfw_content_scale = 1.0f;
-    }
-    const float fb_ratio_x = (win_w > 0) ? static_cast<float>(fb_w) / static_cast<float>(win_w) : 1.0f;
-    const float fb_ratio_y = (win_h > 0) ? static_cast<float>(fb_h) / static_cast<float>(win_h) : 1.0f;
-    const float baseline_ppi = compute_baseline_ppi();
-
-    std::fprintf(stderr,
-        "[UI] monitor_res=%dx%d  monitor_physical=%dx%dmm  "
-        "diagonal=%.2fin  ppi=%.1f  base_ppi=%.1f  fallback=%s  "
-        "window=%dx%d  framebuffer=%dx%d  glfw_content_scale=%.2f  "
-        "ppi_ui_scale=%.3f  user_multiplier=%.2f  "
-        "final_ui_scale=%.3f (clamp %.2f..%.2f)  "
-        "regular=%.1f small=%.1f panel=%.1f axis=%.1f status=%.1f  "
-        "overlay_scale=font_derived  "
-        "oversample=1/1  glyph_range=ChineseSimplifiedCommon  "
-        "DisplayFramebufferScale=io(%.2f,%.2f) live_ratio(%.2f,%.2f)  "
-        "build_called=false  descriptor_pool_size=%u  "
-        "min_window=%dx%d\n",
-        monitor_info.resolution.width, monitor_info.resolution.height,
-        monitor_info.physical_mm.width_mm, monitor_info.physical_mm.height_mm,
-        static_cast<double>(scale_result.diagonal_inches),
-        static_cast<double>(scale_result.ppi),
-        static_cast<double>(baseline_ppi),
-        scale_result.fallback_used ? "yes(res-height)" : "no",
-        win_w, win_h,
-        fb_w, fb_h,
-        static_cast<double>(glfw_content_scale),
-        static_cast<double>(ppi_ui_scale),
-        static_cast<double>(ui_scale_multiplier),
-        static_cast<double>(final_ui_scale),
-        static_cast<double>(kMinUiScale),
-        static_cast<double>(kMaxUiScale),
-        static_cast<double>(kRegularFontSize * final_ui_scale),
-        static_cast<double>(kSmallFontSize * final_ui_scale),
-        static_cast<double>(kPanelTitleFontSize * final_ui_scale),
-        static_cast<double>(kAxisFontSize * final_ui_scale),
-        static_cast<double>(kStatusFontSize * final_ui_scale),
-        static_cast<double>(io.DisplayFramebufferScale.x),
-        static_cast<double>(io.DisplayFramebufferScale.y),
-        static_cast<double>(fb_ratio_x),
-        static_cast<double>(fb_ratio_y),
-        init_info.DescriptorPoolSize,
-        min_win_w, min_win_h);
-
     initialized_ = true;
 }
 
@@ -723,22 +663,6 @@ void ImGuiLayer::begin_frame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    // TODO(debug): 临时诊断多视口点击路由，定位副窗口输入失效
-    {
-        ImGuiContext& g = *ImGui::GetCurrentContext();
-        if (g.IO.MouseClicked[0] || g.IO.MouseReleased[0]) {
-            std::fprintf(stderr,
-                "[VPDBG] %s pos=(%.0f,%.0f) hovered_vp=%08X mouse_vp=%08X "
-                "hovered_win=%s moving_win=%s nav_win=%s\n",
-                g.IO.MouseClicked[0] ? "CLICK" : "RELEASE",
-                g.IO.MousePos.x, g.IO.MousePos.y,
-                g.IO.MouseHoveredViewport,
-                g.MouseViewport ? g.MouseViewport->ID : 0,
-                g.HoveredWindow ? g.HoveredWindow->Name : "<none>",
-                g.MovingWindow ? g.MovingWindow->Name : "<none>",
-                g.NavWindow ? g.NavWindow->Name : "<none>");
-        }
-    }
     frame_open_ = true;
 }
 

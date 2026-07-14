@@ -20,6 +20,8 @@ struct TileSelectionConfig {
      * 推荐范围：20–100。
      */
     float min_tile_pixel_size = 50.0f;
+    // Retained only for backwards-compatible configuration parsing. Visible
+    // tiles are never truncated: a hard cap produces obvious block artifacts.
     std::uint32_t max_visible_tiles = 0;
 
     /*

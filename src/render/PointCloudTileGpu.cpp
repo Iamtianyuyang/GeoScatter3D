@@ -139,9 +139,9 @@ PointCloudTileGpu::stats() const noexcept {
 }
 
 void PointCloudTileGpu::set_resident_tile_budget(
-    std::uint32_t max_tiles
+    std::uint32_t soft_max_tiles
 ) noexcept {
-    resident_tile_budget_ = max_tiles;
+    resident_tile_budget_ = soft_max_tiles;
 }
 
 PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(

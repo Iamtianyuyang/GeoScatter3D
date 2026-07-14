@@ -1,5 +1,7 @@
 #include "render/VulkanGpuInfo.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -7,14 +9,10 @@
 
 namespace {
 
-int failures = 0;
-
 void expect(bool condition, std::string_view name)
 {
-    if (!condition) {
-        std::cerr << "[FAIL] " << name << '\n';
-        ++failures;
-    }
+    INFO(name);
+    CHECK(condition);
 }
 
 // ── UUID conversion ──────────────────────────────────────────────────
@@ -273,26 +271,21 @@ void test_select_gpu_tiebreak_by_memory()
 
 } // namespace
 
-int main()
-{
-    test_uuid_round_trip();
-    test_uuid_from_hex_invalid_length();
-    test_uuid_from_hex_invalid_chars();
-    test_uuid_normalisation();
-    test_gpu_type_label();
-    test_select_gpu_auto_prefers_discrete();
-    test_select_gpu_by_uuid();
-    test_select_gpu_uuid_not_found_fallback();
-    test_select_gpu_unsuitable_fallback();
-    test_select_gpu_auto_finds_only_suitable();
-    test_select_gpu_no_suitable_returns_empty();
-    test_select_gpu_invalid_format_fallback();
-    test_select_gpu_tiebreak_by_memory();
+#define LEGACY_TEST_CASE(test_function) \
+    TEST_CASE(#test_function, "[gpu_info]") { test_function(); }
 
-    if (failures) {
-        std::cerr << failures << " test(s) FAILED.\n";
-        return 1;
-    }
-    std::cout << "All VulkanGpuInfo tests passed.\n";
-    return 0;
-}
+    LEGACY_TEST_CASE(test_uuid_round_trip)
+    LEGACY_TEST_CASE(test_uuid_from_hex_invalid_length)
+    LEGACY_TEST_CASE(test_uuid_from_hex_invalid_chars)
+    LEGACY_TEST_CASE(test_uuid_normalisation)
+    LEGACY_TEST_CASE(test_gpu_type_label)
+    LEGACY_TEST_CASE(test_select_gpu_auto_prefers_discrete)
+    LEGACY_TEST_CASE(test_select_gpu_by_uuid)
+    LEGACY_TEST_CASE(test_select_gpu_uuid_not_found_fallback)
+    LEGACY_TEST_CASE(test_select_gpu_unsuitable_fallback)
+    LEGACY_TEST_CASE(test_select_gpu_auto_finds_only_suitable)
+    LEGACY_TEST_CASE(test_select_gpu_no_suitable_returns_empty)
+    LEGACY_TEST_CASE(test_select_gpu_invalid_format_fallback)
+    LEGACY_TEST_CASE(test_select_gpu_tiebreak_by_memory)
+
+#undef LEGACY_TEST_CASE

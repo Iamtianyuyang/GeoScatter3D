@@ -1,4 +1,5 @@
 #include "app/ViewerApp.hpp"
+#include "util/Log.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "app/ViewerAppRunState.hpp"
 
@@ -24,18 +25,18 @@ void print_benchmark_percentiles(
     const std::vector<double>& samples
 ) {
     if (samples.empty()) {
-        std::cout << "[BENCH] " << name
+        gs3d::util::log::benchmark() << "[BENCH] " << name
                   << ": no samples\n";
         return;
     }
 
-    std::cout << "[BENCH] " << name << "_p50 = "
+    gs3d::util::log::benchmark() << "[BENCH] " << name << "_p50 = "
               << gs3d::util::percentile(samples, 50.0)
               << '\n';
-    std::cout << "[BENCH] " << name << "_p95 = "
+    gs3d::util::log::benchmark() << "[BENCH] " << name << "_p95 = "
               << gs3d::util::percentile(samples, 95.0)
               << '\n';
-    std::cout << "[BENCH] " << name << "_p99 = "
+    gs3d::util::log::benchmark() << "[BENCH] " << name << "_p99 = "
               << gs3d::util::percentile(samples, 99.0)
               << '\n';
 }
@@ -141,12 +142,12 @@ void write_benchmark_pick_results(
 }
 
 void ViewerApp::print_benchmark_report(
-    const ViewerAppBenchmarkFrameSamples& samples,
+    const BenchmarkFrameSamples& samples,
     VkPresentModeKHR present_mode
 ) const {
-    std::cout << "[BENCH] frame_count = "
+    gs3d::util::log::benchmark() << "[BENCH] frame_count = "
               << samples.wall_frame_times_ms.size() << '\n';
-    std::cout << "[BENCH] present_mode = "
+    gs3d::util::log::benchmark() << "[BENCH] present_mode = "
               << present_mode_label(present_mode)
               << '\n';
     print_benchmark_percentiles(
@@ -193,19 +194,34 @@ void ViewerApp::print_benchmark_report(
         "upload_fence_wait_ms",
         samples.upload_fence_wait_ms
     );
-    std::cout << "[BENCH] hover_pick = skipped "
+    gs3d::util::log::benchmark() << "[BENCH] hover_pick = skipped "
               << "(cursor-dependent, not part of fixed benchmark path)\n";
-    if (!samples.reload_seconds.empty()) {
-        std::cout << "[BENCH] reload_latency_seconds_p50 = "
+    if (!samples.tile_reload_samples.empty()) {
+        std::vector<double> reload_seconds;
+        reload_seconds.reserve(samples.tile_reload_samples.size());
+        for (std::size_t index = 0;
+             index < samples.tile_reload_samples.size();
+             ++index) {
+            const auto& sample = samples.tile_reload_samples[index];
+            reload_seconds.push_back(sample.seconds);
+            gs3d::util::log::benchmark()
+                << "[BENCH] reload_sample[" << index << "] = seconds="
+                << sample.seconds
+                << ", selected_tiles=" << sample.selected_tile_count
+                << ", required_tiles=" << sample.required_tile_count
+                << ", resident_tiles=" << sample.resident_tile_count
+                << '\n';
+        }
+        gs3d::util::log::benchmark() << "[BENCH] reload_latency_seconds_p50 = "
                   << gs3d::util::percentile(
-                         samples.reload_seconds, 50.0)
+                         reload_seconds, 50.0)
                   << '\n';
-        std::cout << "[BENCH] reload_latency_seconds_p95 = "
+        gs3d::util::log::benchmark() << "[BENCH] reload_latency_seconds_p95 = "
                   << gs3d::util::percentile(
-                         samples.reload_seconds, 95.0)
+                         reload_seconds, 95.0)
                   << '\n';
     } else {
-        std::cout
+        gs3d::util::log::benchmark()
             << "[BENCH] reload_latency: "
             << "no completed tile uploads captured.\n";
     }

@@ -35,6 +35,11 @@ public:
     [[nodiscard]]
     static std::filesystem::path current_working_directory();
 
+    // Best-effort absolute path to the running executable. Used for packaged
+    // runtime assets so lookup does not depend on the process working dir.
+    [[nodiscard]]
+    static std::filesystem::path current_executable_path();
+
     [[nodiscard]]
     static std::filesystem::path config_directory(
         const std::filesystem::path& config_path

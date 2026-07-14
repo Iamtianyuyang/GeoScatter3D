@@ -75,7 +75,7 @@ void ViewerApp::handle_region_stats_commands(
         const std::uint64_t point_count =
             has_points ? ctx.dataset.point_count() : 0;
         const std::filesystem::path gs3d_path =
-            has_points ? std::filesystem::path{} : config_.gs3d_path;
+            has_points ? std::filesystem::path{} : config_.input.gs3d_path;
 
         auto& target_stats =
             region_stats_for_view(app_state, frame.index);

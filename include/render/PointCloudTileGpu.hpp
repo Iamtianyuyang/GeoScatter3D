@@ -55,7 +55,7 @@ public:
     );
 
     void set_resident_tile_budget(
-        std::uint32_t max_tiles
+        std::uint32_t soft_max_tiles
     ) noexcept;
 
     /*

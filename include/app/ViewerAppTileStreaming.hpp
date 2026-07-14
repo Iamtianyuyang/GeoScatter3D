@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/BenchmarkSession.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "core/PointData.hpp"
@@ -25,6 +26,9 @@ namespace gs3d::render { class VulkanContext; }
 namespace gs3d::render { class VulkanRenderer; }
 
 namespace gs3d::app {
+
+struct ViewerTileConfig;
+struct ViewerAppTileStreamFrameContext;
 
 /*
  * 单 tile 磁盘加载结果：tile ID + 已加载的点数据（不携带缓存状态）。
@@ -71,6 +75,14 @@ struct TileLoadCommitStats {
  * 异步读取 future、全量预加载进度。生命周期与 run() 相同；必须在
  * tile_reader / tile_point_ids_by_tile 之后声明——后台 future 引用
  * 它们，析构时按声明逆序先 join future 再销毁被引用对象。
+ *
+ * Threading contract:
+ * - The main thread exclusively owns every member except point_cache.
+ * - Worker lambdas may capture only immutable tile_reader / point-id inputs
+ *   and return loaded data through futures; they never mutate this state.
+ * - TilePointCache is the sole cross-thread object and synchronizes its own
+ *   access. Future results are committed to the remaining state on the main
+ *   thread in update_tile_streaming().
  */
 struct ViewerAppTileStreamState {
     explicit ViewerAppTileStreamState(std::uint64_t cpu_cache_max_bytes)
@@ -108,15 +120,16 @@ struct ViewerAppTileStreamState {
     gs3d::util::Stopwatch async_cycle_timer;
 
     /*
-     * Stage 3 bounded GPU working set: first K candidates from sorted
-     * tile_result.tile_ids, where K = tile_gpu_cache_max_tiles (0 = all).
+     * Stage 3 active GPU working set: every sorted visible candidate from
+     * tile_result.tile_ids. tile_gpu_cache_max_tiles is a soft resident
+     * budget: active tiles are pinned and may exceed it.
      * Empty in Stage 1 (preload) and Stage 2 (fast path).
      * Rebuilt when the tile selection changes or the budget limit changes.
      */
     std::vector<std::uint64_t> gpu_required_tile_ids;
-    std::uint32_t last_working_set_limit = 0;
+    std::uint32_t last_resident_tile_budget = 0;
     // Incremented every time gpu_required_tile_ids changes (members,
-    // order, or K).  Captured by async load tasks; used for diagnostics.
+    // order, or visibility). Captured by async load tasks; used for diagnostics.
     std::uint64_t gpu_required_revision = 0;
     // Prevent the completed-upload report (and benchmark sample) from being
     // emitted every frame after a working set becomes fully resident.
@@ -141,8 +154,36 @@ struct ViewerAppTileStreamState {
     gs3d::util::Stopwatch preload_timer;
 };
 
+// Owns all mutable tile streaming state, including async read futures and the
+// CPU cache. Worker lambdas only return data; this class commits it on the
+// main thread through update().
+class TileStreamingSystem {
+public:
+    TileStreamingSystem(
+        const ViewerTileConfig& config,
+        bool benchmark_enabled,
+        const std::optional<gs3d::data::Gs3dTileReader>& tile_reader
+    );
+
+    [[nodiscard]] ViewerAppTileStreamState& state() noexcept;
+    [[nodiscard]] const ViewerAppTileStreamState& state() const noexcept;
+
+    void clear_cache(
+        gs3d::render::VulkanRenderer& renderer,
+        gs3d::render::PointCloudTileGpu* tile_gpu_cloud
+    );
+    void update(
+        const ViewerAppTileStreamFrameContext& context,
+        const ViewerTileConfig& config,
+        bool benchmark_enabled
+    );
+
+private:
+    ViewerAppTileStreamState state_;
+};
+
 /*
- * Per-frame inputs for ViewerApp::update_tile_streaming(). References
+ * Per-frame inputs for TileStreamingSystem::update(). References
  * point at run() locals; the context itself is rebuilt every frame.
  */
 struct ViewerAppTileStreamFrameContext {
@@ -172,7 +213,7 @@ struct ViewerAppTileStreamFrameContext {
     double& lod_tile_select_ms_frame;
     double& cpu_cull_ms_frame;
     double& upload_record_ms_frame;
-    std::vector<double>& reload_seconds;
+    std::vector<BenchmarkTileReloadSample>& reload_samples;
 };
 
 /*
@@ -186,33 +227,23 @@ std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
 );
 
 /*
- * Build the Stage-3 bounded GPU working set from sorted candidates.
+ * Build the Stage-3 GPU working set from sorted visible candidates.
  *
  *  sorted_candidates — tile IDs in priority order (projected_pixels DESC,
  *                       center_distance_sq ASC, tile_id ASC).
- *  working_set_limit — K = tile_gpu_cache_max_tiles (0 = all candidates).
+ *  resident_tile_budget — soft cache capacity target. It does not truncate
+ *                         the active viewport: visible tiles must all be
+ *                         resident.
  *
- * Returns the first K candidates (or all when K == 0).
+ * Returns every visible candidate in priority order.
  */
 [[nodiscard]]
 inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
     const std::vector<std::uint64_t>& sorted_candidates,
-    std::uint32_t working_set_limit
+    std::uint32_t resident_tile_budget
 ) {
-    if (sorted_candidates.empty()) {
-        return {};
-    }
-
-    const auto K =
-        (working_set_limit == 0)
-            ? sorted_candidates.size()
-            : std::min(
-                  static_cast<std::size_t>(working_set_limit),
-                  sorted_candidates.size());
-    return {
-        sorted_candidates.begin(),
-        sorted_candidates.begin() + K
-    };
+    (void)resident_tile_budget;
+    return sorted_candidates;
 }
 
 /*

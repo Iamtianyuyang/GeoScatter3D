@@ -91,6 +91,7 @@ struct RenderSettingsCommand {
 
 struct UiActions {
     bool open_requested = false;
+    bool open_bundle_requested = false;
     bool show_welcome_requested = false;
     std::string open_project_path;
     std::string open_raw_data_path;

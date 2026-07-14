@@ -68,6 +68,10 @@ struct DatasetSummaryState {
         "value",
         "z"
     };
+    // 由 ViewerApp 在载入数据后写入，项目树直接展示真实数据，
+    // 而不是只有没有内容的占位节点。
+    std::vector<std::string> tile_details;
+    std::vector<std::string> lod_details;
     std::array<char, 128> search_text{};
     int selected_tab = 0;
 };
@@ -121,7 +125,7 @@ struct RenderSettingsState {
     float max_points_per_pixel = 2.0f;
     bool high_quality = true;
 
-    std::string cache_usage = "0 / 256";
+    std::string cache_usage = "0 / 256 (soft budget)";
     std::string cpu_cache_usage = "0 / 0 MB";
     std::uint32_t loaded_tiles = 0;
     std::uint32_t pending_tiles = 0;

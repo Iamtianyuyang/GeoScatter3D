@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace gs3d::app {
 
@@ -27,7 +26,7 @@ const MeasurementManager& measurement_for_render_view(
 void ViewerApp::fill_render_views(
     gs3d::app::AppState& app_state,
     const ViewerAppRenderViewContext& ctx,
-    const ViewerAppPickState& pick,
+    const ViewerPickState& pick,
     const std::vector<std::optional<gs3d::camera::Vec3>>& selected_focus_points
 ) {
     for (int i = 0; i < ctx.n_viewports; ++i) {
@@ -178,24 +177,6 @@ void ViewerApp::fill_render_views(
                     if (screen_pt) {
                         view.hover_screen_x = screen_pt->x;
                         view.hover_screen_y = screen_pt->y;
-                        static int diag_count = 0;
-                        if (diag_count < 5) {
-                            ++diag_count;
-                            const auto idx = static_cast<std::size_t>(i);
-                            std::fprintf(stderr,
-                                "[PICK] mouse=(%.0f,%.0f) fb=%ux%u "
-                                "hit3d=(%.3f,%.3f,%.3f) "
-                                "proj_screen=(%.1f,%.1f)\n",
-                                static_cast<double>(idx < pick.latest_capture_x.size() ? pick.latest_capture_x[idx] : -1.0f),
-                                static_cast<double>(idx < pick.latest_capture_y.size() ? pick.latest_capture_y[idx] : -1.0f),
-                                camera.viewport_width(), camera.viewport_height(),
-                                static_cast<double>(hover_point->x),
-                                static_cast<double>(hover_point->y),
-                                static_cast<double>(
-                                    point_to_render_position(*hover_point).z),
-                                static_cast<double>(screen_pt->x),
-                                static_cast<double>(screen_pt->y));
-                        }
                     }
                 }
 
@@ -271,51 +252,6 @@ void ViewerApp::fill_render_views(
                 }
     }
 
-}
-
-void ViewerApp::update_navigation_map_view_rect(
-    NavigationMapState& nav,
-    const std::vector<RenderViewState>& render_views,
-    int streaming_viewport_index
-) {
-    if (!nav.valid) {
-        return;
-    }
-    const auto& sv =
-        render_views[static_cast<std::size_t>(streaming_viewport_index)];
-    const float wx_min = sv.map_axis_x_min;
-    const float wx_max = sv.map_axis_x_max;
-    const float wy_min = sv.map_axis_y_min;
-    const float wy_max = sv.map_axis_y_max;
-
-    const float bbox_w = nav.bbox_max_x - nav.bbox_min_x;
-    const float bbox_h = nav.bbox_max_y - nav.bbox_min_y;
-    if (bbox_w > 0.0f && bbox_h > 0.0f) {
-        nav.view_rect_min_x =
-            (wx_min - nav.bbox_min_x) / bbox_w * nav.tex_w;
-        nav.view_rect_max_x =
-            (wx_max - nav.bbox_min_x) / bbox_w * nav.tex_w;
-        // 纹理北在上(tex_y=0)，世界 Y↑ 映射到 tex_y↓
-        nav.view_rect_min_y =
-            (1.0f - (wy_max - nav.bbox_min_y) / bbox_h) *
-            nav.tex_h;
-        nav.view_rect_max_y =
-            (1.0f - (wy_min - nav.bbox_min_y) / bbox_h) *
-            nav.tex_h;
-        nav.view_rect_valid = true;
-    }
-}
-
-void ViewerApp::build_visible_viewports(
-    std::vector<int>& visible_viewports,
-    const std::vector<RenderViewState>& render_views
-) {
-    visible_viewports.clear();
-    for (const auto& view : render_views) {
-        if (view.render_requested) {
-            visible_viewports.push_back(view.viewport_index);
-        }
-    }
 }
 
 } // namespace gs3d::app

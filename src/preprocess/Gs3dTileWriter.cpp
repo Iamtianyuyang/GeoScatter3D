@@ -1,4 +1,5 @@
 #include "preprocess/Gs3dTileWriter.hpp"
+#include "util/Log.hpp"
 
 #include "data/Gs3dTileFormat.hpp"
 #include "util/Stopwatch.hpp"
@@ -356,7 +357,7 @@ std::vector<TileBuildBucket> build_tile_buckets(
         );
 
     if (worker_count > 1) {
-        std::cout << "[TILE] parallel bucketing: threads="
+        gs3d::util::log::info() << "[TILE] parallel bucketing: threads="
                   << worker_count
                   << '\n';
     }
@@ -983,9 +984,9 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
         );
 
     if (config.verbose) {
-        std::cout << "[TILE] building XY tiles\n";
+        gs3d::util::log::info() << "[TILE] building XY tiles\n";
         if (scale > 1.0f) {
-            std::cout << "tile_size = ["
+            gs3d::util::log::info() << "tile_size = ["
                       << effective_tile_size_x
                       << ", "
                       << effective_tile_size_y
@@ -997,13 +998,13 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
                       << config.tile_size_y
                       << "])\n";
         } else {
-            std::cout << "tile_size = ["
+            gs3d::util::log::info() << "tile_size = ["
                       << config.tile_size_x
                       << ", "
                       << config.tile_size_y
                       << "]\n";
         }
-        std::cout << "grid_count = ["
+        gs3d::util::log::info() << "grid_count = ["
                   << grid_count_x
                   << ", "
                   << grid_count_y
@@ -1108,38 +1109,38 @@ Gs3dTileWriteStats Gs3dTileWriter::write(
     stats.success = true;
 
     if (config.verbose) {
-        std::cout << "[TILE] write completed\n";
-        std::cout << "tile_count = "
+        gs3d::util::log::info() << "[TILE] write completed\n";
+        gs3d::util::log::info() << "tile_count = "
                   << stats.tile_count
                   << '\n';
-        std::cout << "total_points = "
+        gs3d::util::log::info() << "total_points = "
                   << stats.total_points
                   << '\n';
-        std::cout << "min_tile_points = "
+        gs3d::util::log::info() << "min_tile_points = "
                   << stats.min_tile_points
                   << '\n';
-        std::cout << "max_tile_points = "
+        gs3d::util::log::info() << "max_tile_points = "
                   << stats.max_tile_points
                   << '\n';
-        std::cout << "index_file_bytes = "
+        gs3d::util::log::info() << "index_file_bytes = "
                   << stats.index_file_bytes
                   << '\n';
-        std::cout << "data_file_bytes = "
+        gs3d::util::log::info() << "data_file_bytes = "
                   << stats.data_file_bytes
                   << '\n';
-        std::cout << "[TIME] tile.bucket_build_seconds = "
+        gs3d::util::log::info() << "[TIME] tile.bucket_build_seconds = "
                   << stats.bucket_build_seconds
                   << '\n';
-        std::cout << "[TIME] tile.tile_stats_seconds = "
+        gs3d::util::log::info() << "[TIME] tile.tile_stats_seconds = "
                   << stats.tile_stats_seconds
                   << '\n';
-        std::cout << "[TIME] tile.data_write_seconds = "
+        gs3d::util::log::info() << "[TIME] tile.data_write_seconds = "
                   << stats.data_write_seconds
                   << '\n';
-        std::cout << "[TIME] tile.index_write_seconds = "
+        gs3d::util::log::info() << "[TIME] tile.index_write_seconds = "
                   << stats.index_write_seconds
                   << '\n';
-        std::cout << "[TIME] tile.total_write_seconds = "
+        gs3d::util::log::info() << "[TIME] tile.total_write_seconds = "
                   << stats.total_write_seconds
                   << '\n';
     }

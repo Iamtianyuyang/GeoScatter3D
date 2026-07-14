@@ -258,13 +258,13 @@ gs3d::camera::Camera make_camera_from_config(
 )
 {
     gs3d::camera::Camera camera;
-    camera.set_viewport(config.window_width, config.window_height);
+    camera.set_viewport(config.window.width, config.window.height);
     camera.set_perspective(
-        config.camera_fov_y,
-        config.camera_near,
-        config.camera_far
+        config.camera.fov_y,
+        config.camera.near_plane,
+        config.camera.far_plane
     );
-    if (config.camera_mode == "fit") {
+    if (config.camera.mode == "fit") {
         gs3d::camera::CameraBounds bounds{
             {-1000.0f, -1000.0f, -1000.0f},
             {1000.0f, 1000.0f, 1000.0f}
@@ -272,9 +272,9 @@ gs3d::camera::Camera make_camera_from_config(
         camera.fit_bounds(bounds);
     } else {
         camera.look_at(
-            to_vec3(config.camera_position),
-            to_vec3(config.camera_target),
-            to_vec3(config.camera_up)
+            to_vec3(config.camera.position),
+            to_vec3(config.camera.target),
+            to_vec3(config.camera.up)
         );
     }
     return camera;
@@ -299,14 +299,14 @@ gs3d::data::Gs3dLodDataset ensure_lod_dataset(
 )
 {
     const auto& viewer = app_config.viewer;
-    if (!viewer.lod_enabled) {
+    if (!viewer.lod.enabled) {
         return {};
     }
 
-    if (!viewer.lod_sidecar_path.empty() &&
-        std::filesystem::exists(viewer.lod_sidecar_path)) {
+    if (!viewer.lod.sidecar_path.empty() &&
+        std::filesystem::exists(viewer.lod.sidecar_path)) {
         return gs3d::data::Gs3dLodReader::read(
-            viewer.lod_sidecar_path,
+            viewer.lod.sidecar_path,
             dataset.header(),
             gs3d::data::Gs3dLodReadConfig{}
         ).dataset;
@@ -314,17 +314,17 @@ gs3d::data::Gs3dLodDataset ensure_lod_dataset(
 
     gs3d::data::Gs3dLodBuildConfig lod_config;
     lod_config.include_full_resolution_level = false;
-    lod_config.finest_target_points = viewer.lod_finest_target_points;
-    lod_config.growth_factor = viewer.lod_growth_factor;
-    lod_config.min_points_per_level = viewer.lod_min_points_per_level;
-    lod_config.voxel_mode = parse_lod_voxel_mode(viewer.lod_voxel_mode);
-    lod_config.voxel_scale = viewer.lod_voxel_scale;
-    lod_config.verbose = viewer.lod_verbose;
+    lod_config.finest_target_points = viewer.lod.finest_target_points;
+    lod_config.growth_factor = viewer.lod.growth_factor;
+    lod_config.min_points_per_level = viewer.lod.min_points_per_level;
+    lod_config.voxel_mode = parse_lod_voxel_mode(viewer.lod.voxel_mode);
+    lod_config.voxel_scale = viewer.lod.voxel_scale;
+    lod_config.verbose = viewer.lod.verbose;
 
     auto lod_dataset = gs3d::data::Gs3dLodDataset::build(dataset, lod_config);
-    if (!viewer.lod_sidecar_path.empty()) {
+    if (!viewer.lod.sidecar_path.empty()) {
         const auto write_stats = gs3d::preprocess::Gs3dLodWriter::write(
-            viewer.lod_sidecar_path,
+            viewer.lod.sidecar_path,
             lod_dataset
         );
         (void)write_stats;
@@ -339,22 +339,22 @@ gs3d::data::Gs3dTileReader ensure_tile_reader(
 )
 {
     const auto& viewer = app_config.viewer;
-    if (!std::filesystem::exists(viewer.tile_index_path) ||
-        !std::filesystem::exists(viewer.tile_data_path)) {
+    if (!std::filesystem::exists(viewer.tile.index_path) ||
+        !std::filesystem::exists(viewer.tile.data_path)) {
         gs3d::preprocess::Gs3dTileWriteConfig tile_config;
         tile_config.num_threads = app_config.tile_build.num_threads;
-        tile_config.verbose = viewer.tile_verbose;
+        tile_config.verbose = viewer.tile.verbose;
         const auto write_stats = gs3d::preprocess::Gs3dTileWriter::write(
-            viewer.tile_index_path,
-            viewer.tile_data_path,
+            viewer.tile.index_path,
+            viewer.tile.data_path,
             dataset,
             tile_config
         );
         (void)write_stats;
     }
     return gs3d::data::Gs3dTileReader::open(
-        viewer.tile_index_path,
-        viewer.tile_data_path,
+        viewer.tile.index_path,
+        viewer.tile.data_path,
         dataset.header()
     );
 }
@@ -884,35 +884,35 @@ PickBatchSummary run_pick_batch(
     write_pick_script(queries, script_path);
 
     auto run_config = viewer_config;
-    run_config.benchmark_mode = true;
-    run_config.benchmark_frame_count =
+    run_config.benchmark.enabled = true;
+    run_config.benchmark.frame_count =
         static_cast<std::uint32_t>(queries.size() + 8);
-    run_config.benchmark_present_mode = "immediate";
-    run_config.benchmark_pick_script_path = script_path;
-    run_config.benchmark_pick_result_path = result_path;
-    run_config.viewport_count = 1;
-    run_config.window_width = viewport.width;
-    run_config.window_height = viewport.height;
-    run_config.ui_layout_ini_path.clear();
-    run_config.camera_mode = "fixed";
-    run_config.camera_position = {
+    run_config.benchmark.present_mode = "immediate";
+    run_config.benchmark.pick_script_path = script_path;
+    run_config.benchmark.pick_result_path = result_path;
+    run_config.window.viewport_count = 1;
+    run_config.window.width = viewport.width;
+    run_config.window.height = viewport.height;
+    run_config.window.ui_layout_ini_path.clear();
+    run_config.camera.mode = "fixed";
+    run_config.camera.position = {
         camera.position().x,
         camera.position().y,
         camera.position().z
     };
-    run_config.camera_target = {
+    run_config.camera.target = {
         camera.target().x,
         camera.target().y,
         camera.target().z
     };
-    run_config.camera_up = {
+    run_config.camera.up = {
         camera.up().x,
         camera.up().y,
         camera.up().z
     };
-    run_config.lod_verbose = false;
-    run_config.tile_verbose = false;
-    run_config.window_title =
+    run_config.lod.verbose = false;
+    run_config.tile.verbose = false;
+    run_config.window.title =
         "GeoScatter3D Pick Benchmark - " + scenario + " - " + mode;
 
     gs3d::app::ViewerApp app(run_config);
@@ -1082,14 +1082,14 @@ BoundarySelectionCase find_boundary_case(
 {
     BoundarySelectionCase best;
     best.name = name;
-    best.viewport = {config.window_width, config.window_height};
+    best.viewport = {config.window.width, config.window.height};
     best.camera = make_camera_from_config(config);
 
     gs3d::render::TileSelection tile_selection;
     gs3d::render::TileSelectionConfig selection_config;
-    selection_config.min_tile_pixel_size = config.tile_min_pixel_size;
-    selection_config.max_visible_tiles = config.tile_max_visible_tiles;
-    selection_config.use_full_z_range = config.tile_use_full_z_range;
+    selection_config.min_tile_pixel_size = config.tile.min_pixel_size;
+    selection_config.max_visible_tiles = config.tile.max_visible_tiles;
+    selection_config.use_full_z_range = config.tile.use_full_z_range;
     tile_selection.set_config(selection_config);
 
     double best_gap = std::numeric_limits<double>::max();
@@ -1451,7 +1451,7 @@ int run_pick_benchmark(int argc, char** argv)
 {
     auto app_config = gs3d::app::AppConfigLoader::load_from_args(argc, argv);
     auto dataset = gs3d::data::Gs3dDatasetLoader::load(
-        app_config.viewer.gs3d_path
+        app_config.viewer.input.gs3d_path
     );
     if (!dataset.is_consistent() || dataset.empty()) {
         std::cerr << "[FAIL] dataset unavailable for pick benchmark\n";
@@ -1487,13 +1487,13 @@ int run_pick_benchmark(int argc, char** argv)
 
     const auto full_view = gs3d::data::make_point_data_view(dataset);
     auto viewer_lod_off = app_config.viewer;
-    viewer_lod_off.lod_enabled = false;
-    viewer_lod_off.tile_enabled = false;
+    viewer_lod_off.lod.enabled = false;
+    viewer_lod_off.tile.enabled = false;
 
     auto viewer_lod_on = app_config.viewer;
-    viewer_lod_on.lod_enabled = lod_view.has_value();
-    viewer_lod_on.lod_keep_full_buffer = true;
-    viewer_lod_on.tile_enabled = true;
+    viewer_lod_on.lod.enabled = lod_view.has_value();
+    viewer_lod_on.lod.keep_full_buffer = true;
+    viewer_lod_on.tile.enabled = true;
 
     const auto run_boundary = [&](const BoundarySelectionCase& selection_case) {
         std::vector<gs3d::core::PointDataView> lod_on_reference_sets;
@@ -1563,8 +1563,8 @@ int run_pick_benchmark(int argc, char** argv)
 
     auto large_scene_camera = make_camera_from_config(app_config.viewer);
     const gs3d::camera::Viewport large_scene_viewport{
-        app_config.viewer.window_width,
-        app_config.viewer.window_height
+        app_config.viewer.window.width,
+        app_config.viewer.window.height
     };
     const auto large_scene_queries = collect_queries_from_view(
         full_view,
@@ -1598,7 +1598,7 @@ int run_pick_benchmark(int argc, char** argv)
     );
     if (lod_view.has_value()) {
         auto viewer_large_scene_lod_on = viewer_lod_on;
-        viewer_large_scene_lod_on.tile_enabled = false;
+        viewer_large_scene_lod_on.tile.enabled = false;
         batches.push_back(
             run_pick_batch(
                 "large_scene_latency",
@@ -1656,8 +1656,8 @@ int run_benchmark(int argc, char** argv)
         gs3d::app::AppConfigLoader::load_from_args(argc, argv);
 
     auto viewer_config = app_config.viewer;
-    viewer_config.benchmark_mode = true;
-    viewer_config.benchmark_frame_count = 600;
+    viewer_config.benchmark.enabled = true;
+    viewer_config.benchmark.frame_count = 600;
 
     // Override via env var (not argv — argv is already claimed by
     // AppConfigLoader's --config flag parsing). Useful when the default
@@ -1665,7 +1665,7 @@ int run_benchmark(int argc, char** argv)
     if (const char* frames_env = std::getenv("GS3D_BENCHMARK_FRAMES")) {
         const auto frames = std::strtoul(frames_env, nullptr, 10);
         if (frames > 0) {
-            viewer_config.benchmark_frame_count =
+            viewer_config.benchmark.frame_count =
                 static_cast<std::uint32_t>(frames);
         }
     }
@@ -1674,11 +1674,11 @@ int run_benchmark(int argc, char** argv)
             std::getenv("GS3D_BENCHMARK_PRESENT_MODE")) {
         const std::string mode = present_mode_env;
         if (mode == "immediate") {
-            viewer_config.benchmark_present_mode = "immediate";
+            viewer_config.benchmark.present_mode = "immediate";
         } else if (mode == "mailbox") {
-            viewer_config.benchmark_present_mode = "mailbox";
+            viewer_config.benchmark.present_mode = "mailbox";
         } else if (mode == "fifo") {
-            viewer_config.benchmark_present_mode = "fifo";
+            viewer_config.benchmark.present_mode = "fifo";
         }
     }
 

@@ -238,7 +238,7 @@ void draw_render_settings(
         // ── 色标选择 ──
         {
             const char* colormap_names[] = {
-                "Geo",
+                "地震（蓝-白-红）",
                 "Viridis",
                 "Jet",
                 "Grayscale",
@@ -267,50 +267,61 @@ void draw_render_settings(
             // 色标预览条 — 根据当前选中的色标切换颜色
             const ImVec2 start = ImGui::GetCursorScreenPos();
             const float bar_width = ImGui::GetContentRegionAvail().x;
+            const float bar_height = 14.0f * scale;
             ImGui::InvisibleButton("##ColorMapPreview",
-                ImVec2(bar_width, 14.0f));
+                ImVec2(bar_width, bar_height));
             ImDrawList* dl = ImGui::GetWindowDrawList();
 
-            // Each colormap: {left, mid-left, mid-right, right} corner colours
-            // matching the approximate endpoints used in the fragment shader.
-            struct CmapColors { ImU32 c0, c1, c2, c3; };
+            // Five control colours per map, matching the shader. Drawing the
+            // preview as adjacent horizontal gradients keeps the legend free
+            // of the diagonal interpolation artefacts caused by a single
+            // four-corner rectangle.
+            struct CmapColors { ImU32 colors[5]; };
             const CmapColors cmap_colors[9] = {
-                // Geo: blue → cyan → green → yellow-red
-                { IM_COL32(60,  105, 215, 255), IM_COL32(55,  190, 175, 255),
-                  IM_COL32(235, 190, 75,  255), IM_COL32(218, 82,  76,  255) },
-                // Viridis: deep purple → teal → green → yellow
-                { IM_COL32(68,  1,   84,  255), IM_COL32(59,  82,  139, 255),
-                  IM_COL32(33,  145, 140, 255), IM_COL32(94,  201, 98,  255) },
-                // Jet: blue → cyan → yellow → red
-                { IM_COL32(0,   0,   143, 255), IM_COL32(0,   191, 255, 255),
-                  IM_COL32(255, 255, 0,   255), IM_COL32(255, 0,   0,   255) },
-                // Grayscale: black → gray → light → white
-                { IM_COL32(0,   0,   0,   255), IM_COL32(85,  85,  85,  255),
-                  IM_COL32(170, 170, 170, 255), IM_COL32(255, 255, 255, 255) },
-                // Thermal: black → red → orange → yellow-white
-                { IM_COL32(0,   0,   0,   255), IM_COL32(153, 0,   0,   255),
-                  IM_COL32(255, 128, 0,   255), IM_COL32(255, 255, 128, 255) },
-                // Coolwarm: blue → light blue → light red → dark red
-                { IM_COL32(59,  76,  192, 255), IM_COL32(144, 161, 255, 255),
-                  IM_COL32(255, 128, 128, 255), IM_COL32(180, 4,   38,  255) },
-                // Turbo: dark blue → teal → green-yellow → orange-red
-                { IM_COL32(48,  18,  59,  255), IM_COL32(18,  145, 190, 255),
-                  IM_COL32(162, 211, 55,  255), IM_COL32(122, 4,   3,   255) },
-                // Plasma: dark purple → magenta → orange → yellow
-                { IM_COL32(13,  8,   135, 255), IM_COL32(126, 3,   168, 255),
-                  IM_COL32(224, 100, 40,  255), IM_COL32(240, 249, 33,  255) },
-                // Rainbow256: blue → cyan → yellow → red (Jet 256 discrete)
-                { IM_COL32(0,   0,   128, 255), IM_COL32(0,   191, 255, 255),
-                  IM_COL32(255, 255, 0,   255), IM_COL32(128, 0,   0,   255) },
+                // Seismic: navy → blue → ivory → red → maroon
+                { { IM_COL32(13, 41, 87, 255), IM_COL32(51, 125, 184, 255),
+                    IM_COL32(240, 237, 224, 255), IM_COL32(196, 69, 51, 255),
+                    IM_COL32(110, 13, 20, 255) } },
+                { { IM_COL32(68, 1, 84, 255), IM_COL32(72, 36, 117, 255),
+                    IM_COL32(33, 145, 140, 255), IM_COL32(94, 201, 98, 255),
+                    IM_COL32(253, 231, 37, 255) } },
+                { { IM_COL32(0, 0, 128, 255), IM_COL32(0, 128, 255, 255),
+                    IM_COL32(0, 255, 255, 255), IM_COL32(255, 255, 0, 255),
+                    IM_COL32(255, 0, 0, 255) } },
+                { { IM_COL32(0, 0, 0, 255), IM_COL32(64, 64, 64, 255),
+                    IM_COL32(128, 128, 128, 255), IM_COL32(192, 192, 192, 255),
+                    IM_COL32(255, 255, 255, 255) } },
+                { { IM_COL32(0, 0, 0, 255), IM_COL32(128, 0, 0, 255),
+                    IM_COL32(220, 48, 0, 255), IM_COL32(255, 160, 0, 255),
+                    IM_COL32(255, 255, 180, 255) } },
+                { { IM_COL32(59, 76, 192, 255), IM_COL32(120, 150, 230, 255),
+                    IM_COL32(245, 245, 245, 255), IM_COL32(230, 120, 120, 255),
+                    IM_COL32(180, 4, 38, 255) } },
+                { { IM_COL32(48, 18, 59, 255), IM_COL32(24, 104, 184, 255),
+                    IM_COL32(38, 188, 135, 255), IM_COL32(235, 206, 47, 255),
+                    IM_COL32(122, 4, 3, 255) } },
+                { { IM_COL32(13, 8, 135, 255), IM_COL32(84, 3, 160, 255),
+                    IM_COL32(182, 55, 121, 255), IM_COL32(237, 121, 33, 255),
+                    IM_COL32(240, 249, 33, 255) } },
+                { { IM_COL32(0, 0, 128, 255), IM_COL32(0, 128, 255, 255),
+                    IM_COL32(0, 255, 128, 255), IM_COL32(255, 255, 0, 255),
+                    IM_COL32(128, 0, 0, 255) } },
             };
             int ci = settings.colormap_index;
             if (ci < 0 || ci > 8) ci = 0;
             const auto& cc = cmap_colors[ci];
-            dl->AddRectFilledMultiColor(
-                start,
-                {start.x + bar_width, start.y + 14.0f},
-                cc.c0, cc.c1, cc.c2, cc.c3
-            );
+            for (int i = 0; i < 4; ++i) {
+                const float x0 = start.x + bar_width * i / 4.0f;
+                const float x1 = start.x + bar_width * (i + 1) / 4.0f;
+                dl->AddRectFilledMultiColor(
+                    ImVec2(x0, start.y),
+                    ImVec2(x1, start.y + bar_height),
+                    cc.colors[i],
+                    cc.colors[i + 1],
+                    cc.colors[i + 1],
+                    cc.colors[i]
+                );
+            }
         }
 
         // ── 数据范围显示 ──

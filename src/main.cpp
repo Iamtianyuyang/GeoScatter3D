@@ -1,6 +1,8 @@
 #include "app/AppConfig.hpp"
+#include "util/Log.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
+#include "app/UserPreferences.hpp"
 #include "app/ViewerApp.hpp"
 #include "app/WelcomeWindow.hpp"
 #include "data/Gs3dLodDataset.hpp"
@@ -24,13 +26,13 @@ gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
 ) {
     gs3d::data::Gs3dLodBuildConfig config;
     config.include_full_resolution_level = false;
-    config.finest_target_points = viewer.lod_finest_target_points;
-    config.growth_factor = viewer.lod_growth_factor;
-    config.min_points_per_level = viewer.lod_min_points_per_level;
-    config.voxel_scale = viewer.lod_voxel_scale;
-    config.verbose = viewer.lod_verbose;
+    config.finest_target_points = viewer.lod.finest_target_points;
+    config.growth_factor = viewer.lod.growth_factor;
+    config.min_points_per_level = viewer.lod.min_points_per_level;
+    config.voxel_scale = viewer.lod.voxel_scale;
+    config.verbose = viewer.lod.verbose;
 
-    if (viewer.lod_voxel_mode == "XYZ") {
+    if (viewer.lod.voxel_mode == "XYZ") {
         config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XYZ;
     } else {
         config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XY;
@@ -51,8 +53,8 @@ gs3d::app::PreprocessedBundlePaths resolve_bundle_paths(
 
     auto paths =
         gs3d::app::make_bundle_paths(app_config.bundle_dir);
-    paths.lod_enabled = app_config.viewer.lod_enabled;
-    paths.tile_enabled = app_config.viewer.tile_enabled;
+    paths.lod_enabled = app_config.viewer.lod.enabled;
+    paths.tile_enabled = app_config.viewer.tile.enabled;
     return paths;
 }
 
@@ -80,14 +82,14 @@ void preprocess_csv_input(
 
     gs3d::util::Stopwatch preprocess_timer;
 
-    std::cout << "[PREPROCESS] csv_path = "
+    gs3d::util::log::info() << "[PREPROCESS] csv_path = "
               << app_config.csv_input_path.string()
               << '\n';
-    std::cout << "[PREPROCESS] bundle_dir = "
+    gs3d::util::log::info() << "[PREPROCESS] bundle_dir = "
               << bundle_paths.bundle_dir.string()
               << '\n';
-    std::cout << "[PREPROCESS] gs3d_path = "
-              << app_config.viewer.gs3d_path.string()
+    gs3d::util::log::info() << "[PREPROCESS] gs3d_path = "
+              << app_config.viewer.input.gs3d_path.string()
               << '\n';
 
     gs3d::data::CsvChunkPlanConfig csv_chunk_plan_config;
@@ -116,17 +118,17 @@ void preprocess_csv_input(
     auto [convert_result, dataset] =
         converter.convert(
             app_config.csv_input_path,
-            app_config.viewer.gs3d_path
+            app_config.viewer.input.gs3d_path
         );
 
-    std::cout << "[PREPROCESS] written_points = "
+    gs3d::util::log::info() << "[PREPROCESS] written_points = "
               << convert_result.written_points
               << '\n';
-    std::cout << "[TIME] preprocess.csv_convert_seconds = "
+    gs3d::util::log::info() << "[TIME] preprocess.csv_convert_seconds = "
               << convert_timer.elapsed_seconds()
               << '\n';
 
-    if (app_config.viewer.lod_enabled) {
+    if (app_config.viewer.lod.enabled) {
         gs3d::util::Stopwatch lod_timer;
         const auto lod_dataset =
             gs3d::data::Gs3dLodDataset::build(
@@ -134,44 +136,44 @@ void preprocess_csv_input(
                 make_lod_build_config(app_config.viewer)
             );
         if (lod_dataset.empty()) {
-            app_config.viewer.lod_enabled = false;
+            app_config.viewer.lod.enabled = false;
             bundle_paths.lod_enabled = false;
-            std::cout
+            gs3d::util::log::info()
                 << "[PREPROCESS] LOD skipped: dataset is below "
                 << "the configured minimum point count.\n";
         } else {
             const auto lod_stats =
                 gs3d::preprocess::Gs3dLodWriter::write(
-                    app_config.viewer.lod_sidecar_path,
+                    app_config.viewer.lod.sidecar_path,
                     lod_dataset
                 );
-            std::cout << "[PREPROCESS] lod_levels = "
+            gs3d::util::log::info() << "[PREPROCESS] lod_levels = "
                       << lod_stats.level_count
                       << '\n';
         }
-        std::cout << "[TIME] preprocess.lod_write_seconds = "
+        gs3d::util::log::info() << "[TIME] preprocess.lod_write_seconds = "
                   << lod_timer.elapsed_seconds()
                   << '\n';
     }
 
-    if (app_config.viewer.tile_enabled) {
+    if (app_config.viewer.tile.enabled) {
         gs3d::preprocess::Gs3dTileWriteConfig tile_config;
         tile_config.num_threads = app_config.tile_build.num_threads;
-        tile_config.verbose = app_config.viewer.tile_verbose;
+        tile_config.verbose = app_config.viewer.tile.verbose;
 
         gs3d::util::Stopwatch tile_timer;
         const auto tile_stats =
             gs3d::preprocess::Gs3dTileWriter::write(
-                app_config.viewer.tile_index_path,
-                app_config.viewer.tile_data_path,
+                app_config.viewer.tile.index_path,
+                app_config.viewer.tile.data_path,
                 dataset,
                 tile_config
             );
 
-        std::cout << "[PREPROCESS] tile_count = "
+        gs3d::util::log::info() << "[PREPROCESS] tile_count = "
                   << tile_stats.tile_count
                   << '\n';
-        std::cout << "[TIME] preprocess.tile_write_seconds = "
+        gs3d::util::log::info() << "[TIME] preprocess.tile_write_seconds = "
                   << tile_timer.elapsed_seconds()
                   << '\n';
     }
@@ -182,7 +184,7 @@ void preprocess_csv_input(
         dataset
     );
 
-    std::cout << "[TIME] preprocess.total_seconds = "
+    gs3d::util::log::info() << "[TIME] preprocess.total_seconds = "
               << preprocess_timer.elapsed_seconds()
               << '\n';
 }
@@ -211,61 +213,61 @@ gs3d::app::ViewerAppConfig make_viewer_config(
 ) {
     gs3d::app::ViewerAppConfig viewer = app_config.viewer;
 
-    viewer.clear_color =
+    viewer.graphics.clear_color =
         app_config.render.clear_color;
 
-    viewer.initial_point_size =
+    viewer.graphics.initial_point_size =
         app_config.render.initial_point_size;
 
-    viewer.primary_value_field_name =
+    viewer.input.primary_value_field_name =
         app_config.csv_convert.primary_value_field;
 
-    viewer.z_field_name =
+    viewer.input.z_field_name =
         app_config.csv_convert.z_field;
 
-    viewer.camera_mode =
+    viewer.camera.mode =
         app_config.camera.mode;
 
-    viewer.camera_position =
+    viewer.camera.position =
         app_config.camera.position;
 
-    viewer.camera_target =
+    viewer.camera.target =
         app_config.camera.target;
 
-    viewer.camera_up =
+    viewer.camera.up =
         app_config.camera.up;
 
-    viewer.camera_fov_y =
+    viewer.camera.fov_y =
         app_config.camera.fov_y;
 
-    viewer.camera_near =
+    viewer.camera.near_plane =
         app_config.camera.near_plane;
 
-    viewer.camera_far =
+    viewer.camera.far_plane =
         app_config.camera.far_plane;
 
-    viewer.controller_rotate_speed =
+    viewer.controller.rotate_speed =
         app_config.controller.rotate_speed;
 
-    viewer.controller_pan_speed =
+    viewer.controller.pan_speed =
         app_config.controller.pan_speed;
 
-    viewer.controller_zoom_speed =
+    viewer.controller.zoom_speed =
         app_config.controller.zoom_speed;
 
-    viewer.controller_invert_rotate_x =
+    viewer.controller.invert_rotate_x =
         app_config.controller.invert_rotate_x;
 
-    viewer.controller_invert_rotate_y =
+    viewer.controller.invert_rotate_y =
         app_config.controller.invert_rotate_y;
 
-    viewer.controller_invert_pan_x =
+    viewer.controller.invert_pan_x =
         app_config.controller.invert_pan_x;
 
-    viewer.controller_invert_pan_y =
+    viewer.controller.invert_pan_y =
         app_config.controller.invert_pan_y;
 
-    viewer.bundle_dir = app_config.bundle_dir;
+    viewer.input.bundle_dir = app_config.bundle_dir;
 
     return viewer;
 }
@@ -293,6 +295,13 @@ void apply_open_request(
     }
 
     const auto extension = request.path.extension().string();
+    if (extension == ".gs3d" || extension == ".GS3D") {
+        app_config.input_mode = "gs3d";
+        app_config.viewer.input.gs3d_path = request.path;
+        app_config.csv_input_path.clear();
+        app_config.bundle_dir.clear();
+        return;
+    }
     app_config.input_mode =
         extension == ".dat" || extension == ".DAT"
             ? "dat"
@@ -311,14 +320,21 @@ int main(int argc, char** argv) {
                 argv
             );
 
+        // GPU UUIDs identify hardware on one machine. Keep the project
+        // template portable and apply a per-user choice only after it loads.
+        if (const auto preferred_gpu =
+                gs3d::app::load_preferred_gpu_preference()) {
+            app_config.viewer.graphics.preferred_gpu = *preferred_gpu;
+        }
+
         // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
         // ImGuiLayer::init() 会以 active_theme() 完成首次应用。
         gs3d::ui::set_startup_theme(
-            gs3d::ui::theme_from_string(app_config.viewer.theme)
+            gs3d::ui::theme_from_string(app_config.viewer.window.theme)
         );
 
         bool show_welcome_window =
-            !app_config.viewer.benchmark_mode;
+            !app_config.viewer.benchmark.enabled;
         for (;;) {
             if (show_welcome_window) {
                 const auto recent_projects =
@@ -336,18 +352,18 @@ int main(int argc, char** argv) {
                 } else if (!app_config.csv_input_path.empty()) {
                     current_path = app_config.csv_input_path;
                 } else {
-                    current_path = app_config.viewer.gs3d_path;
+                    current_path = app_config.viewer.input.gs3d_path;
                 }
 
                 gs3d::app::WelcomeWindow welcome({
                     .enable_validation_layers =
-                        app_config.viewer.enable_validation_layers,
+                        app_config.viewer.graphics.enable_validation_layers,
                     .ui_scale_multiplier =
-                        app_config.viewer.ui_scale_multiplier,
+                        app_config.viewer.window.ui_scale_multiplier,
                     .current_path = std::move(current_path),
                     .recent_projects = recent_projects,
                     .preferred_gpu =
-                        app_config.viewer.preferred_gpu
+                        app_config.viewer.graphics.preferred_gpu
                 });
                 const auto welcome_result = welcome.run();
                 if (welcome_result.kind ==
@@ -419,7 +435,7 @@ int main(int argc, char** argv) {
             apply_open_request(app_config, *app.open_request());
         }
     } catch (const std::exception& e) {
-        std::cerr << "[FAIL] " << e.what() << '\n';
+        gs3d::util::log::error() << "[FAIL] " << e.what() << '\n';
         return 1;
     }
 }

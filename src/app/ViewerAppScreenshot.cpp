@@ -1,5 +1,5 @@
-#include "app/ViewerApp.hpp"
-#include "app/ViewerAppRunState.hpp"
+#include "app/ScreenshotService.hpp"
+#include "util/Log.hpp"
 
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
@@ -22,16 +22,58 @@
 
 namespace gs3d::app {
 
-void ViewerApp::apply_screenshot_command(
+ScreenshotCaptureRegion resolve_screenshot_capture_region(
+    float canvas_min_x,
+    float canvas_min_y,
+    float canvas_max_x,
+    float canvas_max_y,
+    float viewport_x,
+    float viewport_y,
+    float framebuffer_scale_x,
+    float framebuffer_scale_y,
+    VkExtent2D swapchain_extent
+) noexcept {
+    if (canvas_max_x <= canvas_min_x ||
+        canvas_max_y <= canvas_min_y ||
+        framebuffer_scale_x <= 0.0f ||
+        framebuffer_scale_y <= 0.0f) {
+        return {};
+    }
+
+    int x = static_cast<int>((canvas_min_x - viewport_x) * framebuffer_scale_x);
+    int y = static_cast<int>((canvas_min_y - viewport_y) * framebuffer_scale_y);
+    int width = static_cast<int>((canvas_max_x - canvas_min_x) * framebuffer_scale_x);
+    int height = static_cast<int>((canvas_max_y - canvas_min_y) * framebuffer_scale_y);
+    if (x < 0) { width += x; x = 0; }
+    if (y < 0) { height += y; y = 0; }
+    if (x + width > static_cast<int>(swapchain_extent.width)) {
+        width = static_cast<int>(swapchain_extent.width) - x;
+    }
+    if (y + height > static_cast<int>(swapchain_extent.height)) {
+        height = static_cast<int>(swapchain_extent.height) - y;
+    }
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+    return {
+        static_cast<std::uint32_t>(x),
+        static_cast<std::uint32_t>(y),
+        static_cast<std::uint32_t>(width),
+        static_cast<std::uint32_t>(height)
+    };
+}
+
+void ScreenshotService::request(
     const UiActions& gui_cmds,
-    ViewerAppScreenshotContext& ctx
+    const AppState& app_state,
+    const gs3d::render::VulkanSwapchain& swapchain
 ) {
     if (!gui_cmds.screenshot_requested) {
         return;
     }
     // Map viewport 0's canvas_rect (ImGui screen coords) →
     // swapchain physical pixels.
-    for (const auto& view : ctx.app_state.render_views) {
+    for (const auto& view : app_state.render_views) {
         if (view.viewport_index != 0) continue;
         if (view.canvas_rect_max_x <= view.canvas_rect_min_x ||
             view.canvas_rect_max_y <= view.canvas_rect_min_y) break;
@@ -39,22 +81,21 @@ void ViewerApp::apply_screenshot_command(
         const ImVec2 vp_pos = ImGui::GetMainViewport()->Pos;
         const float sx = io.DisplayFramebufferScale.x;
         const float sy = io.DisplayFramebufferScale.y;
-        int x = static_cast<int>((view.canvas_rect_min_x - vp_pos.x) * sx);
-        int y = static_cast<int>((view.canvas_rect_min_y - vp_pos.y) * sy);
-        int w = static_cast<int>((view.canvas_rect_max_x - view.canvas_rect_min_x) * sx);
-        int h = static_cast<int>((view.canvas_rect_max_y - view.canvas_rect_min_y) * sy);
-        // Clamp to swapchain extent
-        const auto& sc_ext = ctx.swapchain.extent();
-        if (x < 0) { w += x; x = 0; }
-        if (y < 0) { h += y; y = 0; }
-        if (x + w > static_cast<int>(sc_ext.width))  w = static_cast<int>(sc_ext.width)  - x;
-        if (y + h > static_cast<int>(sc_ext.height)) h = static_cast<int>(sc_ext.height) - y;
-        if (w > 0 && h > 0) {
-            ctx.screenshot_offset = {static_cast<std::uint32_t>(x),
-                                     static_cast<std::uint32_t>(y)};
-            ctx.screenshot_extent = {static_cast<std::uint32_t>(w),
-                                     static_cast<std::uint32_t>(h)};
-            ctx.screenshot_pending = true;
+        const auto region = resolve_screenshot_capture_region(
+            view.canvas_rect_min_x,
+            view.canvas_rect_min_y,
+            view.canvas_rect_max_x,
+            view.canvas_rect_max_y,
+            vp_pos.x,
+            vp_pos.y,
+            sx,
+            sy,
+            swapchain.extent()
+        );
+        if (region.valid()) {
+            offset_ = {region.x, region.y};
+            extent_ = {region.width, region.height};
+            pending_ = true;
         }
         break;
     }
@@ -63,39 +104,38 @@ void ViewerApp::apply_screenshot_command(
 // post_pass: after the swapchain render pass ends, copy the viewport
 // region to a staging buffer so write_pending_screenshot() can read it
 // back on the CPU after draw_frame.
-void ViewerApp::record_screenshot_copy(
+void ScreenshotService::record_copy(
     VkCommandBuffer cmd,
     std::uint32_t image_index,
     gs3d::render::VulkanContext& context,
-    const gs3d::render::VulkanSwapchain& swapchain,
-    ViewerAppScreenshotCaptureState& capture
+    const gs3d::render::VulkanSwapchain& swapchain
 ) {
-    if (!capture.pending) return;
+    if (!pending_) return;
 
     const VkDeviceSize buf_size =
         static_cast<VkDeviceSize>(
-            capture.extent.width) *
+            extent_.width) *
         static_cast<VkDeviceSize>(
-            capture.extent.height) * 4;
+            extent_.height) * 4;
 
     // Create staging buffer on first use (or re-create if
     // extent changed since last screenshot).
-    if (capture.staging_buf == VK_NULL_HANDLE) {
+    if (staging_buffer_ == VK_NULL_HANDLE) {
         VkBufferCreateInfo buf_info{};
         buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         buf_info.size = buf_size;
         buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         if (vkCreateBuffer(context.device(), &buf_info,
-                           nullptr, &capture.staging_buf) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] buffer create failed\n";
-            capture.pending = false;
+                           nullptr, &staging_buffer_) != VK_SUCCESS) {
+            gs3d::util::log::error() << "[SCREENSHOT] buffer create failed\n";
+            pending_ = false;
             return;
         }
 
         VkMemoryRequirements mem_req{};
         vkGetBufferMemoryRequirements(context.device(),
-                                      capture.staging_buf,
+                                      staging_buffer_,
                                       &mem_req);
         VkMemoryAllocateInfo alloc_info{};
         alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -117,22 +157,22 @@ void ViewerApp::record_screenshot_copy(
         }
         alloc_info.memoryTypeIndex = mem_type_idx;
         if (vkAllocateMemory(context.device(), &alloc_info,
-                             nullptr, &capture.staging_mem) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] memory alloc failed\n";
-            vkDestroyBuffer(context.device(), capture.staging_buf, nullptr);
-            capture.staging_buf = VK_NULL_HANDLE;
-            capture.pending = false;
+                             nullptr, &staging_memory_) != VK_SUCCESS) {
+            gs3d::util::log::error() << "[SCREENSHOT] memory alloc failed\n";
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            pending_ = false;
             return;
         }
         if (vkBindBufferMemory(context.device(),
-                               capture.staging_buf,
-                               capture.staging_mem, 0) != VK_SUCCESS) {
-            std::cerr << "[SCREENSHOT] bind memory failed\n";
-            vkFreeMemory(context.device(), capture.staging_mem, nullptr);
-            vkDestroyBuffer(context.device(), capture.staging_buf, nullptr);
-            capture.staging_buf = VK_NULL_HANDLE;
-            capture.staging_mem = VK_NULL_HANDLE;
-            capture.pending = false;
+                               staging_buffer_,
+                               staging_memory_, 0) != VK_SUCCESS) {
+            gs3d::util::log::error() << "[SCREENSHOT] bind memory failed\n";
+            vkFreeMemory(context.device(), staging_memory_, nullptr);
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            staging_memory_ = VK_NULL_HANDLE;
+            pending_ = false;
             return;
         }
     }
@@ -165,18 +205,18 @@ void ViewerApp::record_screenshot_copy(
         region.bufferImageHeight = 0;
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.imageOffset = {
-            static_cast<std::int32_t>(capture.offset.width),
-            static_cast<std::int32_t>(capture.offset.height),
+            static_cast<std::int32_t>(offset_.width),
+            static_cast<std::int32_t>(offset_.height),
             0
         };
         region.imageExtent = {
-            capture.extent.width,
-            capture.extent.height,
+            extent_.width,
+            extent_.height,
             1
         };
         vkCmdCopyImageToBuffer(cmd, src_img,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            capture.staging_buf, 1, &region);
+            staging_buffer_, 1, &region);
     }
 
     // TRANSFER_SRC_OPTIMAL → PRESENT_SRC_KHR
@@ -201,25 +241,23 @@ void ViewerApp::record_screenshot_copy(
 // Reads the staged pixels back, resolves the output path via the native
 // save dialog (with a timestamped fallback), writes the PNG, and frees
 // the staging resources.
-void ViewerApp::write_pending_screenshot(
+void ScreenshotService::write_pending(
     gs3d::render::VulkanContext& context,
-    const gs3d::render::VulkanSwapchain& swapchain,
-    ViewerAppScreenshotCaptureState& capture
+    const gs3d::render::VulkanSwapchain& swapchain
 ) {
-    if (!capture.pending ||
-        capture.staging_buf == VK_NULL_HANDLE) {
+    if (!pending_ || staging_buffer_ == VK_NULL_HANDLE) {
         return;
     }
 
     vkDeviceWaitIdle(context.device());
 
-    const auto w = static_cast<int>(capture.extent.width);
-    const auto h = static_cast<int>(capture.extent.height);
+    const auto w = static_cast<int>(extent_.width);
+    const auto h = static_cast<int>(extent_.height);
     const VkDeviceSize buf_size =
         static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h) * 4;
 
     void* mapped = nullptr;
-    vkMapMemory(context.device(), capture.staging_mem,
+    vkMapMemory(context.device(), staging_memory_,
                 0, buf_size, 0, &mapped);
     auto* pixels = static_cast<std::uint8_t*>(mapped);
 
@@ -267,23 +305,23 @@ void ViewerApp::write_pending_screenshot(
                    ts + ".png";
     }
     if (user_cancelled || out_path.empty()) {
-        std::cout << "[SCREENSHOT] cancelled.\n";
+        gs3d::util::log::info() << "[SCREENSHOT] cancelled.\n";
     } else if (!stbi_write_png(out_path.c_str(), w, h, 4,
                                pixels, w * 4)) {
-        std::cerr << "[SCREENSHOT] stbi_write_png failed: "
+        gs3d::util::log::error() << "[SCREENSHOT] stbi_write_png failed: "
                   << out_path << '\n';
     } else {
-        std::cout << "[SCREENSHOT] saved: " << out_path << '\n';
+        gs3d::util::log::info() << "[SCREENSHOT] saved: " << out_path << '\n';
     }
 
-    vkUnmapMemory(context.device(), capture.staging_mem);
+    vkUnmapMemory(context.device(), staging_memory_);
     vkDestroyBuffer(context.device(),
-                    capture.staging_buf, nullptr);
+                    staging_buffer_, nullptr);
     vkFreeMemory(context.device(),
-                 capture.staging_mem, nullptr);
-    capture.staging_buf = VK_NULL_HANDLE;
-    capture.staging_mem = VK_NULL_HANDLE;
-    capture.pending = false;
+                 staging_memory_, nullptr);
+    staging_buffer_ = VK_NULL_HANDLE;
+    staging_memory_ = VK_NULL_HANDLE;
+    pending_ = false;
 }
 
 } // namespace gs3d::app

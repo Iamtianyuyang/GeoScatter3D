@@ -121,15 +121,4 @@ public:
     static void print(const AppConfig& config);
 };
 
-/*
- * Persist a single [graphics] string field to viewer.toml.
- * Reads the existing file (if any), modifies the field, and writes back.
- * Returns true on success.
- */
-bool save_viewer_config_string(
-    const std::string& section,
-    const std::string& key,
-    const std::string& value
-);
-
 } // namespace gs3d::app

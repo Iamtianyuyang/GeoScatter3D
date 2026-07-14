@@ -8,14 +8,14 @@ namespace gs3d::ui {
 
 /*
  * 三套可切换 UI 主题：
- *   carbon-blue      碳蓝 · Modern SaaS（默认，亮色 + IBM Carbon 蓝）
- *   deep-graphite    石墨 · Deep Graphite（暗色工作台 + 亮蓝）
- *   instrument-amber 仪器 · Instrument Amber（墨绿灰 + 琥珀，直角）
+ *   carbon-blue      碳蓝 · 浅色测绘（默认，冷白表面 + 克制蓝）
+ *   deep-graphite    石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）
+ *   instrument-amber 仪器 · 琥珀测绘（中性深灰 + 低饱和琥珀）
  *
  * ThemeTokens 里的颜色一律按设计稿的 sRGB 值书写（0-1 浮点，未线性化）。
  * apply_theme() 负责：
- *   1. 重写 palette:: 全局语义色（写入前做 sRGB→linear，见 UiPalette.hpp）；
- *   2. 以 StyleColorsLight/Dark 为底重建 ImGuiStyle 颜色表并整体线性化；
+ *   1. 重写 palette:: 全局语义色（直接作为显示色写入，见 UiPalette.hpp）；
+ *   2. 以 StyleColorsLight/Dark 为底重建 ImGuiStyle 颜色表；
  *   3. 按主题设置圆角（乘 ui_scale）。
  * 可在任意帧调用（菜单切换即时生效）；启动阶段先 set_startup_theme()，
  * ImGuiLayer::init() 会以 active_theme() 完成首次应用。

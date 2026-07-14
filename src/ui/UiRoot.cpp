@@ -1,4 +1,5 @@
 #include "ui/UiRoot.hpp"
+#include "ui/WorkspaceManager.hpp"
 #include "ui/Theme.hpp"
 #include "ui/Widgets.hpp"
 #include "ui/UiPalette.hpp"
@@ -8,6 +9,7 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/ViewportAxisTicks.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -90,224 +92,6 @@ std::string workspace_dockspace_id_name(int id)
     return "GeoScatter3D.WorkspaceDockSpace." + std::to_string(id);
 }
 
-bool workspace_contains_view(
-    const gs3d::app::WorkspaceWindowState& workspace,
-    int viewport_index
-) {
-    return std::find(
-        workspace.viewport_indices.begin(),
-        workspace.viewport_indices.end(),
-        viewport_index
-    ) != workspace.viewport_indices.end();
-}
-
-bool view_is_owned_by_workspace(
-    const gs3d::app::AppState& state,
-    int viewport_index
-) {
-    return std::any_of(
-        state.workspace_windows.begin(),
-        state.workspace_windows.end(),
-        [viewport_index](const auto& workspace) {
-            return workspace.visible &&
-                   workspace_contains_view(workspace, viewport_index);
-        }
-    );
-}
-
-gs3d::app::MeasurementManager& measurement_for_workspace_id(
-    gs3d::app::AppState& state,
-    int workspace_id
-) {
-    if (workspace_id > 0) {
-        const auto found = std::find_if(
-            state.workspace_windows.begin(),
-            state.workspace_windows.end(),
-            [workspace_id](const auto& workspace) {
-                return workspace.id == workspace_id;
-            }
-        );
-        if (found != state.workspace_windows.end()) {
-            return found->components.measurement;
-        }
-    }
-    return state.measurement;
-}
-
-int active_view_for_indices(
-    const gs3d::app::AppState& state,
-    const std::vector<int>& indices,
-    int fallback
-) {
-    if (std::find(
-            indices.begin(),
-            indices.end(),
-            state.active_viewport_index
-        ) != indices.end()) {
-        return state.active_viewport_index;
-    }
-    if (!indices.empty()) {
-        return indices.front();
-    }
-    return fallback;
-}
-
-std::vector<int> main_workspace_viewports(
-    const gs3d::app::AppState& state
-) {
-    std::vector<int> indices;
-    for (const auto& view : state.render_views) {
-        if (view.visible &&
-            !view_is_owned_by_workspace(state, view.viewport_index)) {
-            indices.push_back(view.viewport_index);
-        }
-    }
-    return indices;
-}
-
-std::uint32_t visible_view_signature(
-    const gs3d::app::AppState& state
-) {
-    std::uint32_t signature = 0;
-    for (const auto& view : state.render_views) {
-        if (view.visible &&
-            !view_is_owned_by_workspace(state, view.viewport_index) &&
-            view.viewport_index >= 0 &&
-            view.viewport_index < 24) {
-            signature |=
-                1u << static_cast<std::uint32_t>(view.viewport_index);
-        }
-    }
-    return signature;
-}
-
-bool has_hidden_view(const gs3d::app::AppState& state)
-{
-    return std::any_of(
-        state.render_views.begin(),
-        state.render_views.end(),
-        [](const auto& view) {
-            return !view.visible;
-        }
-    );
-}
-
-int show_first_hidden_view(
-    gs3d::app::AppState& state,
-    bool force_undock = false
-)
-{
-    const auto hidden = std::find_if(
-        state.render_views.begin(),
-        state.render_views.end(),
-        [](const auto& view) {
-            return !view.visible;
-        }
-    );
-    if (hidden == state.render_views.end()) {
-        return -1;
-    }
-
-    hidden->visible = true;
-    hidden->force_undock_next_frame = force_undock;
-    hidden->render_requested = false;
-    return hidden->viewport_index;
-}
-
-int next_workspace_id(const gs3d::app::AppState& state)
-{
-    int next_id = 1;
-    for (const auto& workspace : state.workspace_windows) {
-        next_id = std::max(next_id, workspace.id + 1);
-    }
-    return next_id;
-}
-
-bool add_view_to_workspace(
-    gs3d::app::AppState& state,
-    gs3d::app::WorkspaceWindowState& workspace
-) {
-    const int view_index = show_first_hidden_view(state);
-    if (view_index < 0) {
-        return false;
-    }
-    auto& view = state.render_views[static_cast<std::size_t>(view_index)];
-    view.detached = false;
-    view.force_undock_next_frame = false;
-    workspace.viewport_indices.push_back(view_index);
-    workspace.dock_layout_initialized = false;
-    return true;
-}
-
-bool create_workspace_window(gs3d::app::AppState& state)
-{
-    gs3d::app::WorkspaceWindowState workspace;
-    workspace.id = next_workspace_id(state);
-    workspace.components.dataset = state.dataset;
-    workspace.components.render_settings = state.render_settings;
-    workspace.components.navigation_map = state.navigation_map;
-    workspace.components.navigation_map.view_rect_valid = false;
-    if (!add_view_to_workspace(state, workspace)) {
-        return false;
-    }
-    workspace.visible = true;
-    workspace.dock_layout_initialized = false;
-    state.workspace_windows.push_back(std::move(workspace));
-    return true;
-}
-
-void prune_workspace_windows(gs3d::app::AppState& state)
-{
-    for (auto& workspace : state.workspace_windows) {
-        if (!workspace.visible) {
-            for (const int view_index : workspace.viewport_indices) {
-                if (view_index >= 0 &&
-                    view_index < static_cast<int>(state.render_views.size())) {
-                    auto& view =
-                        state.render_views[static_cast<std::size_t>(view_index)];
-                    view.visible = false;
-                    view.detached = false;
-                    view.force_undock_next_frame = false;
-                    view.render_requested = false;
-                }
-            }
-            workspace.viewport_indices.clear();
-            continue;
-        }
-
-        workspace.viewport_indices.erase(
-            std::remove_if(
-                workspace.viewport_indices.begin(),
-                workspace.viewport_indices.end(),
-                [&](int view_index) {
-                    return view_index < 0 ||
-                           view_index >=
-                               static_cast<int>(state.render_views.size()) ||
-                           !state.render_views[
-                                static_cast<std::size_t>(view_index)
-                            ].visible;
-                }
-            ),
-            workspace.viewport_indices.end()
-        );
-        if (workspace.viewport_indices.empty()) {
-            workspace.visible = false;
-        }
-    }
-
-    state.workspace_windows.erase(
-        std::remove_if(
-            state.workspace_windows.begin(),
-            state.workspace_windows.end(),
-            [](const auto& workspace) {
-                return !workspace.visible ||
-                       workspace.viewport_indices.empty();
-            }
-        ),
-        state.workspace_windows.end()
-    );
-}
-
 // ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
 namespace LayoutMetrics {
     // Dock side-bar widths: ratio + min/max of work width, instead of a
@@ -384,7 +168,6 @@ namespace AxisStyle {
     // 两级刻度
     constexpr float kMajorTickLen   = 8.0f;
     constexpr float kMinorTickLen   = 4.0f;
-    constexpr int   kMinorPerMajor  = 4;
     constexpr int   kMajorCountMin  = 4;
     constexpr int   kMajorCountMax  = 6;
 
@@ -483,6 +266,17 @@ void push_application_menu_style(float ui_scale)
         ImGuiCol_MenuBarBg,
         to_u32(palette::kMenuBg, 255)
     );
+    // The application menu sits directly below the native title bar. Keep
+    // its foreground explicit so each dark theme remains legible even when
+    // a platform backend supplies a light non-client frame.
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        to_u32(palette::kText, 255)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_TextDisabled,
+        to_u32(palette::kTextDim, 255)
+    );
     ImGui::PushStyleColor(
         ImGuiCol_PopupBg,
         to_u32(palette::kSurface, 255)
@@ -515,7 +309,7 @@ void push_application_menu_style(float ui_scale)
 
 void pop_application_menu_style()
 {
-    ImGui::PopStyleColor(8);
+    ImGui::PopStyleColor(10);
     ImGui::PopStyleVar(6);
 }
 
@@ -695,7 +489,7 @@ void draw_tools_window(
     }
 
     ImGui::SetNextWindowSize(
-        ImVec2(420.0f, 68.0f * ui_scale),
+        ImVec2(500.0f * ui_scale, 68.0f * ui_scale),
         ImGuiCond_FirstUseEver
     );
     const ImGuiWindowFlags flags =
@@ -728,14 +522,14 @@ void draw_tools_window(
             ImVec2(6.0f, 4.0f)
         );
 
+        ImGui::TextDisabled("操作");
+        ImGui::SameLine();
         const bool can_add_view = has_hidden_view(state);
         ImGui::BeginDisabled(!can_add_view);
-        if (widgets::Chip("+ 视图")) {
-            if (workspace != nullptr) {
-                add_view_to_workspace(state, *workspace);
-            } else {
-                show_first_hidden_view(state);
-            }
+        if (widgets::Chip("添加视图")) {
+            // Match Ctrl+N exactly: reveal the first available viewport
+            // without changing workspace ownership or docking.
+            show_first_hidden_view(state);
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -751,7 +545,7 @@ void draw_tools_window(
         }
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x >
-            200.0f * ui_scale) {
+            190.0f * ui_scale) {
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
                 to_u32(palette::kTextDim, 190)
@@ -817,18 +611,24 @@ void draw_viewport_window(
         (window_viewport != nullptr &&
          window_viewport->ID != ImGui::GetMainViewport()->ID);
 
+    const float toolbar_scale = ImGui::GetFontSize() / 13.0f;
     ImGui::PushStyleVar(
         ImGuiStyleVar_FramePadding,
-        ImVec2(LayoutMetrics::kViewportToolbarFramePadX,
-               LayoutMetrics::kViewportToolbarFramePadY)
+        ImVec2(
+            LayoutMetrics::kViewportToolbarFramePadX * toolbar_scale,
+            LayoutMetrics::kViewportToolbarFramePadY * toolbar_scale
+        )
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_ItemSpacing,
-        ImVec2(LayoutMetrics::kViewportToolbarGap, 4.0f)
+        ImVec2(
+            LayoutMetrics::kViewportToolbarGap * toolbar_scale,
+            4.0f * toolbar_scale
+        )
     );
-    ImGui::TextDisabled(
-        view.detached ? "独立窗口" : "工作区"
-    );
+    // Keep the essential navigation controls on one compact row. Colour
+    // editing lives in a popup so the toolbar never consumes canvas height.
+    ImGui::TextDisabled(view.detached ? "独立窗口" : "视图");
     ImGui::SameLine();
     if (widgets::Chip("复位视角")) {
         actions.reset_camera_index = view.viewport_index;
@@ -836,6 +636,7 @@ void draw_viewport_window(
     ImGui::SameLine();
     widgets::Checkbox("联动相机", &view.camera_linked);
     ImGui::SameLine();
+
     if (widgets::Checkbox("地图轴", &view.show_map_axis)) {
         if (view.show_map_axis) {
             view.show_world_axis = false;
@@ -855,57 +656,57 @@ void draw_viewport_window(
         }
     }
     ImGui::SameLine();
-    {
-        ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
-        float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
-        ImGui::SetNextItemWidth(22.0f);
-        if (ImGui::ColorEdit4("##CrosshairColor", ch_arr,
-                ImGuiColorEditFlags_NoInputs |
-                ImGuiColorEditFlags_NoLabel)) {
-            view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
-                ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3]));
+    if (widgets::Chip("准星样式")) {
+        ImGui::OpenPopup("##ReticleStyle");
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("调整十字准线和拾取准星颜色");
+    }
+    if (ImGui::BeginPopup("##ReticleStyle")) {
+        ImGui::TextUnformatted("十字准线");
+        if (view.show_crosshair) {
+            ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
+            float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
+            if (ImGui::ColorEdit4(
+                    "颜色##CrosshairColor",
+                    ch_arr,
+                    ImGuiColorEditFlags_NoInputs
+                )) {
+                view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
+                    ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3])
+                );
+            }
+            ImGui::SameLine();
+            if (widgets::Chip("恢复默认##Crosshair")) {
+                view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+            }
+        } else {
+            ImGui::TextDisabled("先启用十字准线后可设置颜色");
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("十字准线颜色");
-    }
-    ImGui::SameLine();
-    if (widgets::Chip("十字颜色")) {
-        view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-    }
-    ImGui::SameLine();
-    {
+        ImGui::Separator();
+        ImGui::TextUnformatted("拾取准星");
         ImVec4 rt = ImGui::ColorConvertU32ToFloat4(view.reticle_color);
         float rt_arr[4] = {rt.x, rt.y, rt.z, rt.w};
-        ImGui::SetNextItemWidth(22.0f);
-        if (ImGui::ColorEdit4("##ReticleColor", rt_arr,
-                ImGuiColorEditFlags_NoInputs |
-                ImGuiColorEditFlags_NoLabel)) {
+        if (ImGui::ColorEdit4(
+                "颜色##ReticleColor",
+                rt_arr,
+                ImGuiColorEditFlags_NoInputs
+            )) {
             view.reticle_color = ImGui::ColorConvertFloat4ToU32(
-                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3]));
+                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3])
+            );
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("拾取准星颜色");
-    }
-    ImGui::SameLine();
-    if (widgets::Chip("准星颜色")) {
-        view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-    }
-    const char* long_hint =
-        "左键旋转  右键平移  滚轮光标缩放  "
-        "双击定轴  F聚焦  Ctrl+左键框选";
-    const char* short_hint = "左键旋转  右键平移  滚轮缩放  F聚焦";
-    ImGui::SameLine();
-    const float hint_space = ImGui::GetContentRegionAvail().x;
-    const char* hint = nullptr;
-    if (hint_space >= ImGui::CalcTextSize(long_hint).x) {
-        hint = long_hint;
-    } else if (hint_space >= ImGui::CalcTextSize(short_hint).x) {
-        hint = short_hint;
-    }
-    if (hint != nullptr) {
+        ImGui::SameLine();
+        if (widgets::Chip("恢复默认##Reticle")) {
+            view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+        }
+        ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 175));
-        ImGui::TextUnformatted(hint);
+        ImGui::TextUnformatted(
+            "左键旋转 · 右键平移 · 滚轮缩放 · F 聚焦"
+        );
         ImGui::PopStyleColor();
-    } else {
-        ImGui::NewLine();
+        ImGui::EndPopup();
     }
     ImGui::PopStyleVar(2);
     ImGui::Separator();
@@ -1021,105 +822,24 @@ void draw_viewport_window(
                 std::max(x_range, y_range) > 0.0f ? 5.0f : 4.0f)),
             AxisStyle::kMajorCountMin, AxisStyle::kMajorCountMax);
 
-        // ---- 辅助 lambda：根据刻度步长选择小数位数 ----
-        const auto fmt_label = [](char* buf, std::size_t buf_size,
-                                  float tick, double origin_offset,
-                                  float major_step) {
-            // Choose precision based on step magnitude so that
-            // zoomed-in views show decimals and zoomed-out views
-            // stay compact.
-            int prec = 0;
-            if (major_step < 1.0f) {
-                prec = static_cast<int>(
-                    std::ceil(-std::log10(std::max(major_step, 1.0e-6f))));
-                if (prec < 0) prec = 0;
-                if (prec > 6) prec = 6;
-            }
-            std::snprintf(buf, buf_size, "%.*f", prec,
-                static_cast<double>(tick) + origin_offset);
-        };
+        std::vector<float> x_major;
+        if (x_range > 0.0f) {
+            x_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
+        }
+        const float x_major_step = (x_major.size() >= 2)
+            ? (x_major[1] - x_major[0]) : 1.0f;
 
-        // ---- 辅助 lambda：生成 minor ticks ----
-        //
-        // 必须用 double + 整数索引步进：之前用 `v += minor_step` 的
-        // float 累加，在缩放视野下（如 first_major≈-14544、
-        // minor_step≈0.002）float 的精度间隙已经 >= step，循环永不
-        // 终止 → 主线程死循环 → UI 卡死。这里把迭代改成 `i * step`
-        // 索引步进，强制上限，并处理退化（range 极小而 step 极小）。
-        const auto make_minors = [](float major_step, float first_major,
-                                     float range_min, float range_max)
-            -> std::vector<float>
-        {
-            std::vector<float> minors;
-            if (major_step <= 0.0f || !std::isfinite(major_step)) {
-                return minors;
-            }
-            const float minor_step =
-                major_step / static_cast<float>(AxisStyle::kMinorPerMajor);
-            if (minor_step <= 0.0f || !std::isfinite(minor_step)) {
-                return minors;
-            }
-
-            constexpr int kMaxMinorsPerSide = 200;
-
-            const double minor_step_d = static_cast<double>(minor_step);
-            const double first_major_d = static_cast<double>(first_major);
-            const double range_min_d = static_cast<double>(range_min);
-            const double range_max_d = static_cast<double>(range_max);
-            // 阈值用 double 算，避免在边界上漏一根 / 多一根
-            const double end_threshold =
-                minor_step_d * 0.5;
-
-            // 向左（向 range_min）
-            int left_count = static_cast<int>(
-                std::floor((first_major_d - range_min_d) / minor_step_d));
-            if (left_count < 0) left_count = 0;
-            if (left_count > kMaxMinorsPerSide) left_count = kMaxMinorsPerSide;
-            minors.reserve(
-                static_cast<std::size_t>(left_count + kMaxMinorsPerSide));
-            for (int i = 1; i <= left_count; ++i) {
-                const double v = first_major_d -
-                                 static_cast<double>(i) * minor_step_d;
-                if (v <= range_min_d + end_threshold) {
-                    break;
-                }
-                minors.push_back(static_cast<float>(v));
-            }
-
-            // 向右（向 range_max）
-            int right_count = static_cast<int>(
-                std::floor((range_max_d - first_major_d) / minor_step_d));
-            if (right_count < 0) right_count = 0;
-            if (right_count > kMaxMinorsPerSide) {
-                right_count = kMaxMinorsPerSide;
-            }
-            for (int i = 1; i <= right_count; ++i) {
-                const double v = first_major_d +
-                                 static_cast<double>(i) * minor_step_d;
-                if (v >= range_max_d - end_threshold) {
-                    break;
-                }
-                minors.push_back(static_cast<float>(v));
-            }
-
-            // 退化降级：上面两侧迭代都已经有迭代上限 kMaxMinorsPerSide
-            // 作为死循环安全网。若 range_min/range_max 与 first_major
-            // 都几乎重合（极度病态视野），仍保证输出最多 2*kMaxMinorsPerSide
-            // 个 tick，且都不会让 v += step 的累加逻辑出现。
-            if (minors.size() >
-                static_cast<std::size_t>(2 * kMaxMinorsPerSide)) {
-                minors.resize(2 * kMaxMinorsPerSide);
-            }
-            return minors;
-        };
+        std::vector<float> y_major;
+        if (y_range > 0.0f) {
+            y_major = gs3d::render::compute_axis_ticks(
+                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
+        }
+        const float y_major_step = (y_major.size() >= 2)
+            ? (y_major[1] - y_major[0]) : 1.0f;
 
         // ---- X 轴（顶部）----
         if (x_range > 0.0f) {
-            const auto x_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
-            const float x_major_step = (x_major.size() >= 2)
-                ? (x_major[1] - x_major[0]) : 1.0f;
-
             // 弱网格线（仅 major 位置）
             for (const float tick : x_major) {
                 const float t = (tick - view.map_axis_x_min) / x_range;
@@ -1143,7 +863,7 @@ void draw_viewport_window(
                     AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
-                fmt_label(label, sizeof(label), tick,
+                format_axis_tick_label(label, sizeof(label), tick,
                     view.map_axis_origin_x, x_major_step);
                 if (axis_font() != nullptr) {
                     ImGui::PushFont(axis_font());
@@ -1169,7 +889,7 @@ void draw_viewport_window(
 
             // Minor ticks 向上
             if (x_major.size() >= 2) {
-                const auto x_minors = make_minors(
+                const auto x_minors = compute_minor_axis_ticks(
                     x_major_step, x_major.front(),
                     view.map_axis_x_min, view.map_axis_x_max);
                 for (const float tick : x_minors) {
@@ -1184,60 +904,7 @@ void draw_viewport_window(
         }
 
         // ---- Y 轴（左侧）----
-        // --- diagnostic: Y-axis visibility trace (off by default) ---
-        constexpr bool kYAxisDiag = false;  // set true to enable
-        if (kYAxisDiag) {
-            static int ydiag_count = 0;
-            if (++ydiag_count % 30 == 0) {
-                std::fprintf(stderr,
-                    "[YAXIS] frame=%d y_range=%.6f "
-                    "y_min=%.2f y_max=%.2f "
-                    "plot_y=[%.1f,%.1f] major_cnt=%d\n",
-                    ydiag_count,
-                    static_cast<double>(y_range),
-                    static_cast<double>(view.map_axis_y_min),
-                    static_cast<double>(view.map_axis_y_max),
-                    static_cast<double>(plot_min.y),
-                    static_cast<double>(plot_max.y),
-                    major_cnt);
-            }
-        }
         if (y_range > 0.0f) {
-            const auto y_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
-            if (kYAxisDiag) {
-                static int ydiag_count2 = 0;
-                if (++ydiag_count2 % 30 == 0) {
-                    std::fprintf(stderr,
-                        "[YAXIS] y_major cnt=%zu step=%.2f "
-                        "first=%.2f last=%.2f\n",
-                        y_major.size(),
-                        y_major.size() >= 2
-                            ? static_cast<double>(y_major[1] - y_major[0])
-                            : -1.0,
-                        y_major.empty()
-                            ? 0.0
-                            : static_cast<double>(y_major.front()),
-                        y_major.empty()
-                            ? 0.0
-                            : static_cast<double>(y_major.back()));
-                    for (size_t ti = 0; ti < std::min(y_major.size(), size_t{4}); ++ti) {
-                        const float t = (y_major[ti] - view.map_axis_y_min) / y_range;
-                        const float py = plot_max.y - t * (plot_max.y - plot_min.y);
-                        std::fprintf(stderr,
-                            "[YAXIS]   tick[%zu]=%.2f t=%.4f py=%.1f "
-                            "in_plot=%s\n",
-                            ti,
-                            static_cast<double>(y_major[ti]),
-                            static_cast<double>(t),
-                            static_cast<double>(py),
-                            (py >= plot_min.y && py <= plot_max.y) ? "YES" : "NO");
-                    }
-                }
-            }
-            const float y_major_step = (y_major.size() >= 2)
-                ? (y_major[1] - y_major[0]) : 1.0f;
-
             // 网格线：只在 major 位置画
             for (const float tick : y_major) {
                 const float t = (tick - view.map_axis_y_min) / y_range;
@@ -1261,7 +928,7 @@ void draw_viewport_window(
                     AxisStyle::kMajorTick(), AxisStyle::kMajorTickWidth);
 
                 char label[32];
-                fmt_label(label, sizeof(label), tick,
+                format_axis_tick_label(label, sizeof(label), tick,
                     view.map_axis_origin_y, y_major_step);
                 if (axis_font() != nullptr) {
                     ImGui::PushFont(axis_font());
@@ -1280,7 +947,7 @@ void draw_viewport_window(
 
             // Minor ticks 向左
             if (y_major.size() >= 2) {
-                const auto y_minors = make_minors(
+                const auto y_minors = compute_minor_axis_ticks(
                     y_major_step, y_major.front(),
                     view.map_axis_y_min, view.map_axis_y_max);
                 for (const float tick : y_minors) {
@@ -1325,29 +992,12 @@ void draw_viewport_window(
             dl->AddLine(ImVec2(cx, plot_min.y), ImVec2(cx, plot_max.y),
                         kCrosshairLine, kCrosshairWidth);
 
-            // Precision from axis major-step estimate, same family as
-            // fmt_label used by tick labels.
-            const auto hover_prec = [](float step) -> int {
-                if (step <= 0.0f || step >= 1.0f) return 0;
-                int p = static_cast<int>(
-                    std::ceil(-std::log10(
-                        static_cast<double>(std::max(step, 1.0e-6f)))));
-                return std::clamp(p, 0, 6);
-            };
-
-            const float x_step = (x_range > 0.0f)
-                ? x_range / static_cast<float>(std::max(major_cnt, 1))
-                : 1.0f;
-            const float y_step = (y_range > 0.0f)
-                ? y_range / static_cast<float>(std::max(major_cnt, 1))
-                : 1.0f;
-
             char label_x[32], label_y[32];
             std::snprintf(label_x, sizeof(label_x), "%.*f",
-                hover_prec(x_step),
+                axis_label_precision(x_major_step),
                 static_cast<double>(view.hover_x));
             std::snprintf(label_y, sizeof(label_y), "%.*f",
-                hover_prec(y_step),
+                axis_label_precision(y_major_step),
                 static_cast<double>(view.hover_y));
 
             if (axis_font() != nullptr) {
@@ -1610,7 +1260,7 @@ void draw_viewport_window(
     frame.mouse_on_image = mouse_mapping.mouse_on_image;
 
     if (frame.hovered || frame.active) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
 
     // Tooltip: shown whenever we have valid hover data and the cursor is on the image.
@@ -2251,11 +1901,17 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
 gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 {
     gs3d::app::UiActions actions;
+    ThemeId requested_theme = active_theme();
+    bool theme_change_requested = false;
     // UI scale for high-DPI chrome (toolbar / status bar heights). Same
     // definition as the per-viewport scale in draw_render_view: font size
     // relative to the 13px baseline. Does NOT feed the render-size chain.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;
     prune_workspace_windows(state);
+    if (ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+        actions.open_requested = true;
+    }
     if (ImGui::GetIO().KeyCtrl &&
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
@@ -2282,6 +1938,12 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImGuiStyleVar_WindowPadding,
         ImVec2(0.0f, 0.0f)
     );
+    // ImGui 在 Begin() 内绘制菜单栏底色；必须在 Begin() 前覆盖
+    // MenuBarBg，深色主题才不会出现浅色菜单底配浅色文字的情况。
+    ImGui::PushStyleColor(
+        ImGuiCol_MenuBarBg,
+        to_u32(palette::kMenuBg, 255)
+    );
 
     constexpr bool render_workspace = true;
     if (ImGui::Begin(kHostWindowName, nullptr, host_flags)) {
@@ -2294,8 +1956,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         if (menu_bar_visible) {
             if (ImGui::BeginMenu("文件")) {
                 draw_menu_section_label("文件操作");
-                if (ImGui::MenuItem("打开数据")) {
+                if (ImGui::MenuItem("打开数据文件…", "Ctrl+O")) {
                     actions.open_requested = true;
+                }
+                if (ImGui::MenuItem("打开 GS3D Bundle 项目…")) {
+                    actions.open_bundle_requested = true;
                 }
                 if (ImGui::MenuItem("截图")) {
                     actions.screenshot_requested = true;
@@ -2332,13 +1997,11 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                                 selected
                             ) &&
                             !selected) {
-                            // 立即重写 ImGuiStyle 与 palette::，本帧剩余
-                            // 控件即以新主题绘制，无需等下一帧。圆角基准
-                            // 用字体系统的权威 ui_scale，与 init 时一致。
-                            apply_theme(
-                                id,
-                                gs3d::gui::ui_fonts().ui_scale
-                            );
+                            // 此处仍处在菜单颜色压栈范围内。若立即应用主题，
+                            // PopStyleColor 会把 Text 等颜色恢复成旧主题，
+                            // 造成“亮色自绘控件 + 黑色原生文字”的混合状态。
+                            requested_theme = id;
+                            theme_change_requested = true;
                         }
                     }
                     ImGui::EndMenu();
@@ -2439,7 +2102,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             );
         }
         pop_application_menu_style();
-
         {
             ImDrawList* host_dl = ImGui::GetWindowDrawList();
             const float content_avail_y =
@@ -2501,7 +2163,16 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(3);
+    if (theme_change_requested) {
+        // 所有临时样式均已出栈，再整体替换主题。后续面板在本帧即可
+        // 使用一致的 ImGuiStyle 与 palette 颜色。
+        apply_theme(
+            requested_theme,
+            gs3d::gui::ui_fonts().ui_scale
+        );
+    }
 
     if (render_workspace) {
         draw_tools_window(state, actions, ui_scale);

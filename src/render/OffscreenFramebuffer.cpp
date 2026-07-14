@@ -1,4 +1,5 @@
 #include "render/OffscreenFramebuffer.hpp"
+#include "util/Log.hpp"
 
 #include "backends/imgui_impl_vulkan.h"
 
@@ -86,9 +87,9 @@ void OffscreenFramebuffer::create(
     pick_depth_format_ =
         find_supported_pick_depth_format(context.physical_device());
 
-    std::cout << "[PICK] id_attachment_format = "
+    gs3d::util::log::info() << "[PICK] id_attachment_format = "
               << static_cast<int>(pick_format_) << '\n';
-    std::cout << "[PICK] depth_attachment_format = "
+    gs3d::util::log::info() << "[PICK] depth_attachment_format = "
               << static_cast<int>(pick_depth_format_) << '\n';
 
     create_color_image();

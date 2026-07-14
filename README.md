@@ -7,7 +7,7 @@ LOD 和 tile 文件支持分级与局部加载。
 ## 当前能力
 
 - CSV 并行解析并转换为 GS3D 二进制数据。
-- GS3D 头部、文件长度和点数据读取校验。
+- GS3D v2 使用固定小端字段编码；读取端兼容既有 v1 文件，并校验头部、长度和点数据。
 - 全量点云、LOD 点云和局部 tile 三种 GPU 数据路径。
 - 基于屏幕空间的 tile 选择、后台读取、CPU 缓存和主线程 GPU 上传。
 - Vulkan 点渲染、点大小调整、`value`/`z` 属性着色切换。
@@ -31,7 +31,9 @@ LOD 和 tile 文件支持分级与局部加载。
 - Vulkan SDK/开发包
 - GLFW 3
 - pthreads
-- Git submodule 中的 Dear ImGui
+- Git submodule 中的 Dear ImGui 与 Catch2
+- Python 3（仅用于 include 依赖检查）
+- `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
 
 ```bash
 git submodule update --init --recursive
@@ -40,15 +42,65 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-运行默认配置：
+`ctest` 包含一个从仓库内样例 CSV 生成 bundle 的无窗口 smoke test，因此上述
+命令会在没有 GPU 或图形会话的 CI 环境中验证最小数据流程。CTest 中的 C++ 单元测试使用
+Catch2，可按标签或原有测试函数名单独运行，例如
+`./build/GeoScatter3DGs3dV2Tests "[gs3d]"` 或
+`./build/GeoScatter3DRuntimeLogicTests test_resize_debounce`。
 
-```bash
-./build/GeoScatter3D --config config/viewer.toml
+Windows 可用 vcpkg 安装 `glfw3`、`vulkan-headers`、`vulkan-loader` 和
+`glslang[tools]`，再按 CI 传入 toolchain：
+
+```powershell
+vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows glslang[tools]:x64-windows
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DGS3D_GLSLANG_VALIDATOR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/tools/glslang/glslangValidator.exe"
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
+详细的 Windows 状态和仍需手工验证的桌面路径见
+[Windows portability report](docs/windows-portability-report.md)。
+
+## 从干净克隆打开样例
+
+仓库提供了 25 行的 [样例 CSV](examples/sample-points.csv) 和可直接运行的
+[样例配置](config/sample-viewer.toml)。以下命令从零开始生成数据并打开窗口：
+
+```bash
+git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/GeoScatter3D --config config/sample-viewer.toml
+```
+
+样例生成的 bundle 位于被 Git 忽略的 `data/sample-points.gs3d.bundle/`。若只需
+验证转换而不启动窗口，可运行：
+
+```bash
+./build/GeoScatter3DPreprocess --config config/sample-viewer.toml
+```
+
+默认配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
 会在启动时重新生成 GS3D 和启用的 tile 数据；`input.mode = "gs3d"` 直接打开现有
 GS3D 文件。
+
+## 用户偏好
+
+项目配置是可提交的模板。欢迎页选择的 GPU UUID 不再修改
+`config/viewer.toml`，而是保存至 Linux 的 `$XDG_CONFIG_HOME/geoscatter3d/`
+（默认 `~/.config/geoscatter3d/`）或 Windows 的
+`%APPDATA%\\geoscatter3d\\preferences.toml`。这样在新机器上运行不会弄脏仓库。
+
+## 日志
+
+应用、预处理和 Vulkan 诊断统一按级别写日志。`GS3D_LOG_LEVEL` 可设为
+`trace`、`debug`、`info`（默认）、`warning`、`error` 或 `off`；性能报告走独立
+benchmark 通道，可用 `GS3D_LOG_BENCHMARK=0` 静默。例如：
+
+```bash
+GS3D_LOG_LEVEL=warning GS3D_LOG_BENCHMARK=0 \
+  ./build/GeoScatter3D --config config/sample-viewer.toml
+```
 
 ## 多窗口使用
 
@@ -72,7 +124,7 @@ include/ + src/
   render/      Vulkan 资源、点管线、LOD/tile GPU 数据和离屏视口
   gui/ + ui/   ImGui 生命周期与界面绘制
   platform/    GLFW 窗口
-  util/        线程池与计时
+  util/        线程池、计时与统一日志
 ```
 
 更完整的启动流程、逐帧流程、资源所有权和主要缺陷见

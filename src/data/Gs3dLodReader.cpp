@@ -1,7 +1,7 @@
 #include "data/Gs3dLodReader.hpp"
+#include "util/Log.hpp"
 
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -245,11 +245,11 @@ Gs3dLodReadResult Gs3dLodReader::read(
         );
 
     if (config.verbose) {
-        std::cout << Gs3dLodFormat::file_header_summary(
+        gs3d::util::log::info() << Gs3dLodFormat::file_header_summary(
             result.file_header
         );
 
-        std::cout << result.dataset.summary();
+        gs3d::util::log::info() << result.dataset.summary();
     }
 
     return result;

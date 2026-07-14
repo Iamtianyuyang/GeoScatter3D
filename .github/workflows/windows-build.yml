@@ -1,4 +1,4 @@
-name: Windows Build
+name: Build and Test
 
 on:
   push:
@@ -7,28 +7,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  windows:
+    name: Windows
     runs-on: windows-latest
     timeout-minutes: 60
 
     steps:
+      # Dear ImGui is a submodule and is compiled by both application targets.
+      # A checkout without submodules cannot even generate the build system.
       - uses: actions/checkout@v4
+        with:
+          # Test the PR head itself rather than GitHub's synthetic merge ref.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+          # Guardrails compare a PR to merge-base(base, HEAD), not just HEAD^.
+          fetch-depth: 0
 
-      # glfw3 + Vulkan headers/loader via the runner's preinstalled vcpkg.
-      # Shaders are committed as prebuilt .spv, so no glslc is needed.
+      - name: Fetch guardrail base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin $env:GITHUB_BASE_REF
+
+      # glfw3 + Vulkan headers/loader + glslangValidator via vcpkg.
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-glfw3-vulkan-v1
+          key: vcpkg-x64-windows-glfw3-vulkan-glslang-v2
 
       - name: Install dependencies
-        run: vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows
+        run: >
+          vcpkg install glfw3:x64-windows vulkan-headers:x64-windows
+          vulkan-loader:x64-windows glslang[tools]:x64-windows
 
       - name: Configure
         run: >
           cmake -B build -S .
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DGS3D_GLSLANG_VALIDATOR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/tools/glslang/glslangValidator.exe"
           -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
@@ -39,3 +54,36 @@ jobs:
       # without a display or physical GPU.
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Keep the historical budget comparison on the PR's actual history.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Fetch guardrail base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "$GITHUB_BASE_REF"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools
+
+      - name: Configure
+        run: >
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

@@ -235,11 +235,11 @@ void compute_map_axis_overlay(
     double origin_y
 );
 
-struct ViewerAppConfig;
+struct ViewerCameraConfig;
 
 void initialize_camera_from_config(
     gs3d::camera::Camera& camera,
-    const ViewerAppConfig& config,
+    const ViewerCameraConfig& config,
     const gs3d::camera::CameraBounds& bounds
 );
 

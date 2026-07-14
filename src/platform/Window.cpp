@@ -1,9 +1,23 @@
 #include "platform/Window.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace gs3d::platform {
 
@@ -14,6 +28,46 @@ bool g_glfw_initialized = false;
 
 std::uint32_t safe_u32_from_int(int value) noexcept {
     return static_cast<std::uint32_t>(std::max(value, 0));
+}
+
+void enable_per_monitor_dpi_awareness() noexcept {
+#if defined(_WIN32)
+    // GLFW must be initialized after the process is DPI-aware. Otherwise
+    // Windows virtualizes coordinates using the DPI of the startup monitor,
+    // which makes a window dragged to a monitor with a different scale render
+    // at the wrong size.
+    using SetProcessDpiAwarenessContextFn = BOOL (WINAPI*)(HANDLE);
+    const auto set_dpi_awareness_context =
+        reinterpret_cast<SetProcessDpiAwarenessContextFn>(
+            GetProcAddress(
+                GetModuleHandleW(L"user32.dll"),
+                "SetProcessDpiAwarenessContext"
+            )
+        );
+    if (set_dpi_awareness_context != nullptr) {
+        const auto per_monitor_aware_v2 = reinterpret_cast<HANDLE>(
+            static_cast<std::intptr_t>(-4)
+        );
+        (void)set_dpi_awareness_context(per_monitor_aware_v2);
+        return;
+    }
+
+    // Windows 8.1 fallback: PROCESS_PER_MONITOR_DPI_AWARE == 2. Load it
+    // dynamically so Windows 7 builds do not require linking against Shcore.
+    using SetProcessDpiAwarenessFn = HRESULT (WINAPI*)(int);
+    if (HMODULE shcore = LoadLibraryW(L"shcore.dll")) {
+        const auto set_dpi_awareness =
+            reinterpret_cast<SetProcessDpiAwarenessFn>(
+                GetProcAddress(shcore, "SetProcessDpiAwareness")
+            );
+        if (set_dpi_awareness != nullptr) {
+            (void)set_dpi_awareness(2);
+        }
+        FreeLibrary(shcore);
+    } else {
+        (void)SetProcessDPIAware();
+    }
+#endif
 }
 
 } // namespace
@@ -138,6 +192,8 @@ void Window::ensure_glfw_initialized() {
     if (g_glfw_initialized) {
         return;
     }
+
+    enable_per_monitor_dpi_awareness();
 
     if (glfwInit() != GLFW_TRUE) {
         throw std::runtime_error("Window: failed to initialize GLFW");

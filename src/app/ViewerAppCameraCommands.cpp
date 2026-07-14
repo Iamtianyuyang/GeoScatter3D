@@ -29,44 +29,30 @@ gs3d::camera::Vec3 to_vec3(
 
 void initialize_camera_from_config(
     gs3d::camera::Camera& camera,
-    const ViewerAppConfig& config,
+    const ViewerCameraConfig& config,
     const gs3d::camera::CameraBounds& bounds
 ) {
     // Default: orthographic projection, fit to data bounds.
     // fit_bounds() sets ortho_height, near/far, position, target, up.
     camera.set_orthographic(10.0f, 0.01f, 10000.0f);
 
-    if (config.camera_mode == "fit") {
+    if (config.mode == "fit") {
         camera.fit_bounds(bounds);
         return;
     }
 
     // Explicit camera overrides: still use ortho by default.
     camera.look_at(
-        to_vec3(config.camera_position),
-        to_vec3(config.camera_target),
-        to_vec3(config.camera_up)
+        to_vec3(config.position),
+        to_vec3(config.target),
+        to_vec3(config.up)
     );
     // Derive ortho_height from distance and FOV for backwards compat.
-    const float fov_rad = config.camera_fov_y * 3.14159265f / 180.0f;
+    const float fov_rad = config.fov_y * 3.14159265f / 180.0f;
     const float view_h =
         2.0f * camera.distance() * std::tan(fov_rad * 0.5f);
     // Ortho near/far: small near, huge far — covers any practical depth.
     camera.set_orthographic(view_h, 0.01f, 1.0e7f);
-}
-
-void ViewerApp::sync_camera_link_groups(
-    const AppState& app_state,
-    gs3d::camera::CameraHub& camera_hub
-) {
-    for (const auto& view : app_state.render_views) {
-        camera_hub.set_group(
-            view.viewport_index,
-            view.camera_linked
-                ? 0
-                : gs3d::camera::CameraHub::kIndependent
-        );
-    }
 }
 
 void ViewerApp::apply_reset_camera_command(
@@ -82,7 +68,7 @@ void ViewerApp::apply_reset_camera_command(
     ].clear_orbit_pivot();
     initialize_camera_from_config(
         ctx.viewport_manager.camera(gui_cmds.reset_camera_index),
-        config_,
+        ctx.camera_config,
         ctx.bounds
     );
     ctx.camera_hub.propagate(gui_cmds.reset_camera_index);

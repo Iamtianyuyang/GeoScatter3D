@@ -173,14 +173,9 @@ TileSelectionResult TileSelection::update(
         }
     );
 
-    const bool apply_visible_tile_cap =
-        config_.max_visible_tiles > 0 &&
-        camera.projection_mode() !=
-            gs3d::camera::ProjectionMode::Orthographic;
-    if (apply_visible_tile_cap &&
-        candidates.size() > config_.max_visible_tiles) {
-        candidates.resize(config_.max_visible_tiles);
-    }
+    // Every tile that intersects the current view is part of the active
+    // selection. A hard cap produces block artifacts in the detail layer;
+    // ordering remains useful for incremental streaming priority.
 
     float sel_min_x = std::numeric_limits<float>::max();
     float sel_min_y = std::numeric_limits<float>::max();

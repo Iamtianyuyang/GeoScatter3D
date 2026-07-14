@@ -1,0 +1,63 @@
+# A portable, tracked example. It generates ignored output under data/ and
+# can be opened by the viewer directly after a fresh clone.
+
+[input]
+mode = "csv"
+csv_path = "examples/sample-points.csv"
+bundle_dir = "data/sample-points.gs3d.bundle"
+
+[csv_convert]
+num_threads = 1
+x_field = "X"
+y_field = "Y"
+z_field = "elevation"
+primary_value_field = "field_statics"
+
+[shader]
+vertex_shader_path = "assets/shaders/point.vert.spv"
+fragment_shader_path = "assets/shaders/point.frag.spv"
+
+[window]
+width = 1280
+height = 720
+title = "GeoScatter3D sample dataset"
+resizable = true
+ui_layout_ini_path = ""
+ui_scale_multiplier = 1.0
+theme = "carbon-blue"
+multi_viewports = false
+
+[vulkan]
+validation_layers = false
+
+[graphics]
+preferred_gpu = "auto"
+
+[render]
+clear_color = [0.118, 0.133, 0.165, 1.0]
+initial_point_size = 3.0
+
+[camera]
+mode = "fit"
+
+[lod]
+enabled = false
+keep_full_buffer = true
+auto_load_sidecar = false
+auto_save_sidecar = false
+
+[viewport]
+count = 1
+
+[tile]
+enabled = true
+min_tile_pixel_size = 8
+max_visible_tiles = 0
+use_full_z_range = true
+verbose = false
+gpu_cache_max_tiles = 32
+gpu_upload_budget_bytes = 8388608
+cpu_cache_max_bytes = 67108864
+preload_all = false
+preload_max_bytes = 67108864
+preload_upload_budget_bytes = 8388608

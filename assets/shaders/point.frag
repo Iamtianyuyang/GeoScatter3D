@@ -8,47 +8,20 @@ layout(location = 0) out vec4 out_color;
 layout(location = 1) out uint out_pick_id;
 layout(location = 2) out float out_pick_depth;
 
-/*
- * PUSH CONSTANT LAYOUT — MUST match PointPipeline.hpp byte-for-byte.
- * If you change any field or reorder them, update BOTH point.vert AND point.frag
- * to match the C++ struct AND keep the offset comments aligned.
- *
- * Offset map (C++ PointPushConstants → both shaders):
- *   0:   mat4  mvp           (64 bytes)
- *   64:  vec4  clip_min      (16 bytes) — xyz = spatial clip, w = value_clip_min
- *   80:  vec4  clip_max      (16 bytes) — xyz = spatial clip, w = value_clip_max
- *   96:  float color_min     (4 bytes)  — unused in frag
- *   100: float color_range   (4 bytes)  — unused in frag
- *   104: float height_offset (4 bytes)  — unused in frag
- *   108: float height_mult   (4 bytes)  — unused in frag
- *   112: float point_size    (4 bytes)  — unused in frag
- *   116: uint  height_source (4 bytes)  — unused in frag
- *   120: uint  color_source  (4 bytes)  — unused in frag
- *   124: uint  flags         (4 bytes)  — bit0=spatial, bits1-7=colormap, bit8=value_clip
- * TOTAL: 128 bytes
- */
-layout(push_constant) uniform PointPushConstants {
-    mat4  mvp;            // offset   0
-    vec4  clip_min;       // offset  64
-    vec4  clip_max;       // offset  80
-    float color_min;      // offset  96
-    float color_range;    // offset 100
-    float height_offset;  // offset 104
-    float height_mult;    // offset 108
-    float point_size;     // offset 112
-    uint  height_source;  // offset 116
-    uint  color_source;   // offset 120
-    uint  flags;          // offset 124
-} pc;
+#extension GL_GOOGLE_include_directive : require
+#include "point_push_constants.glsl"
 
-// ── Colormap 0: Geo (blue-cyan-green-yellow-red) ──
+// ── Colormap 0: Seismic (blue-white-red) ────────────────────────────
+// A restrained divergent scale for geophysical attributes. The pale centre
+// makes subtle structures readable while the dark endpoints preserve strong
+// positive/negative anomalies without the false boundaries of a rainbow map.
 vec3 colormap_geo(float t) {
     t = clamp(t, 0.0, 1.0);
-    vec3 c0 = vec3(0.05, 0.10, 0.35);
-    vec3 c1 = vec3(0.00, 0.45, 0.85);
-    vec3 c2 = vec3(0.10, 0.85, 0.35);
-    vec3 c3 = vec3(0.95, 0.85, 0.10);
-    vec3 c4 = vec3(0.95, 0.20, 0.05);
+    vec3 c0 = vec3(0.05, 0.16, 0.34);
+    vec3 c1 = vec3(0.20, 0.49, 0.72);
+    vec3 c2 = vec3(0.94, 0.93, 0.88);
+    vec3 c3 = vec3(0.77, 0.27, 0.20);
+    vec3 c4 = vec3(0.43, 0.05, 0.08);
     if (t < 0.25)      return mix(c0, c1, t / 0.25);
     else if (t < 0.50) return mix(c1, c2, (t - 0.25) / 0.25);
     else if (t < 0.75) return mix(c2, c3, (t - 0.50) / 0.25);

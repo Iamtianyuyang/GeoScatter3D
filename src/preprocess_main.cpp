@@ -1,4 +1,5 @@
 #include "app/AppConfig.hpp"
+#include "util/Log.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
@@ -18,13 +19,13 @@ gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
 ) {
     gs3d::data::Gs3dLodBuildConfig config;
     config.include_full_resolution_level = false;
-    config.finest_target_points = viewer.lod_finest_target_points;
-    config.growth_factor = viewer.lod_growth_factor;
-    config.min_points_per_level = viewer.lod_min_points_per_level;
-    config.voxel_scale = viewer.lod_voxel_scale;
-    config.verbose = viewer.lod_verbose;
+    config.finest_target_points = viewer.lod.finest_target_points;
+    config.growth_factor = viewer.lod.growth_factor;
+    config.min_points_per_level = viewer.lod.min_points_per_level;
+    config.voxel_scale = viewer.lod.voxel_scale;
+    config.verbose = viewer.lod.verbose;
 
-    if (viewer.lod_voxel_mode == "XYZ") {
+    if (viewer.lod.voxel_mode == "XYZ") {
         config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XYZ;
     } else {
         config.voxel_mode = gs3d::data::Gs3dLodVoxelMode::XY;
@@ -46,8 +47,8 @@ gs3d::app::PreprocessedBundlePaths resolve_bundle_paths(
 
     auto paths =
         gs3d::app::make_bundle_paths(app_config.bundle_dir);
-    paths.lod_enabled = app_config.viewer.lod_enabled;
-    paths.tile_enabled = app_config.viewer.tile_enabled;
+    paths.lod_enabled = app_config.viewer.lod.enabled;
+    paths.tile_enabled = app_config.viewer.tile.enabled;
     return paths;
 }
 
@@ -60,13 +61,13 @@ int main(int argc, char** argv) {
 
         if (app_config.input_mode != "csv" &&
             app_config.input_mode != "dat") {
-            std::cerr << "[FAIL] input.mode must be \"csv\" "
+            gs3d::util::log::error() << "[FAIL] input.mode must be \"csv\" "
                          "or \"dat\" for preprocessing.\n";
             return 1;
         }
 
         if (app_config.csv_input_path.empty()) {
-            std::cerr << "[FAIL] an input CSV/DAT path is required.\n";
+            gs3d::util::log::error() << "[FAIL] an input CSV/DAT path is required.\n";
             return 1;
         }
 
@@ -80,12 +81,12 @@ int main(int argc, char** argv) {
 
         gs3d::util::Stopwatch preprocess_timer;
 
-        std::cout << "[PREPROCESS] input_path = "
+        gs3d::util::log::info() << "[PREPROCESS] input_path = "
                   << app_config.csv_input_path.string() << '\n';
-        std::cout << "[PREPROCESS] bundle_dir = "
+        gs3d::util::log::info() << "[PREPROCESS] bundle_dir = "
                   << bundle_paths.bundle_dir.string() << '\n';
-        std::cout << "[PREPROCESS] gs3d_path = "
-                  << app_config.viewer.gs3d_path.string() << '\n';
+        gs3d::util::log::info() << "[PREPROCESS] gs3d_path = "
+                  << app_config.viewer.input.gs3d_path.string() << '\n';
 
         gs3d::data::CsvChunkPlanConfig csv_chunk_plan_config;
         csv_chunk_plan_config.num_threads =
@@ -110,16 +111,16 @@ int main(int argc, char** argv) {
         gs3d::util::Stopwatch convert_timer;
         auto [convert_result, dataset] = converter.convert(
             app_config.csv_input_path,
-            app_config.viewer.gs3d_path);
+            app_config.viewer.input.gs3d_path);
 
-        std::cout << "[PREPROCESS] written_points = "
+        gs3d::util::log::info() << "[PREPROCESS] written_points = "
                   << convert_result.written_points << '\n';
-        std::cout << "[PREPROCESS] invalid_records = "
+        gs3d::util::log::info() << "[PREPROCESS] invalid_records = "
                   << convert_result.invalid_records << '\n';
-        std::cout << "[TIME] csv_convert_seconds = "
+        gs3d::util::log::info() << "[TIME] csv_convert_seconds = "
                   << convert_timer.elapsed_seconds() << '\n';
 
-        if (app_config.viewer.lod_enabled) {
+        if (app_config.viewer.lod.enabled) {
             gs3d::util::Stopwatch lod_timer;
             const auto lod_dataset =
                 gs3d::data::Gs3dLodDataset::build(
@@ -128,28 +129,28 @@ int main(int argc, char** argv) {
                 );
             const auto lod_stats =
                 gs3d::preprocess::Gs3dLodWriter::write(
-                    app_config.viewer.lod_sidecar_path,
+                    app_config.viewer.lod.sidecar_path,
                     lod_dataset
                 );
 
-            std::cout << "[PREPROCESS] lod_levels = "
+            gs3d::util::log::info() << "[PREPROCESS] lod_levels = "
                       << lod_stats.level_count << '\n';
-            std::cout << "[TIME] lod_write_seconds = "
+            gs3d::util::log::info() << "[TIME] lod_write_seconds = "
                       << lod_timer.elapsed_seconds() << '\n';
         }
 
-        if (app_config.viewer.tile_enabled) {
+        if (app_config.viewer.tile.enabled) {
             gs3d::preprocess::Gs3dTileWriteConfig tile_config;
             tile_config.num_threads =
                 app_config.tile_build.num_threads;
             tile_config.verbose =
-                app_config.viewer.tile_verbose;
+                app_config.viewer.tile.verbose;
 
             gs3d::util::Stopwatch tile_timer;
             const auto tile_stats =
                 gs3d::preprocess::Gs3dTileWriter::write(
-                    app_config.viewer.tile_index_path,
-                    app_config.viewer.tile_data_path,
+                    app_config.viewer.tile.index_path,
+                    app_config.viewer.tile.data_path,
                     dataset, tile_config);
 
             if (!tile_stats.success ||
@@ -160,9 +161,9 @@ int main(int argc, char** argv) {
                 );
             }
 
-            std::cout << "[PREPROCESS] tile_count = "
+            gs3d::util::log::info() << "[PREPROCESS] tile_count = "
                       << tile_stats.tile_count << '\n';
-            std::cout << "[TIME] tile_write_seconds = "
+            gs3d::util::log::info() << "[TIME] tile_write_seconds = "
                       << tile_timer.elapsed_seconds() << '\n';
         }
 
@@ -172,13 +173,13 @@ int main(int argc, char** argv) {
             dataset
         );
 
-        std::cout << "[TIME] total_seconds = "
+        gs3d::util::log::info() << "[TIME] total_seconds = "
                   << preprocess_timer.elapsed_seconds() << '\n';
-        std::cout << "[OK] preprocessing complete.\n";
+        gs3d::util::log::info() << "[OK] preprocessing complete.\n";
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "[FAIL] " << e.what() << '\n';
+        gs3d::util::log::error() << "[FAIL] " << e.what() << '\n';
         return 1;
     }
 }

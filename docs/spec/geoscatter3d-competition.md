@@ -1,7 +1,5 @@
 # Spec: GeoScatter3D 比赛版查看器
 
-依据：[docs/intent/geoscatter3d-competition.md](../intent/geoscatter3d-competition.md)（已确认意图）
-
 ## Objective
 
 把 GeoScatter3D 现有的 Vulkan + ImGui 桌面查看器，补全为能在比赛中演示的 1 亿点级

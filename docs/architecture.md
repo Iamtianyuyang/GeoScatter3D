@@ -114,25 +114,46 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 1660 行，`ViewerApp::run()` 同时负责数据加载、缓存、
-   GPU 上传、输入、UI 映射和渲染。职责边界不清晰，修改任何功能都容易影响主循环。
-2. GS3D v1 直接序列化 C++ struct，依赖本机字节序、浮点表示和 ABI padding。
-   当前校验能防截断和整数溢出，但格式还不是跨平台稳定协议。
+1. `ViewerApp.cpp` 当前有 912 行，其中 `ViewerApp::run()` 独占 716 行。运行时资源、
+   tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
+   `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
+   帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
+   调度与错误边界。`UiRoot.cpp` 仍有 2250 行，剩余的 docking 编排、菜单与面板绘制
+   仍集中在一个文件；下一刀按 UI 边界拆出菜单/工作台编排和独立 panel，且每次拆分都
+   降低对应预算。工程护栏以 912 / 716 / 2250 / 763 行分别约束 `ViewerApp.cpp`、
+   `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
+   比较只允许下降，本地快速检查仍与 `HEAD^` 比较。当前 PR 早于 main 上的护栏，故仅在
+   此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。
+2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
+   大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
+   已有 v1 数据应重建为 v2，LOD/tile sidecar 也需要独立评估相同的可移植性问题。
 3. swapchain 重建假设颜色格式和 image count 不变。显示模式或 surface 能力变化时，
    ImGui pipeline/render pass 以及 image-count 配置可能失配。
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按
    frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
-5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算和视图局部
-   相机输入；仍缺少 CSV、LOD、tile 选择和 Vulkan 生命周期集成测试，也没有 CI。
-6. 仓库跟踪约 500 MiB 的 `data/test.gs3d`，Git 对象目录接近 900 MiB。大型样例
-   应迁移到 release artifact、Git LFS 或可重复生成的小型 fixture。
+5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算、视图局部
+   相机输入与 LOD 策略；FreshClonePreprocess 还会把跟踪的 CSV 生成 bundle，并由生产
+   GS3D/tile reader 回读 25 个 golden 点。CTest 中的 C++ 测试使用 Catch2 并可按具体
+   用例过滤，Linux/Windows 构建工作流执行这些无窗口测试，并检查日志、仓库卫生和架构
+   风险数字。仍缺少 tile 选择和 Vulkan 生命周期集成测试。
+6. `ThreadPool::shutdown()` 会取消尚未开始的工作，并令对应 future 抛出显式
+   `TaskCancelled`。pool 必须比它返回的每个 future 活得更久；调用者要么在 shutdown
+   前消费 future，要么显式处理该异常。当前生产用法在同一函数内提交并消费 future，且
+   没有手动 shutdown 调用；Viewer 的 tile future 来自 `std::async`，清缓存路径已捕获
+   它的异常。未来若引入跨所有者的 pool future，必须同时添加生命周期测试和取消处理。
+7. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具与手动 benchmark 保留直接
+   stdout 作为机器可读接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道可由
+   `GS3D_LOG_BENCHMARK=0` 关闭。
+8. 当前 HEAD 的可追踪 blob 约为 28 MiB，其中两个 CJK 字体约占 25 MiB；历史中仍
+   保留已删除的调试资源和多个字体字重。要真正缩小克隆历史，需要以 `git filter-repo`
+   重写历史并协调一次强制推送；在完成团队协调前，不应静默执行该操作。
 
 ## 后续拆分方向
 
-1. **Tile 运行时服务**：从 `ViewerApp` 提取 tile 后台任务、CPU 缓存和 GPU 同步。
-   对外只提供相机更新和可渲染结果，让异步状态机可以独立测试。
+1. **UiRoot panel 边界**：先分离 docking/菜单编排，再把仍内嵌的 panel 绘制按数据集、
+   测量和渲染设置职责迁出；每个切片都附带交互烟测并压低 `UiRoot.cpp` 预算。
 2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
-   逐项复制 UI 字段。
+   逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
 3. **稳定的文件格式层**：用明确的小端字段编码替代 C++ struct 原样写盘，把版本、
    校验和兼容策略集中管理。
 4. **Swapchain 变更接口**：明确通知 ImGui 和依赖 render pass 的管线重建，而不是

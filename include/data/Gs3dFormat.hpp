@@ -1,12 +1,18 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace gs3d::data {
 
 inline constexpr char GS3D_MAGIC[4] = {'G', 'S', '3', 'D'};
-inline constexpr std::uint32_t GS3D_VERSION = 1;
+inline constexpr std::uint32_t GS3D_LEGACY_VERSION = 1;
+inline constexpr std::uint32_t GS3D_VERSION = 2;
+inline constexpr std::uint32_t GS3D_HEADER_V2_SIZE = 108;
+inline constexpr std::uint32_t GS3D_POINT_SIZE = 16;
 
 struct Gs3dHeader {
     char magic[4];
@@ -80,6 +86,24 @@ public:
     static std::string describe_header_error(const Gs3dHeader& header);
 
     static std::uint64_t expected_file_size(const Gs3dHeader& header);
+
+    // Version 2 is the portable on-disk representation: every integer and
+    // IEEE-754 value is emitted as an explicit little-endian field. Version 1
+    // files remain readable only as a legacy native-layout compatibility path.
+    static bool write_header(std::ostream& out, const Gs3dHeader& header);
+
+    static bool read_header(std::istream& in, Gs3dHeader& header);
+
+    static bool write_points(
+        std::ostream& out,
+        std::span<const Gs3dPoint> points
+    );
+
+    static bool read_points(
+        std::istream& in,
+        const Gs3dHeader& header,
+        std::vector<Gs3dPoint>& points
+    );
 };
 
 } // namespace gs3d::data

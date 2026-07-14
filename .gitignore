@@ -1,26 +1,29 @@
-cmake-build-*/
-build/
-build-*/
-out/
+/cmake-build-*/
+/build/
+/build-*/
+/out/
 *.o
 *.obj
 *.exe
 *.pdb
 *.ilk
-*.log
 *.bak
-data/
-bench/
-tools/__pycache__/
-config/imgui_layout.ini
+/data/
+/bench/
+/tools/__pycache__/
+/config/imgui_layout.ini
+/assets/shaders/*.spv
+
+# Local IDE and debugging state
+/.idea/
+/.vscode/
+/.cursor/
+/.dbg/
+/.tools/
 
 # Generated / temporary
-Testing/
-.reasonix/
-debug-zoom-horizon-singularity.md
-rc include -maxdepth 2 -type d
-reasonix.toml
-review_dump.txt
-*.html
-*.png
-*.xwd
+/Testing/
+/.reasonix/
+/reasonix.toml
+/review_dump.txt
+/*.xwd
