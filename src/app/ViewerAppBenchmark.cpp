@@ -196,14 +196,29 @@ void ViewerApp::print_benchmark_report(
     );
     gs3d::util::log::benchmark() << "[BENCH] hover_pick = skipped "
               << "(cursor-dependent, not part of fixed benchmark path)\n";
-    if (!samples.reload_seconds.empty()) {
+    if (!samples.tile_reload_samples.empty()) {
+        std::vector<double> reload_seconds;
+        reload_seconds.reserve(samples.tile_reload_samples.size());
+        for (std::size_t index = 0;
+             index < samples.tile_reload_samples.size();
+             ++index) {
+            const auto& sample = samples.tile_reload_samples[index];
+            reload_seconds.push_back(sample.seconds);
+            gs3d::util::log::benchmark()
+                << "[BENCH] reload_sample[" << index << "] = seconds="
+                << sample.seconds
+                << ", selected_tiles=" << sample.selected_tile_count
+                << ", required_tiles=" << sample.required_tile_count
+                << ", resident_tiles=" << sample.resident_tile_count
+                << '\n';
+        }
         gs3d::util::log::benchmark() << "[BENCH] reload_latency_seconds_p50 = "
                   << gs3d::util::percentile(
-                         samples.reload_seconds, 50.0)
+                         reload_seconds, 50.0)
                   << '\n';
         gs3d::util::log::benchmark() << "[BENCH] reload_latency_seconds_p95 = "
                   << gs3d::util::percentile(
-                         samples.reload_seconds, 95.0)
+                         reload_seconds, 95.0)
                   << '\n';
     } else {
         gs3d::util::log::benchmark()

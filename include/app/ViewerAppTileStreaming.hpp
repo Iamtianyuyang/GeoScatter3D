@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/BenchmarkSession.hpp"
 #include "app/TilePointCache.hpp"
 #include "app/ViewerAppInternal.hpp"
 #include "core/PointData.hpp"
@@ -119,15 +120,16 @@ struct ViewerAppTileStreamState {
     gs3d::util::Stopwatch async_cycle_timer;
 
     /*
-     * Stage 3 bounded GPU working set: first K candidates from sorted
-     * tile_result.tile_ids, where K = tile_gpu_cache_max_tiles (0 = all).
+     * Stage 3 active GPU working set: every sorted selected candidate from
+     * tile_result.tile_ids. Selection enforces max_visible_tiles; a nonzero
+     * tile_gpu_cache_max_tiles must cover that bounded active set.
      * Empty in Stage 1 (preload) and Stage 2 (fast path).
      * Rebuilt when the tile selection changes or the budget limit changes.
      */
     std::vector<std::uint64_t> gpu_required_tile_ids;
-    std::uint32_t last_working_set_limit = 0;
+    std::uint32_t last_resident_tile_budget = 0;
     // Incremented every time gpu_required_tile_ids changes (members,
-    // order, or K).  Captured by async load tasks; used for diagnostics.
+    // order, or visibility). Captured by async load tasks; used for diagnostics.
     std::uint64_t gpu_required_revision = 0;
     // Prevent the completed-upload report (and benchmark sample) from being
     // emitted every frame after a working set becomes fully resident.
@@ -211,7 +213,7 @@ struct ViewerAppTileStreamFrameContext {
     double& lod_tile_select_ms_frame;
     double& cpu_cull_ms_frame;
     double& upload_record_ms_frame;
-    std::vector<double>& reload_seconds;
+    std::vector<BenchmarkTileReloadSample>& reload_samples;
 };
 
 /*
@@ -225,22 +227,34 @@ std::vector<gs3d::core::PointDataView> collect_visible_hover_tile_views(
 );
 
 /*
- * Build the Stage-3 GPU working set from sorted visible candidates.
+ * Build the Stage-3 GPU working set from sorted selected candidates.
  *
  *  sorted_candidates — tile IDs in priority order (projected_pixels DESC,
  *                       center_distance_sq ASC, tile_id ASC).
- *  working_set_limit — legacy cache capacity hint. It does not truncate the
- *                      active viewport: visible tiles must all be resident.
+ *  resident_tile_budget — cache capacity. It does not truncate the selected
+ *                         active set; max_visible_tiles is enforced earlier
+ *                         by TileSelection.
  *
  * Returns every visible candidate in priority order.
  */
 [[nodiscard]]
 inline std::vector<std::uint64_t> build_gpu_required_tile_ids(
     const std::vector<std::uint64_t>& sorted_candidates,
-    std::uint32_t working_set_limit
+    std::uint32_t resident_tile_budget
 ) {
-    (void)working_set_limit;
+    (void)resident_tile_budget;
     return sorted_candidates;
+}
+
+// LOD can be spatially clipped only when selected full-resolution tiles cover
+// every raw candidate. A capped selection must retain the LOD base elsewhere.
+[[nodiscard]]
+inline bool selected_tiles_cover_candidates(
+    const std::size_t selected_tile_count,
+    const std::uint32_t total_candidate_tiles
+) noexcept {
+    return selected_tile_count == static_cast<std::size_t>(
+        total_candidate_tiles);
 }
 
 /*

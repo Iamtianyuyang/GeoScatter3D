@@ -23,7 +23,7 @@ CPU tile 缓存、GPU 显存三份（最浪费的设计），也只是 4.8GB，�
 | LOD sidecar（3 级，CPU+GPU 各一份） | 34.85 MB（实际降采样后约 217.8 万点） | 量级不变，约 35-70MB | `target_point_counts` 是绝对值（3M/1M/0.3M 目标），不随源数据量自动放大；即使个别级别降采样不充分顶到目标上限，3.3M 点 × 16 字节 = 52.8MB，CPU+GPU 两份 ≈106MB，仍是小数 |
 | Tile 索引（159 个 tile） | 12,856 字节 | 即使 tile 数涨到 5000+，索引仍 <1MB | 80.9 字节/tile 条目 × tile 数，量级始终是 KB-MB |
 | Tile CPU 缓存（LRU，`cpu_cache_max_bytes`） | 配置 512MB 上限 | 建议提到 ~2-4GB | 若 1 亿点与当前数据同 bbox（同空间范围、密度×3.03），每 tile 点数同比增长，512MB 缓存只能装下更少 tile，命中率会下降；提到 2-4GB 可让大部分/全部 tile 常驻 CPU，减少重复磁盘读取 |
-| Tile GPU 缓存（`gpu_cache_max_tiles` × 平均每 tile 字节） | 128 tile × ~3.32MB ≈ 425MB | 若 tile 数不变、平均点数 ×3.03：128 × ~10.06MB ≈ 1.29GB；若把 `gpu_cache_max_tiles` 提到能覆盖全部 tile（设当前 tile 数量级 ~159-500），全量驻留也只是 1.6-2.5GB | 16 字节/点 × 平均每 tile 点数 × 驻留 tile 数 |
+| Tile GPU 缓存（`gpu_cache_max_tiles` × 平均每 tile 字节） | 128 tile × ~3.32MB ≈ 425MB | 若 tile 数不变、平均点数 ×3.03：128 × ~10.06MB ≈ 1.29GB；若把 `gpu_cache_max_tiles` 提到能覆盖全部 tile（设当前 tile 数量级 ~159-500），全量驻留也只是 1.6-2.5GB | `max_visible_tiles` 硬限制活动全精度集合，且配置校验要求其不大于非零 `gpu_cache_max_tiles`；因此此项是 tile 数上的受控上限（不是每 tile 字节的上限） |
 | Vulkan/ImGui/多视口固定开销（4 视口离屏 framebuffer + swapchain + ImGui 字体纹理等） | 未单独测量，估计 <300MB | 同量级，不随点数变化 | 固定大小的渲染目标和 UI 资源，与点云规模无关 |
 | 进程基线开销（glibc/Vulkan loader/GLFW/std 容器开销） | 未单独测量，估计 <500MB-1GB | 同量级 | 经验值，不随点数变化 |
 
@@ -31,7 +31,7 @@ CPU tile 缓存、GPU 显存三份（最浪费的设计），也只是 4.8GB，�
 
 ```
 CPU tile 缓存上限（建议新值）        4.0 GB
-GPU tile 缓存（全量驻留，最坏情况）   2.5 GB
+GPU tile 缓存（全量驻留，最坏情况）   2.5 GB（活动 tile 数受 max_visible_tiles 限制）
 LOD CPU + GPU                       0.1 GB
 渲染/UI 固定开销                     0.3 GB
 进程基线开销                         1.0 GB
@@ -40,14 +40,16 @@ LOD CPU + GPU                       0.1 GB
 ```
 
 即使数据集再大几倍（比如赛方给的是 2-3 亿点），按同样比例放大 CPU/GPU tile 缓存
-两项（线性于点数），合计也只会到 ~15-20GB 区间——**内存预算有充分余量，不是这个项目的主要风险**。
+两项（线性于点数），合计也只会到 ~15-20GB 区间。`max_visible_tiles` 使活动集
+有界，配置校验要求非零 `gpu_cache_max_tiles` 覆盖该集合；极端视角仍必须以实际
+benchmark 的 selected/required/resident tile 数复核每 tile 的字节规模。
 
 ## 建议的新配置值（Task 4 落地）
 
 | 字段 | 当前值 | 建议新值 | 理由 |
 |---|---|---|---|
 | `tile.cpu_cache_max_bytes` | 536,870,912（512MB） | 4,294,967,296（4GB） | 让大部分/全部 tile 常驻 CPU 缓存，减少重复磁盘读取，直接帮助"减少重载时间"这条验收标准 |
-| `tile.gpu_cache_max_tiles` | 128 | 512 | 给将来 tile 数量增长（更大空间范围或更细分块）留余量；即使 1 亿点全部 tile 同时驻留 GPU 也远低于预算 |
+| `tile.gpu_cache_max_tiles` | 128 | 512 | 受 `max_visible_tiles` 约束的 GPU LRU 预算；调大它给相邻视野留余量。非零值必须不小于活动集上限 |
 | `tile.gpu_upload_budget_bytes` | 8,388,608（8MB/帧） | 暂不改 | 这是吞吐限速参数（防止单帧上传过多拖慢 fps），不是容量参数，留给 Layer 1 D（防闪烁）阶段根据帧时间实测再调 |
 | `lod.target_point_counts` | [3000000, 1000000, 300000] | 暂不改 | 内存占用可忽略，调整这个阶梯是为了 fps 不是为了内存，留给 Layer 1 C/D |
 

@@ -7,11 +7,11 @@ namespace gs3d::app {
 
 ViewerFrameStateSynchronizer::ViewerFrameStateSynchronizer(
     double dataset_origin_z,
-    std::uint32_t gpu_cache_max_tiles,
+    std::uint32_t resident_tile_budget,
     bool lod_enabled
 ) noexcept
     : dataset_origin_z_(dataset_origin_z),
-      gpu_cache_max_tiles_(gpu_cache_max_tiles),
+      resident_tile_budget_(resident_tile_budget),
       lod_enabled_(lod_enabled)
 {
 }
@@ -59,7 +59,7 @@ void ViewerFrameStateSynchronizer::synchronize(
         settings.loaded_tiles = metrics.loaded_tiles;
         settings.pending_tiles = metrics.pending_tiles;
         settings.cache_usage = std::to_string(metrics.loaded_tiles) + " / " +
-            std::to_string(gpu_cache_max_tiles_);
+            std::to_string(resident_tile_budget_) + " (budget)";
         settings.cpu_cache_usage = std::to_string(
             cache.resident_bytes / (1024ull * 1024ull)
         ) + " / " + std::to_string(

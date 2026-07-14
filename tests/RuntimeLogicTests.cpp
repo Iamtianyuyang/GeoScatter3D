@@ -766,7 +766,7 @@ void test_tile_selection_uses_mapped_height_space()
     );
 }
 
-void test_tile_selection_does_not_cap_visible_tiles()
+void test_tile_selection_honors_visible_tile_cap()
 {
     gs3d::camera::Camera camera;
     camera.set_viewport(400, 400);
@@ -818,8 +818,8 @@ void test_tile_selection_does_not_cap_visible_tiles()
     const auto result = selection.update(camera, tile_index);
 
     expect(
-        result.tile_ids.size() == 2,
-        "visible tile selection ignores max_visible_tiles to avoid viewport holes"
+        result.total_candidate_tiles == 2 && result.tile_ids.size() == 1,
+        "visible tile selection honors max_visible_tiles after ranking"
     );
 }
 
@@ -3027,7 +3027,7 @@ void test_hover_cleared_when_no_hit()
     LEGACY_TEST_CASE(test_orthographic_fit_bounds_uses_true_top_down_view)
     LEGACY_TEST_CASE(test_tile_selection_honors_full_z_range_config)
     LEGACY_TEST_CASE(test_tile_selection_uses_mapped_height_space)
-    LEGACY_TEST_CASE(test_tile_selection_does_not_cap_visible_tiles)
+    LEGACY_TEST_CASE(test_tile_selection_honors_visible_tile_cap)
     LEGACY_TEST_CASE(test_zoom_caps_depth_ratio_for_close_large_scene)
     LEGACY_TEST_CASE(test_rotate_refreshes_depth_ratio)
     LEGACY_TEST_CASE(test_pan_refreshes_depth_ratio)

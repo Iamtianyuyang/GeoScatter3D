@@ -15,6 +15,7 @@ void BenchmarkFrameSamples::reserve_frames(const std::size_t frame_count)
     acquire_wait_ms.reserve(frame_count);
     frame_fence_wait_ms.reserve(frame_count);
     upload_fence_wait_ms.reserve(frame_count);
+    tile_reload_samples.reserve(frame_count);
 }
 
 BenchmarkSession::BenchmarkSession(

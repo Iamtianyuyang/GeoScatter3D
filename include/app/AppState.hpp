@@ -125,7 +125,7 @@ struct RenderSettingsState {
     float max_points_per_pixel = 2.0f;
     bool high_quality = true;
 
-    std::string cache_usage = "0 / 256";
+    std::string cache_usage = "0 / 256 (budget)";
     std::string cpu_cache_usage = "0 / 0 MB";
     std::uint32_t loaded_tiles = 0;
     std::uint32_t pending_tiles = 0;

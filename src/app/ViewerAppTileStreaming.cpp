@@ -529,23 +529,23 @@ void TileStreamingSystem::update(
      * without special-case flags.
      */
     {
-        const auto working_set_limit =
+        const auto resident_tile_budget =
             config.gpu_cache_max_tiles;
 
         // Keep the GPU eviction budget synchronised with the cache limit.
-        // Current visible tiles are pinned by sync_from_cached_tiles, so the
-        // budget can be exceeded temporarily when the viewport needs it.
-        if (working_set_limit != tiles.last_working_set_limit) {
-            tiles.last_working_set_limit = working_set_limit;
+        // A bounded active selection fits this budget by validation; only an
+        // explicit unlimited selection can pin more tiles than it.
+        if (resident_tile_budget != tiles.last_resident_tile_budget) {
+            tiles.last_resident_tile_budget = resident_tile_budget;
             ctx.tile_gpu_cloud->set_resident_tile_budget(
-                working_set_limit);
+                resident_tile_budget);
         }
 
         if (ctx.tile_result.enabled &&
             !ctx.tile_result.tile_ids.empty()) {
             auto next_required = build_gpu_required_tile_ids(
                 ctx.tile_result.tile_ids,
-                working_set_limit);
+                resident_tile_budget);
 
             if (next_required != tiles.gpu_required_tile_ids) {
                 tiles.gpu_required_tile_ids =
@@ -702,9 +702,14 @@ void TileStreamingSystem::update(
                     reload_total_seconds
                 );
                 if (benchmark_enabled) {
-                    ctx.reload_seconds.push_back(
-                        reload_total_seconds
-                    );
+                    ctx.reload_samples.push_back({
+                        .seconds = reload_total_seconds,
+                        .selected_tile_count = ctx.tile_result.tile_ids.size(),
+                        .required_tile_count =
+                            tiles.gpu_required_tile_ids.size(),
+                        .resident_tile_count = static_cast<std::size_t>(
+                            sync.resident_tile_count)
+                    });
                 }
                 tiles.completed_gpu_required_revision =
                     tiles.gpu_required_revision;

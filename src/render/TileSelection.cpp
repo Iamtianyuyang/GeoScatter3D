@@ -173,11 +173,13 @@ TileSelectionResult TileSelection::update(
         }
     );
 
-    // Every tile that intersects the current view is part of the active
-    // selection.  Limiting this list creates holes in the viewport, which is
-    // especially noticeable while navigating a perspective view.  The order
-    // above remains the streaming priority: larger on-screen tiles upload
-    // first, while the GPU cache budget controls residency separately.
+    // Keep the highest-priority full-resolution tiles within the explicit
+    // active-set cap. The renderer leaves LOD unclipped when this trims the
+    // candidate set, so non-selected areas remain covered instead of holes.
+    if (config_.max_visible_tiles > 0 &&
+        candidates.size() > config_.max_visible_tiles) {
+        candidates.resize(config_.max_visible_tiles);
+    }
 
     float sel_min_x = std::numeric_limits<float>::max();
     float sel_min_y = std::numeric_limits<float>::max();

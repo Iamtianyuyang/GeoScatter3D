@@ -778,7 +778,7 @@ int ViewerApp::run() {
                     .cpu_cull_ms_frame = benchmark_cpu_cull_ms_frame,
                     .upload_record_ms_frame =
                         benchmark_upload_record_ms_frame,
-                    .reload_seconds = benchmark_session.samples().reload_seconds
+                    .reload_samples = benchmark_session.samples().tile_reload_samples
                 };
                 tile_streaming.update(
                     tile_ctx,

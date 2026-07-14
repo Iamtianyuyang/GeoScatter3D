@@ -159,6 +159,21 @@ TEST_CASE("AppConfig rejects negative unsigned values", "[app_config][validation
     );
 }
 
+TEST_CASE("AppConfig rejects a GPU tile budget below the active tile cap", "[app_config][validation]")
+{
+    TemporaryDirectory fixture;
+    const auto config_path = fixture.path() / "invalid-tile-budget.toml";
+    write_file(
+        config_path,
+        "[tile]\nenabled = true\nmax_visible_tiles = 16\ngpu_cache_max_tiles = 8\n"
+    );
+
+    CHECK_THROWS_AS(
+        gs3d::app::AppConfigLoader::load_from_file(config_path),
+        std::runtime_error
+    );
+}
+
 TEST_CASE("AppConfig rejects invalid runtime domain values", "[app_config][validation]")
 {
     TemporaryDirectory fixture;

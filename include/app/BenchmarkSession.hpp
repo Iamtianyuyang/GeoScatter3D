@@ -7,6 +7,16 @@
 
 namespace gs3d::app {
 
+// A reload latency is meaningful only with its selected/resident tile counts.
+// Keep the workload next to the duration so reports cannot compare different
+// active viewports as if they were equivalent cache events.
+struct BenchmarkTileReloadSample {
+    double seconds = 0.0;
+    std::size_t selected_tile_count = 0;
+    std::size_t required_tile_count = 0;
+    std::size_t resident_tile_count = 0;
+};
+
 struct BenchmarkFrameSamples {
     std::vector<double> wall_frame_times_ms;
     std::vector<double> cpu_frame_times_ms;
@@ -19,7 +29,7 @@ struct BenchmarkFrameSamples {
     std::vector<double> acquire_wait_ms;
     std::vector<double> frame_fence_wait_ms;
     std::vector<double> upload_fence_wait_ms;
-    std::vector<double> reload_seconds;
+    std::vector<BenchmarkTileReloadSample> tile_reload_samples;
 
     void reserve_frames(std::size_t frame_count);
 };

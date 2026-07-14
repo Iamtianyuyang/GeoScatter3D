@@ -121,13 +121,16 @@ enabled = true
 
 # tile 投影宽度 >= 该像素值时加载全精度数据（对应 Potree 屏幕空间阈值）
 min_tile_pixel_size = 50
+# 活动全分辨率 tile 的硬上限（0 = 不限）。达到上限时，未选中区域保留 LOD
+# 覆盖；gpu_cache_max_tiles 必须不小于此值，才能保证受限集合不会突破 GPU 预算。
 max_visible_tiles = 160
 
 use_full_z_range = true
 verbose = true
-# LRU 淘汰上限。设为可见 tile 数的 2-3× 让淘汰真正生效，
-# 默认 288 覆盖高峰可见集及相邻视野缓冲，避免调试时的小上限
-# 被误提交后持续触发 GPU 缓存淘汰。
+# GPU LRU 驻留预算。活动集由 max_visible_tiles 硬上限约束，且配置校验要求
+# 此值不小于活动集；默认 288 为 160 个活动 tile 留出相邻视野缓冲。基准报告会
+# 输出实际 selected/required/resident tile 数，比较 reload 时必须同时比较这些
+# 工作负载。
 gpu_cache_max_tiles = 288
 # Upload at most 32 MiB of newly visible tile data per frame. The previous
 # 8 MiB cap dominated cold-load latency on large visible working sets.

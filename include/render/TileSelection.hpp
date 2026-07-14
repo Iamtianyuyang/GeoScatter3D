@@ -20,8 +20,9 @@ struct TileSelectionConfig {
      * 推荐范围：20–100。
      */
     float min_tile_pixel_size = 50.0f;
-    // Kept for backwards-compatible configuration parsing.  Visible tiles are
-    // never truncated: the streaming order and GPU cache budget manage memory.
+    // Hard cap for the active full-resolution set (0 = unlimited). The LOD
+    // base remains visible outside a capped set, so this bounds resources
+    // without leaving viewport holes.
     std::uint32_t max_visible_tiles = 0;
 
     /*

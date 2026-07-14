@@ -67,7 +67,7 @@ TEST_CASE("ViewerFrameStateSynchronizer mirrors per-viewport render state")
     CHECK(active.height_exaggeration == Catch::Approx(2.5f));
     CHECK(active.data_value_min == Catch::Approx(107.0f));
     CHECK(active.data_value_max == Catch::Approx(110.0f));
-    CHECK(active.cache_usage == "4 / 288");
+    CHECK(active.cache_usage == "4 / 288 (budget)");
     CHECK(active.cpu_cache_usage == "12 / 64 MB");
     CHECK(active.cache_hit_rate == Catch::Approx(75.0f));
     CHECK(state.render_settings.point_size == Catch::Approx(3.0f));

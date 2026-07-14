@@ -33,6 +33,8 @@ GS3D_BENCHMARK_FRAMES=1800 ./build/GeoScatter3DBenchmark --config config/viewer.
 下的数字直接比较。每次比较必须报告帧数、GPU、present mode、数据集、缓存状态，并把
 GPU P50 作为首要帧时间判据。普通 benchmark 在刚进入静止段时会清空 CPU/GPU tile
 缓存、重新选择并重新上传一次；只有完成该事件的运行才能声称验证了 reload 延迟。
+每个完成的 reload 还会输出 `selected_tiles`、`required_tiles` 和
+`resident_tiles`；只有这些工作负载相同（或明确归一化）时，延迟数字才能横向比较。
 
 ## 结果
 
@@ -83,3 +85,7 @@ P95/P99 在 tile 重新选择触发异步上传期间偏高（每帧花费在
   应该多采几种相机轨迹来覆盖。
 - 当前基准用的是合成轨道+推近运动，不是真实用户交互手感，数字是"机器能跑多快"
   的上限参考，不是"用户实际感受到的延迟"的直接替代。
+- `tile.max_visible_tiles` 是活动全分辨率集合的硬上限；被截断的区域保留 LOD 覆盖，
+  因此不会形成空洞。非零 `tile.gpu_cache_max_tiles` 必须不小于它。仍不能把不同
+  `selected_tiles`/`required_tiles` 的 reload 延迟当作同一工作量的回归；报告中的对应
+  字段是比较前置条件。

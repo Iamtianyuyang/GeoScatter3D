@@ -36,7 +36,7 @@ class ViewerFrameStateSynchronizer {
 public:
     ViewerFrameStateSynchronizer(
         double dataset_origin_z,
-        std::uint32_t gpu_cache_max_tiles,
+        std::uint32_t resident_tile_budget,
         bool lod_enabled
     ) noexcept;
 
@@ -51,7 +51,7 @@ public:
 
 private:
     double dataset_origin_z_ = 0.0;
-    std::uint32_t gpu_cache_max_tiles_ = 0;
+    std::uint32_t resident_tile_budget_ = 0;
     bool lod_enabled_ = false;
 };
 
