@@ -62,6 +62,13 @@ bool BenchmarkSession::should_orbit() const noexcept
     return enabled_ && frame_index_ < orbit_frame_count_;
 }
 
+bool BenchmarkSession::should_force_tile_reload() const noexcept
+{
+    // Fire once at the first settled frame, after the scripted camera motion
+    // has produced a realistic selection but before the steady-state sample.
+    return enabled_ && frame_index_ == orbit_frame_count_;
+}
+
 std::uint32_t BenchmarkSession::frame_index() const noexcept
 {
     return frame_index_;

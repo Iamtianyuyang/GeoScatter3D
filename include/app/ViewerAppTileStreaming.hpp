@@ -166,7 +166,10 @@ public:
     [[nodiscard]] ViewerAppTileStreamState& state() noexcept;
     [[nodiscard]] const ViewerAppTileStreamState& state() const noexcept;
 
-    void clear_cpu_cache();
+    void clear_cache(
+        gs3d::render::VulkanRenderer& renderer,
+        gs3d::render::PointCloudTileGpu* tile_gpu_cloud
+    );
     void update(
         const ViewerAppTileStreamFrameContext& context,
         const ViewerTileConfig& config,

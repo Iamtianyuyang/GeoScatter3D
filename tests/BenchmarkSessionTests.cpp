@@ -41,10 +41,12 @@ TEST_CASE(
     CHECK(session.should_orbit());
     session.record_frame({}, std::nullopt);
     CHECK_FALSE(session.should_orbit());
+    CHECK(session.should_force_tile_reload());
 
     for (std::uint32_t frame = 0; frame < 4; ++frame) {
         session.record_frame({}, std::nullopt);
         CHECK_FALSE(session.should_orbit());
+        CHECK_FALSE(session.should_force_tile_reload());
     }
 }
 

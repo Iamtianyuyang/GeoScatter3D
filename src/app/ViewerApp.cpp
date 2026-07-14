@@ -638,7 +638,6 @@ int ViewerApp::run() {
             const bool keyboard_shortcuts_allowed =
                 !ImGui::GetIO().WantTextInput;
             gs3d::util::Stopwatch benchmark_camera_timer;
-
             ViewerAppCameraCommandContext cam_ctx{
                 .n_viewports = n_viewports,
                 .controllers = viewport_cameras.controllers(),
@@ -659,11 +658,12 @@ int ViewerApp::run() {
                 dataset,
                 viewport_height_exags
             );
-            if (gui_cmds.clear_cache_requested) {
-                tile_streaming.clear_cpu_cache();
+            if (gui_cmds.clear_cache_requested ||
+                (!benchmark_pick_enabled && benchmark_session.should_force_tile_reload())) {
+                tile_streaming.clear_cache(renderer, tile_gpu_cloud);
+                tile_selection_dirty = true;
             }
             screenshot_service.request(gui_cmds, app_state, swapchain);
-
             {
                 RegionStatsCommandContext rs_ctx{
                     .viewport_manager = viewport_manager,

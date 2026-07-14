@@ -269,8 +269,11 @@ const ViewerAppTileStreamState& TileStreamingSystem::state() const noexcept
 
 // gui_cmds.clear_cache_requested: cancel a still-running preload first so
 // clear() isn't immediately defeated by the background thread re-inserting
-// tiles, then drop the CPU cache.
-void TileStreamingSystem::clear_cpu_cache() {
+// tiles, then release both CPU and GPU tile caches.
+void TileStreamingSystem::clear_cache(
+    gs3d::render::VulkanRenderer& renderer,
+    gs3d::render::PointCloudTileGpu* tile_gpu_cloud
+) {
     auto& tiles = state_;
     if (tiles.preload_enabled && !tiles.tiles_fully_resident &&
         !tiles.preload_failed) {
@@ -298,7 +301,11 @@ void TileStreamingSystem::clear_cpu_cache() {
     tiles.cache_requested_tile_ids.clear();
     tiles.completed_gpu_required_revision.reset();
     tiles.point_cache.clear();
-    gs3d::util::log::info() << "[TILE] CPU cache cleared.\n";
+    if (tile_gpu_cloud != nullptr) {
+        renderer.wait_for_in_flight_fences();
+        tile_gpu_cloud->clear();
+    }
+    gs3d::util::log::info() << "[TILE] tile caches cleared.\n";
 }
 
 /*

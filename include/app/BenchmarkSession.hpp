@@ -57,6 +57,7 @@ public:
     [[nodiscard]] bool enabled() const noexcept;
     [[nodiscard]] bool should_continue() const noexcept;
     [[nodiscard]] bool should_orbit() const noexcept;
+    [[nodiscard]] bool should_force_tile_reload() const noexcept;
     [[nodiscard]] std::uint32_t frame_index() const noexcept;
     [[nodiscard]] std::uint64_t app_frame_index() const noexcept;
     [[nodiscard]] const BenchmarkFrameSamples& samples() const noexcept;
