@@ -38,13 +38,8 @@ TEST_CASE(
     CHECK(active_task.get() == 7);
     REQUIRE(cancelled_task.wait_for(1s) == std::future_status::ready);
 
-    bool queued_task_was_cancelled = false;
-    try {
-        static_cast<void>(cancelled_task.get());
-    } catch (const std::future_error& error) {
-        queued_task_was_cancelled =
-            error.code() ==
-                std::make_error_code(std::future_errc::broken_promise);
-    }
-    CHECK(queued_task_was_cancelled);
+    CHECK_THROWS_AS(
+        static_cast<void>(cancelled_task.get()),
+        gs3d::util::ThreadPool::TaskCancelled
+    );
 }

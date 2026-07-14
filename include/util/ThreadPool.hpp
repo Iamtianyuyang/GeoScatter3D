@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <functional>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <stdexcept>
@@ -32,6 +33,16 @@ namespace gs3d::util {
  */
 class ThreadPool {
 public:
+    class TaskCancelled final : public std::runtime_error {
+    public:
+        TaskCancelled()
+            : std::runtime_error(
+                "ThreadPool: task cancelled during shutdown"
+            )
+        {
+        }
+    };
+
     explicit ThreadPool(std::size_t num_threads) {
         if (num_threads == 0) {
             throw std::invalid_argument("ThreadPool: num_threads must be > 0");
@@ -48,9 +59,9 @@ public:
     }
 
     // Reject future submissions and cancel tasks that no worker has started.
-    // Futures for cancelled packaged tasks become ready with broken_promise.
+    // Their futures become ready with TaskCancelled, never broken_promise.
     void shutdown() {
-        std::queue<std::function<void()>> cancelled_tasks;
+        std::queue<QueuedTask> cancelled_tasks;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             if (shutdown_) {
@@ -58,6 +69,10 @@ public:
             }
             shutdown_ = true;
             tasks_.swap(cancelled_tasks);
+        }
+        while (!cancelled_tasks.empty()) {
+            cancelled_tasks.front().cancel();
+            cancelled_tasks.pop();
         }
         cv_.notify_all();
     }
@@ -68,6 +83,11 @@ public:
     }
 
 private:
+    struct QueuedTask {
+        std::function<void()> execute;
+        std::function<void()> cancel;
+    };
+
     void join_workers() {
         for (auto& w : workers_) {
             if (w.joinable()) w.join();
@@ -87,14 +107,39 @@ public:
     template<typename F>
     auto submit(F&& f) -> std::future<std::invoke_result_t<F>> {
         using R = std::invoke_result_t<F>;
-        auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
-        auto future = task->get_future();
+        auto promise = std::make_shared<std::promise<R>>();
+        auto future = promise->get_future();
+        auto callable = std::make_shared<std::decay_t<F>>(
+            std::forward<F>(f)
+        );
+        QueuedTask task;
+        task.execute = [promise, callable] {
+            try {
+                if constexpr (std::is_void_v<R>) {
+                    std::invoke(*callable);
+                    promise->set_value();
+                } else {
+                    promise->set_value(std::invoke(*callable));
+                }
+            } catch (...) {
+                promise->set_exception(std::current_exception());
+            }
+        };
+        task.cancel = [promise] {
+            try {
+                promise->set_exception(
+                    std::make_exception_ptr(TaskCancelled{})
+                );
+            } catch (...) {
+                // A cancellation notification must not make shutdown throw.
+            }
+        };
         {
             std::unique_lock<std::mutex> lock(mutex_);
             if (shutdown_) {
                 throw std::runtime_error("ThreadPool: submit after shutdown");
             }
-            tasks_.push([task = std::move(task)] { (*task)(); });
+            tasks_.push(std::move(task));
         }
         cv_.notify_one();
         return future;
@@ -103,7 +148,7 @@ public:
 private:
     void worker_loop() {
         while (true) {
-            std::function<void()> task;
+            QueuedTask task;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 cv_.wait(lock, [this] {
@@ -115,12 +160,12 @@ private:
                 task = std::move(tasks_.front());
                 tasks_.pop();
             }
-            task();
+            task.execute();
         }
     }
 
     std::vector<std::thread>         workers_;
-    std::queue<std::function<void()>> tasks_;
+    std::queue<QueuedTask> tasks_;
     std::mutex                        mutex_;
     std::condition_variable           cv_;
     bool                              shutdown_ = false;
