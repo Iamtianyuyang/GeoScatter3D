@@ -26,6 +26,13 @@ GS3D_BENCHMARK_FRAMES=1800 ./build/GeoScatter3DBenchmark --config config/viewer.
 600 帧轨道旋转+缓慢推近（制造真实的 tile 重选需求），随后 1200 帧静止（让 tile
 异步加载/上传完整跑完一轮，用于测重载延迟）。
 
+### 协议完整性
+
+上述 1/3 运动、2/3 静止的比例现在由 `BenchmarkSession` 强制执行并有单元测试。
+此前实现曾错误地执行 2/3 运动、1/3 静止；因此在修正前采集的历史数字不能和新协议
+下的数字直接比较。每次比较必须报告帧数、GPU、present mode、数据集、缓存状态，并把
+GPU P50 作为首要帧时间判据；没有完成 tile upload 的运行不得声称验证了 reload 延迟。
+
 ## 结果
 
 ### 帧时间（独显，1800 帧）

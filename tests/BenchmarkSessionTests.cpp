@@ -30,6 +30,24 @@ TEST_CASE("BenchmarkSession stops at configured frame count", "[benchmark_sessio
           std::vector<double>{1.5, 2.5});
 }
 
+TEST_CASE(
+    "BenchmarkSession reserves two thirds of a normal run for settling",
+    "[benchmark_session]"
+) {
+    gs3d::app::BenchmarkSession session(true, 6, 2);
+
+    CHECK(session.should_orbit());
+    session.record_frame({}, std::nullopt);
+    CHECK(session.should_orbit());
+    session.record_frame({}, std::nullopt);
+    CHECK_FALSE(session.should_orbit());
+
+    for (std::uint32_t frame = 0; frame < 4; ++frame) {
+        session.record_frame({}, std::nullopt);
+        CHECK_FALSE(session.should_orbit());
+    }
+}
+
 TEST_CASE("BenchmarkSession accounts for pick warmup and GPU latency", "[benchmark_session]")
 {
     gs3d::app::BenchmarkSession session(true, 600, 3);

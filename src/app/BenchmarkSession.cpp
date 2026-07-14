@@ -26,7 +26,10 @@ BenchmarkSession::BenchmarkSession(
     , requested_frame_count_(requested_frame_count)
     , frames_in_flight_(frames_in_flight)
     , target_frame_count_(requested_frame_count)
-    , orbit_frame_count_(requested_frame_count * 2 / 3)
+    // Keep two thirds of a normal run stationary.  The scripted camera move
+    // exists to trigger a tile reload; it must not dominate the frame-time
+    // percentile intended to describe the settled rendering path.
+    , orbit_frame_count_(requested_frame_count / 3)
 {
     if (enabled_) {
         samples_.reserve_frames(requested_frame_count_);
