@@ -130,9 +130,10 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按
    frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
 5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算、视图局部
-   相机输入与 LOD 策略；CTest 中的 C++ 单元测试使用 Catch2 并可按具体用例过滤，Linux/Windows
-   构建工作流执行这些无窗口测试，并检查日志、仓库卫生和架构风险数字。仍缺少 CSV、tile
-   选择和 Vulkan 生命周期集成测试。
+   相机输入与 LOD 策略；FreshClonePreprocess 还会把跟踪的 CSV 生成 bundle，并由生产
+   GS3D/tile reader 回读 25 个 golden 点。CTest 中的 C++ 测试使用 Catch2 并可按具体
+   用例过滤，Linux/Windows 构建工作流执行这些无窗口测试，并检查日志、仓库卫生和架构
+   风险数字。仍缺少 tile 选择和 Vulkan 生命周期集成测试。
 6. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具与手动 benchmark 保留直接
    stdout 作为机器可读接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道可由
    `GS3D_LOG_BENCHMARK=0` 关闭。

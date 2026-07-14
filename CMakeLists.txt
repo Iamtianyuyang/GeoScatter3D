@@ -1125,6 +1125,37 @@ if(BUILD_TESTING)
                 "GS3D_USER_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-user-config"
     )
 
+    # The preprocessor smoke test must prove that its output is consumable,
+    # not merely that it exits successfully.  This test reads the generated
+    # GS3D v2 source and tile data back through production readers.
+    add_executable(GeoScatter3DFreshCloneBundleTests
+        tests/FreshCloneBundleTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DFreshCloneBundleTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_compile_definitions(GeoScatter3DFreshCloneBundleTests PRIVATE
+        GS3D_SAMPLE_BUNDLE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/data/sample-points.gs3d.bundle\"
+    )
+
+    target_link_libraries(GeoScatter3DFreshCloneBundleTests PRIVATE
+        gs3d_data
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.FreshCloneBundle
+        COMMAND GeoScatter3DFreshCloneBundleTests
+    )
+
+    set_tests_properties(
+        GeoScatter3D.FreshCloneBundle
+        PROPERTIES
+            DEPENDS GeoScatter3D.FreshClonePreprocess
+    )
+
     # Manual GPU performance harness — not registered with add_test()/ctest
     # (needs a real Vulkan device and takes seconds, not milliseconds; see
     # docs/plan/geoscatter3d-tasks.md Task 1). Run directly:
