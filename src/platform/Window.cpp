@@ -1,5 +1,14 @@
 #include "platform/Window.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -7,7 +16,6 @@
 #include <stdexcept>
 
 #if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 

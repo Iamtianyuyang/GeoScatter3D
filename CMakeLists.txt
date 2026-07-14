@@ -241,6 +241,9 @@ target_include_directories(gs3d_app_support PUBLIC
 
 target_link_libraries(gs3d_app_support PUBLIC
     gs3d_preprocess
+    # AppState exposes Vulkan handle types, so this usage requirement must
+    # propagate to every consumer (not only to the final viewer executable).
+    Vulkan::Vulkan
 )
 
 add_library(gs3d_viewport_camera STATIC
