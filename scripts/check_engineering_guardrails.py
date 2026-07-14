@@ -67,7 +67,9 @@ def line_budgets_at_parent(root: pathlib.Path) -> dict[str, int] | None:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        # Git stores source as UTF-8.  Do not use Windows' process locale
+        # (cp1252 on hosted runners), because historical comments are Chinese.
+        encoding="utf-8",
     )
     if previous.returncode != 0:
         return None
