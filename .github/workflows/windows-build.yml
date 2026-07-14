@@ -17,12 +17,15 @@ jobs:
       # A checkout without submodules cannot even generate the build system.
       - uses: actions/checkout@v4
         with:
-          # Test the PR head itself so the guardrail's HEAD^ is the preceding
-          # feature-branch commit, rather than the synthetic merge commit's
-          # main-branch parent.
+          # Test the PR head itself rather than GitHub's synthetic merge ref.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
-          fetch-depth: 2
+          # Guardrails compare a PR to merge-base(base, HEAD), not just HEAD^.
+          fetch-depth: 0
+
+      - name: Fetch guardrail base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin $env:GITHUB_BASE_REF
 
       # glfw3 + Vulkan headers/loader + glslangValidator via vcpkg.
       - name: Cache vcpkg packages
@@ -63,7 +66,11 @@ jobs:
           # Keep the historical budget comparison on the PR's actual history.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
-          fetch-depth: 2
+          fetch-depth: 0
+
+      - name: Fetch guardrail base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "$GITHUB_BASE_REF"
 
       - name: Install dependencies
         run: |

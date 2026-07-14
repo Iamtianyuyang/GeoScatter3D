@@ -29,7 +29,10 @@ namespace gs3d::util {
  *
  * shutdown() cancels queued work but lets tasks that a worker already started
  * finish. This keeps application exit bounded by active work, not by an
- * unbounded backlog of stale requests.
+ * unbounded backlog of stale requests. A pool must outlive every future it
+ * returned: consume each future before shutdown(), or deliberately catch
+ * TaskCancelled when retaining it across shutdown. Production owners must not
+ * rely on a future becoming a broken promise during teardown.
  */
 class ThreadPool {
 public:

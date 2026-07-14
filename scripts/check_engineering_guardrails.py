@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import pathlib
 import re
 import subprocess
@@ -43,39 +44,9 @@ LINE_BUDGETS = {
 }
 
 
-def line_budgets_at_parent(root: pathlib.Path) -> dict[str, int] | None:
-    """Return the committed budgets immediately preceding the checked tree.
-
-    A line-budget ratchet is only useful if a code change cannot increase its
-    allowance in the same commit.  CI therefore checks this working tree
-    against HEAD^; workflows must fetch that parent commit.
-    """
-    parent = subprocess.run(
-        ["git", "rev-parse", "--verify", "HEAD^"],
-        cwd=root,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    if parent.returncode != 0:
-        return None
-
-    previous = subprocess.run(
-        ["git", "show", "HEAD^:scripts/check_engineering_guardrails.py"],
-        cwd=root,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        # Git stores source as UTF-8.  Do not use Windows' process locale
-        # (cp1252 on hosted runners), because historical comments are Chinese.
-        encoding="utf-8",
-    )
-    if previous.returncode != 0:
-        return None
-
+def line_budgets_from_source(source: str) -> dict[str, int] | None:
     try:
-        module = ast.parse(previous.stdout)
+        module = ast.parse(source)
         assignment = next(
             node for node in module.body
             if isinstance(node, ast.Assign) and any(
@@ -93,6 +64,94 @@ def line_budgets_at_parent(root: pathlib.Path) -> dict[str, int] | None:
     ):
         return None
     return parsed
+
+
+def line_budgets_at_revision(
+    root: pathlib.Path,
+    revision: str,
+) -> dict[str, int] | None:
+    previous = subprocess.run(
+        ["git", "show", f"{revision}:scripts/check_engineering_guardrails.py"],
+        cwd=root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Git stores source as UTF-8.  Do not use Windows' process locale
+        # (cp1252 on hosted runners), because historical comments are Chinese.
+        encoding="utf-8",
+    )
+    if previous.returncode != 0:
+        return None
+    return line_budgets_from_source(previous.stdout)
+
+
+def git_revision(
+    root: pathlib.Path,
+    *args: str,
+) -> str | None:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def line_budget_baseline(
+    root: pathlib.Path,
+) -> tuple[dict[str, int], str] | None:
+    """Return the immutable line-budget baseline for this checked tree.
+
+    Local runs compare against HEAD^ for fast feedback.  Pull-request CI sets
+    GITHUB_BASE_REF and compares against the merge-base with that base branch,
+    so a budget cannot be raised in one commit and cosmetically lowered in a
+    later head commit.  This first PR predates the guardrail on main, so its
+    transitional baseline is the first commit on the PR that introduced a
+    complete LINE_BUDGETS mapping; once merged, all later PRs use main.
+    """
+    base_ref = os.environ.get("GITHUB_BASE_REF")
+    if not base_ref:
+        parent = git_revision(root, "rev-parse", "--verify", "HEAD^")
+        if parent is None:
+            return None
+        budgets = line_budgets_at_revision(root, parent)
+        if budgets is None:
+            return None
+        return budgets, f"parent {parent[:12]}"
+
+    merge_base = git_revision(
+        root,
+        "merge-base",
+        "HEAD",
+        f"origin/{base_ref}",
+    )
+    if merge_base is None:
+        return None
+
+    budgets = line_budgets_at_revision(root, merge_base)
+    if budgets is not None:
+        return budgets, f"merge-base {merge_base[:12]}"
+
+    introduced_revisions = git_revision(
+        root,
+        "rev-list",
+        "--reverse",
+        f"{merge_base}..HEAD",
+        "--",
+        "scripts/check_engineering_guardrails.py",
+    )
+    if introduced_revisions is None:
+        return None
+    for revision in introduced_revisions.splitlines():
+        budgets = line_budgets_at_revision(root, revision)
+        if budgets is not None:
+            return budgets, f"first guardrail policy {revision[:12]}"
+    return None
 
 
 def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
@@ -178,22 +237,23 @@ def main() -> int:
     tracked = tracked_files(root)
     violations: list[str] = []
 
-    parent_budgets = line_budgets_at_parent(root)
-    if parent_budgets is None:
+    baseline = line_budget_baseline(root)
+    if baseline is None:
         violations.append(
-            "cannot verify historical line budgets; fetch the parent commit"
+            "cannot verify line-budget baseline; fetch the PR base and history"
         )
     else:
+        baseline_budgets, baseline_description = baseline
         for subject, budget in LINE_BUDGETS.items():
-            parent_budget = parent_budgets.get(subject)
-            if parent_budget is None:
+            baseline_budget = baseline_budgets.get(subject)
+            if baseline_budget is None:
                 violations.append(
-                    f"historical line budget missing: {subject}"
+                    f"baseline line budget missing: {subject}"
                 )
-            elif budget > parent_budget:
+            elif budget > baseline_budget:
                 violations.append(
                     "line budget increased: "
-                    f"{subject}={budget}, parent={parent_budget}"
+                    f"{subject}={budget}, {baseline_description}={baseline_budget}"
                 )
 
     for path in tracked:
