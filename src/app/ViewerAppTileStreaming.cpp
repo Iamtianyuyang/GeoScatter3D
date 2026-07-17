@@ -349,6 +349,7 @@ void TileStreamingSystem::update(
                  &cache = tiles.point_cache,
                  &ids_by_tile = ctx.tile_point_ids_by_tile,
                  &arena = tiles.preload_arena,
+                 &read_tiles = tiles.preload_read_tiles,
                  &context = ctx.context]()
                     -> std::vector<PreloadedTile> {
                     std::vector<PreloadedTile> all;
@@ -385,6 +386,8 @@ void TileStreamingSystem::update(
                             &arena
                         );
                         all.push_back(std::move(tile));
+                        read_tiles.fetch_add(
+                            1, std::memory_order_relaxed);
                     }
                     return all;
                 });
@@ -413,11 +416,8 @@ void TileStreamingSystem::update(
                     );
                     tiles.preload_uploads.push_back(std::move(upload));
                 }
-                register_runtime_tile_point_lookup(
-                    tiles.preload_tiles,
-                    ctx.runtime_points_by_id,
-                    ctx.runtime_points_valid_by_id
-                );
+                // 点 ID 查找表不在此一次性注册（5000 万点的写入是
+                // 一次可感知的单帧冻结），改为随 adopt 分帧推进。
             } catch (const std::exception& e) {
                 gs3d::util::log::error()
                     << "[TILE] preload failed: " << e.what()
@@ -426,6 +426,7 @@ void TileStreamingSystem::update(
                 // 顺序：先销毁子绑定的 buffer，再释放 arena 大块。
                 tiles.preload_uploads.clear();
                 tiles.preload_tiles.clear();
+                tiles.preload_registered_tiles = 0;
                 tiles.preload_arena.destroy();
             }
         }
@@ -446,6 +447,22 @@ void TileStreamingSystem::update(
                     tiles.preload_uploads,
                     config.preload_upload_budget_bytes
                 );
+            // 点 ID 查找表随收编进度分帧注册：本帧只写刚收编瓦片的
+            // 点（preload_tiles 与 uploads 同序构建，收编总数 =
+            // 总数 - 未收编数）。
+            const std::size_t adopted_total =
+                tiles.preload_tiles.size() - tiles.preload_uploads.size();
+            for (std::size_t i = tiles.preload_registered_tiles;
+                 i < adopted_total; ++i) {
+                const auto& points = tiles.preload_tiles[i].second;
+                register_runtime_point_lookup(
+                    points->points,
+                    points->point_ids,
+                    ctx.runtime_points_by_id,
+                    ctx.runtime_points_valid_by_id
+                );
+            }
+            tiles.preload_registered_tiles = adopted_total;
             if (config.verbose && sync.uploaded_bytes > 0) {
                 gs3d::util::log::info()
                     << "[TILE] preload upload: bytes="

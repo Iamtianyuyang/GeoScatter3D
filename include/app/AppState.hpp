@@ -80,6 +80,8 @@ struct TilePreloadProgressState {
     bool active = false;
     // 后台读盘 + 预建显存 buffer 阶段（尚无瓦片可上传）。
     bool reading = true;
+    // 读取阶段进度：后台已读完的瓦片数（含显存 buffer 预建）。
+    std::uint64_t read_tiles = 0;
     std::uint64_t resident_tiles = 0;
     std::uint64_t total_tiles = 0;
     std::uint64_t resident_bytes = 0;

@@ -89,6 +89,8 @@ ViewerFrameMetricsSnapshot ViewerFrameMetricsCollector::collect(
         preload.active &&
         tile_stream.preload_uploads.empty() &&
         tile_stream.preload_tiles.empty();
+    preload.read_tiles = tile_stream.preload_read_tiles.load(
+        std::memory_order_relaxed);
     if (context.tile_reader != nullptr) {
         const auto reader_stats = context.tile_reader->stats();
         preload.total_tiles = reader_stats.tile_count;

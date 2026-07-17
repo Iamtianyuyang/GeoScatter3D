@@ -10,6 +10,7 @@
 #include "util/Stopwatch.hpp"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
@@ -91,7 +92,9 @@ struct TileLoadCommitStats {
  * 它们，析构时按声明逆序先 join future 再销毁被引用对象。
  *
  * Threading contract:
- * - The main thread exclusively owns every member except point_cache.
+ * - The main thread exclusively owns every member except point_cache and
+ *   preload_read_tiles (a relaxed atomic progress counter the preload
+ *   worker bumps and the main thread only reads for the loading UI).
  * - Worker lambdas may capture only immutable tile_reader / point-id inputs
  *   and return loaded data through futures; they never mutate this state.
  * - The preload worker additionally creates device-local vertex buffers via
@@ -177,6 +180,13 @@ struct ViewerAppTileStreamState {
     // 待收编的「已备好上传」队列，每帧按预算被 adopt_prepared_tiles
     // 从前端消费；清空即全部驻留。
     std::vector<gs3d::render::PreparedTileUpload> preload_uploads;
+    // 后台读盘进度（已读瓦片数）。worker 以 relaxed 递增，主线程只读
+    // （加载页进度条）；除此之外 worker 不触碰本结构。
+    std::atomic<std::uint64_t> preload_read_tiles{0};
+    // preload_tiles 中已注册进 point-id 查找表的前缀长度。注册随
+    // adopt 分帧推进（每帧只注册本帧收编的瓦片），避免 future 就绪帧
+    // 一次性写入全量 5000 万点造成可感知的单帧冻结。
+    std::size_t preload_registered_tiles = 0;
     bool preload_dispatched = false;
     bool preload_failed = false;
     bool tiles_fully_resident = false;
