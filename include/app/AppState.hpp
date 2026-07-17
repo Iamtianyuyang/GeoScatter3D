@@ -70,6 +70,22 @@ struct DockUiState {
     float hint_seconds_left = 6.0f;
 };
 
+/*
+ * 瓦片全量预加载进度（加载门禁 UI 使用）。active 期间 UI 显示全屏
+ * 加载页并拦截交互——「加载好了再进程序」；预加载完成或回退按需
+ * 流式后 active=false，正常界面出现。每帧由
+ * ViewerFrameStateSynchronizer 从真实流式状态镜像而来。
+ */
+struct TilePreloadProgressState {
+    bool active = false;
+    // 后台读盘 + 预建显存 buffer 阶段（尚无瓦片可上传）。
+    bool reading = true;
+    std::uint64_t resident_tiles = 0;
+    std::uint64_t total_tiles = 0;
+    std::uint64_t resident_bytes = 0;
+    std::uint64_t total_bytes = 0;
+};
+
 enum class ScreenshotNoticeKind {
     kNone,
     kSelectingPath,
@@ -467,6 +483,7 @@ struct AppState {
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
     UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
     DockUiState dock_ui;
+    TilePreloadProgressState tile_preload;
     ScreenshotNoticeState screenshot_notice;
 };
 

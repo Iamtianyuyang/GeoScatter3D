@@ -210,6 +210,7 @@ add_library(gs3d_render STATIC
     src/render/PointCloudLodGpu.cpp
     src/render/LodSelector.cpp
     src/render/PointCloudTileGpu.cpp
+    src/render/TileDeviceArena.cpp
     src/render/TileSelection.cpp
     src/render/OffscreenFramebuffer.cpp
     src/render/ViewportManager.cpp
@@ -438,6 +439,7 @@ add_library(gs3d_app STATIC
     include/render/PointCloudTileGpu.hpp
     include/render/FrameUploadBudget.hpp
     include/render/TileStagingPlan.hpp
+    include/render/TileDeviceArena.hpp
     include/render/TileSelection.hpp
     include/render/OffscreenFramebuffer.hpp
     include/render/ViewportManager.hpp

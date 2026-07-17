@@ -6,6 +6,7 @@
 #include "core/PointData.hpp"
 #include "data/Gs3dTileReader.hpp"
 #include "render/PointCloudTileGpu.hpp"
+#include "render/TileDeviceArena.hpp"
 #include "util/Stopwatch.hpp"
 
 #include <array>
@@ -160,6 +161,13 @@ struct ViewerAppTileStreamState {
      * 走原有按需流式。
      */
     bool preload_enabled = false;
+    /*
+     * 预加载瓦片 vertex buffer 的显存 arena（大块分配 + 子绑定，绕开
+     * 逐瓦片 vkAllocateMemory 的 ~111µs 内核调用）。预加载后台线程
+     * 单线程使用；声明在 preload_uploads 之前——析构逆序保证瓦片
+     * buffer 先于 arena 释放。clear_cache 里的显式释放顺序同理。
+     */
+    gs3d::render::TileDeviceArena preload_arena;
     std::future<std::vector<PreloadedTile>> preload_future;
     // 点数据所有权（hover 反查与 point-id lookup 注册使用），future
     // 就绪时一次性建立，之后不再增删——preload_uploads 里的

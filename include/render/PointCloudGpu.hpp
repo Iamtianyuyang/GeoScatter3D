@@ -10,6 +10,8 @@
 
 namespace gs3d::render {
 
+class TileDeviceArena;
+
 struct PointVertex {
     float x = 0.0f;
     float y = 0.0f;
@@ -67,9 +69,14 @@ public:
      * 记录拷贝。一个共享 staging + 一次提交即可服务整批瓦片，避免逐块
      * 分配私有 staging（预加载上万瓦片时那是上万次永不释放的 host 分配）。
      */
+    /*
+     * arena 非空时 vertex buffer 子绑定到 arena 的大块显存（预加载
+     * 路径：绕开逐瓦片 vkAllocateMemory）；为空时独立分配（原行为）。
+     */
     void prepare_device_buffer(
         const VulkanContext& context,
-        std::uint64_t point_count
+        std::uint64_t point_count,
+        TileDeviceArena* arena = nullptr
     );
 
     void record_upload_from_external_staging(

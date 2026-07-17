@@ -27,6 +27,8 @@ struct ViewerFrameStateMetrics {
     float fps = 0.0f;
     float frame_time_ms = 0.0f;
     std::string camera_position;
+    // 全量预加载进度（加载门禁 UI），collect 时从流式状态镜像。
+    TilePreloadProgressState tile_preload;
 };
 
 // Mirrors render state into the UI model once per frame. Immutable viewer

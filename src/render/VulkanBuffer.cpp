@@ -34,11 +34,13 @@ VulkanBuffer::VulkanBuffer(VulkanBuffer&& other) noexcept {
     buffer_ = other.buffer_;
     memory_ = other.memory_;
     size_ = other.size_;
+    owns_memory_ = other.owns_memory_;
 
     other.context_ = nullptr;
     other.buffer_ = VK_NULL_HANDLE;
     other.memory_ = VK_NULL_HANDLE;
     other.size_ = 0;
+    other.owns_memory_ = true;
 }
 
 VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& other) noexcept {
@@ -49,11 +51,13 @@ VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& other) noexcept {
         buffer_ = other.buffer_;
         memory_ = other.memory_;
         size_ = other.size_;
+        owns_memory_ = other.owns_memory_;
 
         other.context_ = nullptr;
         other.buffer_ = VK_NULL_HANDLE;
         other.memory_ = VK_NULL_HANDLE;
         other.size_ = 0;
+        other.owns_memory_ = true;
     }
 
     return *this;
@@ -127,6 +131,79 @@ void VulkanBuffer::create(
     );
 }
 
+void VulkanBuffer::create_bound(
+    const VulkanContext& context,
+    VkDeviceSize size,
+    VkBufferUsageFlags usage,
+    VkDeviceMemory external_memory,
+    VkDeviceSize memory_offset,
+    VkDeviceSize bound_capacity
+) {
+    if (size == 0) {
+        throw std::runtime_error("VulkanBuffer: buffer size is zero");
+    }
+    if (external_memory == VK_NULL_HANDLE) {
+        throw std::runtime_error(
+            "VulkanBuffer: external memory is null"
+        );
+    }
+
+    destroy();
+
+    context_ = &context;
+    size_ = size;
+    owns_memory_ = false;
+
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = size;
+    buffer_info.usage = usage;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    check_vk(
+        vkCreateBuffer(
+            context.device(),
+            &buffer_info,
+            nullptr,
+            &buffer_
+        ),
+        "VulkanBuffer: failed to create buffer"
+    );
+
+    // arena 切片按首次 probe 的 alignment 估算 req.size；此处以真实
+    // requirements 兜底校验，异常实现直接失败（调用方回退独立分配）。
+    VkMemoryRequirements requirements{};
+    vkGetBufferMemoryRequirements(
+        context.device(),
+        buffer_,
+        &requirements
+    );
+    if (requirements.size > bound_capacity ||
+        memory_offset % requirements.alignment != 0) {
+        vkDestroyBuffer(context.device(), buffer_, nullptr);
+        buffer_ = VK_NULL_HANDLE;
+        context_ = nullptr;
+        size_ = 0;
+        owns_memory_ = true;
+        throw std::runtime_error(
+            "VulkanBuffer: external memory slot does not satisfy "
+            "buffer requirements"
+        );
+    }
+
+    memory_ = external_memory;
+
+    check_vk(
+        vkBindBufferMemory(
+            context.device(),
+            buffer_,
+            external_memory,
+            memory_offset
+        ),
+        "VulkanBuffer: failed to bind external buffer memory"
+    );
+}
+
 void VulkanBuffer::destroy() noexcept {
     if (!context_) {
         return;
@@ -140,12 +217,58 @@ void VulkanBuffer::destroy() noexcept {
     }
 
     if (memory_ != VK_NULL_HANDLE) {
-        vkFreeMemory(device, memory_, nullptr);
+        if (owns_memory_) {
+            vkFreeMemory(device, memory_, nullptr);
+        }
         memory_ = VK_NULL_HANDLE;
     }
 
     context_ = nullptr;
     size_ = 0;
+    owns_memory_ = true;
+}
+
+VkMemoryRequirements VulkanBuffer::probe_memory_requirements(
+    const VulkanContext& context,
+    VkDeviceSize size,
+    VkBufferUsageFlags usage
+) {
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = size;
+    buffer_info.usage = usage;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer probe = VK_NULL_HANDLE;
+    check_vk(
+        vkCreateBuffer(
+            context.device(),
+            &buffer_info,
+            nullptr,
+            &probe
+        ),
+        "VulkanBuffer: failed to create probe buffer"
+    );
+    VkMemoryRequirements requirements{};
+    vkGetBufferMemoryRequirements(
+        context.device(),
+        probe,
+        &requirements
+    );
+    vkDestroyBuffer(context.device(), probe, nullptr);
+    return requirements;
+}
+
+std::uint32_t VulkanBuffer::memory_type_for(
+    const VulkanContext& context,
+    std::uint32_t type_filter,
+    VkMemoryPropertyFlags properties
+) {
+    return find_memory_type(
+        context.physical_device(),
+        type_filter,
+        properties
+    );
 }
 
 void VulkanBuffer::upload(

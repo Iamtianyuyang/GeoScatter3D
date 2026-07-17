@@ -285,7 +285,8 @@ void TileStreamingSystem::clear_cache(
     }
     // Un-adopted preloaded buffers were either never submitted or their
     // copies already completed (single-time submits wait for queue idle),
-    // so destroying them here is safe.
+    // so destroying them here is safe. The arena is released at the end of
+    // this function, after the resident tiles (bound to it) are cleared.
     tiles.preload_uploads.clear();
     // A running Stage-3 read cannot be cancelled safely. Drain and discard it
     // before clearing so its late result cannot immediately refill the cache.
@@ -309,6 +310,8 @@ void TileStreamingSystem::clear_cache(
         renderer.wait_for_in_flight_fences();
         tile_gpu_cloud->clear();
     }
+    // 驻留瓦片（子绑定在 arena 上的 buffer）已全部销毁，释放大块显存。
+    tiles.preload_arena.destroy();
     gs3d::util::log::info() << "[TILE] tile caches cleared.\n";
 }
 
@@ -345,6 +348,7 @@ void TileStreamingSystem::update(
                 [&reader = *ctx.tile_reader,
                  &cache = tiles.point_cache,
                  &ids_by_tile = ctx.tile_point_ids_by_tile,
+                 &arena = tiles.preload_arena,
                  &context = ctx.context]()
                     -> std::vector<PreloadedTile> {
                     std::vector<PreloadedTile> all;
@@ -369,14 +373,16 @@ void TileStreamingSystem::update(
                         PreloadedTile tile;
                         tile.tile_id = rec.tile_id;
                         tile.points = pts;
-                        // 后台就把 device-local vertex buffer 建好：
-                        // vkCreateBuffer/vkAllocateMemory 对同一 device
-                        // 并发合法且不触碰 queue。主线程每帧只剩
-                        // staging 拷贝 + 单次提交，不再被上万次显存
-                        // 分配卡住。
+                        // 后台就把 device-local vertex buffer 建好
+                        // （vkCreateBuffer/vkAllocateMemory 对同一
+                        // device 并发合法且不触碰 queue），且经 arena
+                        // 大块子绑定——逐瓦片独立 vkAllocateMemory 是
+                        // ~111µs 的驱动内核调用，3 万瓦片即 ~3.4s。
+                        // 主线程每帧只剩 staging 拷贝 + 单次提交。
                         tile.gpu_cloud.prepare_device_buffer(
                             context,
-                            pts->points.size()
+                            pts->points.size(),
+                            &arena
                         );
                         all.push_back(std::move(tile));
                     }
@@ -417,8 +423,10 @@ void TileStreamingSystem::update(
                     << "[TILE] preload failed: " << e.what()
                     << " — falling back to streaming mode.\n";
                 tiles.preload_failed = true;
+                // 顺序：先销毁子绑定的 buffer，再释放 arena 大块。
                 tiles.preload_uploads.clear();
                 tiles.preload_tiles.clear();
+                tiles.preload_arena.destroy();
             }
         }
 

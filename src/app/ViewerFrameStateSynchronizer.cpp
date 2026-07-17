@@ -96,6 +96,8 @@ void ViewerFrameStateSynchronizer::synchronize(
         );
     }
 
+    state.tile_preload = metrics.tile_preload;
+
     state.performance.fps = metrics.fps;
     state.performance.frame_time_ms = metrics.frame_time_ms;
     state.performance.visible_points = metrics.visible_points;

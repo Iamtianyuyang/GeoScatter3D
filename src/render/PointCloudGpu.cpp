@@ -1,5 +1,7 @@
 #include "render/PointCloudGpu.hpp"
 
+#include "render/TileDeviceArena.hpp"
+
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -245,23 +247,40 @@ VkDeviceSize PointCloudGpu::packed_point_bytes(
 
 void PointCloudGpu::prepare_device_buffer(
     const VulkanContext& context,
-    std::uint64_t point_count
+    std::uint64_t point_count,
+    TileDeviceArena* arena
 ) {
     const VkDeviceSize point_bytes = point_buffer_size_bytes(point_count);
+    constexpr VkBufferUsageFlags kUsage =
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
     // Reuse the device-local vertex buffer when it is already large enough,
     // matching prepare_upload's capacity policy. No staging is touched here —
     // the caller owns a shared staging buffer for the whole batch.
     if (!vertex_buffer_.valid() || vertex_buffer_capacity_ < point_bytes) {
         vertex_buffer_.destroy();
-        vertex_buffer_.create(
-            context,
-            point_bytes,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        );
-        vertex_buffer_capacity_ = point_bytes;
+        if (arena != nullptr) {
+            const auto slot =
+                arena->allocate(context, point_bytes, kUsage);
+            vertex_buffer_.create_bound(
+                context,
+                point_bytes,
+                kUsage,
+                slot.memory,
+                slot.offset,
+                slot.capacity
+            );
+            vertex_buffer_capacity_ = point_bytes;
+        } else {
+            vertex_buffer_.create(
+                context,
+                point_bytes,
+                kUsage,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+            );
+            vertex_buffer_capacity_ = point_bytes;
+        }
     }
 
     point_count_        = point_count;

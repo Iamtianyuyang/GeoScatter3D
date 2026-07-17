@@ -78,6 +78,28 @@ ViewerFrameMetricsSnapshot ViewerFrameMetricsCollector::collect(
         }
     }
 
+    // 全量预加载进度（加载门禁 UI）。active 期间界面显示加载页。
+    TilePreloadProgressState preload;
+    const auto& tile_stream = context.tile_stream;
+    preload.active =
+        tile_stream.preload_enabled &&
+        !tile_stream.tiles_fully_resident &&
+        !tile_stream.preload_failed;
+    preload.reading =
+        preload.active &&
+        tile_stream.preload_uploads.empty() &&
+        tile_stream.preload_tiles.empty();
+    if (context.tile_reader != nullptr) {
+        const auto reader_stats = context.tile_reader->stats();
+        preload.total_tiles = reader_stats.tile_count;
+        preload.total_bytes = reader_stats.total_point_bytes;
+    }
+    if (context.tile_gpu_cloud != nullptr) {
+        const auto& tile_stats = context.tile_gpu_cloud->stats();
+        preload.resident_tiles = tile_stats.resident_tile_count;
+        preload.resident_bytes = tile_stats.gpu_buffer_bytes;
+    }
+
     const auto cache_stats = context.tile_stream.point_cache.stats();
     return {
         .tile_cache = {
@@ -97,7 +119,8 @@ ViewerFrameMetricsSnapshot ViewerFrameMetricsCollector::collect(
             .frame_time_ms = context.delta_seconds > 0.0
                 ? static_cast<float>(context.delta_seconds * 1000.0)
                 : 0.0f,
-            .camera_position = context.camera_position
+            .camera_position = context.camera_position,
+            .tile_preload = preload
         }
     };
 }
