@@ -4,7 +4,6 @@
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
 #include "imgui.h"
-#include "platform/NativeFileDialog.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
 
@@ -12,15 +11,38 @@
 #include "stb_image_write.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <ctime>
 #include <filesystem>
-#include <iostream>
+#include <future>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace gs3d::app {
+
+namespace {
+
+template <typename T>
+bool future_is_ready(std::future<T>& future) {
+    return future.valid() &&
+        future.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready;
+}
+
+void set_screenshot_notice(
+    AppState& state,
+    const ScreenshotNoticeKind kind,
+    std::string message,
+    const float seconds_left = 0.0f
+) {
+    state.screenshot_notice.kind = kind;
+    state.screenshot_notice.message = std::move(message);
+    state.screenshot_notice.seconds_left = seconds_left;
+}
+
+} // namespace
 
 ScreenshotCaptureRegion resolve_screenshot_capture_region(
     float canvas_min_x,
@@ -63,42 +85,199 @@ ScreenshotCaptureRegion resolve_screenshot_capture_region(
     };
 }
 
-void ScreenshotService::request(
-    const UiActions& gui_cmds,
+std::filesystem::path make_screenshot_output_path(
+    const std::filesystem::path& directory,
+    const std::uint64_t timestamp_milliseconds
+) {
+    return directory /
+        ("screenshot_" + std::to_string(timestamp_milliseconds) + ".png");
+}
+
+std::filesystem::path normalize_screenshot_output_path(
+    std::filesystem::path path
+) {
+    std::string extension = path.extension().string();
+    std::transform(
+        extension.begin(),
+        extension.end(),
+        extension.begin(),
+        [](const unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        }
+    );
+    if (extension != ".png") {
+        path.replace_extension(".png");
+    }
+    return path;
+}
+
+ScreenshotService::~ScreenshotService() {
+    for (auto& task : write_tasks_) {
+        if (task.valid()) {
+            task.wait();
+        }
+    }
+}
+
+bool ScreenshotService::prepare_capture(
     const AppState& app_state,
     const gs3d::render::VulkanSwapchain& swapchain
 ) {
-    if (!gui_cmds.screenshot_requested) {
+    const RenderViewState* target_view = nullptr;
+    for (const auto& view : app_state.render_views) {
+        if (view.viewport_index == app_state.active_viewport_index &&
+            view.visible &&
+            !view.detached) {
+            target_view = &view;
+            break;
+        }
+    }
+    if (target_view == nullptr) {
+        for (const auto& view : app_state.render_views) {
+            if (view.visible && !view.detached) {
+                target_view = &view;
+                break;
+            }
+        }
+    }
+    if (target_view == nullptr ||
+        target_view->canvas_rect_max_x <= target_view->canvas_rect_min_x ||
+        target_view->canvas_rect_max_y <= target_view->canvas_rect_min_y) {
+        return false;
+    }
+
+    const auto& io = ImGui::GetIO();
+    const ImVec2 viewport_pos = ImGui::GetMainViewport()->Pos;
+    const auto region = resolve_screenshot_capture_region(
+        target_view->canvas_rect_min_x,
+        target_view->canvas_rect_min_y,
+        target_view->canvas_rect_max_x,
+        target_view->canvas_rect_max_y,
+        viewport_pos.x,
+        viewport_pos.y,
+        io.DisplayFramebufferScale.x,
+        io.DisplayFramebufferScale.y,
+        swapchain.extent()
+    );
+    if (!region.valid()) {
+        return false;
+    }
+    offset_ = {region.x, region.y};
+    extent_ = {region.width, region.height};
+    return true;
+}
+
+void ScreenshotService::request(
+    const UiActions& gui_cmds,
+    AppState& app_state,
+    const gs3d::render::VulkanSwapchain& swapchain
+) {
+    if (!capture_error_.empty()) {
+        set_screenshot_notice(
+            app_state,
+            ScreenshotNoticeKind::kError,
+            "截图失败：" + capture_error_,
+            4.0f
+        );
+        capture_error_.clear();
+    }
+
+    for (auto task = write_tasks_.begin(); task != write_tasks_.end();) {
+        if (!future_is_ready(*task)) {
+            ++task;
+            continue;
+        }
+        const ScreenshotWriteResult result = task->get();
+        if (result.error.empty()) {
+            set_screenshot_notice(
+                app_state,
+                ScreenshotNoticeKind::kSaved,
+                "截图已保存：" + result.path.filename().string(),
+                3.5f
+            );
+        } else {
+            set_screenshot_notice(
+                app_state,
+                ScreenshotNoticeKind::kError,
+                "截图失败：" + result.error,
+                4.0f
+            );
+        }
+        task = write_tasks_.erase(task);
+    }
+
+    if (const auto completed = save_panel_.poll();
+        completed.has_value()) {
+        const auto& result = *completed;
+        if (result.path.has_value()) {
+            output_path_ =
+                normalize_screenshot_output_path(*result.path);
+            if (prepare_capture(app_state, swapchain)) {
+                pending_ = true;
+                set_screenshot_notice(
+                    app_state,
+                    ScreenshotNoticeKind::kSaving,
+                    "正在保存截图…"
+                );
+            } else {
+                output_path_.clear();
+                set_screenshot_notice(
+                    app_state,
+                    ScreenshotNoticeKind::kError,
+                    "截图失败：当前主视图不可截图",
+                    4.0f
+                );
+            }
+        } else if (!result.error.empty()) {
+            set_screenshot_notice(
+                app_state,
+                ScreenshotNoticeKind::kError,
+                "无法打开保存面板：" + result.error,
+                4.0f
+            );
+        } else {
+            set_screenshot_notice(
+                app_state,
+                ScreenshotNoticeKind::kCancelled,
+                "已取消截图",
+                2.0f
+            );
+        }
+    }
+
+    if (!gui_cmds.screenshot_requested ||
+        save_panel_.active() ||
+        pending_) {
         return;
     }
-    // Map viewport 0's canvas_rect (ImGui screen coords) →
-    // swapchain physical pixels.
-    for (const auto& view : app_state.render_views) {
-        if (view.viewport_index != 0) continue;
-        if (view.canvas_rect_max_x <= view.canvas_rect_min_x ||
-            view.canvas_rect_max_y <= view.canvas_rect_min_y) break;
-        const auto& io = ImGui::GetIO();
-        const ImVec2 vp_pos = ImGui::GetMainViewport()->Pos;
-        const float sx = io.DisplayFramebufferScale.x;
-        const float sy = io.DisplayFramebufferScale.y;
-        const auto region = resolve_screenshot_capture_region(
-            view.canvas_rect_min_x,
-            view.canvas_rect_min_y,
-            view.canvas_rect_max_x,
-            view.canvas_rect_max_y,
-            vp_pos.x,
-            vp_pos.y,
-            sx,
-            sy,
-            swapchain.extent()
+
+    const auto now = std::chrono::system_clock::now();
+    const auto timestamp = std::chrono::duration_cast<
+        std::chrono::milliseconds
+    >(now.time_since_epoch()).count();
+    const std::string default_filename =
+        make_screenshot_output_path(
+            {},
+            static_cast<std::uint64_t>(timestamp)
+        ).filename().string();
+    if (!save_panel_.begin(
+            default_filename,
+            "保存截图",
+            "PNG Images|*.png"
+        )) {
+        set_screenshot_notice(
+            app_state,
+            ScreenshotNoticeKind::kError,
+            "无法打开系统保存面板",
+            4.0f
         );
-        if (region.valid()) {
-            offset_ = {region.x, region.y};
-            extent_ = {region.width, region.height};
-            pending_ = true;
-        }
-        break;
+        return;
     }
+    set_screenshot_notice(
+        app_state,
+        ScreenshotNoticeKind::kSelectingPath,
+        "请选择截图名称和保存位置…"
+    );
 }
 
 // post_pass: after the swapchain render pass ends, copy the viewport
@@ -129,6 +308,7 @@ void ScreenshotService::record_copy(
         if (vkCreateBuffer(context.device(), &buf_info,
                            nullptr, &staging_buffer_) != VK_SUCCESS) {
             gs3d::util::log::error() << "[SCREENSHOT] buffer create failed\n";
+            capture_error_ = "无法创建截图读回缓冲区";
             pending_ = false;
             return;
         }
@@ -155,10 +335,20 @@ void ScreenshotService::record_copy(
                 break;
             }
         }
+        if (mem_type_idx == mem_props.memoryTypeCount) {
+            gs3d::util::log::error()
+                << "[SCREENSHOT] no host-visible memory type\n";
+            capture_error_ = "GPU 不支持截图读回内存";
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            pending_ = false;
+            return;
+        }
         alloc_info.memoryTypeIndex = mem_type_idx;
         if (vkAllocateMemory(context.device(), &alloc_info,
                              nullptr, &staging_memory_) != VK_SUCCESS) {
             gs3d::util::log::error() << "[SCREENSHOT] memory alloc failed\n";
+            capture_error_ = "无法分配截图读回内存";
             vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
             staging_buffer_ = VK_NULL_HANDLE;
             pending_ = false;
@@ -168,6 +358,7 @@ void ScreenshotService::record_copy(
                                staging_buffer_,
                                staging_memory_, 0) != VK_SUCCESS) {
             gs3d::util::log::error() << "[SCREENSHOT] bind memory failed\n";
+            capture_error_ = "无法绑定截图读回内存";
             vkFreeMemory(context.device(), staging_memory_, nullptr);
             vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
             staging_buffer_ = VK_NULL_HANDLE;
@@ -238,9 +429,9 @@ void ScreenshotService::record_copy(
     }
 }
 
-// Reads the staged pixels back, resolves the output path via the native
-// save dialog (with a timestamped fallback), writes the PNG, and frees
-// the staging resources.
+// Reads the staged pixels back, releases the Vulkan resources immediately,
+// then encodes the PNG on a worker so the render loop never waits on a native
+// file dialog or PNG compression.
 void ScreenshotService::write_pending(
     gs3d::render::VulkanContext& context,
     const gs3d::render::VulkanSwapchain& swapchain
@@ -257,9 +448,29 @@ void ScreenshotService::write_pending(
         static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h) * 4;
 
     void* mapped = nullptr;
-    vkMapMemory(context.device(), staging_memory_,
-                0, buf_size, 0, &mapped);
-    auto* pixels = static_cast<std::uint8_t*>(mapped);
+    if (vkMapMemory(
+            context.device(),
+            staging_memory_,
+            0,
+            buf_size,
+            0,
+            &mapped
+        ) != VK_SUCCESS) {
+        gs3d::util::log::error() << "[SCREENSHOT] memory map failed\n";
+        capture_error_ = "无法读取截图像素";
+        vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+        vkFreeMemory(context.device(), staging_memory_, nullptr);
+        staging_buffer_ = VK_NULL_HANDLE;
+        staging_memory_ = VK_NULL_HANDLE;
+        pending_ = false;
+        return;
+    }
+    const auto* mapped_pixels = static_cast<const std::uint8_t*>(mapped);
+    std::vector<std::uint8_t> pixels(
+        mapped_pixels,
+        mapped_pixels + static_cast<std::size_t>(buf_size)
+    );
+    vkUnmapMemory(context.device(), staging_memory_);
 
     // BGR→RGB swizzle if swapchain uses B8G8R8A8 format
     const VkFormat fmt = swapchain.image_format();
@@ -270,51 +481,6 @@ void ScreenshotService::write_pending(
         }
     }
 
-    // Resolve output path: native file dialog → fallback.
-    // Cross-platform: uses NativeFileDialog (zenity/kdialog on
-    // Linux, GetSaveFileNameW on Windows, osascript on macOS).
-    // If the user cancels, skip save.
-    // If no dialog tool is available, fall back to timestamped file.
-    std::string out_path;
-    bool user_cancelled = false;
-    {
-        const auto save_result =
-            gs3d::platform::choose_save_file(
-                "screenshot.png",
-                "保存截图",
-                "PNG Images|*.png"
-            );
-        if (save_result.path.has_value()) {
-            out_path = save_result.path->string();
-        } else if (!save_result.error.empty()) {
-            // Dialog tool unavailable — not a user cancel;
-            // fall through to timestamped fallback below.
-        } else {
-            // Empty path + no error = user cancelled the dialog.
-            user_cancelled = true;
-        }
-    }
-    if (!user_cancelled && out_path.empty()) {
-        std::filesystem::create_directories("screenshots");
-        const auto now = std::chrono::system_clock::now();
-        const auto tt = std::chrono::system_clock::to_time_t(now);
-        char ts[64];
-        std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S",
-                      std::localtime(&tt));
-        out_path = std::string("screenshots/screenshot_") +
-                   ts + ".png";
-    }
-    if (user_cancelled || out_path.empty()) {
-        gs3d::util::log::info() << "[SCREENSHOT] cancelled.\n";
-    } else if (!stbi_write_png(out_path.c_str(), w, h, 4,
-                               pixels, w * 4)) {
-        gs3d::util::log::error() << "[SCREENSHOT] stbi_write_png failed: "
-                  << out_path << '\n';
-    } else {
-        gs3d::util::log::info() << "[SCREENSHOT] saved: " << out_path << '\n';
-    }
-
-    vkUnmapMemory(context.device(), staging_memory_);
     vkDestroyBuffer(context.device(),
                     staging_buffer_, nullptr);
     vkFreeMemory(context.device(),
@@ -322,6 +488,51 @@ void ScreenshotService::write_pending(
     staging_buffer_ = VK_NULL_HANDLE;
     staging_memory_ = VK_NULL_HANDLE;
     pending_ = false;
+
+    const auto output_path = output_path_;
+    output_path_.clear();
+    write_tasks_.push_back(std::async(
+        std::launch::async,
+        [output_path, w, h, pixels = std::move(pixels)]() {
+            std::error_code directory_error;
+            const auto parent = output_path.parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(
+                    parent,
+                    directory_error
+                );
+            }
+            if (directory_error) {
+                gs3d::util::log::error()
+                    << "[SCREENSHOT] directory create failed: "
+                    << directory_error.message() << '\n';
+                return ScreenshotWriteResult{
+                    output_path,
+                    "无法创建保存目录：" + directory_error.message()
+                };
+            }
+            const std::string output = output_path.string();
+            if (!stbi_write_png(
+                    output.c_str(),
+                    w,
+                    h,
+                    4,
+                    pixels.data(),
+                    w * 4
+                )) {
+                gs3d::util::log::error()
+                    << "[SCREENSHOT] stbi_write_png failed: "
+                    << output << '\n';
+                return ScreenshotWriteResult{
+                    output_path,
+                    "无法写入 PNG 文件"
+                };
+            }
+            gs3d::util::log::info()
+                << "[SCREENSHOT] saved: " << output << '\n';
+            return ScreenshotWriteResult{output_path, {}};
+        }
+    ));
 }
 
 } // namespace gs3d::app

@@ -1,4 +1,5 @@
 #include "app/ViewerWorkbenchLayout.hpp"
+#include "ui/FloatingDockLayout.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -50,4 +51,51 @@ TEST_CASE("Viewer workbench layout clamps client dimensions after frame insets",
 
     CHECK(layout.client_width == 1);
     CHECK(layout.client_height == 1);
+}
+
+TEST_CASE("Floating dock top overlays clear the map-axis band", "[floating_dock]")
+{
+    const auto with_axis =
+        gs3d::ui::compute_floating_dock_top_overlay_layout(
+            10.0f,
+            20.0f,
+            1.25f,
+            true
+        );
+    const auto without_axis =
+        gs3d::ui::compute_floating_dock_top_overlay_layout(
+            10.0f,
+            20.0f,
+            1.25f,
+            false
+        );
+
+    CHECK(with_axis.left_x == 87.5f);
+    CHECK(with_axis.primary_y == 70.0f);
+    CHECK(with_axis.secondary_y == 130.0f);
+    CHECK(without_axis.left_x == 30.0f);
+    CHECK(without_axis.primary_y == 37.5f);
+    CHECK(without_axis.secondary_y == 97.5f);
+}
+
+TEST_CASE("Navigation preview is square and contains its texture", "[floating_dock]")
+{
+    const auto layout = gs3d::ui::compute_navigation_preview_layout(
+        10.0f,
+        20.0f,
+        300.0f,
+        256.0f,
+        128.0f
+    );
+
+    CHECK(layout.container.width == 300.0f);
+    CHECK(layout.container.height == 300.0f);
+    CHECK(layout.image.x == 10.0f);
+    CHECK(layout.image.y == 95.0f);
+    CHECK(layout.image.width == 300.0f);
+    CHECK(layout.image.height == 150.0f);
+    CHECK(
+        layout.image.width / 256.0f ==
+        layout.image.height / 128.0f
+    );
 }

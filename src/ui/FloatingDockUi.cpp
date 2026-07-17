@@ -1,12 +1,13 @@
 #include "ui/FloatingDockUi.hpp"
 
 #include "ui/ColormapPreview.hpp"
-#include "ui/RegionStatsPanel.hpp"
+#include "ui/FloatingDockLayout.hpp"
 #include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 #include "ui/ViewportCanvas.hpp"
 #include "ui/Widgets.hpp"
+#include "ui/WorkspaceManager.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -15,6 +16,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -278,12 +280,62 @@ void icon_axis(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
     dl->AddLine(icon_pt(c, k, 18.5f, 14.0f), icon_pt(c, k, 21.0f, 12.0f), col, th);
 }
 
+void icon_world_axis(
+    ImDrawList* dl,
+    const ImVec2& c,
+    float k,
+    ImU32 col,
+    float th
+) {
+    static const float outline[][2] = {
+        {12.0f, 2.5f}, {3.5f, 7.0f}, {3.5f, 17.0f},
+        {12.0f, 21.5f}, {20.5f, 17.0f}, {20.5f, 7.0f}
+    };
+    icon_stroke(dl, c, k, col, th, outline, 6, true);
+    dl->AddLine(
+        icon_pt(c, k, 3.5f, 7.0f),
+        icon_pt(c, k, 12.0f, 12.0f),
+        col,
+        th
+    );
+    dl->AddLine(
+        icon_pt(c, k, 20.5f, 7.0f),
+        icon_pt(c, k, 12.0f, 12.0f),
+        col,
+        th
+    );
+    dl->AddLine(
+        icon_pt(c, k, 12.0f, 12.0f),
+        icon_pt(c, k, 12.0f, 21.5f),
+        col,
+        th
+    );
+}
+
 void icon_crosshair(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
     dl->AddCircle(c, k * 0.29f, col, 0, th);
     dl->AddLine(icon_pt(c, k, 12.0f, 2.0f), icon_pt(c, k, 12.0f, 6.0f), col, th);
     dl->AddLine(icon_pt(c, k, 12.0f, 18.0f), icon_pt(c, k, 12.0f, 22.0f), col, th);
     dl->AddLine(icon_pt(c, k, 2.0f, 12.0f), icon_pt(c, k, 6.0f, 12.0f), col, th);
     dl->AddLine(icon_pt(c, k, 18.0f, 12.0f), icon_pt(c, k, 22.0f, 12.0f), col, th);
+}
+
+void icon_crosshair_style(
+    ImDrawList* dl,
+    const ImVec2& c,
+    float k,
+    ImU32 col,
+    float th
+) {
+    icon_crosshair(dl, c, k, col, th);
+    dl->AddCircle(c, k * 0.10f, col, 0, th);
+    const float r = k * 0.40f;
+    for (int i = 0; i < 8; i += 2) {
+        const float a0 = static_cast<float>(i) * 0.785398f;
+        const float a1 = static_cast<float>(i + 1) * 0.785398f;
+        dl->PathArcTo(c, r, a0, a1, 4);
+        dl->PathStroke(col, 0, std::max(1.0f, th * 0.65f));
+    }
 }
 
 void icon_expand(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
@@ -381,6 +433,19 @@ void set_tooltip(const char* text) {
     if (text != nullptr && ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", text);
     }
+}
+
+void toggle_card(
+    gs3d::app::DockUiState& dock,
+    gs3d::app::DockCard card
+) {
+    dock.hint_seconds_left = 0.0f;
+    if (dock.open_card == card) {
+        dock.open_card = gs3d::app::DockCard::kNone;
+        return;
+    }
+    dock.open_card = card;
+    dock.anim_card = card;
 }
 
 // 圆形图标按钮（视角 pill / FAB 内部使用）。
@@ -546,6 +611,140 @@ std::string format_thousands(std::uint64_t value) {
     return out;
 }
 
+void key_value_row(
+    const char* label,
+    const std::string& value,
+    float label_width
+) {
+    ImGui::PushID(label);
+    if (ImGui::BeginTable(
+            "##kv",
+            2,
+            ImGuiTableFlags_SizingStretchProp |
+                ImGuiTableFlags_PadOuterX
+        )) {
+        ImGui::TableSetupColumn(
+            "label",
+            ImGuiTableColumnFlags_WidthFixed,
+            label_width
+        );
+        ImGui::TableSetupColumn(
+            "value",
+            ImGuiTableColumnFlags_WidthStretch
+        );
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        {
+            ScopedFont font(small_font());
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                to_u32(palette::kTextFaint, 230)
+            );
+            ImGui::TextUnformatted(label);
+            ImGui::PopStyleColor();
+        }
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextWrapped("%s", value.c_str());
+        ImGui::EndTable();
+    }
+    ImGui::PopID();
+}
+
+void draw_navigation_map_preview(
+    gs3d::app::AppState& state,
+    int active_index,
+    float s
+) {
+    auto& nm = gs3d::app::navigation_map_for_view(state, active_index);
+    const float width = ImGui::GetContentRegionAvail().x;
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const auto layout = compute_navigation_preview_layout(
+        cursor.x,
+        cursor.y,
+        width,
+        nm.tex_w,
+        nm.tex_h
+    );
+    const ImVec2 min(
+        layout.container.x,
+        layout.container.y
+    );
+    const ImVec2 max(
+        min.x + layout.container.width,
+        min.y + layout.container.height
+    );
+    const ImVec2 image_min(layout.image.x, layout.image.y);
+    const ImVec2 image_max(
+        image_min.x + layout.image.width,
+        image_min.y + layout.image.height
+    );
+    ImGui::InvisibleButton(
+        "##DockNavigationMap",
+        ImVec2(layout.container.width, layout.container.height)
+    );
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(
+        min,
+        max,
+        to_u32(palette::kViewportBg, 255),
+        11.0f * s
+    );
+    dl->PushClipRect(min, max, true);
+    if (nm.valid && nm.texture_descriptor != VK_NULL_HANDLE) {
+        dl->AddImage(
+            static_cast<ImTextureID>(
+                reinterpret_cast<ImU64>(nm.texture_descriptor)
+            ),
+            image_min,
+            image_max
+        );
+    }
+    if (nm.view_rect_valid && nm.tex_w > 0.0f && nm.tex_h > 0.0f) {
+        const float sx = layout.image.width / nm.tex_w;
+        const float sy = layout.image.height / nm.tex_h;
+        dl->AddRect(
+            ImVec2(
+                image_min.x + nm.view_rect_min_x * sx,
+                image_min.y + nm.view_rect_min_y * sy
+            ),
+            ImVec2(
+                image_min.x + nm.view_rect_max_x * sx,
+                image_min.y + nm.view_rect_max_y * sy
+            ),
+            to_u32(palette::kRed, 235),
+            0.0f,
+            0,
+            2.0f * s
+        );
+    }
+    dl->PopClipRect();
+    dl->AddRect(
+        min,
+        max,
+        to_u32(palette::kBorder, 150),
+        11.0f * s
+    );
+    {
+        ScopedFont font(status_font());
+        const char* caption = "导航图 · 红框 = 主视图可见 XY 范围";
+        const ImVec2 text_size = ImGui::CalcTextSize(caption);
+        dl->AddRectFilled(
+            ImVec2(min.x + 8.0f * s, max.y - text_size.y - 10.0f * s),
+            ImVec2(
+                min.x + text_size.x + 16.0f * s,
+                max.y - 5.0f * s
+            ),
+            IM_COL32(16, 22, 34, 190),
+            5.0f * s
+        );
+        dl->AddText(
+            ImVec2(min.x + 12.0f * s, max.y - text_size.y - 7.0f * s),
+            IM_COL32(235, 240, 247, 235),
+            caption
+        );
+    }
+}
+
 // ── 视图解析 ────────────────────────────────────────────────────────
 
 // 沉浸布局一次全屏显示一个视图：优先当前活动视图，其次第一个可见
@@ -555,19 +754,39 @@ int resolve_immersive_view(gs3d::app::AppState& state) {
     if (count <= 0) {
         return -1;
     }
+    const auto is_candidate = [](const auto& view) {
+        return view.visible &&
+               !view.detached &&
+               !view.force_undock_next_frame;
+    };
     int index = std::clamp(state.active_viewport_index, 0, count - 1);
-    if (!state.render_views[static_cast<std::size_t>(index)].visible) {
+    if (!is_candidate(
+            state.render_views[static_cast<std::size_t>(index)])) {
+        index = -1;
         for (int i = 0; i < count; ++i) {
-            if (state.render_views[static_cast<std::size_t>(i)].visible) {
+            if (is_candidate(
+                    state.render_views[static_cast<std::size_t>(i)])) {
                 index = i;
                 break;
             }
         }
     }
-    auto& view = state.render_views[static_cast<std::size_t>(index)];
-    if (!view.visible) {
-        view.visible = true;
+    if (index < 0) {
+        for (int i = 0; i < count; ++i) {
+            auto& candidate =
+                state.render_views[static_cast<std::size_t>(i)];
+            if (!candidate.detached &&
+                !candidate.force_undock_next_frame) {
+                candidate.visible = true;
+                index = i;
+                break;
+            }
+        }
     }
+    if (index < 0) {
+        return -1;
+    }
+    auto& view = state.render_views[static_cast<std::size_t>(index)];
     state.active_viewport_index = index;
     return index;
 }
@@ -588,13 +807,20 @@ gs3d::app::RenderSettingsCommand& add_render_settings_command(
 
 void draw_file_chip(
     const FrameCtx& ctx,
-    const gs3d::app::AppState& state
+    gs3d::app::AppState& state,
+    const bool show_map_axis
 ) {
     const float s = ctx.s;
+    const auto top = compute_floating_dock_top_overlay_layout(
+        ctx.work_pos.x,
+        ctx.work_pos.y,
+        s,
+        show_map_axis
+    );
     ImGui::SetNextWindowPos(
         ImVec2(
-            ctx.work_pos.x + DockMetrics::kSideMargin * s,
-            ctx.work_pos.y + DockMetrics::kTopMargin * s
+            top.left_x,
+            top.primary_y
         ),
         ImGuiCond_Always
     );
@@ -646,6 +872,26 @@ void draw_file_chip(
             );
             ImGui::PopStyleColor();
         }
+        const bool hovered = ImGui::IsWindowHovered(
+            ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
+        );
+        if (hovered) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            ImGui::GetWindowDrawList()->AddRect(
+                ImGui::GetWindowPos(),
+                ImVec2(
+                    ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                    ImGui::GetWindowPos().y + ImGui::GetWindowSize().y
+                ),
+                to_u32(palette::kAccent, 120),
+                DockMetrics::kChipRounding * s,
+                0,
+                1.0f
+            );
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                toggle_card(state.dock_ui, gs3d::app::DockCard::kData);
+            }
+        }
     }
     ImGui::End();
     pop_glass_window_style();
@@ -653,13 +899,20 @@ void draw_file_chip(
 
 void draw_perf_chip(
     const FrameCtx& ctx,
-    const gs3d::app::AppState& state
+    gs3d::app::AppState& state,
+    const bool show_map_axis
 ) {
     const float s = ctx.s;
+    const auto top = compute_floating_dock_top_overlay_layout(
+        ctx.work_pos.x,
+        ctx.work_pos.y,
+        s,
+        show_map_axis
+    );
     ImGui::SetNextWindowPos(
         ImVec2(
-            ctx.work_pos.x + DockMetrics::kSideMargin * s,
-            ctx.work_pos.y + 62.0f * s
+            top.left_x,
+            top.secondary_y
         ),
         ImGuiCond_Always
     );
@@ -675,7 +928,7 @@ void draw_perf_chip(
         ImVec4(0.078f, 0.094f, 0.125f, 0.62f)
     );
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.10f));
-    const ImGuiWindowFlags flags = kOverlayWindowFlags | ImGuiWindowFlags_NoInputs;
+    const ImGuiWindowFlags flags = kOverlayWindowFlags;
     if (ImGui::Begin("##FloatingDockPerfChip", nullptr, flags)) {
         ScopedFont font(status_font());
         ImGui::PushStyleColor(
@@ -692,6 +945,17 @@ void draw_perf_chip(
             )
         );
         ImGui::PopStyleColor();
+        if (ImGui::IsWindowHovered(
+                ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
+            )) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                toggle_card(
+                    state.dock_ui,
+                    gs3d::app::DockCard::kPerformance
+                );
+            }
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
@@ -700,17 +964,141 @@ void draw_perf_chip(
 
 // ── 右上视角工具 pill ───────────────────────────────────────────────
 
+bool draw_camera_pill_buttons(
+    gs3d::app::RenderViewState& view,
+    gs3d::app::UiActions& actions,
+    const bool style_active,
+    const float s
+) {
+    const float btn = 36.0f * s;
+    if (circle_icon_button(
+            "##pill_reset", btn, icon_reset, false, s, "复位视角")) {
+        actions.reset_camera_index = view.viewport_index;
+    }
+    ImGui::SameLine();
+    if (circle_icon_button(
+            "##pill_axis", btn, icon_axis,
+            view.show_map_axis, s, "地图轴")) {
+        view.show_map_axis = !view.show_map_axis;
+        if (view.show_map_axis) {
+            view.show_world_axis = false;
+        }
+    }
+    ImGui::SameLine();
+    if (circle_icon_button(
+            "##pill_world_axis", btn, icon_world_axis,
+            view.show_world_axis, s, "世界轴")) {
+        view.show_world_axis = !view.show_world_axis;
+        if (view.show_world_axis) {
+            view.show_map_axis = false;
+            view.show_crosshair = false;
+        }
+    }
+    ImGui::SameLine();
+    if (circle_icon_button(
+            "##pill_crosshair", btn, icon_crosshair,
+            view.show_crosshair, s, "十字准线")) {
+        view.show_crosshair = !view.show_crosshair;
+        if (view.show_crosshair && !view.show_map_axis) {
+            view.show_map_axis = true;
+            view.show_world_axis = false;
+        }
+    }
+    ImGui::SameLine();
+    const bool style_clicked = circle_icon_button(
+        "##pill_crosshair_style",
+        btn,
+        icon_crosshair_style,
+        style_active,
+        s,
+        "准星样式"
+    );
+    ImGui::SameLine();
+    if (circle_icon_button(
+            "##pill_fullscreen", btn, icon_expand,
+            false, s, "全屏切换")) {
+        actions.toggle_fullscreen_requested = true;
+    }
+    return style_clicked;
+}
+
+void draw_detached_reticle_popup(gs3d::app::RenderViewState& view) {
+    if (!ImGui::BeginPopup("##DetachedReticleStyle")) {
+        return;
+    }
+    ImGui::TextUnformatted("十字准线");
+    if (view.show_crosshair) {
+        ImVec4 crosshair =
+            ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
+        float color[4] = {
+            crosshair.x,
+            crosshair.y,
+            crosshair.z,
+            crosshair.w
+        };
+        if (ImGui::ColorEdit4(
+                "颜色##DetachedCrosshairColor",
+                color,
+                ImGuiColorEditFlags_NoInputs
+            )) {
+            view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(color[0], color[1], color[2], color[3])
+            );
+        }
+        ImGui::SameLine();
+        if (widgets::Chip("恢复默认##DetachedCrosshair")) {
+            view.crosshair_color =
+                IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+        }
+    } else {
+        ImGui::TextDisabled("先启用十字准线后可设置颜色");
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("拾取准星");
+    ImVec4 reticle = ImGui::ColorConvertU32ToFloat4(view.reticle_color);
+    float color[4] = {
+        reticle.x,
+        reticle.y,
+        reticle.z,
+        reticle.w
+    };
+    if (ImGui::ColorEdit4(
+            "颜色##DetachedReticleColor",
+            color,
+            ImGuiColorEditFlags_NoInputs
+        )) {
+        view.reticle_color = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(color[0], color[1], color[2], color[3])
+        );
+    }
+    ImGui::SameLine();
+    if (widgets::Chip("恢复默认##DetachedReticle")) {
+        view.reticle_color =
+            IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("左键旋转 · 右键平移 · 滚轮缩放 · F 聚焦");
+    ImGui::EndPopup();
+}
+
 void draw_camera_pill(
     const FrameCtx& ctx,
     gs3d::app::RenderViewState& view,
-    gs3d::app::UiActions& actions
+    gs3d::app::UiActions& actions,
+    gs3d::app::DockUiState& dock
 ) {
     const float s = ctx.s;
     const float btn = 36.0f * s;
+    const auto top = compute_floating_dock_top_overlay_layout(
+        ctx.work_pos.x,
+        ctx.work_pos.y,
+        s,
+        view.show_map_axis
+    );
     ImGui::SetNextWindowPos(
         ImVec2(
             ctx.work_pos.x + ctx.work_size.x - DockMetrics::kSideMargin * s,
-            ctx.work_pos.y + DockMetrics::kTopMargin * s
+            top.primary_y
         ),
         ImGuiCond_Always,
         ImVec2(1.0f, 0.0f)
@@ -733,34 +1121,13 @@ void draw_camera_pill(
             ),
             (btn + 10.0f * s) * 0.5f
         );
-        if (circle_icon_button(
-                "##pill_reset", btn, icon_reset, false, s, "复位视角")) {
-            actions.reset_camera_index = view.viewport_index;
-        }
-        ImGui::SameLine();
-        if (circle_icon_button(
-                "##pill_axis", btn, icon_axis,
-                view.show_map_axis, s, "地图轴")) {
-            view.show_map_axis = !view.show_map_axis;
-            if (view.show_map_axis) {
-                view.show_world_axis = false;
-            }
-        }
-        ImGui::SameLine();
-        if (circle_icon_button(
-                "##pill_crosshair", btn, icon_crosshair,
-                view.show_crosshair, s, "十字准线")) {
-            view.show_crosshair = !view.show_crosshair;
-            if (view.show_crosshair && !view.show_map_axis) {
-                view.show_map_axis = true;
-                view.show_world_axis = false;
-            }
-        }
-        ImGui::SameLine();
-        if (circle_icon_button(
-                "##pill_fullscreen", btn, icon_expand,
-                false, s, "全屏切换")) {
-            actions.toggle_fullscreen_requested = true;
+        if (draw_camera_pill_buttons(
+                view,
+                actions,
+                dock.open_card == gs3d::app::DockCard::kCrosshairStyle,
+                s
+            )) {
+            toggle_card(dock, gs3d::app::DockCard::kCrosshairStyle);
         }
     }
     ImGui::End();
@@ -1019,13 +1386,7 @@ void draw_dock_item(
     }
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-        dock.hint_seconds_left = 0.0f;
-        if (dock.open_card == item.card) {
-            dock.open_card = gs3d::app::DockCard::kNone;
-        } else {
-            dock.open_card = item.card;
-            dock.anim_card = item.card;
-        }
+        toggle_card(dock, item.card);
     }
 }
 
@@ -1180,8 +1541,11 @@ void draw_card_views(
                 IM_COL32(255, 255, 255, 235),
                 label
             );
-            const char* status =
-                is_active ? "沉浸显示中" : (view.visible ? "就绪" : "未开启");
+            const char* status = view.detached
+                ? "独立窗口"
+                : is_active
+                    ? "沉浸显示中"
+                    : (view.visible ? "就绪" : "未开启");
             const ImVec2 ts = ImGui::CalcTextSize(status);
             dl->AddText(
                 ImVec2(rmax.x - ts.x - 7.0f * s, rmin.y + 5.0f * s),
@@ -1191,20 +1555,47 @@ void draw_card_views(
                 status
             );
         }
-        set_tooltip(is_active ? "当前沉浸视图" : "点击切换到该视图");
+        set_tooltip(
+            view.detached
+                ? "点击收回独立窗口并切换到该视图"
+                : is_active
+                    ? "当前沉浸视图"
+                    : "点击切换到该视图"
+        );
 
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !is_active) {
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) &&
+            (!is_active || view.detached)) {
             view.visible = true;
+            view.detached = false;
+            view.force_undock_next_frame = false;
             state.active_viewport_index = i;
         }
     }
 
     ImGui::Spacing();
+    if (active_index >= 0 &&
+        active_index < static_cast<int>(state.render_views.size())) {
+        auto& active =
+            state.render_views[static_cast<std::size_t>(active_index)];
+        switch_row("联动相机（同步组）", &active.camera_linked, s);
+        if (widgets::Button(
+                "弹出当前视图为独立窗口",
+                widgets::ButtonVariant::kSecondary,
+                ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+            ) &&
+            pop_out_view_window(state, active_index)) {
+            state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+        }
+        ImGui::Spacing();
+        draw_navigation_map_preview(state, active_index, s);
+        ImGui::Spacing();
+    }
     {
         ScopedFont font(small_font());
         ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 190));
         ImGui::TextWrapped(
             "沉浸布局一次全屏显示一个视图，点击卡片即时切换；"
+            "独立窗口可自由移动或拖到其他显示器；"
             "多窗格并排请切换到工作台布局（我的 → 布局）。"
         );
         ImGui::PopStyleColor();
@@ -1258,7 +1649,7 @@ void draw_card_measure(
         if (i == 0) {
             tool_active = measurement.measure_mode_active();
         } else if (i == 1) {
-            tool_active = state.panels.region_stats;
+            tool_active = true;
         }
 
         const int bg_alpha =
@@ -1305,9 +1696,11 @@ void draw_card_measure(
             }
         } else if (i == 1) {
             set_tooltip("区域统计：测量模式下 Shift+拖拽框选，"
-                        "结果显示在区域统计窗口");
+                        "结果收纳在本卡片底部");
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                state.panels.region_stats = !state.panels.region_stats;
+                if (!measurement.measure_mode_active()) {
+                    measurement.toggle_measure_mode();
+                }
             }
         }
     }
@@ -1380,6 +1773,104 @@ void draw_card_measure(
                 true
             )) {
             measurement.remove_all_unfixed();
+        }
+    }
+
+    ImGui::Spacing();
+    card_section_label("区域统计结果");
+    const auto& stats =
+        gs3d::app::region_stats_for_view(state, active_index);
+    if (stats.computing) {
+        ImGui::TextUnformatted("正在统计框选区域…");
+    } else if (!stats.valid) {
+        ScopedFont font(small_font());
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            to_u32(palette::kTextFaint, 210)
+        );
+        ImGui::TextWrapped(
+            "测量模式下按住 Shift + 左键框选区域，结果将在这里更新。"
+        );
+        ImGui::PopStyleColor();
+    } else {
+        char value[192];
+        key_value_row(
+            "框内点数",
+            format_thousands(stats.point_count),
+            82.0f * s
+        );
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%.6f – %.6f",
+            stats.world_x_min,
+            stats.world_x_max
+        );
+        key_value_row("X 范围", value, 82.0f * s);
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%.6f – %.6f",
+            stats.world_y_min,
+            stats.world_y_max
+        );
+        key_value_row("Y 范围", value, 82.0f * s);
+        std::snprintf(
+            value,
+            sizeof(value),
+            "min %.4g · max %.4g · avg %.4g",
+            static_cast<double>(stats.fold_min),
+            static_cast<double>(stats.fold_max),
+            static_cast<double>(stats.fold_avg)
+        );
+        key_value_row(
+            stats.primary_label.empty()
+                ? "主属性"
+                : stats.primary_label.c_str(),
+            value,
+            82.0f * s
+        );
+        std::snprintf(
+            value,
+            sizeof(value),
+            "min %.4g · max %.4g · avg %.4g",
+            static_cast<double>(stats.elev_min),
+            static_cast<double>(stats.elev_max),
+            static_cast<double>(stats.elev_avg)
+        );
+        key_value_row(
+            stats.secondary_label.empty()
+                ? "高程"
+                : stats.secondary_label.c_str(),
+            value,
+            82.0f * s
+        );
+        if (widgets::Button(
+                "复制统计结果",
+                widgets::ButtonVariant::kSecondary
+            )) {
+            char clipboard[768];
+            std::snprintf(
+                clipboard,
+                sizeof(clipboard),
+                "框内点数 %llu\nX [%.6f, %.6f]\nY [%.6f, %.6f]\n"
+                "%s: min %.6g / max %.6g / avg %.6g\n"
+                "%s: min %.6g / max %.6g / avg %.6g",
+                static_cast<unsigned long long>(stats.point_count),
+                stats.world_x_min,
+                stats.world_x_max,
+                stats.world_y_min,
+                stats.world_y_max,
+                stats.primary_label.c_str(),
+                static_cast<double>(stats.fold_min),
+                static_cast<double>(stats.fold_max),
+                static_cast<double>(stats.fold_avg),
+                stats.secondary_label.c_str(),
+                static_cast<double>(stats.elev_min),
+                static_cast<double>(stats.elev_max),
+                static_cast<double>(stats.elev_avg)
+            );
+            ImGui::SetClipboardText(clipboard);
         }
     }
 }
@@ -1476,6 +1967,49 @@ void draw_card_layers(
     }
 
     ImGui::Spacing();
+    card_section_label("瓦片与细节层级");
+    {
+        char tiles[128];
+        std::snprintf(
+            tiles,
+            sizeof(tiles),
+            "已加载 %u · 等待 %u",
+            state.performance.loaded_tiles,
+            state.performance.pending_tiles
+        );
+        key_value_row("瓦片", tiles, 72.0f * s);
+    }
+    if (state.dataset.lod_details.empty()) {
+        key_value_row(
+            "LOD",
+            state.performance.lod_mode,
+            72.0f * s
+        );
+    } else {
+        for (std::size_t i = 0; i < state.dataset.lod_details.size(); ++i) {
+            const std::string label =
+                i == 0 ? "LOD" : ("L" + std::to_string(i - 1));
+            key_value_row(
+                label.c_str(),
+                state.dataset.lod_details[i],
+                72.0f * s
+            );
+        }
+    }
+    {
+        const auto& runtime_settings =
+            gs3d::app::render_settings_for_view(state, active_index);
+        char target[64];
+        std::snprintf(
+            target,
+            sizeof(target),
+            "%.0f FPS",
+            static_cast<double>(runtime_settings.target_fps)
+        );
+        key_value_row("目标帧率", target, 72.0f * s);
+    }
+
+    ImGui::Spacing();
     card_section_label("测量标注");
     const auto& lines = measurement.lines();
     if (lines.empty()) {
@@ -1529,6 +2063,28 @@ void draw_card_appearance(
                 add_render_settings_command(actions, active_index);
             command.point_size_changed = true;
             command.point_size = point_size;
+        }
+    }
+    {
+        static const char* shape_names[] = {
+            "方形", "圆形", "菱形", "三角形"
+        };
+        int shape = std::clamp(settings.point_shape, 0, 3);
+        begin_control_row("点形状", ctl_w);
+        if (widgets::BeginCombo(
+                "##DockPointShape",
+                shape_names[shape]
+            )) {
+            for (int i = 0; i < 4; ++i) {
+                if (ImGui::Selectable(shape_names[i], i == shape)) {
+                    settings.point_shape = i;
+                    auto& command =
+                        add_render_settings_command(actions, active_index);
+                    command.point_shape_changed = true;
+                    command.point_shape = i;
+                }
+            }
+            widgets::EndCombo();
         }
     }
     {
@@ -1646,12 +2202,353 @@ void draw_card_appearance(
         ImGui::TextUnformatted(hi);
         ImGui::PopStyleColor();
     }
+
+    ImGui::Spacing();
+    card_section_label("值域裁切");
+    const float data_lo = settings.data_value_min;
+    const float data_hi = settings.data_value_max;
+    const float data_range = data_hi - data_lo;
+    const float step =
+        data_range > 0.0f ? data_range * 0.001f : 0.001f;
+    bool clip_enabled = settings.value_clip_enabled;
+    if (switch_row("启用值域裁切", &clip_enabled, s)) {
+        settings.value_clip_enabled = clip_enabled;
+        if (clip_enabled) {
+            settings.value_clip_min = data_lo;
+            settings.value_clip_max = data_hi;
+        }
+        auto& command =
+            add_render_settings_command(actions, active_index);
+        command.value_clip_changed = true;
+        command.value_clip_enabled = clip_enabled;
+        command.value_clip_min = settings.value_clip_min;
+        command.value_clip_max = settings.value_clip_max;
+    }
+    if (settings.value_clip_enabled) {
+        float lo = std::clamp(
+            settings.value_clip_min,
+            data_lo,
+            settings.value_clip_max
+        );
+        float hi = std::clamp(
+            settings.value_clip_max,
+            lo,
+            data_hi
+        );
+        begin_control_row("下限", ctl_w);
+        if (widgets::DragFloat(
+                "##DockClipMin",
+                &lo,
+                step,
+                data_lo,
+                hi,
+                "%.4g"
+            )) {
+            settings.value_clip_min = lo;
+            auto& command =
+                add_render_settings_command(actions, active_index);
+            command.value_clip_changed = true;
+            command.value_clip_enabled = true;
+            command.value_clip_min = lo;
+            command.value_clip_max = hi;
+        }
+        begin_control_row("上限", ctl_w);
+        if (widgets::DragFloat(
+                "##DockClipMax",
+                &hi,
+                step,
+                lo,
+                data_hi,
+                "%.4g"
+            )) {
+            settings.value_clip_max = hi;
+            auto& command =
+                add_render_settings_command(actions, active_index);
+            command.value_clip_changed = true;
+            command.value_clip_enabled = true;
+            command.value_clip_min = lo;
+            command.value_clip_max = hi;
+        }
+    }
+}
+
+void draw_card_data(
+    const FrameCtx& ctx,
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions
+) {
+    const float s = ctx.s;
+    key_value_row(
+        "名称",
+        state.dataset.active_dataset.empty()
+            ? "未加载数据"
+            : state.dataset.active_dataset,
+        76.0f * s
+    );
+    key_value_row(
+        "格式",
+        state.dataset.format.empty() ? "GS3D" : state.dataset.format,
+        76.0f * s
+    );
+    key_value_row(
+        "点数",
+        format_thousands(state.dataset.point_count),
+        76.0f * s
+    );
+    key_value_row(
+        "大小",
+        state.dataset.file_size.empty() ? "--" : state.dataset.file_size,
+        76.0f * s
+    );
+    key_value_row(
+        "路径",
+        state.dataset.path.empty() ? "--" : state.dataset.path,
+        76.0f * s
+    );
+    key_value_row(
+        "包围盒",
+        state.dataset.bounding_box.empty()
+            ? "--"
+            : state.dataset.bounding_box,
+        76.0f * s
+    );
+    std::string attributes;
+    for (const auto& attribute : state.dataset.attributes) {
+        if (!attributes.empty()) {
+            attributes += " · ";
+        }
+        attributes += attribute;
+    }
+    key_value_row(
+        "属性",
+        attributes.empty() ? "--" : attributes,
+        76.0f * s
+    );
+
+    ImGui::Spacing();
+    card_section_label("操作");
+    if (widgets::Button(
+            "打开数据文件…    Ctrl+O",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.open_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
+    if (widgets::Button(
+            "打开 GS3D Bundle 项目…",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.open_bundle_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
+    if (widgets::Button(
+            "返回欢迎页",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.show_welcome_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
+}
+
+void draw_card_performance(
+    const FrameCtx& ctx,
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    int active_index
+) {
+    const float s = ctx.s;
+    char value[160];
+    card_section_label("渲染");
+    std::snprintf(
+        value,
+        sizeof(value),
+        "%.1f FPS",
+        static_cast<double>(state.performance.fps)
+    );
+    key_value_row("帧率", value, 92.0f * s);
+    std::snprintf(
+        value,
+        sizeof(value),
+        "%.2f ms",
+        static_cast<double>(state.performance.frame_time_ms)
+    );
+    key_value_row("帧耗时", value, 92.0f * s);
+    key_value_row(
+        "可见点数",
+        format_thousands(state.performance.visible_points),
+        92.0f * s
+    );
+    std::snprintf(
+        value,
+        sizeof(value),
+        "%.1f MB",
+        static_cast<double>(
+            bytes_to_mb(state.performance.gpu_memory_bytes)
+        )
+    );
+    key_value_row("GPU 显存", value, 92.0f * s);
+
+    ImGui::Spacing();
+    card_section_label("流式加载");
+    std::snprintf(
+        value,
+        sizeof(value),
+        "已加载 %u · 等待 %u",
+        state.performance.loaded_tiles,
+        state.performance.pending_tiles
+    );
+    key_value_row("瓦片", value, 92.0f * s);
+    const auto& settings =
+        gs3d::app::render_settings_for_view(state, active_index);
+    key_value_row(
+        "GPU 瓦片",
+        settings.cache_usage,
+        92.0f * s
+    );
+    key_value_row(
+        "CPU 缓存",
+        settings.cpu_cache_usage,
+        92.0f * s
+    );
+    if (settings.cache_hit_rate < 0.0f) {
+        key_value_row("缓存命中率", "—", 92.0f * s);
+    } else {
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%.1f%%",
+            static_cast<double>(settings.cache_hit_rate)
+        );
+        key_value_row("缓存命中率", value, 92.0f * s);
+    }
+    key_value_row("细节层级", state.performance.lod_mode, 92.0f * s);
+    ImGui::Spacing();
+    if (widgets::Button(
+            "清空缓存",
+            widgets::ButtonVariant::kDanger,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.clear_cache_requested = true;
+    }
+}
+
+bool color_swatch(
+    const char* id,
+    std::uint32_t color,
+    bool selected,
+    float s
+) {
+    const float size = 19.0f * s;
+    ImGui::InvisibleButton(id, ImVec2(size, size));
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 center(min.x + size * 0.5f, min.y + size * 0.5f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (selected) {
+        dl->AddCircleFilled(
+            center,
+            size * 0.5f,
+            to_u32(palette::kAccent, 255)
+        );
+    }
+    dl->AddCircleFilled(
+        center,
+        size * (selected ? 0.34f : 0.42f),
+        color
+    );
+    dl->AddCircle(
+        center,
+        size * (selected ? 0.34f : 0.42f),
+        IM_COL32(255, 255, 255, 210),
+        0,
+        1.0f
+    );
+    return ImGui::IsItemClicked(ImGuiMouseButton_Left);
+}
+
+void crosshair_color_row(
+    const char* label,
+    const char* id,
+    std::uint32_t& value,
+    float s
+) {
+    static constexpr std::uint32_t colors[] = {
+        IM_COL32(0xF1, 0xC2, 0x1B, 0xFF),
+        IM_COL32(0x2A, 0xAB, 0xEE, 0xFF),
+        IM_COL32(0xFF, 0x5E, 0x7E, 0xFF),
+        IM_COL32(0x4A, 0xDE, 0x80, 0xFF),
+        IM_COL32(0xFF, 0xFF, 0xFF, 0xFF),
+    };
+    ImGui::PushID(id);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine();
+    const float row_width =
+        static_cast<float>(std::size(colors)) * 23.0f * s;
+    const float shift = ImGui::GetContentRegionAvail().x - row_width;
+    if (shift > 0.0f) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + shift);
+    }
+    for (std::size_t i = 0; i < std::size(colors); ++i) {
+        if (i > 0) {
+            ImGui::SameLine(0.0f, 4.0f * s);
+        }
+        ImGui::PushID(static_cast<int>(i));
+        if (color_swatch(
+                "##swatch",
+                colors[i],
+                value == colors[i],
+                s
+            )) {
+            value = colors[i];
+        }
+        ImGui::PopID();
+    }
+    if (widgets::Chip("恢复默认") &&
+        value != colors[0]) {
+        value = colors[0];
+    }
+    ImGui::PopID();
+}
+
+void draw_card_crosshair_style(
+    const FrameCtx& ctx,
+    gs3d::app::RenderViewState& view
+) {
+    const float s = ctx.s;
+    crosshair_color_row(
+        "十字准线",
+        "crosshair",
+        view.crosshair_color,
+        s
+    );
+    crosshair_color_row(
+        "拾取准星",
+        "reticle",
+        view.reticle_color,
+        s
+    );
+    ImGui::Spacing();
+    {
+        ScopedFont font(small_font());
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            to_u32(palette::kTextFaint, 210)
+        );
+        ImGui::TextWrapped(
+            "左键旋转 · 右键平移 · 滚轮缩放 · F 聚焦"
+        );
+        ImGui::PopStyleColor();
+    }
 }
 
 void draw_card_settings(
     const FrameCtx& ctx,
     gs3d::app::AppState& state,
     gs3d::app::RenderViewState& view,
+    gs3d::app::UiActions& actions,
     FloatingDockFrameResult& result
 ) {
     const float s = ctx.s;
@@ -1681,6 +2578,41 @@ void draw_card_settings(
             view.show_world_axis = false;
         }
     }
+    bool world_axis = view.show_world_axis;
+    if (switch_row("世界轴", &world_axis, s)) {
+        view.show_world_axis = world_axis;
+        if (view.show_world_axis) {
+            view.show_map_axis = false;
+            view.show_crosshair = false;
+        }
+    }
+
+    ImGui::Spacing();
+    card_section_label("数据");
+    if (widgets::Button(
+            "打开数据文件…    Ctrl+O",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.open_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
+    if (widgets::Button(
+            "打开 GS3D Bundle 项目…",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.open_bundle_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
+    if (widgets::Button(
+            "返回欢迎页",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        actions.show_welcome_requested = true;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+    }
 
     ImGui::Spacing();
     card_section_label("布局");
@@ -1694,6 +2626,75 @@ void draw_card_settings(
         state.dock_ui.anim_card = gs3d::app::DockCard::kNone;
         state.dock_ui.card_anim = 0.0f;
     }
+    const float layout_button_gap = 8.0f * s;
+    const float layout_button_width =
+        (ImGui::GetContentRegionAvail().x - layout_button_gap) * 0.5f;
+    if (widgets::Button(
+            "恢复默认工作区",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(layout_button_width, 0.0f)
+        )) {
+        restore_default_workspace(state);
+        actions.restore_default_workspace_requested = true;
+        state.ui_layout_mode = gs3d::app::UiLayoutMode::kWorkbench;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.anim_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.card_anim = 0.0f;
+    }
+    ImGui::SameLine(0.0f, layout_button_gap);
+    const bool can_create_workspace = has_hidden_view(state);
+    ImGui::BeginDisabled(!can_create_workspace);
+    if (widgets::Button(
+            "新建工作窗口",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(layout_button_width, 0.0f)
+        ) &&
+        create_workspace_window(state)) {
+        state.ui_layout_mode = gs3d::app::UiLayoutMode::kWorkbench;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.anim_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.card_anim = 0.0f;
+    }
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    card_section_label("日志");
+    if (state.debug_log.lines.empty()) {
+        ImGui::TextUnformatted("暂无日志。");
+    } else {
+        const std::size_t first =
+            state.debug_log.lines.size() > 3
+                ? state.debug_log.lines.size() - 3
+                : 0;
+        ImGui::PushStyleColor(
+            ImGuiCol_ChildBg,
+            to_u32(palette::kFrame, 150)
+        );
+        ImGui::BeginChild(
+            "##DockLogPreview",
+            ImVec2(0.0f, 78.0f * s),
+            ImGuiChildFlags_Borders,
+            ImGuiWindowFlags_NoScrollbar
+        );
+        {
+            ScopedFont font(status_font());
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                to_u32(palette::kTextDim, 220)
+            );
+            for (std::size_t i = first;
+                 i < state.debug_log.lines.size();
+                 ++i) {
+                ImGui::TextWrapped(
+                    "%s",
+                    state.debug_log.lines[i].c_str()
+                );
+            }
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
 
     ImGui::Spacing();
     {
@@ -1701,6 +2702,7 @@ void draw_card_settings(
         ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextFaint, 200));
         ImGui::TextWrapped(
             "Esc 收起卡片 · M 测量模式 · Ctrl+O 打开数据 · "
+            "Ctrl+N 新建视图 · Tab 切换着色 · "
             "左键旋转 · 右键平移 · 滚轮缩放"
         );
         ImGui::PopStyleColor();
@@ -1714,6 +2716,10 @@ const char* card_title(gs3d::app::DockCard card) {
         case gs3d::app::DockCard::kLayers:     return "图层";
         case gs3d::app::DockCard::kAppearance: return "点云外观";
         case gs3d::app::DockCard::kSettings:   return "设置";
+        case gs3d::app::DockCard::kData:        return "数据";
+        case gs3d::app::DockCard::kPerformance: return "性能";
+        case gs3d::app::DockCard::kCrosshairStyle:
+            return "准星样式";
         default:                               return "";
     }
 }
@@ -1734,19 +2740,63 @@ void draw_dock_card(
     const bool closing = dock.open_card == gs3d::app::DockCard::kNone;
     const float eased = ease_out_back(dock.card_anim);
     const float alpha = std::clamp(dock.card_anim * 1.4f, 0.0f, 1.0f);
+    const auto card = dock.anim_card;
+    const bool top_left =
+        card == gs3d::app::DockCard::kData ||
+        card == gs3d::app::DockCard::kPerformance;
+    const bool top_right =
+        card == gs3d::app::DockCard::kCrosshairStyle;
+    float card_width = DockMetrics::kCardWidth;
+    if (card == gs3d::app::DockCard::kMeasure ||
+        card == gs3d::app::DockCard::kData ||
+        card == gs3d::app::DockCard::kPerformance) {
+        card_width = 400.0f;
+    } else if (top_right) {
+        card_width = 320.0f;
+    }
 
-    ImGui::SetNextWindowPos(
-        ImVec2(
+    ImVec2 card_pos;
+    ImVec2 card_pivot;
+    float max_height = 0.0f;
+    if (top_left) {
+        const float y_offset =
+            card == gs3d::app::DockCard::kData ? 76.0f : 104.0f;
+        card_pos = ImVec2(
+            ctx.work_pos.x + DockMetrics::kSideMargin * s,
+            ctx.work_pos.y + y_offset * s -
+                (1.0f - eased) * 8.0f * s
+        );
+        card_pivot = ImVec2(0.0f, 0.0f);
+        max_height = ctx.work_size.y - y_offset * s - 20.0f * s;
+    } else if (top_right) {
+        const float y_offset = 76.0f;
+        card_pos = ImVec2(
+            ctx.work_pos.x + ctx.work_size.x -
+                DockMetrics::kSideMargin * s,
+            ctx.work_pos.y + y_offset * s -
+                (1.0f - eased) * 8.0f * s
+        );
+        card_pivot = ImVec2(1.0f, 0.0f);
+        max_height = ctx.work_size.y - y_offset * s - 20.0f * s;
+    } else {
+        card_pos = ImVec2(
             ctx.work_pos.x + ctx.work_size.x * 0.5f,
             ctx.dock_top - DockMetrics::kCardBottomGap * s +
                 (1.0f - eased) * 10.0f * s
-        ),
+        );
+        card_pivot = ImVec2(0.5f, 1.0f);
+        max_height =
+            ctx.dock_top - ctx.work_pos.y - 22.0f * s;
+    }
+    max_height = std::max(160.0f * s, max_height);
+    ImGui::SetNextWindowPos(
+        card_pos,
         ImGuiCond_Always,
-        ImVec2(0.5f, 1.0f)
+        card_pivot
     );
     ImGui::SetNextWindowSizeConstraints(
-        ImVec2(DockMetrics::kCardWidth * s, 0.0f),
-        ImVec2(DockMetrics::kCardWidth * s, FLT_MAX)
+        ImVec2(card_width * s, 0.0f),
+        ImVec2(card_width * s, max_height)
     );
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
     push_glass_window_style(
@@ -1754,6 +2804,8 @@ void draw_dock_card(
         ImVec2(DockMetrics::kCardPad * s, DockMetrics::kCardPad * s)
     );
     ImGuiWindowFlags flags = kOverlayWindowFlags;
+    flags &= ~ImGuiWindowFlags_NoScrollbar;
+    flags &= ~ImGuiWindowFlags_NoScrollWithMouse;
     if (closing) {
         // 收起动画期间不再拦截输入，点击可直接落到视口。
         flags |= ImGuiWindowFlags_NoInputs;
@@ -1787,7 +2839,27 @@ void draw_dock_card(
                     ctx,
                     state,
                     state.render_views[static_cast<std::size_t>(active_index)],
+                    actions,
                     result
+                );
+                break;
+            case gs3d::app::DockCard::kData:
+                draw_card_data(ctx, state, actions);
+                break;
+            case gs3d::app::DockCard::kPerformance:
+                draw_card_performance(
+                    ctx,
+                    state,
+                    actions,
+                    active_index
+                );
+                break;
+            case gs3d::app::DockCard::kCrosshairStyle:
+                draw_card_crosshair_style(
+                    ctx,
+                    state.render_views[
+                        static_cast<std::size_t>(active_index)
+                    ]
                 );
                 break;
             default:
@@ -1813,42 +2885,182 @@ void draw_hint_pill(const FrameCtx& ctx, gs3d::app::DockUiState& dock) {
     if (fade <= 0.0f) {
         return;
     }
-
-    ImGui::SetNextWindowPos(
-        ImVec2(
-            ctx.work_pos.x + ctx.work_size.x * 0.5f,
-            ctx.dock_top - 12.0f * s
-        ),
-        ImGuiCond_Always,
-        ImVec2(0.5f, 1.0f)
-    );
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, fade);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 99.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_WindowPadding,
-        ImVec2(15.0f * s, 7.0f * s)
-    );
-    ImGui::PushStyleColor(
-        ImGuiCol_WindowBg,
-        ImVec4(0.078f, 0.094f, 0.125f, 0.75f)
-    );
-    const ImGuiWindowFlags flags = kOverlayWindowFlags | ImGuiWindowFlags_NoInputs;
-    if (ImGui::Begin("##FloatingDockHint", nullptr, flags)) {
-        ScopedFont font(small_font());
-        ImGui::PushStyleColor(
-            ImGuiCol_Text,
-            ImVec4(0.91f, 0.93f, 0.97f, 1.0f)
-        );
-        ImGui::TextUnformatted("点击 Dock 图标，面板以悬浮卡片弹出");
-        ImGui::PopStyleColor();
+    if (ctx.shadow_layer == nullptr) {
+        return;
     }
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(4);
+    const char* text = "点击 Dock 图标，面板以悬浮卡片弹出";
+    ImFont* font = small_font() != nullptr
+        ? small_font()
+        : ImGui::GetFont();
+    const float font_size = font == nullptr
+        ? ImGui::GetFontSize()
+        : font->LegacySize;
+    const ImVec2 text_size = font->CalcTextSizeA(
+        font_size,
+        FLT_MAX,
+        0.0f,
+        text
+    );
+    const ImVec2 padding(14.0f * s, 7.0f * s);
+    const ImVec2 size(
+        text_size.x + padding.x * 2.0f,
+        text_size.y + padding.y * 2.0f
+    );
+    const ImVec2 min(
+        ctx.work_pos.x + (ctx.work_size.x - size.x) * 0.5f,
+        ctx.dock_top - 10.0f * s - size.y
+    );
+    const ImVec2 max(min.x + size.x, min.y + size.y);
+    ctx.shadow_layer->AddRectFilled(
+        min,
+        max,
+        IM_COL32(20, 24, 32, static_cast<int>(190.0f * fade)),
+        size.y * 0.5f
+    );
+    ctx.shadow_layer->AddText(
+        font,
+        font_size,
+        ImVec2(min.x + padding.x, min.y + padding.y),
+        IM_COL32(235, 240, 247, static_cast<int>(255.0f * fade)),
+        text
+    );
 }
 
 } // namespace
+
+void draw_detached_view_camera_pill(
+    gs3d::app::RenderViewState& view,
+    gs3d::app::UiActions& actions,
+    const float canvas_top,
+    const float canvas_right,
+    const unsigned int platform_viewport_id,
+    const float ui_scale
+) {
+    const float s = std::max(0.5f, ui_scale);
+    const float btn = 36.0f * s;
+    const float axis_clearance =
+        view.show_map_axis ? kMapAxisTopBandBase * s : 0.0f;
+    ImGui::SetNextWindowPos(
+        ImVec2(
+            canvas_right - DockMetrics::kSideMargin * s,
+            canvas_top + axis_clearance + DockMetrics::kTopMargin * s
+        ),
+        ImGuiCond_Always,
+        ImVec2(1.0f, 0.0f)
+    );
+    ImGui::SetNextWindowViewport(platform_viewport_id);
+    push_glass_window_style(
+        (btn + 10.0f * s) * 0.5f,
+        ImVec2(5.0f * s, 5.0f * s)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(2.0f * s, 0.0f)
+    );
+    const std::string window_name =
+        "##DetachedCameraPill" + std::to_string(view.viewport_index);
+    if (ImGui::Begin(
+            window_name.c_str(),
+            nullptr,
+            kOverlayWindowFlags
+        )) {
+        const bool style_active =
+            ImGui::IsPopupOpen("##DetachedReticleStyle");
+        if (draw_camera_pill_buttons(
+                view,
+                actions,
+                style_active,
+                s
+            )) {
+            ImGui::OpenPopup("##DetachedReticleStyle");
+        }
+        draw_detached_reticle_popup(view);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    pop_glass_window_style();
+}
+
+void draw_screenshot_notice(
+    gs3d::app::AppState& state,
+    const float ui_scale
+) {
+    auto& notice = state.screenshot_notice;
+    if (notice.kind == gs3d::app::ScreenshotNoticeKind::kNone ||
+        notice.message.empty()) {
+        return;
+    }
+    if (notice.seconds_left > 0.0f) {
+        notice.seconds_left -=
+            std::min(ImGui::GetIO().DeltaTime, 0.05f);
+        if (notice.seconds_left <= 0.0f) {
+            notice = {};
+            return;
+        }
+    }
+
+    ImVec4 indicator = palette::kAccent;
+    switch (notice.kind) {
+    case gs3d::app::ScreenshotNoticeKind::kSaved:
+        indicator = palette::kGreen;
+        break;
+    case gs3d::app::ScreenshotNoticeKind::kCancelled:
+        indicator = palette::kGray;
+        break;
+    case gs3d::app::ScreenshotNoticeKind::kError:
+        indicator = palette::kRed;
+        break;
+    default:
+        break;
+    }
+
+    const float s = std::max(0.5f, ui_scale);
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float notice_width = std::clamp(
+        ImGui::CalcTextSize(notice.message.c_str()).x + 58.0f * s,
+        190.0f * s,
+        520.0f * s
+    );
+    ImGui::SetNextWindowPos(
+        ImVec2(
+            viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+            viewport->WorkPos.y + 58.0f * s
+        ),
+        ImGuiCond_Always,
+        ImVec2(0.5f, 0.0f)
+    );
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(notice_width, 0.0f),
+        ImVec2(notice_width, FLT_MAX)
+    );
+    push_glass_window_style(
+        18.0f * s,
+        ImVec2(14.0f * s, 9.0f * s)
+    );
+    if (ImGui::Begin(
+            "##ScreenshotNotice",
+            nullptr,
+            kOverlayWindowFlags | ImGuiWindowFlags_NoInputs
+        )) {
+        const float dot_size = 10.0f * s;
+        ImGui::Dummy(ImVec2(dot_size, dot_size));
+        const ImVec2 dot_min = ImGui::GetItemRectMin();
+        const ImVec2 dot_max = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(
+                (dot_min.x + dot_max.x) * 0.5f,
+                (dot_min.y + dot_max.y) * 0.5f
+            ),
+            dot_size * 0.5f,
+            to_u32(indicator)
+        );
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", notice.message.c_str());
+    }
+    ImGui::End();
+    pop_glass_window_style();
+}
 
 // ── 布局入口 ────────────────────────────────────────────────────────
 
@@ -1939,11 +3151,12 @@ FloatingDockFrameResult draw_floating_dock_layout(
     ImGui::End();
     ImGui::PopStyleVar(3);
 
-    // 未沉浸显示的视图本帧不渲染；沉浸布局下也没有独立 OS 窗口视图。
+    // 未沉浸显示、也未弹出的视图本帧不渲染。弹出视图稍后由
+    // UiRoot 作为独立 ImGui 窗口绘制。
     for (auto& view : state.render_views) {
-        view.detached = false;
-        view.force_undock_next_frame = false;
-        if (view.viewport_index != active_index) {
+        if (view.viewport_index != active_index &&
+            !view.detached &&
+            !view.force_undock_next_frame) {
             view.render_requested = false;
         }
     }
@@ -1955,20 +3168,15 @@ FloatingDockFrameResult draw_floating_dock_layout(
         state.render_views[static_cast<std::size_t>(active_index)];
 
     // ── 2. 悬浮件 ──
-    draw_file_chip(ctx, state);
+    draw_file_chip(ctx, state, active_view.show_map_axis);
     if (dock.show_perf_hud) {
-        draw_perf_chip(ctx, state);
+        draw_perf_chip(ctx, state, active_view.show_map_axis);
     }
-    draw_camera_pill(ctx, active_view, actions);
+    draw_camera_pill(ctx, active_view, actions, dock);
     draw_fabs(ctx, state, actions, active_index);
     draw_dock(ctx, state);
     draw_dock_card(ctx, state, actions, active_index, result);
     draw_hint_pill(ctx, dock);
-
-    // 区域统计结果窗口（Shift+框选统计的输出）。
-    if (state.panels.region_stats) {
-        draw_region_stats_panel(state, nullptr, &state.panels.region_stats);
-    }
 
     // ── 3. Esc 收起卡片 ──
     if (dock.open_card != gs3d::app::DockCard::kNone &&

@@ -108,9 +108,6 @@ namespace LayoutMetrics {
     constexpr float kToolsBarHeightBase = 44.0f;
     // Status bar: base pixel size, scaled by ui_scale at the call site.
     constexpr float kStatusBarHeightBase  = 22.0f;
-    constexpr float kViewportToolbarGap = 6.0f;
-    constexpr float kViewportToolbarFramePadX = 5.0f;
-    constexpr float kViewportToolbarFramePadY = 2.0f;
     constexpr float kPanelHeaderGap = 8.0f;
     constexpr float kPanelSectionGap = 8.0f;
     constexpr float kPanelInsetX = 10.0f;
@@ -378,110 +375,25 @@ void draw_viewport_window(
          window_viewport->ID != ImGui::GetMainViewport()->ID);
 
     const float toolbar_scale = ImGui::GetFontSize() / 13.0f;
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_FramePadding,
-        ImVec2(
-            LayoutMetrics::kViewportToolbarFramePadX * toolbar_scale,
-            LayoutMetrics::kViewportToolbarFramePadY * toolbar_scale
-        )
-    );
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_ItemSpacing,
-        ImVec2(
-            LayoutMetrics::kViewportToolbarGap * toolbar_scale,
-            4.0f * toolbar_scale
-        )
-    );
-    // Keep the essential navigation controls on one compact row. Colour
-    // editing lives in a popup so the toolbar never consumes canvas height.
-    ImGui::TextDisabled(view.detached ? "独立窗口" : "视图");
-    ImGui::SameLine();
-    if (widgets::Chip("复位视角")) {
-        actions.reset_camera_index = view.viewport_index;
-    }
-    ImGui::SameLine();
-    widgets::Checkbox("联动相机", &view.camera_linked);
-    ImGui::SameLine();
-
-    if (widgets::Checkbox("地图轴", &view.show_map_axis)) {
-        if (view.show_map_axis) {
-            view.show_world_axis = false;
-        }
-    }
-    ImGui::SameLine();
-    if (widgets::Checkbox("世界轴", &view.show_world_axis)) {
-        if (view.show_world_axis) {
-            view.show_map_axis = false;
-        }
-    }
-    ImGui::SameLine();
-    if (widgets::Checkbox("十字准线", &view.show_crosshair)) {
-        if (view.show_crosshair && !view.show_map_axis) {
-            view.show_map_axis = true;
-            view.show_world_axis = false;
-        }
-    }
-    ImGui::SameLine();
-    if (widgets::Chip("准星样式")) {
-        ImGui::OpenPopup("##ReticleStyle");
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("调整十字准线和拾取准星颜色");
-    }
-    if (ImGui::BeginPopup("##ReticleStyle")) {
-        ImGui::TextUnformatted("十字准线");
-        if (view.show_crosshair) {
-            ImVec4 ch = ImGui::ColorConvertU32ToFloat4(view.crosshair_color);
-            float ch_arr[4] = {ch.x, ch.y, ch.z, ch.w};
-            if (ImGui::ColorEdit4(
-                    "颜色##CrosshairColor",
-                    ch_arr,
-                    ImGuiColorEditFlags_NoInputs
-                )) {
-                view.crosshair_color = ImGui::ColorConvertFloat4ToU32(
-                    ImVec4(ch_arr[0], ch_arr[1], ch_arr[2], ch_arr[3])
-                );
-            }
-            ImGui::SameLine();
-            if (widgets::Chip("恢复默认##Crosshair")) {
-                view.crosshair_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-            }
-        } else {
-            ImGui::TextDisabled("先启用十字准线后可设置颜色");
-        }
-        ImGui::Separator();
-        ImGui::TextUnformatted("拾取准星");
-        ImVec4 rt = ImGui::ColorConvertU32ToFloat4(view.reticle_color);
-        float rt_arr[4] = {rt.x, rt.y, rt.z, rt.w};
-        if (ImGui::ColorEdit4(
-                "颜色##ReticleColor",
-                rt_arr,
-                ImGuiColorEditFlags_NoInputs
-            )) {
-            view.reticle_color = ImGui::ColorConvertFloat4ToU32(
-                ImVec4(rt_arr[0], rt_arr[1], rt_arr[2], rt_arr[3])
-            );
-        }
-        ImGui::SameLine();
-        if (widgets::Chip("恢复默认##Reticle")) {
-            view.reticle_color = IM_COL32(0xF1, 0xC2, 0x1B, 0xFF);
-        }
-        ImGui::Separator();
-        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 175));
-        ImGui::TextUnformatted(
-            "左键旋转 · 右键平移 · 滚轮缩放 · F 聚焦"
-        );
-        ImGui::PopStyleColor();
-        ImGui::EndPopup();
-    }
-    ImGui::PopStyleVar(2);
-    ImGui::Separator();
-
     ViewportCanvasOptions canvas_options;
     canvas_options.workspace_id = workspace_id;
     draw_viewport_canvas(view, actions, canvas_options);
 
+    const unsigned int platform_viewport_id =
+        window_viewport == nullptr
+            ? ImGui::GetMainViewport()->ID
+            : window_viewport->ID;
+    const float canvas_top = view.canvas_rect_min_y;
+    const float canvas_right = view.canvas_rect_max_x;
     ImGui::End();
+    draw_detached_view_camera_pill(
+        view,
+        actions,
+        canvas_top,
+        canvas_right,
+        platform_viewport_id,
+        toolbar_scale
+    );
 }
 
 /*
@@ -985,17 +897,24 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         ImGui::IsKeyPressed(ImGuiKey_N, false)) {
         show_first_hidden_view(state);
     }
-
     // ── 悬浮 Dock 沉浸布局（方案 B）：整帧交给 FloatingDockUi ──
     if (state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock) {
         const FloatingDockFrameResult dock_result =
             draw_floating_dock_layout(state, actions, ui_scale);
         if (dock_result.theme_change_requested) {
-            apply_theme(
-                dock_result.requested_theme,
-                gs3d::gui::ui_fonts().ui_scale
-            );
+            apply_theme(dock_result.requested_theme,
+                        gs3d::gui::ui_fonts().ui_scale);
         }
+        if (actions.restore_default_workspace_requested) {
+            dock_layout_initialized_ = false;
+        }
+        for (auto& view : state.render_views) {
+            if (view.visible &&
+                (view.detached || view.force_undock_next_frame)) {
+                draw_viewport_window(view, actions);
+            }
+        }
+        draw_screenshot_notice(state, ui_scale);
         finalize_frame_shortcuts(state, actions);
         return actions;
     }
@@ -1063,11 +982,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     show_first_hidden_view(state);
                 }
                 if (ImGui::MenuItem("恢复默认工作区")) {
-                    for (auto& view : state.render_views) {
-                        view.detached = false;
-                        view.force_undock_next_frame = false;
-                    }
-                    state.workspace_windows.clear();
+                    restore_default_workspace(state);
                     dock_layout_initialized_ = false;
                 }
                 draw_menu_section_label("布局");
@@ -1257,10 +1172,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     if (theme_change_requested) {
         // 所有临时样式均已出栈，再整体替换主题。后续面板在本帧即可
         // 使用一致的 ImGuiStyle 与 palette 颜色。
-        apply_theme(
-            requested_theme,
-            gs3d::gui::ui_fonts().ui_scale
-        );
+        apply_theme(requested_theme, gs3d::gui::ui_fonts().ui_scale);
     }
 
     if (render_workspace) {
@@ -1300,13 +1212,13 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 }
             }
         }
-
         for (auto& workspace : state.workspace_windows) {
             draw_workspace_window(state, actions, workspace, ui_scale);
         }
         prune_workspace_windows(state);
 
         draw_auxiliary_panels(state, actions);
+        draw_screenshot_notice(state, ui_scale);
     } else {
         for (auto& view : state.render_views) {
             view.render_requested = false;

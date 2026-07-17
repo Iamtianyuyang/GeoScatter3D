@@ -2,8 +2,13 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <filesystem>
+#include <future>
 #include <iterator>
+#include <memory>
 #include <string>
+#include <utility>
 
 #if defined(_WIN32)
 #define NOMINMAX
@@ -17,6 +22,34 @@ namespace gs3d::platform {
 namespace {
 
 #if defined(_WIN32)
+
+std::wstring utf8_to_wide(const std::string& value)
+{
+    if (value.empty()) {
+        return {};
+    }
+    const int size = MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0
+    );
+    if (size <= 0) {
+        return std::wstring(value.begin(), value.end());
+    }
+    std::wstring result(static_cast<std::size_t>(size), L'\0');
+    MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        size
+    );
+    return result;
+}
 
 NativeFileDialogResult choose_windows_folder()
 {
@@ -105,6 +138,20 @@ bool command_available(const char* command)
     return std::system(probe.c_str()) == 0;
 }
 
+std::string shell_quote(const std::string& value)
+{
+    std::string quoted = "'";
+    for (const char character : value) {
+        if (character == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += character;
+        }
+    }
+    quoted += "'";
+    return quoted;
+}
+
 NativeFileDialogResult run_dialog_command(const char* command)
 {
     FILE* process = popen(command, "r");
@@ -161,23 +208,24 @@ NativeFileDialogResult choose_project_directory()
 #endif
 }
 
-NativeFileDialogResult choose_save_file(
+#if !defined(__APPLE__)
+
+namespace {
+
+NativeFileDialogResult choose_save_file_blocking(
     const std::string& default_filename,
     const std::string& title,
     const std::string& /*filters*/
 ) {
 #if defined(_WIN32)
-    std::wstring wide_default(
-        default_filename.begin(),
-        default_filename.end()
-    );
-    std::wstring wide_title(title.begin(), title.end());
+    const std::wstring wide_default = utf8_to_wide(default_filename);
+    const std::wstring wide_title = utf8_to_wide(title);
 
     wchar_t path_buffer[32768]{};
     if (wide_default.size() < std::size(path_buffer)) {
         std::wcscpy(path_buffer, wide_default.c_str());
     }
-    const std::wstring wfilter =
+    static constexpr wchar_t kPngFilter[] =
         L"PNG Images (*.png)\0*.png\0"
         L"所有文件 (*.*)\0*.*\0\0";
 
@@ -185,7 +233,7 @@ NativeFileDialogResult choose_save_file(
     dialog.lStructSize = sizeof(dialog);
     dialog.lpstrFile = path_buffer;
     dialog.nMaxFile = static_cast<DWORD>(std::size(path_buffer));
-    dialog.lpstrFilter = wfilter.c_str();
+    dialog.lpstrFilter = kPngFilter;
     dialog.nFilterIndex = 1;
     dialog.lpstrTitle = wide_title.c_str();
     dialog.lpstrDefExt = L"png";
@@ -199,28 +247,30 @@ NativeFileDialogResult choose_save_file(
         return {std::filesystem::path(path_buffer), {}};
     }
     return {};
-#elif defined(__APPLE__)
-    const std::string command =
-        "osascript -e 'POSIX path of (choose file name "
-        "with prompt \"" + title + "\" "
-        "default name \"" + default_filename + "\")' 2>/dev/null";
-    return run_dialog_command(command.c_str());
 #else
+    std::error_code absolute_error;
+    const auto absolute_path = std::filesystem::absolute(
+        default_filename,
+        absolute_error
+    );
+    const std::string default_path = absolute_error
+        ? default_filename
+        : absolute_path.string();
     if (command_available("zenity")) {
         const std::string command =
             "zenity --file-selection --save "
             "--confirm-overwrite "
-            "--title='" + title + "' "
-            "--filename='" + default_filename + "' "
+            "--title=" + shell_quote(title) + " "
+            "--filename=" + shell_quote(default_path) + " "
             "--file-filter='PNG Images | *.png' "
             "2>/dev/null";
         return run_dialog_command(command.c_str());
     }
     if (command_available("kdialog")) {
         const std::string command =
-            "kdialog --getsavefilename . "
+            "kdialog --getsavefilename " + shell_quote(default_path) + " "
             "'PNG Images (*.png)' "
-            "--title '" + title + "' 2>/dev/null";
+            "--title " + shell_quote(title) + " 2>/dev/null";
         return run_dialog_command(command.c_str());
     }
     return {
@@ -229,6 +279,61 @@ NativeFileDialogResult choose_save_file(
     };
 #endif
 }
+
+} // namespace
+
+struct NativeSavePanel::Impl {
+    std::future<NativeFileDialogResult> task;
+    bool active = false;
+};
+
+NativeSavePanel::NativeSavePanel()
+    : impl_(std::make_unique<Impl>()) {}
+
+NativeSavePanel::~NativeSavePanel() {
+    if (impl_->task.valid()) {
+        impl_->task.wait();
+    }
+}
+
+bool NativeSavePanel::begin(
+    const std::string& default_filename,
+    const std::string& title,
+    const std::string& filters
+) {
+    if (impl_->active) {
+        return false;
+    }
+    impl_->task = std::async(
+        std::launch::async,
+        [default_filename, title, filters]() {
+            return choose_save_file_blocking(
+                default_filename,
+                title,
+                filters
+            );
+        }
+    );
+    impl_->active = true;
+    return true;
+}
+
+std::optional<NativeFileDialogResult> NativeSavePanel::poll() {
+    if (!impl_->active ||
+        !impl_->task.valid() ||
+        impl_->task.wait_for(std::chrono::seconds(0)) !=
+            std::future_status::ready) {
+        return std::nullopt;
+    }
+    impl_->active = false;
+    return impl_->task.get();
+}
+
+bool NativeSavePanel::active() const noexcept {
+    return impl_->active;
+}
+
+#endif
 
 NativeFileDialogResult choose_raw_data_file()
 {

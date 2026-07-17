@@ -48,9 +48,12 @@ enum class DockCard : int {
     kLayers = 2,      // 图层：数据集 + 测量线
     kAppearance = 3,  // 属性：点云外观
     kSettings = 4,    // 我的：设置
+    kData = 5,        // 文件 chip：数据集信息 + 打开入口
+    kPerformance = 6, // 性能 HUD：渲染与流式加载诊断
+    kCrosshairStyle = 7, // 视角 pill：准星配色
 };
 
-inline constexpr int kDockCardCount = 5;
+inline constexpr int kDockCardCount = 8;
 
 /*
  * 悬浮 Dock 布局的跨帧 UI 状态（方案 B）。
@@ -65,6 +68,23 @@ struct DockUiState {
     bool show_perf_hud = true;
     // 首次进入布局时的引导气泡剩余秒数（“点击 Dock 图标…”）。
     float hint_seconds_left = 6.0f;
+};
+
+enum class ScreenshotNoticeKind {
+    kNone,
+    kSelectingPath,
+    kSaving,
+    kSaved,
+    kCancelled,
+    kError,
+};
+
+struct ScreenshotNoticeState {
+    ScreenshotNoticeKind kind = ScreenshotNoticeKind::kNone;
+    std::string message;
+    // Selecting/saving use 0 for an indefinite notice. Terminal states use
+    // a short countdown and then disappear automatically.
+    float seconds_left = 0.0f;
 };
 
 /*
@@ -447,6 +467,7 @@ struct AppState {
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
     UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
     DockUiState dock_ui;
+    ScreenshotNoticeState screenshot_notice;
 };
 
 inline int resolve_viewport_index(

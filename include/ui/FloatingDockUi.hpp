@@ -31,4 +31,23 @@ FloatingDockFrameResult draw_floating_dock_layout(
     float ui_scale
 );
 
+// 主窗口顶部的非阻塞状态提示，用于截图选址、编码和保存结果。
+void draw_screenshot_notice(
+    gs3d::app::AppState& state,
+    float ui_scale
+);
+
+/*
+ * 独立视图窗口复用沉浸布局右上角的视角工具 pill。位置以画布右上角
+ * 为基准，并绑定到画布所在的 ImGui 平台窗口，避免成为额外的系统窗口。
+ */
+void draw_detached_view_camera_pill(
+    gs3d::app::RenderViewState& view,
+    gs3d::app::UiActions& actions,
+    float canvas_top,
+    float canvas_right,
+    unsigned int platform_viewport_id,
+    float ui_scale
+);
+
 } // namespace gs3d::ui

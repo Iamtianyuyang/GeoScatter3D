@@ -4,9 +4,9 @@
 
 ## 已验证的代码路径
 
-- 截图保存通过 `NativeFileDialog::choose_save_file()`：Windows 使用
-  `GetSaveFileNameW`，Linux 使用 Zenity/KDialog，macOS 使用 osascript。取消操作不会
-  写文件；没有系统对话框时才回退到 `screenshots/` 下的时间戳文件。
+- 截图使用 Windows/Linux/macOS 的系统“另存为”面板选择目录和文件名。macOS 在主线程
+  以 `NSSavePanel` sheet 异步展示；Windows/Linux 在后台等待其原生选择器。PNG 编码也在
+  后台执行，渲染线程不会被对话框或压缩过程阻塞，界面会提示保存结果。
 - 最近项目和 GPU 首选项不再写入 Git 跟踪的 TOML。Windows 使用 `%APPDATA%\geoscatter3d`，
   Linux 使用 `$XDG_CONFIG_HOME/geoscatter3d`（默认 `~/.config/geoscatter3d`）。
 - 打包资源优先相对配置文件和可执行文件解析。Windows 通过 `GetModuleFileNameW` 定位当前

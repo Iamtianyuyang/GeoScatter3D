@@ -45,6 +45,13 @@ bool add_view_to_workspace(
 
 bool create_workspace_window(gs3d::app::AppState& state);
 
+bool pop_out_view_window(
+    gs3d::app::AppState& state,
+    int viewport_index
+);
+
+void restore_default_workspace(gs3d::app::AppState& state);
+
 void prune_workspace_windows(gs3d::app::AppState& state);
 
 } // namespace gs3d::ui

@@ -1,0 +1,39 @@
+#pragma once
+
+namespace gs3d::ui {
+
+struct FloatingDockTopOverlayLayout {
+    float left_x = 0.0f;
+    float primary_y = 0.0f;
+    float secondary_y = 0.0f;
+};
+
+struct FloatingDockRect {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+};
+
+struct NavigationPreviewLayout {
+    FloatingDockRect container;
+    FloatingDockRect image;
+};
+
+[[nodiscard]] FloatingDockTopOverlayLayout
+compute_floating_dock_top_overlay_layout(
+    float work_x,
+    float work_y,
+    float ui_scale,
+    bool show_map_axis
+) noexcept;
+
+[[nodiscard]] NavigationPreviewLayout compute_navigation_preview_layout(
+    float x,
+    float y,
+    float available_width,
+    float texture_width,
+    float texture_height
+) noexcept;
+
+} // namespace gs3d::ui

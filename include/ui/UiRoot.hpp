@@ -7,6 +7,9 @@ struct ImFont;
 
 namespace gs3d::ui {
 
+inline constexpr float kMapAxisTopBandBase = 26.0f;
+inline constexpr float kMapAxisLeftBandBase = 46.0f;
+
 struct ViewportScreenRect {
     float min_x = 0.0f;
     float min_y = 0.0f;
@@ -48,8 +51,8 @@ inline ViewportScreenRect compute_plot_rect(
     // the bottom/right gutters.
     // Values must match LayoutMetrics::kAxisTopH / kAxisLeftW in
     // ViewportCanvas.cpp.
-    const float axis_top_h  = 26.0f * ui_scale;
-    const float axis_left_w = 46.0f * ui_scale;
+    const float axis_top_h  = kMapAxisTopBandBase * ui_scale;
+    const float axis_left_w = kMapAxisLeftBandBase * ui_scale;
     plot_rect.min_x += axis_left_w;
     plot_rect.min_y += axis_top_h;
     return plot_rect;

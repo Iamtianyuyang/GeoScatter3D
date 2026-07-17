@@ -33,3 +33,36 @@ TEST_CASE("Screenshot capture region rejects an offscreen or empty canvas")
         {200, 100}
     ).valid());
 }
+
+TEST_CASE("Screenshot save panel default names are unique PNG files")
+{
+    const auto first = gs3d::app::make_screenshot_output_path(
+        "screenshots",
+        1'721'234'567'890ULL
+    );
+    const auto second = gs3d::app::make_screenshot_output_path(
+        "screenshots",
+        1'721'234'567'891ULL
+    );
+
+    CHECK(first.parent_path() == "screenshots");
+    CHECK(first.extension() == ".png");
+    CHECK(first.filename().string().starts_with("screenshot_"));
+    CHECK(first != second);
+}
+
+TEST_CASE("Screenshot save paths are normalized to PNG")
+{
+    CHECK(
+        gs3d::app::normalize_screenshot_output_path("result") ==
+        "result.png"
+    );
+    CHECK(
+        gs3d::app::normalize_screenshot_output_path("result.jpg") ==
+        "result.png"
+    );
+    CHECK(
+        gs3d::app::normalize_screenshot_output_path("result.PNG") ==
+        "result.PNG"
+    );
+}

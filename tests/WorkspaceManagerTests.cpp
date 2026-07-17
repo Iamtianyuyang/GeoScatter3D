@@ -47,3 +47,34 @@ TEST_CASE("Closed workspace returns its views to the hidden pool", "[workspace]"
     CHECK_FALSE(state.render_views[1].render_requested);
     CHECK(gs3d::ui::has_hidden_view(state));
 }
+
+TEST_CASE("Restoring the default workspace rejoins every view", "[workspace]")
+{
+    auto state = make_state();
+    REQUIRE(gs3d::ui::create_workspace_window(state));
+    state.render_views[0].detached = true;
+    state.render_views[0].force_undock_next_frame = true;
+
+    gs3d::ui::restore_default_workspace(state);
+
+    CHECK(state.workspace_windows.empty());
+    for (const auto& view : state.render_views) {
+        CHECK_FALSE(view.detached);
+        CHECK_FALSE(view.force_undock_next_frame);
+    }
+}
+
+TEST_CASE("Popping out the immersive view keeps a main view available", "[workspace]")
+{
+    auto state = make_state();
+
+    REQUIRE(gs3d::ui::pop_out_view_window(state, 0));
+
+    CHECK(state.render_views[0].visible);
+    CHECK(state.render_views[0].detached);
+    CHECK(state.render_views[0].force_undock_next_frame);
+    CHECK(state.active_viewport_index == 1);
+    CHECK(state.render_views[1].visible);
+    CHECK_FALSE(state.render_views[1].detached);
+    CHECK_FALSE(state.render_views[1].force_undock_next_frame);
+}

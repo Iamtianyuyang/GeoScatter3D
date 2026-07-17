@@ -1,4 +1,5 @@
 #include "app/ViewportInteractionState.hpp"
+#include "ui/ViewportCanvas.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -116,4 +117,25 @@ TEST_CASE(
     CHECK_FALSE(invalid.rotate_begin);
     CHECK(invalid.delta_x == 4.0f);
     CHECK(invalid.delta_y == -3.0f);
+}
+
+TEST_CASE(
+    "Viewport input is routed only through the focused platform window",
+    "[viewport_interaction][window_focus]"
+) {
+    const auto foreground = gs3d::ui::resolve_viewport_input_routing(
+        true,
+        true,
+        true
+    );
+    CHECK(foreground.hovered);
+    CHECK(foreground.active);
+
+    const auto background = gs3d::ui::resolve_viewport_input_routing(
+        true,
+        true,
+        false
+    );
+    CHECK_FALSE(background.hovered);
+    CHECK_FALSE(background.active);
 }

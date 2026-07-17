@@ -14,6 +14,20 @@ gs3d::core::DatasetDescriptor make_viewer_dataset_descriptor(
 ) {
     gs3d::core::DatasetDescriptor descriptor;
     descriptor.display_name = source_path.filename().string();
+    // Bundle 项目内部的数据文件统一叫 source.gs3d。项目 UI 应展示
+    // bundle 目录名，并去掉约定的 .gs3d.bundle 双后缀。
+    if (source_path.filename() == "source.gs3d") {
+        auto project_name = source_path.parent_path().filename();
+        if (project_name.extension() == ".bundle") {
+            project_name = project_name.stem();
+        }
+        if (project_name.extension() == ".gs3d") {
+            project_name = project_name.stem();
+        }
+        if (!project_name.empty()) {
+            descriptor.display_name = project_name.string();
+        }
+    }
     descriptor.path = source_path.string();
     descriptor.format = "GS3D";
     descriptor.point_count = dataset.point_count();

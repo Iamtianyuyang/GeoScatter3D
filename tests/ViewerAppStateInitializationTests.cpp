@@ -42,6 +42,24 @@ TEST_CASE("Viewer dataset descriptor uses portable metadata and named attributes
     CHECK(descriptor.attributes[1].name == "elevation");
 }
 
+TEST_CASE("Viewer bundle descriptor uses the project name")
+{
+    const auto header = gs3d::data::Gs3dFormat::create_empty_header();
+    const gs3d::data::Gs3dDataset dataset(header, {}, {}, false);
+
+    const auto descriptor = gs3d::app::make_viewer_dataset_descriptor(
+        dataset,
+        "/tmp/field_scan.gs3d.bundle/source.gs3d",
+        {}
+    );
+
+    CHECK(descriptor.display_name == "field_scan");
+    CHECK(
+        descriptor.path ==
+        "/tmp/field_scan.gs3d.bundle/source.gs3d"
+    );
+}
+
 TEST_CASE("Viewer app state initialization reflects dataset startup state")
 {
     gs3d::core::DatasetDescriptor dataset;

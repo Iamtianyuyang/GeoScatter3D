@@ -39,7 +39,7 @@ IGNORE_SCOPE_PROBES = (
 LINE_BUDGETS = {
     "src/app/ViewerApp.cpp": 912,
     "ViewerApp::run()": 716,
-    "src/ui/UiRoot.cpp": 1319,
+    "src/ui/UiRoot.cpp": 1231,
     "src/app/AppConfig.cpp": 763,
 }
 

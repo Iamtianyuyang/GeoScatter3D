@@ -297,8 +297,15 @@ void draw_viewport_canvas(
         canvas_max.x,
         canvas_max.y
     };
-    const bool hovered = ImGui::IsItemHovered();
-    const bool active = ImGui::IsItemActive();
+    const bool platform_window_focused =
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    const auto input_routing = resolve_viewport_input_routing(
+        ImGui::IsItemHovered(),
+        ImGui::IsItemActive(),
+        platform_window_focused
+    );
+    const bool hovered = input_routing.hovered;
+    const bool active = input_routing.active;
 
     // UI scale for high-DPI: use font size relative to default 13 px.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;

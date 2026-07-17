@@ -1,8 +1,14 @@
 #pragma once
 
+#include "platform/NativeFileDialog.hpp"
+
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <filesystem>
+#include <future>
+#include <string>
+#include <vector>
 
 namespace gs3d::app {
 
@@ -40,14 +46,34 @@ struct ScreenshotCaptureRegion {
     VkExtent2D swapchain_extent
 ) noexcept;
 
+[[nodiscard]] std::filesystem::path make_screenshot_output_path(
+    const std::filesystem::path& directory,
+    std::uint64_t timestamp_milliseconds
+);
+
+[[nodiscard]] std::filesystem::path normalize_screenshot_output_path(
+    std::filesystem::path path
+);
+
+struct ScreenshotWriteResult {
+    std::filesystem::path path;
+    std::string error;
+};
+
 // Owns the complete request → GPU copy → CPU write-back screenshot lifecycle.
 // It is created after VulkanContext in ViewerApp::run(), so its capture buffer
 // is always destroyed before the context goes out of scope.
 class ScreenshotService {
 public:
+    ScreenshotService() = default;
+    ~ScreenshotService();
+
+    ScreenshotService(const ScreenshotService&) = delete;
+    ScreenshotService& operator=(const ScreenshotService&) = delete;
+
     void request(
         const UiActions& actions,
-        const AppState& state,
+        AppState& state,
         const gs3d::render::VulkanSwapchain& swapchain
     );
 
@@ -64,10 +90,19 @@ public:
     );
 
 private:
+    [[nodiscard]] bool prepare_capture(
+        const AppState& state,
+        const gs3d::render::VulkanSwapchain& swapchain
+    );
+
     VkBuffer staging_buffer_ = VK_NULL_HANDLE;
     VkDeviceMemory staging_memory_ = VK_NULL_HANDLE;
     VkExtent2D offset_{};
     VkExtent2D extent_{};
+    std::filesystem::path output_path_;
+    gs3d::platform::NativeSavePanel save_panel_;
+    std::vector<std::future<ScreenshotWriteResult>> write_tasks_;
+    std::string capture_error_;
     bool pending_ = false;
 };
 

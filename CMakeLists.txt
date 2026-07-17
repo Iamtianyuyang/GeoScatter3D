@@ -156,12 +156,39 @@ add_library(gs3d_platform STATIC
     src/platform/NativeFileDialog.cpp
 )
 
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+
+    target_sources(gs3d_platform PRIVATE
+        src/platform/NativeFileDialogMac.mm
+    )
+    set_source_files_properties(
+        src/platform/NativeFileDialogMac.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+    )
+
+    find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+    find_library(
+        UNIFORM_TYPE_IDENTIFIERS_FRAMEWORK
+        UniformTypeIdentifiers
+        REQUIRED
+    )
+    target_link_libraries(gs3d_platform PUBLIC
+        ${COCOA_FRAMEWORK}
+        ${UNIFORM_TYPE_IDENTIFIERS_FRAMEWORK}
+    )
+endif()
+
 target_include_directories(gs3d_platform PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(gs3d_platform PUBLIC
     glfw
+    Threads::Threads
 )
 
 add_library(gs3d_render STATIC
@@ -231,6 +258,7 @@ add_library(gs3d_app_support STATIC
     src/app/ViewerFrameClock.cpp
     src/app/ViewerWorkbenchLayout.cpp
     src/app/MeasurementManager.cpp
+    src/ui/FloatingDockLayout.cpp
     src/ui/WorkspaceManager.cpp
 )
 
@@ -318,6 +346,7 @@ add_library(gs3d_app STATIC
     include/ui/MeasurementPanel.hpp
     include/ui/AuxiliaryPanels.hpp
     include/ui/RenderSettingsPanel.hpp
+    include/ui/FloatingDockLayout.hpp
     include/ui/FloatingDockUi.hpp
     include/ui/ColormapPreview.hpp
     include/ui/ViewportCanvas.hpp

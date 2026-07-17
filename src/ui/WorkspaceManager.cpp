@@ -143,6 +143,65 @@ bool create_workspace_window(gs3d::app::AppState& state)
     return true;
 }
 
+bool pop_out_view_window(
+    gs3d::app::AppState& state,
+    const int viewport_index
+) {
+    if (viewport_index < 0 ||
+        viewport_index >= static_cast<int>(state.render_views.size())) {
+        return false;
+    }
+
+    auto& view =
+        state.render_views[static_cast<std::size_t>(viewport_index)];
+    view.visible = true;
+    view.detached = true;
+    view.force_undock_next_frame = true;
+    view.render_requested = false;
+
+    if (state.active_viewport_index != viewport_index) {
+        return true;
+    }
+
+    int fallback = -1;
+    for (std::size_t i = 0; i < state.render_views.size(); ++i) {
+        if (static_cast<int>(i) == viewport_index) {
+            continue;
+        }
+        const auto& candidate = state.render_views[i];
+        if (candidate.visible && !candidate.detached) {
+            fallback = static_cast<int>(i);
+            break;
+        }
+    }
+    if (fallback < 0) {
+        for (std::size_t i = 0; i < state.render_views.size(); ++i) {
+            if (static_cast<int>(i) != viewport_index) {
+                fallback = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+    if (fallback >= 0) {
+        auto& main_view =
+            state.render_views[static_cast<std::size_t>(fallback)];
+        main_view.visible = true;
+        main_view.detached = false;
+        main_view.force_undock_next_frame = false;
+        state.active_viewport_index = fallback;
+    }
+    return true;
+}
+
+void restore_default_workspace(gs3d::app::AppState& state)
+{
+    for (auto& view : state.render_views) {
+        view.detached = false;
+        view.force_undock_next_frame = false;
+    }
+    state.workspace_windows.clear();
+}
+
 void prune_workspace_windows(gs3d::app::AppState& state)
 {
     for (auto& workspace : state.workspace_windows) {

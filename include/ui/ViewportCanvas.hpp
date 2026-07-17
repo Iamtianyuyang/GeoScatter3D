@@ -5,6 +5,23 @@
 
 namespace gs3d::ui {
 
+struct ViewportInputRouting {
+    bool hovered = false;
+    bool active = false;
+};
+
+[[nodiscard]]
+inline ViewportInputRouting resolve_viewport_input_routing(
+    const bool item_hovered,
+    const bool item_active,
+    const bool platform_window_focused
+) noexcept {
+    return {
+        .hovered = platform_window_focused && item_hovered,
+        .active = platform_window_focused && item_active,
+    };
+}
+
 struct ViewportCanvasOptions {
     int workspace_id = 0;
     // 左上角「N 点 | x ms」信息 badge。悬浮 Dock 布局用独立的性能
