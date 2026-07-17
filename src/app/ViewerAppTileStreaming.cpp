@@ -283,6 +283,10 @@ void TileStreamingSystem::clear_cache(
         }
         gs3d::util::log::info() << "[TILE] preload cancelled for cache clear.\n";
     }
+    // Un-adopted preloaded buffers were either never submitted or their
+    // copies already completed (single-time submits wait for queue idle),
+    // so destroying them here is safe.
+    tiles.preload_uploads.clear();
     // A running Stage-3 read cannot be cancelled safely. Drain and discard it
     // before clearing so its late result cannot immediately refill the cache.
     if (tiles.load_future.valid()) {
@@ -340,11 +344,10 @@ void TileStreamingSystem::update(
                 std::launch::async,
                 [&reader = *ctx.tile_reader,
                  &cache = tiles.point_cache,
-                 &ids_by_tile = ctx.tile_point_ids_by_tile]()
-                    -> std::vector<std::pair<
-                        std::uint64_t, SharedTilePoints>> {
-                    std::vector<std::pair<
-                        std::uint64_t, SharedTilePoints>> all;
+                 &ids_by_tile = ctx.tile_point_ids_by_tile,
+                 &context = ctx.context]()
+                    -> std::vector<PreloadedTile> {
+                    std::vector<PreloadedTile> all;
                     all.reserve(reader.records().size());
                     for (const auto& rec : reader.records()) {
                         // Use find() (shared lock) for the check to
@@ -363,18 +366,47 @@ void TileStreamingSystem::update(
                             cache.put(rec.tile_id, loaded);
                             pts = loaded;
                         }
-                        all.emplace_back(rec.tile_id, pts);
+                        PreloadedTile tile;
+                        tile.tile_id = rec.tile_id;
+                        tile.points = pts;
+                        // 后台就把 device-local vertex buffer 建好：
+                        // vkCreateBuffer/vkAllocateMemory 对同一 device
+                        // 并发合法且不触碰 queue。主线程每帧只剩
+                        // staging 拷贝 + 单次提交，不再被上万次显存
+                        // 分配卡住。
+                        tile.gpu_cloud.prepare_device_buffer(
+                            context,
+                            pts->points.size()
+                        );
+                        all.push_back(std::move(tile));
                     }
                     return all;
                 });
         }
 
-        if (tiles.preload_tiles.empty() &&
+        if (tiles.preload_uploads.empty() &&
+            tiles.preload_tiles.empty() &&
             tiles.preload_future.valid() &&
             tiles.preload_future.wait_for(std::chrono::seconds(0)) ==
                 std::future_status::ready) {
             try {
-                tiles.preload_tiles = tiles.preload_future.get();
+                auto preloaded = tiles.preload_future.get();
+                // 先建立点数据所有权（shared_ptr 移动不改变所指数据
+                // 地址），uploads 里的 PointDataView 指向这些数据。
+                tiles.preload_tiles.reserve(preloaded.size());
+                tiles.preload_uploads.reserve(preloaded.size());
+                for (auto& tile : preloaded) {
+                    tiles.preload_tiles.emplace_back(
+                        tile.tile_id, tile.points);
+                    gs3d::render::PreparedTileUpload upload;
+                    upload.tile_id = tile.tile_id;
+                    upload.gpu_cloud = std::move(tile.gpu_cloud);
+                    upload.points = gs3d::data::make_point_data_view(
+                        tile.points->points,
+                        tile.points->point_ids.data()
+                    );
+                    tiles.preload_uploads.push_back(std::move(upload));
+                }
                 register_runtime_tile_point_lookup(
                     tiles.preload_tiles,
                     ctx.runtime_points_by_id,
@@ -385,20 +417,25 @@ void TileStreamingSystem::update(
                     << "[TILE] preload failed: " << e.what()
                     << " — falling back to streaming mode.\n";
                 tiles.preload_failed = true;
+                tiles.preload_uploads.clear();
+                tiles.preload_tiles.clear();
             }
         }
 
-        if (!tiles.preload_tiles.empty()) {
-            ctx.renderer.wait_for_in_flight_fences();
-            const auto preload_views =
-                make_cached_tile_views(tiles.preload_tiles);
+        if (!tiles.preload_uploads.empty()) {
+            // 收编本帧批次。无需 wait_for_in_flight_fences：上传的都是
+            // 尚未被任何帧引用的全新 buffer，不驱逐驻留瓦片；共享
+            // staging 的跨帧复用安全由单次提交内部的队列等待保证。
+            const std::size_t total_tiles =
+                tiles.preload_uploads.size() +
+                static_cast<std::size_t>(
+                    ctx.tile_gpu_cloud->stats().resident_tile_count);
             const auto sync =
-                ctx.tile_gpu_cloud->sync_from_cached_tiles(
+                ctx.tile_gpu_cloud->adopt_prepared_tiles(
                     ctx.context,
                     ctx.renderer.command_pool(),
                     ctx.context.graphics_queue(),
-                    preload_views,
-                    {},  // preload: no bounded working set
+                    tiles.preload_uploads,
                     config.preload_upload_budget_bytes
                 );
             if (config.verbose && sync.uploaded_bytes > 0) {
@@ -407,7 +444,7 @@ void TileStreamingSystem::update(
                     << sync.uploaded_bytes
                     << ", resident="
                     << sync.resident_tile_count << "/"
-                    << tiles.preload_tiles.size()
+                    << total_tiles
                     << ", complete="
                     << (sync.complete ? "true" : "false")
                     << '\n';
@@ -423,21 +460,6 @@ void TileStreamingSystem::update(
                     << " bytes) in "
                     << tiles.preload_timer.elapsed_seconds()
                     << "s — interactive streaming disabled.\n";
-            } else if (sync.uploaded_bytes == 0) {
-                ++tiles.preload_stall_frames;
-                if (tiles.preload_stall_frames >= 3) {
-                    gs3d::util::log::error()
-                        << "[TILE] preload stalled ("
-                        << sync.resident_tile_count << "/"
-                        << tiles.preload_tiles.size()
-                        << " tiles uploaded, budget="
-                        << config.preload_upload_budget_bytes
-                        << " bytes/frame)"
-                        << " — falling back to streaming.\n";
-                    tiles.preload_failed = true;
-                }
-            } else {
-                tiles.preload_stall_frames = 0;
             }
         }
     }

@@ -5,6 +5,7 @@
 #include "app/ViewerAppInternal.hpp"
 #include "core/PointData.hpp"
 #include "data/Gs3dTileReader.hpp"
+#include "render/PointCloudTileGpu.hpp"
 #include "util/Stopwatch.hpp"
 
 #include <array>
@@ -38,6 +39,18 @@ struct ViewerAppTileStreamFrameContext;
 struct LoadedTilePoints {
     std::uint64_t tile_id = 0;
     SharedTilePoints points;
+};
+
+/*
+ * 全量预加载的后台产物：点数据 + 已建好的 device-local vertex buffer。
+ * 后台线程读盘的同时就完成 vkCreateBuffer/vkAllocateMemory（对同一
+ * device 并发合法，不触碰 queue），主线程每帧只剩「staging 拷贝 +
+ * 单次提交」，预加载期间不再因上万次显存分配而掉帧。
+ */
+struct PreloadedTile {
+    std::uint64_t tile_id = 0;
+    SharedTilePoints points;
+    gs3d::render::PointCloudGpu gpu_cloud{};
 };
 
 /*
@@ -80,6 +93,10 @@ struct TileLoadCommitStats {
  * - The main thread exclusively owns every member except point_cache.
  * - Worker lambdas may capture only immutable tile_reader / point-id inputs
  *   and return loaded data through futures; they never mutate this state.
+ * - The preload worker additionally creates device-local vertex buffers via
+ *   PointCloudGpu::prepare_device_buffer. That is pure device-level Vulkan
+ *   (vkCreateBuffer/vkAllocateMemory, legal concurrently with the render
+ *   thread) and never touches a VkQueue or this state.
  * - TilePointCache is the sole cross-thread object and synchronizes its own
  *   access. Future results are committed to the remaining state on the main
  *   thread in update_tile_streaming().
@@ -143,14 +160,18 @@ struct ViewerAppTileStreamState {
      * 走原有按需流式。
      */
     bool preload_enabled = false;
-    std::future<std::vector<std::pair<
-        std::uint64_t, SharedTilePoints>>> preload_future;
+    std::future<std::vector<PreloadedTile>> preload_future;
+    // 点数据所有权（hover 反查与 point-id lookup 注册使用），future
+    // 就绪时一次性建立，之后不再增删——preload_uploads 里的
+    // PointDataView 指向这些 shared_ptr 的数据。
     std::vector<std::pair<std::uint64_t, SharedTilePoints>>
         preload_tiles;
+    // 待收编的「已备好上传」队列，每帧按预算被 adopt_prepared_tiles
+    // 从前端消费；清空即全部驻留。
+    std::vector<gs3d::render::PreparedTileUpload> preload_uploads;
     bool preload_dispatched = false;
     bool preload_failed = false;
     bool tiles_fully_resident = false;
-    int preload_stall_frames = 0;
     gs3d::util::Stopwatch preload_timer;
 };
 

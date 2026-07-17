@@ -336,6 +336,128 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     return result;
 }
 
+PointCloudTileGpuSyncResult PointCloudTileGpu::adopt_prepared_tiles(
+    const VulkanContext& context,
+    VkCommandPool command_pool,
+    VkQueue transfer_queue,
+    std::vector<PreparedTileUpload>& pending,
+    std::uint64_t max_upload_bytes
+) {
+    PointCloudTileGpuSyncResult result;
+    if (pending.empty()) {
+        result.resident_tile_count = stats_.resident_tile_count;
+        result.resident_gpu_buffer_bytes = stats_.gpu_buffer_bytes;
+        result.complete = true;
+        return result;
+    }
+
+    // ── 1. 从前端截取本帧批次：至少一条，之后按剩余预算继续 ──
+    std::size_t batch_count = 0;
+    std::uint64_t batch_bytes = 0;
+    for (const auto& prepared : pending) {
+        const std::uint64_t bytes =
+            static_cast<std::uint64_t>(
+                prepared.gpu_cloud.vertex_buffer_size()
+            );
+        if (batch_count > 0 && batch_bytes + bytes > max_upload_bytes) {
+            break;
+        }
+        ++batch_count;
+        batch_bytes += bytes;
+    }
+
+    // ── 2. 共享 staging：一次 map，打包整批点数据 ──
+    ensure_shared_staging(context, batch_bytes);
+
+    void* staging_mapped = nullptr;
+    check_vk(
+        vkMapMemory(
+            context.device(),
+            shared_staging_buffer_.memory(),
+            0,
+            batch_bytes,
+            0,
+            &staging_mapped
+        ),
+        "PointCloudTileGpu: failed to map shared staging buffer"
+    );
+
+    auto* staging_bytes = static_cast<std::uint8_t*>(staging_mapped);
+    std::vector<VkDeviceSize> staging_offsets;
+    staging_offsets.reserve(batch_count);
+    VkDeviceSize offset = 0;
+    for (std::size_t i = 0; i < batch_count; ++i) {
+        const auto& prepared = pending[i];
+        PointCloudGpu::pack_points(
+            staging_bytes + offset, prepared.points);
+        staging_offsets.push_back(offset);
+        offset += prepared.gpu_cloud.vertex_buffer_size();
+
+        result.uploaded_tile_count += 1;
+        result.uploaded_point_count += prepared.points.point_count;
+    }
+    result.uploaded_bytes = batch_bytes;
+
+    vkUnmapMemory(
+        context.device(),
+        shared_staging_buffer_.memory()
+    );
+
+    // ── 3. 整批拷贝 + 单次提交 ──
+    const VkCommandBuffer command_buffer =
+        VulkanBufferUtils::begin_single_time_commands(
+            context,
+            command_pool
+        );
+    for (std::size_t i = 0; i < batch_count; ++i) {
+        pending[i].gpu_cloud.record_upload_from_external_staging(
+            command_buffer,
+            shared_staging_buffer_.handle(),
+            staging_offsets[i]
+        );
+    }
+    VulkanBufferUtils::end_single_time_commands(
+        context,
+        command_pool,
+        transfer_queue,
+        command_buffer
+    );
+
+    // ── 4. 收编为驻留瓦片，维护统计 ──
+    for (std::size_t i = 0; i < batch_count; ++i) {
+        auto& prepared = pending[i];
+        ResidentTileGpu tile_gpu;
+        const std::uint64_t bytes =
+            static_cast<std::uint64_t>(
+                prepared.gpu_cloud.vertex_buffer_size()
+            );
+        tile_gpu.point_count = prepared.points.point_count;
+        tile_gpu.point_bytes = bytes;
+        tile_gpu.gpu_cloud = std::move(prepared.gpu_cloud);
+        tile_gpu.last_used_tick = ++usage_tick_;
+
+        loaded_tile_ids_.push_back(prepared.tile_id);
+        stats_.tile_count += 1;
+        stats_.point_count += tile_gpu.point_count;
+        stats_.point_bytes += bytes;
+        stats_.gpu_buffer_bytes += bytes;
+        resident_tiles_.emplace(prepared.tile_id, std::move(tile_gpu));
+    }
+    pending.erase(
+        pending.begin(),
+        pending.begin() + static_cast<std::ptrdiff_t>(batch_count)
+    );
+
+    stats_.resident_tile_count =
+        static_cast<std::uint64_t>(resident_tiles_.size());
+    stats_.success = !loaded_tile_ids_.empty();
+
+    result.resident_tile_count = stats_.resident_tile_count;
+    result.resident_gpu_buffer_bytes = stats_.gpu_buffer_bytes;
+    result.complete = pending.empty();
+    return result;
+}
+
 void PointCloudTileGpu::touch_tile(std::uint64_t tile_id) noexcept {
     auto it = resident_tiles_.find(tile_id);
     if (it != resident_tiles_.end()) {

@@ -34,6 +34,19 @@ struct PointCloudTileGpuSyncResult {
     bool complete = false;
 };
 
+/*
+ * 预加载专用的「已备好上传」瓦片：device-local vertex buffer 已由后台
+ * 线程通过 PointCloudGpu::prepare_device_buffer 创建（vkCreateBuffer /
+ * vkAllocateMemory 允许对同一 device 并发调用，且不触碰 queue），主线程
+ * 每帧只需把点数据经共享 staging 拷入并提交。points 视图指向调用方持有
+ * 的 CPU 缓存数据，生存期必须覆盖 adopt_prepared_tiles 的消费。
+ */
+struct PreparedTileUpload {
+    std::uint64_t tile_id = 0;
+    PointCloudGpu gpu_cloud{};
+    gs3d::core::PointDataView points{};
+};
+
 class PointCloudTileGpu {
 public:
     PointCloudTileGpu() = default;
@@ -77,6 +90,23 @@ public:
         const std::vector<std::pair<std::uint64_t, gs3d::core::PointDataView>>&
             tiles,
         const std::vector<std::uint64_t>& required_tile_ids,
+        std::uint64_t max_upload_bytes =
+            std::numeric_limits<std::uint64_t>::max()
+    );
+
+    /*
+     * 预加载专用：从 pending 前端按 max_upload_bytes 消费若干条目，经
+     * 共享 staging 一次提交后成为驻留瓦片；被消费的条目从 pending 移除。
+     * 每帧至少消费一条（即便单条超预算），保证进度单调、不会停摆。
+     * pending 消费完毕时 result.complete = true。不做 LRU 驱逐——预加载
+     * 集合就是全量驻留集。
+     */
+    [[nodiscard]]
+    PointCloudTileGpuSyncResult adopt_prepared_tiles(
+        const VulkanContext& context,
+        VkCommandPool command_pool,
+        VkQueue transfer_queue,
+        std::vector<PreparedTileUpload>& pending,
         std::uint64_t max_upload_bytes =
             std::numeric_limits<std::uint64_t>::max()
     );

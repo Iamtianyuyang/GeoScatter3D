@@ -42,7 +42,10 @@ layout = "floating-dock"
 multi_viewports = true
 
 [vulkan]
-validation_layers = true
+# 验证层是调试工具：拦截并检查每一次 Vulkan API 调用。日常使用关闭；
+# 排查渲染问题时再临时打开。对瓦片预加载（数万次 buffer 创建/拷贝
+# 录制）的放大尤其明显。
+validation_layers = false
 
 [graphics]
 # 图形设备选择："auto"（自动，优先独立显卡、显存大者优先）
