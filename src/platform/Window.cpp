@@ -145,6 +145,52 @@ void Window::request_close() noexcept {
     }
 }
 
+bool Window::is_fullscreen() const noexcept {
+    return window_ && glfwGetWindowMonitor(window_) != nullptr;
+}
+
+void Window::toggle_fullscreen() noexcept {
+    if (!window_) {
+        return;
+    }
+    if (is_fullscreen()) {
+        glfwSetWindowMonitor(
+            window_,
+            nullptr,
+            windowed_pos_x_,
+            windowed_pos_y_,
+            windowed_width_ > 0
+                ? windowed_width_
+                : static_cast<int>(config_.width),
+            windowed_height_ > 0
+                ? windowed_height_
+                : static_cast<int>(config_.height),
+            GLFW_DONT_CARE
+        );
+    } else {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode =
+            monitor ? glfwGetVideoMode(monitor) : nullptr;
+        if (monitor == nullptr || mode == nullptr) {
+            return;
+        }
+        glfwGetWindowPos(window_, &windowed_pos_x_, &windowed_pos_y_);
+        glfwGetWindowSize(window_, &windowed_width_, &windowed_height_);
+        glfwSetWindowMonitor(
+            window_,
+            monitor,
+            0,
+            0,
+            mode->width,
+            mode->height,
+            mode->refreshRate
+        );
+    }
+    update_window_size();
+    update_framebuffer_size();
+    framebuffer_resized_ = true;
+}
+
 WindowSize Window::window_size() const noexcept {
     return window_size_;
 }

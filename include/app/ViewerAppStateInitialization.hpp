@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace gs3d::app {
@@ -24,8 +25,11 @@ struct ViewerAppStateInitializationInput {
     bool benchmark_enabled = false;
 };
 
+// ui_layout 取配置字符串（"workbench" / "floating-dock"，见
+// ui_layout_from_string），未知值回退到工作台布局。
 [[nodiscard]] AppState make_initial_viewer_app_state(
-    const ViewerAppStateInitializationInput& input
+    const ViewerAppStateInitializationInput& input,
+    std::string_view ui_layout = "workbench"
 );
 
 } // namespace gs3d::app

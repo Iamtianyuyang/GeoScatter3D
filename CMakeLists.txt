@@ -274,6 +274,8 @@ add_library(gs3d_app STATIC
     src/ui/MeasurementPanel.cpp
     src/ui/AuxiliaryPanels.cpp
     src/ui/RenderSettingsPanel.cpp
+    src/ui/FloatingDockUi.cpp
+    src/ui/ViewportCanvas.cpp
     src/ui/SvgLogoTexture.cpp
 
     src/app/ViewerApp.cpp
@@ -316,6 +318,9 @@ add_library(gs3d_app STATIC
     include/ui/MeasurementPanel.hpp
     include/ui/AuxiliaryPanels.hpp
     include/ui/RenderSettingsPanel.hpp
+    include/ui/FloatingDockUi.hpp
+    include/ui/ColormapPreview.hpp
+    include/ui/ViewportCanvas.hpp
     include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp

@@ -102,6 +102,7 @@ struct UiActions {
     bool screenshot_requested = false;
     bool preferences_requested = false;
     bool clear_cache_requested = false;
+    bool toggle_fullscreen_requested = false;
     int reset_camera_index = -1;
 
     bool  point_size_changed = false;

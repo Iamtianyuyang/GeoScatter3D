@@ -22,9 +22,11 @@ namespace {
 } // namespace
 
 AppState make_initial_viewer_app_state(
-    const ViewerAppStateInitializationInput& input
+    const ViewerAppStateInitializationInput& input,
+    std::string_view ui_layout
 ) {
     AppState state;
+    state.ui_layout_mode = ui_layout_from_string(ui_layout);
     state.dataset.active_dataset = input.dataset.display_name;
     state.dataset.path = input.dataset.path;
     state.dataset.format = input.dataset.format;

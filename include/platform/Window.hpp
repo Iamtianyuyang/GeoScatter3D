@@ -55,6 +55,13 @@ public:
 
     void request_close() noexcept;
 
+    // 无边框全屏 ↔ 窗口模式切换（GLFW monitor 切换）。恢复时回到进入
+    // 全屏前记录的位置和尺寸。framebuffer resize 走现有回调链。
+    void toggle_fullscreen() noexcept;
+
+    [[nodiscard]]
+    bool is_fullscreen() const noexcept;
+
     [[nodiscard]]
     WindowSize window_size() const noexcept;
 
@@ -89,6 +96,12 @@ private:
     WindowSize framebuffer_size_{};
 
     bool framebuffer_resized_ = false;
+
+    // 进入全屏前的窗口几何，退出全屏时恢复。
+    int windowed_pos_x_ = 0;
+    int windowed_pos_y_ = 0;
+    int windowed_width_ = 0;
+    int windowed_height_ = 0;
 
     MouseState mouse_{};
 

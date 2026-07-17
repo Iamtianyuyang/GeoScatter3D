@@ -427,8 +427,8 @@ int ViewerApp::run() {
             config_.window.viewport_count,
             config_.benchmark.enabled
         };
-        AppState app_state =
-            make_initial_viewer_app_state(initial_state_input);
+        AppState app_state = make_initial_viewer_app_state(
+            initial_state_input, config_.window.layout);
         viewport_presentation.initialize_visibility(app_state);
 
         app_state.logo_texture = render_runtime.logo_descriptor();

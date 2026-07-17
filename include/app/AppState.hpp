@@ -7,11 +7,65 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/MeasurementManager.hpp"
 
 namespace gs3d::app {
+
+/*
+ * 顶层 UI 布局模式：
+ *   kWorkbench    菜单栏 + 左右停靠面板 + 状态栏（经典工作台）。
+ *   kFloatingDock 视口全沉浸 + 底部悬浮胶囊 Dock + 弹出卡片（方案 B，
+ *                 Telegram 风）。所有面板功能收进 Dock 弹出卡片。
+ * 运行时可通过菜单 / Dock 设置卡片双向切换。
+ */
+enum class UiLayoutMode : int {
+    kWorkbench = 0,
+    kFloatingDock = 1,
+};
+
+[[nodiscard]]
+inline UiLayoutMode ui_layout_from_string(
+    std::string_view name,
+    UiLayoutMode fallback = UiLayoutMode::kWorkbench
+) noexcept {
+    if (name == "floating-dock") {
+        return UiLayoutMode::kFloatingDock;
+    }
+    if (name == "workbench") {
+        return UiLayoutMode::kWorkbench;
+    }
+    return fallback;
+}
+
+// 悬浮 Dock 的弹出卡片种类（Dock 项从左到右）。
+enum class DockCard : int {
+    kNone = -1,
+    kViews = 0,       // 视图：多视口切换
+    kMeasure = 1,     // 测量：工具箱 + 测量列表
+    kLayers = 2,      // 图层：数据集 + 测量线
+    kAppearance = 3,  // 属性：点云外观
+    kSettings = 4,    // 我的：设置
+};
+
+inline constexpr int kDockCardCount = 5;
+
+/*
+ * 悬浮 Dock 布局的跨帧 UI 状态（方案 B）。
+ * 动画约定：open_card 是目标状态（点击立即改写）；anim_card 记录当前
+ * 正在绘制的卡片，card_anim 在 0..1 之间按 DeltaTime 缓动，收起动画
+ * 播完后 anim_card 才复位。
+ */
+struct DockUiState {
+    DockCard open_card = DockCard::kNone;
+    DockCard anim_card = DockCard::kNone;
+    float card_anim = 0.0f;
+    bool show_perf_hud = true;
+    // 首次进入布局时的引导气泡剩余秒数（“点击 Dock 图标…”）。
+    float hint_seconds_left = 6.0f;
+};
 
 /*
  * 物理来源：Gs3dPoint 中哪个 float 字段存储属性的原始值。
@@ -391,6 +445,8 @@ struct AppState {
     std::vector<RegionStatsResult> region_stats_by_view;
     int active_viewport_index = 0;
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
+    UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
+    DockUiState dock_ui;
 };
 
 inline int resolve_viewport_index(

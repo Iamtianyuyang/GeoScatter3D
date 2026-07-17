@@ -1,4 +1,5 @@
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/ColormapPreview.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/Widgets.hpp"
 #include "ui/UiRoot.hpp"
@@ -237,23 +238,12 @@ void draw_render_settings(
 
         // ── 色标选择 ──
         {
-            const char* colormap_names[] = {
-                "地震（蓝-白-红）",
-                "Viridis",
-                "Jet",
-                "Grayscale",
-                "Thermal",
-                "Coolwarm",
-                "Turbo",
-                "Plasma",
-                "Rainbow256"
-            };
             int cmap = settings.colormap_index;
-            if (cmap < 0 || cmap > 8) cmap = 0;
+            if (cmap < 0 || cmap >= kColormapCount) cmap = 0;
             ImGui::TextUnformatted("色标");
-            if (widgets::BeginCombo("##Colormap", colormap_names[cmap])) {
-                for (int i = 0; i < 9; ++i) {
-                    if (ImGui::Selectable(colormap_names[i], i == cmap)) {
+            if (widgets::BeginCombo("##Colormap", colormap_display_name(cmap))) {
+                for (int i = 0; i < kColormapCount; ++i) {
+                    if (ImGui::Selectable(colormap_display_name(i), i == cmap)) {
                         settings.colormap_index = i;
                         auto& command =
                             add_render_settings_command(actions, target_viewports);
@@ -264,64 +254,19 @@ void draw_render_settings(
                 widgets::EndCombo();
             }
 
-            // 色标预览条 — 根据当前选中的色标切换颜色
+            // 色标预览条 — 根据当前选中的色标切换颜色（色值定义见
+            // ColormapPreview.hpp，与悬浮 Dock 属性卡片共用）。
             const ImVec2 start = ImGui::GetCursorScreenPos();
             const float bar_width = ImGui::GetContentRegionAvail().x;
             const float bar_height = 14.0f * scale;
             ImGui::InvisibleButton("##ColorMapPreview",
                 ImVec2(bar_width, bar_height));
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-
-            // Five control colours per map, matching the shader. Drawing the
-            // preview as adjacent horizontal gradients keeps the legend free
-            // of the diagonal interpolation artefacts caused by a single
-            // four-corner rectangle.
-            struct CmapColors { ImU32 colors[5]; };
-            const CmapColors cmap_colors[9] = {
-                // Seismic: navy → blue → ivory → red → maroon
-                { { IM_COL32(13, 41, 87, 255), IM_COL32(51, 125, 184, 255),
-                    IM_COL32(240, 237, 224, 255), IM_COL32(196, 69, 51, 255),
-                    IM_COL32(110, 13, 20, 255) } },
-                { { IM_COL32(68, 1, 84, 255), IM_COL32(72, 36, 117, 255),
-                    IM_COL32(33, 145, 140, 255), IM_COL32(94, 201, 98, 255),
-                    IM_COL32(253, 231, 37, 255) } },
-                { { IM_COL32(0, 0, 128, 255), IM_COL32(0, 128, 255, 255),
-                    IM_COL32(0, 255, 255, 255), IM_COL32(255, 255, 0, 255),
-                    IM_COL32(255, 0, 0, 255) } },
-                { { IM_COL32(0, 0, 0, 255), IM_COL32(64, 64, 64, 255),
-                    IM_COL32(128, 128, 128, 255), IM_COL32(192, 192, 192, 255),
-                    IM_COL32(255, 255, 255, 255) } },
-                { { IM_COL32(0, 0, 0, 255), IM_COL32(128, 0, 0, 255),
-                    IM_COL32(220, 48, 0, 255), IM_COL32(255, 160, 0, 255),
-                    IM_COL32(255, 255, 180, 255) } },
-                { { IM_COL32(59, 76, 192, 255), IM_COL32(120, 150, 230, 255),
-                    IM_COL32(245, 245, 245, 255), IM_COL32(230, 120, 120, 255),
-                    IM_COL32(180, 4, 38, 255) } },
-                { { IM_COL32(48, 18, 59, 255), IM_COL32(24, 104, 184, 255),
-                    IM_COL32(38, 188, 135, 255), IM_COL32(235, 206, 47, 255),
-                    IM_COL32(122, 4, 3, 255) } },
-                { { IM_COL32(13, 8, 135, 255), IM_COL32(84, 3, 160, 255),
-                    IM_COL32(182, 55, 121, 255), IM_COL32(237, 121, 33, 255),
-                    IM_COL32(240, 249, 33, 255) } },
-                { { IM_COL32(0, 0, 128, 255), IM_COL32(0, 128, 255, 255),
-                    IM_COL32(0, 255, 128, 255), IM_COL32(255, 255, 0, 255),
-                    IM_COL32(128, 0, 0, 255) } },
-            };
-            int ci = settings.colormap_index;
-            if (ci < 0 || ci > 8) ci = 0;
-            const auto& cc = cmap_colors[ci];
-            for (int i = 0; i < 4; ++i) {
-                const float x0 = start.x + bar_width * i / 4.0f;
-                const float x1 = start.x + bar_width * (i + 1) / 4.0f;
-                dl->AddRectFilledMultiColor(
-                    ImVec2(x0, start.y),
-                    ImVec2(x1, start.y + bar_height),
-                    cc.colors[i],
-                    cc.colors[i + 1],
-                    cc.colors[i + 1],
-                    cc.colors[i]
-                );
-            }
+            draw_colormap_preview_bar(
+                ImGui::GetWindowDrawList(),
+                start,
+                ImVec2(start.x + bar_width, start.y + bar_height),
+                settings.colormap_index
+            );
         }
 
         // ── 数据范围显示 ──

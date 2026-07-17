@@ -12,6 +12,10 @@ void ViewerApp::apply_project_open_commands(
     const UiActions& gui_cmds,
     gs3d::platform::Window& window
 ) {
+    // 窗口级命令与打开命令一起消费（悬浮 Dock 布局的全屏切换按钮）。
+    if (gui_cmds.toggle_fullscreen_requested) {
+        window.toggle_fullscreen();
+    }
     if (gui_cmds.show_welcome_requested) {
         open_request_ = ViewerOpenRequest{
             .kind = ViewerOpenRequestKind::Welcome

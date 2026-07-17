@@ -37,6 +37,8 @@ void apply_window(const toml::table& root, AppConfig& config)
             config.viewer.window.ui_scale_multiplier);
         config.viewer.window.theme = string_or_default(
             *window, "theme", config.viewer.window.theme);
+        config.viewer.window.layout = string_or_default(
+            *window, "layout", config.viewer.window.layout);
         config.viewer.window.enable_multi_viewports = bool_or_default(
             *window, "multi_viewports",
             config.viewer.window.enable_multi_viewports);

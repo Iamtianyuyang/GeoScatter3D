@@ -87,3 +87,50 @@ TEST_CASE("Viewer app state initialization reflects dataset startup state")
     CHECK(!state.panels.render_settings);
     CHECK(!state.panels.performance);
 }
+
+TEST_CASE("Initial viewer app state resolves the configured UI layout")
+{
+    auto header = gs3d::data::Gs3dFormat::create_empty_header();
+    header.point_count = 1;
+    const gs3d::data::Gs3dDataset dataset(
+        header,
+        {{0.0f, 0.0f, 0.0f, 0.0f}},
+        {},
+        false
+    );
+    const auto descriptor = gs3d::app::make_viewer_dataset_descriptor(
+        dataset,
+        "layout.gs3d",
+        {}
+    );
+    const std::vector<gs3d::app::AttrDescriptor> attributes;
+    const gs3d::data::Gs3dLodDataset lod_dataset;
+    const std::optional<gs3d::data::Gs3dTileReader> tile_reader;
+    const gs3d::app::ViewerAppStateInitializationInput input{
+        descriptor,
+        attributes,
+        lod_dataset,
+        tile_reader,
+        false,
+        1,
+        1,
+        false
+    };
+
+    SECTION("floating-dock 配置进入悬浮 Dock 布局") {
+        const auto state =
+            gs3d::app::make_initial_viewer_app_state(input, "floating-dock");
+        CHECK(state.ui_layout_mode ==
+              gs3d::app::UiLayoutMode::kFloatingDock);
+    }
+    SECTION("缺省与未知取值回退到工作台布局") {
+        const auto default_state =
+            gs3d::app::make_initial_viewer_app_state(input);
+        CHECK(default_state.ui_layout_mode ==
+              gs3d::app::UiLayoutMode::kWorkbench);
+        const auto unknown_state =
+            gs3d::app::make_initial_viewer_app_state(input, "holo-deck");
+        CHECK(unknown_state.ui_layout_mode ==
+              gs3d::app::UiLayoutMode::kWorkbench);
+    }
+}

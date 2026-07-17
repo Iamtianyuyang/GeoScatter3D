@@ -46,7 +46,8 @@ inline ViewportScreenRect compute_plot_rect(
     // Outside scientific-style axes: X on top, Y on left.
     // Keep just enough band for outer ticks/labels without growing
     // the bottom/right gutters.
-    // Values must match LayoutMetrics::kAxisTopH / kAxisLeftW in UiRoot.cpp.
+    // Values must match LayoutMetrics::kAxisTopH / kAxisLeftW in
+    // ViewportCanvas.cpp.
     const float axis_top_h  = 26.0f * ui_scale;
     const float axis_left_w = 46.0f * ui_scale;
     plot_rect.min_x += axis_left_w;
