@@ -1,9 +1,10 @@
 #include "render/PointCloudTileGpu.hpp"
 
-#include "render/FrameUploadBudget.hpp"
+#include "render/TileStagingPlan.hpp"
 
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace gs3d::render {
 
@@ -14,6 +15,12 @@ std::uint64_t point_bytes_for(
 ) noexcept {
     return points.point_count *
            static_cast<std::uint64_t>(sizeof(PointVertex));
+}
+
+void check_vk(VkResult result, const char* message) {
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error(message);
+    }
 }
 
 } // namespace
@@ -161,46 +168,97 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
     }
 
     PointCloudTileGpuSyncResult result;
-    FrameUploadBudget upload_budget(max_upload_bytes);
-    std::vector<std::pair<std::uint64_t, ResidentTileGpu>> prepared_tiles;
-    prepared_tiles.reserve(tiles.size());
 
-    for (const auto& [tile_id, points] : tiles) {
+    // ── 1. 选出本帧要上传的非驻留瓦片，并规划它们在共享 staging 里的偏移 ──
+    // 校验所有传入瓦片（含已驻留者）非空，语义与旧实现一致。
+    std::vector<std::size_t> candidate_tile_indices;
+    std::vector<std::uint64_t> candidate_bytes;
+    candidate_tile_indices.reserve(tiles.size());
+    candidate_bytes.reserve(tiles.size());
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const auto& [tile_id, points] = tiles[i];
         if (!points.valid() || points.empty()) {
             throw std::runtime_error(
                 "PointCloudTileGpu: cached tile points are missing"
             );
         }
-
-        const auto point_bytes = point_bytes_for(points);
-
         if (resident_tiles_.contains(tile_id)) {
             continue;
         }
-
-        if (!upload_budget.try_reserve(point_bytes)) {
-            continue;
-        }
-
-        ResidentTileGpu tile_gpu;
-        tile_gpu.gpu_cloud.prepare_upload(context, points);
-        tile_gpu.point_count = points.point_count;
-        tile_gpu.point_bytes = point_bytes;
-        prepared_tiles.emplace_back(tile_id, std::move(tile_gpu));
-        result.uploaded_tile_count += 1;
-        result.uploaded_point_count += points.point_count;
-        result.uploaded_bytes = upload_budget.reserved_bytes();
+        candidate_tile_indices.push_back(i);
+        candidate_bytes.push_back(point_bytes_for(points));
     }
 
-    if (!prepared_tiles.empty()) {
+    const TileStagingPlan plan =
+        plan_tile_staging_batch(candidate_bytes, max_upload_bytes);
+
+    if (!plan.entries.empty()) {
+        // ── 2. 共享 staging：一次分配/复用、一次 map，容纳整批瓦片 ──
+        ensure_shared_staging(context, plan.total_bytes);
+
+        void* staging_mapped = nullptr;
+        check_vk(
+            vkMapMemory(
+                context.device(),
+                shared_staging_buffer_.memory(),
+                0,
+                plan.total_bytes,
+                0,
+                &staging_mapped
+            ),
+            "PointCloudTileGpu: failed to map shared staging buffer"
+        );
+
+        struct PreparedTile {
+            std::uint64_t tile_id;
+            ResidentTileGpu tile;
+            VkDeviceSize staging_offset;
+        };
+        std::vector<PreparedTile> prepared_tiles;
+        prepared_tiles.reserve(plan.entries.size());
+
+        auto* staging_bytes = static_cast<std::uint8_t*>(staging_mapped);
+        for (const auto& entry : plan.entries) {
+            const std::size_t tile_index =
+                candidate_tile_indices[entry.candidate_index];
+            const auto& [tile_id, points] = tiles[tile_index];
+
+            ResidentTileGpu tile_gpu;
+            tile_gpu.gpu_cloud.prepare_device_buffer(
+                context, points.point_count);
+            PointCloudGpu::pack_points(
+                staging_bytes + entry.offset, points);
+            tile_gpu.point_count = points.point_count;
+            tile_gpu.point_bytes = entry.bytes;
+
+            prepared_tiles.push_back(PreparedTile{
+                tile_id,
+                std::move(tile_gpu),
+                static_cast<VkDeviceSize>(entry.offset)
+            });
+
+            result.uploaded_tile_count += 1;
+            result.uploaded_point_count += points.point_count;
+        }
+        result.uploaded_bytes = plan.total_bytes;
+
+        vkUnmapMemory(
+            context.device(),
+            shared_staging_buffer_.memory()
+        );
+
+        // ── 3. 整批拷贝 + 单次提交 ──
         const VkCommandBuffer command_buffer =
             VulkanBufferUtils::begin_single_time_commands(
                 context,
                 command_pool
             );
-        for (const auto& [tile_id, tile] : prepared_tiles) {
-            (void)tile_id;
-            tile.gpu_cloud.record_prepared_upload(command_buffer);
+        for (const auto& prepared : prepared_tiles) {
+            prepared.tile.gpu_cloud.record_upload_from_external_staging(
+                command_buffer,
+                shared_staging_buffer_.handle(),
+                prepared.staging_offset
+            );
         }
         VulkanBufferUtils::end_single_time_commands(
             context,
@@ -209,8 +267,9 @@ PointCloudTileGpuSyncResult PointCloudTileGpu::sync_from_cached_tiles(
             command_buffer
         );
 
-        for (auto& [tile_id, tile] : prepared_tiles) {
-            resident_tiles_.emplace(tile_id, std::move(tile));
+        for (auto& prepared : prepared_tiles) {
+            resident_tiles_.emplace(
+                prepared.tile_id, std::move(prepared.tile));
         }
     }
 
@@ -316,6 +375,29 @@ void PointCloudTileGpu::evict_to_budget(
 
         resident_tiles_.erase(eviction_tile_id);
     }
+}
+
+void PointCloudTileGpu::ensure_shared_staging(
+    const VulkanContext& context,
+    VkDeviceSize needed
+) {
+    if (needed == 0) {
+        return;
+    }
+    // Grow-only: keep the buffer when it is already large enough so a full
+    // preload reuses a single staging allocation across every frame.
+    if (shared_staging_buffer_.valid() &&
+        shared_staging_buffer_.size() >= needed) {
+        return;
+    }
+    shared_staging_buffer_.destroy();
+    shared_staging_buffer_.create(
+        context,
+        needed,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
 }
 
 } // namespace gs3d::render

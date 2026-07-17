@@ -227,6 +227,97 @@ void PointCloudGpu::record_prepared_upload(
     );
 }
 
+void PointCloudGpu::pack_points(
+    void* destination,
+    const gs3d::core::PointDataView& points
+) {
+    copy_points_to_staging(destination, points);
+}
+
+VkDeviceSize PointCloudGpu::packed_point_bytes(
+    std::uint64_t point_count
+) {
+    if (point_count == 0) {
+        return 0;
+    }
+    return point_buffer_size_bytes(point_count);
+}
+
+void PointCloudGpu::prepare_device_buffer(
+    const VulkanContext& context,
+    std::uint64_t point_count
+) {
+    const VkDeviceSize point_bytes = point_buffer_size_bytes(point_count);
+
+    // Reuse the device-local vertex buffer when it is already large enough,
+    // matching prepare_upload's capacity policy. No staging is touched here —
+    // the caller owns a shared staging buffer for the whole batch.
+    if (!vertex_buffer_.valid() || vertex_buffer_capacity_ < point_bytes) {
+        vertex_buffer_.destroy();
+        vertex_buffer_.create(
+            context,
+            point_bytes,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+        );
+        vertex_buffer_capacity_ = point_bytes;
+    }
+
+    point_count_        = point_count;
+    vertex_buffer_size_ = point_bytes;
+}
+
+void PointCloudGpu::record_upload_from_external_staging(
+    VkCommandBuffer command_buffer,
+    VkBuffer staging_buffer,
+    VkDeviceSize staging_offset
+) const {
+    if (command_buffer == VK_NULL_HANDLE ||
+        staging_buffer == VK_NULL_HANDLE ||
+        !vertex_buffer_.valid() ||
+        vertex_buffer_size_ == 0) {
+        throw std::runtime_error(
+            "PointCloudGpu: no prepared device buffer to record"
+        );
+    }
+
+    VkBufferCopy copy_region{};
+    copy_region.srcOffset = staging_offset;
+    copy_region.dstOffset = 0;
+    copy_region.size = vertex_buffer_size_;
+    vkCmdCopyBuffer(
+        command_buffer,
+        staging_buffer,
+        vertex_buffer_.handle(),
+        1,
+        &copy_region
+    );
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = vertex_buffer_.handle();
+    barrier.offset = 0;
+    barrier.size = vertex_buffer_size_;
+
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        0,
+        0,
+        nullptr,
+        1,
+        &barrier,
+        0,
+        nullptr
+    );
+}
+
 void PointCloudGpu::ensure_staging(
     const VulkanContext& context,
     VkDeviceSize needed

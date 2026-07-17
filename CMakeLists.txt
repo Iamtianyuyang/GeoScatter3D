@@ -408,6 +408,7 @@ add_library(gs3d_app STATIC
     include/render/LodSelector.hpp
     include/render/PointCloudTileGpu.hpp
     include/render/FrameUploadBudget.hpp
+    include/render/TileStagingPlan.hpp
     include/render/TileSelection.hpp
     include/render/OffscreenFramebuffer.hpp
     include/render/ViewportManager.hpp

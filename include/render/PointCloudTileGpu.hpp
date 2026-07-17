@@ -142,9 +142,23 @@ private:
     std::uint32_t resident_tile_budget_ = 0;
     std::uint64_t usage_tick_ = 0;
 
+    /*
+     * 一个可复用的共享 staging buffer，承载每次 sync 里整批新瓦片的点数据。
+     * 只增长不缩小；每帧上传只在此 map/unmap 一次（拷贝多块瓦片），一次
+     * vkQueueSubmit 完成整批拷贝。取代旧的「每块瓦片一个私有 staging」——
+     * 那对上万块瓦片的预加载意味着上万次 host 分配且从不释放。
+     */
+    VulkanBuffer shared_staging_buffer_{};
+
 private:
     void evict_to_budget(
         const std::unordered_set<std::uint64_t>& pinned_tile_ids
+    );
+
+    // 确保共享 staging buffer 至少有 needed 字节（不足时重建，够大则复用）。
+    void ensure_shared_staging(
+        const VulkanContext& context,
+        VkDeviceSize needed
     );
 };
 

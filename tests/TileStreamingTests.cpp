@@ -2,6 +2,7 @@
 #include "app/ViewerAppTileStreaming.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "render/TileSelection.hpp"
+#include "render/TileStagingPlan.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -569,3 +570,65 @@ void test_stale_entry_is_first_lru_eviction()
     LEGACY_TEST_CASE(test_stale_entry_is_first_lru_eviction)
 
 #undef LEGACY_TEST_CASE
+
+// ── 共享 staging 批量上传规划器（TileStagingPlan.hpp）──────────────────
+TEST_CASE("staging plan packs tiles into contiguous offsets", "[staging_plan]")
+{
+    using gs3d::render::plan_tile_staging_batch;
+
+    const std::vector<std::uint64_t> bytes{100, 200, 60};
+    const auto plan = plan_tile_staging_batch(bytes);
+
+    REQUIRE(plan.entries.size() == 3);
+    CHECK(plan.entries[0].candidate_index == 0);
+    CHECK(plan.entries[0].offset == 0);
+    CHECK(plan.entries[0].bytes == 100);
+    CHECK(plan.entries[1].offset == 100);
+    CHECK(plan.entries[2].offset == 300);
+    CHECK(plan.total_bytes == 360);
+}
+
+TEST_CASE("staging plan honours the per-frame byte budget", "[staging_plan]")
+{
+    using gs3d::render::plan_tile_staging_batch;
+
+    // Budget 250: 100 fits (reserved 100), 200 does not fit remaining 150 and
+    // is skipped, then 60 fits (reserved 160). Matches the old greedy
+    // FrameUploadBudget semantics where a later smaller tile can still pack.
+    const std::vector<std::uint64_t> bytes{100, 200, 60};
+    const auto plan = plan_tile_staging_batch(bytes, 250);
+
+    REQUIRE(plan.entries.size() == 2);
+    CHECK(plan.entries[0].candidate_index == 0);
+    CHECK(plan.entries[0].offset == 0);
+    CHECK(plan.entries[1].candidate_index == 2);
+    CHECK(plan.entries[1].offset == 100);
+    CHECK(plan.total_bytes == 160);
+}
+
+TEST_CASE("staging plan skips empty tiles and oversized singletons",
+          "[staging_plan]")
+{
+    using gs3d::render::plan_tile_staging_batch;
+
+    const std::vector<std::uint64_t> bytes{0, 500, 40};
+    const auto plan = plan_tile_staging_batch(bytes, 100);
+
+    // 0-byte candidate skipped; 500 exceeds the whole 100 budget and is
+    // skipped; only the 40-byte tile is planned.
+    REQUIRE(plan.entries.size() == 1);
+    CHECK(plan.entries[0].candidate_index == 2);
+    CHECK(plan.entries[0].offset == 0);
+    CHECK(plan.total_bytes == 40);
+}
+
+TEST_CASE("staging plan is empty when nothing fits", "[staging_plan]")
+{
+    using gs3d::render::plan_tile_staging_batch;
+
+    const std::vector<std::uint64_t> bytes{500, 600};
+    const auto plan = plan_tile_staging_batch(bytes, 100);
+
+    CHECK(plan.entries.empty());
+    CHECK(plan.total_bytes == 0);
+}

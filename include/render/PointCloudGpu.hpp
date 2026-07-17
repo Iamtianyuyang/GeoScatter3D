@@ -60,6 +60,34 @@ public:
         VkCommandBuffer command_buffer
     ) const;
 
+    /*
+     * 共享 staging 批量上传（见 TileStagingPlan.hpp）：只分配/复用本 cloud
+     * 的 device-local vertex buffer，不创建私有 staging。调用方把点数据用
+     * pack_points 打进外部 staging buffer，再用 record_upload_from_external_staging
+     * 记录拷贝。一个共享 staging + 一次提交即可服务整批瓦片，避免逐块
+     * 分配私有 staging（预加载上万瓦片时那是上万次永不释放的 host 分配）。
+     */
+    void prepare_device_buffer(
+        const VulkanContext& context,
+        std::uint64_t point_count
+    );
+
+    void record_upload_from_external_staging(
+        VkCommandBuffer command_buffer,
+        VkBuffer staging_buffer,
+        VkDeviceSize staging_offset
+    ) const;
+
+    // 把点视图按 PointVertex 布局打进调用方已 map 的内存。
+    static void pack_points(
+        void* destination,
+        const gs3d::core::PointDataView& points
+    );
+
+    // point_count 个 PointVertex 记录的字节数（打包后 = GPU buffer 尺寸）。
+    [[nodiscard]]
+    static VkDeviceSize packed_point_bytes(std::uint64_t point_count);
+
     void destroy() noexcept;
 
     [[nodiscard]]
