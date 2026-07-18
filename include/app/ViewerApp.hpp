@@ -80,8 +80,8 @@ struct ViewerWindowConfig {
     std::filesystem::path ui_layout_ini_path = "config/imgui_layout.ini";
     float ui_scale_multiplier = 1.15f;
     std::string theme = "carbon-blue";
-    // 顶层布局："workbench"（经典工作台）或 "floating-dock"（方案 B
-    // 悬浮 Dock 沉浸布局）。运行时仍可在界面里切换。
+    // 顶层布局："workbench"（方案 A）、"floating-dock"（方案 B）
+    // 或 "analysis-rail"（方案 C）。运行时仍可在界面里切换。
     std::string layout = "workbench";
     bool enable_multi_viewports = true;
 

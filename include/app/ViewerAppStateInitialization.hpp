@@ -25,7 +25,8 @@ struct ViewerAppStateInitializationInput {
     bool benchmark_enabled = false;
 };
 
-// ui_layout 取配置字符串（"workbench" / "floating-dock"，见
+// ui_layout 取配置字符串（"workbench" / "floating-dock" /
+// "analysis-rail"，见
 // ui_layout_from_string），未知值回退到工作台布局。
 [[nodiscard]] AppState make_initial_viewer_app_state(
     const ViewerAppStateInitializationInput& input,

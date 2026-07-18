@@ -2617,7 +2617,7 @@ void draw_card_settings(
     ImGui::Spacing();
     card_section_label("布局");
     if (widgets::Button(
-            "切换到工作台布局",
+            "方案 A · 专业工作台",
             widgets::ButtonVariant::kSecondary,
             ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
         )) {
@@ -2625,6 +2625,19 @@ void draw_card_settings(
         state.dock_ui.open_card = gs3d::app::DockCard::kNone;
         state.dock_ui.anim_card = gs3d::app::DockCard::kNone;
         state.dock_ui.card_anim = 0.0f;
+    }
+    if (widgets::Button(
+            "方案 C · 暗色分析舱",
+            widgets::ButtonVariant::kSecondary,
+            ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+        )) {
+        state.ui_layout_mode =
+            gs3d::app::UiLayoutMode::kAnalysisRail;
+        state.dock_ui.open_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.anim_card = gs3d::app::DockCard::kNone;
+        state.dock_ui.card_anim = 0.0f;
+        result.theme_change_requested = true;
+        result.requested_theme = ThemeId::kDeepGraphite;
     }
     const float layout_button_gap = 8.0f * s;
     const float layout_button_width =
@@ -3186,6 +3199,139 @@ FloatingDockFrameResult draw_floating_dock_layout(
     }
 
     return result;
+}
+
+bool draw_preload_gate_if_active(
+    gs3d::app::AppState& state,
+    float ui_scale
+) {
+    const auto& progress = state.tile_preload;
+    // 显示进度对真实进度做指数趋近，读取→上传阶段切换与逐帧跳变都被
+    // 平滑掉。active 边缘复位。
+    static float smoothed_fraction = 0.0f;
+    static bool was_active = false;
+    if (!progress.active) {
+        was_active = false;
+        return false;
+    }
+    if (!was_active) {
+        smoothed_fraction = 0.0f;
+        was_active = true;
+    }
+    const float s = std::max(0.5f, ui_scale);
+
+    // 门禁期间不渲染任何视口：数据尚未就绪，「加载好了再进程序」。
+    for (auto& view : state.render_views) {
+        view.render_requested = false;
+    }
+
+    // 连续单进度：读取（后台读盘 + 预建显存）约占前 35%，上传占其余。
+    // 两个阶段都有真实计数，进度条从头到尾单调前进、无阶段跳变。
+    float target_fraction = 0.0f;
+    if (progress.total_tiles > 0) {
+        const float read_fraction =
+            static_cast<float>(progress.read_tiles) /
+            static_cast<float>(progress.total_tiles);
+        const float upload_fraction =
+            static_cast<float>(progress.resident_tiles) /
+            static_cast<float>(progress.total_tiles);
+        target_fraction = std::clamp(
+            0.35f * read_fraction + 0.65f * upload_fraction,
+            0.0f, 1.0f);
+    }
+    const float dt = std::min(ImGui::GetIO().DeltaTime, 0.1f);
+    smoothed_fraction +=
+        (target_fraction - smoothed_fraction) *
+        std::min(1.0f, dt * 6.0f);
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    // 浅色启动页：跟随主题表面色（默认碳蓝主题即白色风格）。
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, palette::kBg);
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoNavFocus |
+        ImGuiWindowFlags_NoDocking;
+    if (ImGui::Begin("###TilePreloadGate", nullptr, flags)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 center(
+            viewport->Pos.x + viewport->Size.x * 0.5f,
+            viewport->Pos.y + viewport->Size.y * 0.5f
+        );
+        const ImU32 text_main = to_u32(palette::kText, 255);
+        const ImU32 text_dim = to_u32(palette::kTextDim, 235);
+
+        // 数据集名 + 阶段标题
+        {
+            ScopedFont font(bold_font());
+            const char* name = state.dataset.active_dataset.empty()
+                ? "GeoScatter3D"
+                : state.dataset.active_dataset.c_str();
+            const ImVec2 ts = ImGui::CalcTextSize(name);
+            dl->AddText(
+                ImVec2(center.x - ts.x * 0.5f, center.y - 64.0f * s),
+                text_main, name);
+        }
+        {
+            ScopedFont font(medium_font());
+            const char* title = progress.reading
+                ? "正在读取数据文件…"
+                : "正在载入显存…";
+            const ImVec2 ts = ImGui::CalcTextSize(title);
+            dl->AddText(
+                ImVec2(center.x - ts.x * 0.5f, center.y - 34.0f * s),
+                text_dim, title);
+        }
+
+        // 连续进度条（浅灰轨道 + 主题强调色填充，圆角胶囊）。
+        const float bar_w = 380.0f * s;
+        const float bar_h = 8.0f * s;
+        const ImVec2 bar_min(center.x - bar_w * 0.5f, center.y);
+        const ImVec2 bar_max(center.x + bar_w * 0.5f, center.y + bar_h);
+        dl->AddRectFilled(
+            bar_min, bar_max,
+            to_u32(palette::kBorder, 255), bar_h * 0.5f);
+        const float fill_w = bar_w * smoothed_fraction;
+        if (fill_w > bar_h) {
+            dl->AddRectFilled(
+                bar_min,
+                ImVec2(bar_min.x + fill_w, bar_max.y),
+                to_u32(palette::kAccent, 255), bar_h * 0.5f);
+        }
+
+        // 明细行：总体百分比 + 瓦片与数据量
+        {
+            ScopedFont font(small_font());
+            char detail[160];
+            std::snprintf(detail, sizeof(detail),
+                "%d%% · %s / %s 瓦片 · %.0f MB",
+                static_cast<int>(smoothed_fraction * 100.0f),
+                format_thousands(progress.reading
+                    ? progress.read_tiles
+                    : progress.resident_tiles).c_str(),
+                format_thousands(progress.total_tiles).c_str(),
+                static_cast<double>(progress.total_bytes) / 1e6);
+            const ImVec2 ts = ImGui::CalcTextSize(detail);
+            dl->AddText(
+                ImVec2(center.x - ts.x * 0.5f,
+                       bar_max.y + 14.0f * s),
+                text_dim, detail);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+    return true;
 }
 
 } // namespace gs3d::ui

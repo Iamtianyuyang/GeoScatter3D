@@ -141,6 +141,17 @@ TEST_CASE("Initial viewer app state resolves the configured UI layout")
         CHECK(state.ui_layout_mode ==
               gs3d::app::UiLayoutMode::kFloatingDock);
     }
+    SECTION("analysis-rail 配置进入暗色分析舱布局") {
+        const auto state =
+            gs3d::app::make_initial_viewer_app_state(
+                input,
+                "analysis-rail"
+            );
+        CHECK(state.ui_layout_mode ==
+              gs3d::app::UiLayoutMode::kAnalysisRail);
+        CHECK(state.analysis_rail_ui.open_drawer ==
+              gs3d::app::AnalysisDrawer::kData);
+    }
     SECTION("缺省与未知取值回退到工作台布局") {
         const auto default_state =
             gs3d::app::make_initial_viewer_app_state(input);

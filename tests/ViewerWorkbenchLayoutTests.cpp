@@ -1,4 +1,5 @@
 #include "app/ViewerWorkbenchLayout.hpp"
+#include "ui/AnalysisRailLayout.hpp"
 #include "ui/FloatingDockLayout.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -98,4 +99,45 @@ TEST_CASE("Navigation preview is square and contains its texture", "[floating_do
         layout.image.width / 256.0f ==
         layout.image.height / 128.0f
     );
+}
+
+TEST_CASE("Analysis rail matches the 1360 by 850 scheme C reference", "[analysis_rail]")
+{
+    const auto layout = gs3d::ui::compute_analysis_rail_layout(
+        1360.0f,
+        850.0f,
+        1.0f,
+        1.0f
+    );
+
+    CHECK(layout.rail_width == 54.0f);
+    CHECK(layout.drawer_width == 272.0f);
+    CHECK(layout.center_x == 326.0f);
+    CHECK(layout.topbar_height == 50.0f);
+    CHECK(layout.cards_width == 252.0f);
+    CHECK(layout.viewport_width == 782.0f);
+    CHECK(layout.viewport_height == 776.0f);
+    CHECK(layout.status_y == 826.0f);
+    CHECK(layout.status_height == 24.0f);
+}
+
+TEST_CASE("Analysis rail gives the viewport space when its drawer closes", "[analysis_rail]")
+{
+    const auto open = gs3d::ui::compute_analysis_rail_layout(
+        1360.0f,
+        850.0f,
+        1.0f,
+        1.0f
+    );
+    const auto closed = gs3d::ui::compute_analysis_rail_layout(
+        1360.0f,
+        850.0f,
+        1.0f,
+        0.0f
+    );
+
+    CHECK(closed.drawer_width == 0.0f);
+    CHECK(closed.center_x == 54.0f);
+    CHECK(closed.viewport_width ==
+          open.viewport_width + open.drawer_width);
 }

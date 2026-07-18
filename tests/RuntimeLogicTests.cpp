@@ -465,6 +465,107 @@ void test_camera_uses_view_local_input()
     );
 }
 
+void test_arcball_drag_rotates_about_screen_axes()
+{
+    // 跟手: each drag direction rotates about a screen-aligned axis so the
+    // rotation tracks the cursor regardless of where the pivot sits.  Horizontal
+    // drag yaws about screen-up (camera up = world up projected to view plane).
+    // Vertical drag pitches about cross(world_up, forward_post) - a horizontal
+    // axis perpendicular to the view direction.  We deliberately use this over
+    // the screen-right vector: screen-right tilts with the camera so the
+    // elevation clamp (asin(z/orbit_radius) -> angle_v mapping) loses 1:1 and
+    // the pole test breaks; cross(world_up, forward) is a world-horizontal axis
+    // that preserves the clamp while still being screen-aligned (equal to
+    // screen-right when the camera is upright, and equal to the old
+    // position_offset axis when the camera faces the pivot).  Invariants:
+    //   - yaw about screen-up: camera.up() stays fixed.
+    //   - pitch about cross(world_up, forward): forward's horizontal azimuth
+    //     stays fixed (only elevation changes).
+    gs3d::camera::Camera camera;
+    camera.set_viewport(800, 600);
+    camera.set_perspective(60.0f, 0.1f, 10000.0f);
+    const gs3d::camera::Vec3 cam_pos{0.0f, -80.0f, 30.0f};
+    const gs3d::camera::Vec3 cam_tgt{0.0f, 0.0f, 0.0f};
+    // look_at only length-normalises up, it does not re-orthogonalise it against
+    // forward - so initialise with an already-perpendicular up, otherwise the
+    // pre-drag camera.up() is the raw (0,0,1) and the axis-invariance check
+    // below would compare against a non-perpendicular baseline.
+    const gs3d::camera::Vec3 fwd{
+        cam_tgt.x - cam_pos.x,
+        cam_tgt.y - cam_pos.y,
+        cam_tgt.z - cam_pos.z};
+    const float fl = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
+    const gs3d::camera::Vec3 fn{fwd.x / fl, fwd.y / fl, fwd.z / fl};
+    const float dotz = fn.z;  // forward . (0,0,1)
+    gs3d::camera::Vec3 ortho_up{0.0f, 0.0f, 1.0f};
+    ortho_up = {
+        ortho_up.x - fn.x * dotz,
+        ortho_up.y - fn.y * dotz,
+        ortho_up.z - fn.z * dotz};
+    const float ul = std::sqrt(
+        ortho_up.x * ortho_up.x + ortho_up.y * ortho_up.y + ortho_up.z * ortho_up.z);
+    camera.look_at(
+        cam_pos,
+        cam_tgt,
+        {ortho_up.x / ul, ortho_up.y / ul, ortho_up.z / ul}
+    );
+
+    const gs3d::camera::Viewport viewport{800, 600};
+    const gs3d::camera::Vec3 pivot{40.0f, 0.0f, 0.0f};
+
+    auto drag = [&](float dx, float dy) -> gs3d::camera::Camera {
+        gs3d::camera::Camera cam = camera;
+        gs3d::camera::CameraController controller;
+        controller.set_orbit_pivot(pivot);
+        gs3d::camera::CameraInput input;
+        input.viewport_width = 800;
+        input.viewport_height = 600;
+        input.rotate = true;
+        input.delta_x = dx;
+        input.delta_y = dy;
+        static_cast<void>(controller.update(cam, input));
+        return cam;
+    };
+
+    // Horizontal drag yaws about screen-up: camera.up() is the axis, stays fixed.
+    {
+        const auto up_before = camera.up();
+        const auto cam = drag(60.0f, 0.0f);
+        expect(
+            std::abs(cam.up().x - up_before.x) < 1.0e-3f &&
+            std::abs(cam.up().y - up_before.y) < 1.0e-3f &&
+            std::abs(cam.up().z - up_before.z) < 1.0e-3f,
+            "horizontal drag yaws about screen-up (camera.up() stays fixed)"
+        );
+        const auto p = gs3d::camera::MouseRay::to_screen(pivot, viewport, cam);
+        expect(p.has_value(), "pivot stays on screen after horizontal drag");
+    }
+
+    // Vertical drag pitches about cross(world_up, forward): the view's
+    // horizontal azimuth is preserved (only elevation tilts).
+    {
+        const auto cam = drag(0.0f, 60.0f);
+        const auto fwd_before = gs3d::camera::Vec3{
+            camera.target().x - camera.position().x,
+            camera.target().y - camera.position().y,
+            camera.target().z - camera.position().z};
+        const auto fwd_after = gs3d::camera::Vec3{
+            cam.target().x - cam.position().x,
+            cam.target().y - cam.position().y,
+            cam.target().z - cam.position().z};
+        // Azimuth = atan2 of the horizontal projection; pitch preserves it.
+        const auto az = [](const gs3d::camera::Vec3& f) {
+            return std::atan2(f.x, f.y);
+        };
+        expect(
+            std::abs(az(fwd_after) - az(fwd_before)) < 1.0e-3f,
+            "vertical drag pitches about the view-perpendicular axis (azimuth preserved)"
+        );
+        const auto p = gs3d::camera::MouseRay::to_screen(pivot, viewport, cam);
+        expect(p.has_value(), "pivot stays on screen after vertical drag");
+    }
+}
+
 void test_zoom_keeps_cursor_anchor_fixed()
 {
     gs3d::camera::Camera camera;
@@ -2102,8 +2203,12 @@ void test_rotation_after_pan_keeps_panned_target()
         std::abs(target_after_rotate.z - target_after_pan.z) < 1.0e-6f,
         "rotation after pan must keep the panned target fixed"
     );
+    // Distance is preserved by rotation in exact arithmetic; the residual is
+    // float32 storage noise from storing position = pivot + offset at ~1e6
+    // geospatial magnitude (float32 precision there is ~0.25, so an absolute
+    // floor of 1.0 sits above the noise while still catching real drift).
     expect(
-        std::abs(camera.distance() - distance_after_pan) < 0.01f,
+        std::abs(camera.distance() - distance_after_pan) < 1.0f,
         "rotation after pan must preserve camera distance"
     );
 }
@@ -2228,7 +2333,6 @@ void test_rotation_supports_nearly_full_pitch_range()
         input.viewport_width = 800;
         input.viewport_height = 600;
         input.rotate = true;
-        input.rotate_begin = true;
         input.delta_y = -200.0f;
         static_cast<void>(controller.update(camera, input));
     }
@@ -3020,6 +3124,7 @@ void test_hover_cleared_when_no_hit()
     LEGACY_TEST_CASE(test_scene_state_is_constructible_without_dataset_io)
     LEGACY_TEST_CASE(test_frame_upload_budget)
     LEGACY_TEST_CASE(test_camera_uses_view_local_input)
+    LEGACY_TEST_CASE(test_arcball_drag_rotates_about_screen_axes)
     LEGACY_TEST_CASE(test_zoom_keeps_cursor_anchor_fixed)
     LEGACY_TEST_CASE(test_zoom_respects_max_distance_from_bounds)
     LEGACY_TEST_CASE(test_fit_bounds_distance_is_orientation_independent)

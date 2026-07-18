@@ -1,6 +1,8 @@
 #include "ui/UiRoot.hpp"
+#include "ui/AnalysisRailUi.hpp"
 #include "ui/FloatingDockUi.hpp"
 #include "ui/ViewportCanvas.hpp"
+#include "ui/WorkbenchUi.hpp"
 #include "ui/WorkspaceManager.hpp"
 #include "ui/Theme.hpp"
 #include "ui/Widgets.hpp"
@@ -93,21 +95,14 @@ std::string workspace_dockspace_id_name(int id)
 
 // ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
 namespace LayoutMetrics {
-    // Dock side-bar widths: ratio + min/max of work width, instead of a
-    // fixed pixel value. Derived from the previously hand-tuned baseline
-    // (kDockLeftWidth=220, kDockRightWidth=240 at a ~1280px work width, which
-    // read as ~0.17 / ~0.19). A ratio keeps the side bars proportional when
-    // the window is maximized, while the min/max band prevents them from
-    // collapsing on tiny windows or swallowing the center on huge ones.
-    constexpr float kDockLeftRatio  = 0.175f;
-    constexpr float kDockLeftMinPx  = 210.0f;
-    constexpr float kDockLeftMaxPx  = 320.0f;
-    constexpr float kDockRightRatio = 0.205f;
+    constexpr float kDockLeftRatio  = 276.0f / 1360.0f;
+    constexpr float kDockLeftMinPx  = 240.0f;
+    constexpr float kDockLeftMaxPx  = 336.0f;
+    constexpr float kDockRightRatio = 280.0f / 1360.0f;
     constexpr float kDockRightMinPx = 260.0f;
-    constexpr float kDockRightMaxPx = 360.0f;
-    constexpr float kToolsBarHeightBase = 44.0f;
-    // Status bar: base pixel size, scaled by ui_scale at the call site.
-    constexpr float kStatusBarHeightBase  = 22.0f;
+    constexpr float kDockRightMaxPx = 336.0f;
+    constexpr float kToolsBarHeightBase = 52.0f;
+    constexpr float kStatusBarHeightBase  = 26.0f;
     constexpr float kPanelHeaderGap = 8.0f;
     constexpr float kPanelSectionGap = 8.0f;
     constexpr float kPanelInsetX = 10.0f;
@@ -140,7 +135,7 @@ void push_application_menu_style(float ui_scale)
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_FramePadding,
-        ImVec2(10.0f * ui_scale, 5.0f * ui_scale)
+        ImVec2(10.0f * ui_scale, 9.0f * ui_scale)
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_ItemSpacing,
@@ -160,9 +155,6 @@ void push_application_menu_style(float ui_scale)
         ImGuiCol_MenuBarBg,
         to_u32(palette::kMenuBg, 255)
     );
-    // The application menu sits directly below the native title bar. Keep
-    // its foreground explicit so each dark theme remains legible even when
-    // a platform backend supplies a light non-client frame.
     ImGui::PushStyleColor(
         ImGuiCol_Text,
         to_u32(palette::kText, 255)
@@ -290,8 +282,6 @@ void draw_tools_window(
         const bool can_add_view = has_hidden_view(state);
         ImGui::BeginDisabled(!can_add_view);
         if (widgets::Chip("添加视图")) {
-            // Match Ctrl+N exactly: reveal the first available viewport
-            // without changing workspace ownership or docking.
             show_first_hidden_view(state);
         }
         ImGui::EndDisabled();
@@ -307,8 +297,11 @@ void draw_tools_window(
             }
         }
         ImGui::SameLine();
-        if (ImGui::GetContentRegionAvail().x >
-            190.0f * ui_scale) {
+        if (ImGui::GetContentRegionAvail().x > 190.0f * ui_scale) {
+            ImGui::SetCursorPosX(std::max(
+                ImGui::GetCursorPosX(),
+                ImGui::GetWindowContentRegionMax().x - 270.0f * ui_scale
+            ));
             ImGui::PushStyleColor(
                 ImGuiCol_Text,
                 to_u32(palette::kTextDim, 190)
@@ -329,7 +322,8 @@ void draw_tools_window(
 void draw_viewport_window(
     gs3d::app::RenderViewState& view,
     gs3d::app::UiActions& actions,
-    int workspace_id = 0
+    int workspace_id = 0,
+    bool show_workbench_controls = false
 ) {
     view.render_requested = false;
     const auto window_name =
@@ -373,8 +367,13 @@ void draw_viewport_window(
         !ImGui::IsWindowDocked() ||
         (window_viewport != nullptr &&
          window_viewport->ID != ImGui::GetMainViewport()->ID);
-
     const float toolbar_scale = ImGui::GetFontSize() / 13.0f;
+    const bool embedded_controls =
+        show_workbench_controls && !view.detached;
+    if (embedded_controls) {
+        draw_workbench_view_controls(view, actions, toolbar_scale);
+    }
+
     ViewportCanvasOptions canvas_options;
     canvas_options.workspace_id = workspace_id;
     draw_viewport_canvas(view, actions, canvas_options);
@@ -386,44 +385,11 @@ void draw_viewport_window(
     const float canvas_top = view.canvas_rect_min_y;
     const float canvas_right = view.canvas_rect_max_x;
     ImGui::End();
-    draw_detached_view_camera_pill(
-        view,
-        actions,
-        canvas_top,
-        canvas_right,
-        platform_viewport_id,
-        toolbar_scale
-    );
-}
-
-/*
- * 两种布局共用的帧尾逻辑：M 键切换测量模式（目标 = 悬停/活动视口），
- * 并把最近交互的视口记录为活动视口。
- */
-void finalize_frame_shortcuts(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions
-) {
-    if (!ImGui::GetIO().WantTextInput &&
-        !ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_M, false)) {
-        int target_viewport_index = state.active_viewport_index;
-        for (const auto& frame : actions.viewport_frames) {
-            if (frame.active || frame.hovered) {
-                target_viewport_index = frame.index;
-            }
-        }
-        auto& measurement =
-            gs3d::app::measurement_for_view(state, target_viewport_index);
-        measurement.toggle_measure_mode();
-        if (!measurement.measure_mode_active()) {
-            measurement.clear_pending();
-        }
-    }
-    for (const auto& frame : actions.viewport_frames) {
-        if (frame.active || frame.hovered) {
-            state.active_viewport_index = frame.index;
-        }
+    if (!embedded_controls) {
+        draw_detached_view_camera_pill(
+            view, actions, canvas_top, canvas_right,
+            platform_viewport_id, toolbar_scale
+        );
     }
 }
 
@@ -702,11 +668,6 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     const std::uint32_t signature = visible_view_signature(state);
     const ImVec2 work_size = ImGui::GetMainViewport()->WorkSize;
 
-    // Re-apply the ratio-based default layout on a large relative work-size
-    // change (maximize/restore), even if the visible-view signature is
-    // unchanged. Threshold: relative change in either dimension exceeds 25%
-    // vs the size at which we last built the layout. Small resizes leave
-    // any user-dragged dock splitters untouched.
     const bool size_changed_significantly =
         last_layout_work_w_ > 0.0f && last_layout_work_h_ > 0.0f &&
         (std::abs(work_size.x - last_layout_work_w_) >
@@ -732,10 +693,6 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         work_size
     );
     const float work_width = std::max(1.0f, work_size.x);
-    // Side-bar widths: ratio of work width, clamped to [min,max] px.
-    // Ratio derived from the prior hand-tuned baseline (220px / 240px at a
-    // ~1280px work width → ~0.17 / ~0.19). The clamp keeps tiny windows
-    // readable and huge windows from letting the bars swallow the center.
     const float default_left_width = std::clamp(
         work_width * LayoutMetrics::kDockLeftRatio,
         LayoutMetrics::kDockLeftMinPx,
@@ -759,10 +716,6 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         state.panels.render_settings ||
         state.panels.performance ||
         state.panels.debug_log;
-    // The right split happens after the optional left split, so its ratio
-    // must be relative to the remaining center node rather than the original
-    // work width. Using work_width here made a requested 260px panel land at
-    // roughly 225px on a 1280px window.
     const float right_split_width = std::max(
         1.0f,
         work_width - (has_left_panels ? default_left_width : 0.0f)
@@ -770,6 +723,24 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     const float right_ratio = default_right_width / right_split_width;
 
     ImGuiID center_id = dockspace_id;
+    if (state.panels.tools) {
+        const float tools_ratio = std::clamp(
+            LayoutMetrics::kToolsBarHeightBase /
+                std::max(1.0f, work_size.y),
+            0.045f,
+            0.12f
+        );
+        ImGuiID body_id = center_id;
+        const ImGuiID tools_id = ImGui::DockBuilderSplitNode(
+            center_id, ImGuiDir_Up, tools_ratio, nullptr, &body_id
+        );
+        center_id = body_id;
+        if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(tools_id)) {
+            node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar |
+                ImGuiDockNodeFlags_NoWindowMenuButton;
+        }
+        ImGui::DockBuilderDockWindow(kToolsWindowName, tools_id);
+    }
     ImGuiID left_id = 0;
     ImGuiID right_id = 0;
     if (has_left_panels) {
@@ -799,25 +770,25 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         left_bottom_id = ImGui::DockBuilderSplitNode(
             left_id,
             ImGuiDir_Down,
-            0.33f,               // 导航图占左侧 33%
+            0.18f,               // 方案 A：底部导航图约占工作区 18%
             nullptr,
             &left_top_id
         );
 
-        if (state.panels.dataset) {
-            ImGui::DockBuilderDockWindow(kDatasetWindowName, left_top_id);
-        }
-        if (state.panels.tile_inspector) {
-            ImGui::DockBuilderDockWindow(kTileInspectorWindowName, left_top_id);
-        }
-        if (state.panels.lod_view) {
-            ImGui::DockBuilderDockWindow(kLodViewWindowName, left_top_id);
+        if (state.panels.region_stats) {
+            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, left_top_id);
         }
         if (state.panels.measurement) {
             ImGui::DockBuilderDockWindow(kMeasurementWindowName, left_top_id);
         }
-        if (state.panels.region_stats) {
-            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, left_top_id);
+        if (state.panels.lod_view) {
+            ImGui::DockBuilderDockWindow(kLodViewWindowName, left_top_id);
+        }
+        if (state.panels.tile_inspector) {
+            ImGui::DockBuilderDockWindow(kTileInspectorWindowName, left_top_id);
+        }
+        if (state.panels.dataset) {
+            ImGui::DockBuilderDockWindow(kDatasetWindowName, left_top_id);
         }
     }
     if (left_bottom_id != 0) {
@@ -837,37 +808,13 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         }
     }
 
-    ImGuiID view_area_id = center_id;
-    if (state.panels.tools) {
-        const float tools_ratio = std::clamp(
-            LayoutMetrics::kToolsBarHeightBase /
-                std::max(1.0f, work_size.y),
-            0.045f,
-            0.12f
-        );
-        const ImGuiID tools_id = ImGui::DockBuilderSplitNode(
-            center_id,
-            ImGuiDir_Up,
-            tools_ratio,
-            nullptr,
-            &view_area_id
-        );
-        if (ImGuiDockNode* tools_node =
-                ImGui::DockBuilderGetNode(tools_id)) {
-            tools_node->LocalFlags |=
-                ImGuiDockNodeFlags_NoTabBar |
-                ImGuiDockNodeFlags_NoWindowMenuButton;
-        }
-        ImGui::DockBuilderDockWindow(kToolsWindowName, tools_id);
-    }
-
     for (const auto& view : state.render_views) {
         if (view.visible &&
             !view.detached &&
             !view_is_owned_by_workspace(state, view.viewport_index)) {
             ImGui::DockBuilderDockWindow(
                 render_view_window_name(view.viewport_index).c_str(),
-                view_area_id
+                center_id
             );
         }
     }
@@ -877,6 +824,7 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     dock_layout_signature_ = signature;
     last_layout_work_w_ = work_size.x;
     last_layout_work_h_ = work_size.y;
+    focus_workbench_dataset_ = true;
 }
 
 gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
@@ -884,20 +832,13 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     gs3d::app::UiActions actions;
     ThemeId requested_theme = active_theme();
     bool theme_change_requested = false;
-    // UI scale for high-DPI chrome (toolbar / status bar heights). Same
-    // definition as the per-viewport scale in draw_render_view: font size
-    // relative to the 13px baseline. Does NOT feed the render-size chain.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;
     prune_workspace_windows(state);
-    if (ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_O, false)) {
-        actions.open_requested = true;
+    begin_viewport_frame_shortcuts(state, actions);
+    // 全量预加载门禁：数据就绪前只显示加载页（加载好了再进程序）。
+    if (draw_preload_gate_if_active(state, ui_scale)) {
+        return actions;
     }
-    if (ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_N, false)) {
-        show_first_hidden_view(state);
-    }
-    // ── 悬浮 Dock 沉浸布局（方案 B）：整帧交给 FloatingDockUi ──
     if (state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock) {
         const FloatingDockFrameResult dock_result =
             draw_floating_dock_layout(state, actions, ui_scale);
@@ -915,7 +856,24 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             }
         }
         draw_screenshot_notice(state, ui_scale);
-        finalize_frame_shortcuts(state, actions);
+        finalize_viewport_frame_shortcuts(state, actions);
+        return actions;
+    }
+    if (state.ui_layout_mode == gs3d::app::UiLayoutMode::kAnalysisRail) {
+        const auto rail_result = draw_analysis_rail_layout(
+            state, actions, gs3d::gui::ui_fonts().ui_scale);
+        if (rail_result.theme_change_requested) {
+            apply_theme(rail_result.requested_theme,
+                        gs3d::gui::ui_fonts().ui_scale);
+        }
+        for (auto& view : state.render_views) {
+            if (view.visible &&
+                (view.detached || view.force_undock_next_frame)) {
+                draw_viewport_window(view, actions);
+            }
+        }
+        draw_screenshot_notice(state, ui_scale);
+        finalize_viewport_frame_shortcuts(state, actions);
         return actions;
     }
 
@@ -957,6 +915,12 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
         const bool menu_bar_visible = ImGui::BeginMenuBar();
         if (menu_bar_visible) {
+            ImGui::TextUnformatted("GeoScatter");
+            ImGui::SameLine(0.0f, 2.0f * ui_scale);
+            ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kAccent, 255));
+            ImGui::TextUnformatted("3D");
+            ImGui::PopStyleColor();
+            ImGui::SameLine(0.0f, 16.0f * ui_scale);
             if (ImGui::BeginMenu("文件")) {
                 draw_menu_section_label("文件操作");
                 if (ImGui::MenuItem("打开数据文件…", "Ctrl+O")) {
@@ -986,9 +950,18 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                     dock_layout_initialized_ = false;
                 }
                 draw_menu_section_label("布局");
-                if (ImGui::MenuItem("切换到悬浮 Dock（沉浸）")) {
+                ImGui::MenuItem(
+                    "方案 A · 专业工作台", nullptr, true, false
+                );
+                if (ImGui::MenuItem("方案 B · 悬浮 Dock")) {
                     state.ui_layout_mode =
                         gs3d::app::UiLayoutMode::kFloatingDock;
+                }
+                if (ImGui::MenuItem("方案 C · 暗色分析舱")) {
+                    state.ui_layout_mode =
+                        gs3d::app::UiLayoutMode::kAnalysisRail;
+                    requested_theme = ThemeId::kDeepGraphite;
+                    theme_change_requested = true;
                 }
                 draw_menu_section_label("外观");
                 if (ImGui::BeginMenu("主题")) {
@@ -1090,6 +1063,19 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 );
                 ImGui::EndMenu();
             }
+            const float search_x =
+                ImGui::GetWindowWidth() - 286.0f * ui_scale;
+            if (ImGui::GetCursorPosX() < search_x) {
+                ImGui::SetCursorPosX(search_x);
+                ImGui::PushStyleColor(ImGuiCol_Button, palette::kFrame);
+                ImGui::Button(
+                    "搜索命令…    Ctrl K",
+                    ImVec2(238.0f * ui_scale, 0.0f)
+                );
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0.0f, 6.0f * ui_scale);
+                ImGui::Button("徐", ImVec2(28.0f * ui_scale, 0.0f));
+            }
             ImGui::EndMenuBar();
         }
         if (menu_font != nullptr) {
@@ -1170,14 +1156,12 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(3);
     if (theme_change_requested) {
-        // 所有临时样式均已出栈，再整体替换主题。后续面板在本帧即可
-        // 使用一致的 ImGuiStyle 与 palette 颜色。
+        // 所有临时样式均已出栈后再整体替换主题。
         apply_theme(requested_theme, gs3d::gui::ui_fonts().ui_scale);
     }
 
     if (render_workspace) {
         draw_tools_window(state, actions, ui_scale);
-        draw_dataset_panel(state);
         const auto main_viewports = main_workspace_viewports(state);
         const int main_active_view = active_view_for_indices(
             state,
@@ -1198,7 +1182,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         for (auto& view : state.render_views) {
             if (view.visible &&
                 !view_is_owned_by_workspace(state, view.viewport_index)) {
-                draw_viewport_window(view, actions);
+                draw_viewport_window(view, actions, 0, true);
             } else {
                 if (!view.visible) {
                     view.detached = false;
@@ -1218,13 +1202,18 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         prune_workspace_windows(state);
 
         draw_auxiliary_panels(state, actions);
+        if (focus_workbench_dataset_) {
+            ImGui::SetNextWindowFocus();
+            focus_workbench_dataset_ = false;
+        }
+        draw_dataset_panel(state);
         draw_screenshot_notice(state, ui_scale);
     } else {
         for (auto& view : state.render_views) {
             view.render_requested = false;
         }
     }
-    finalize_frame_shortcuts(state, actions);
+    finalize_viewport_frame_shortcuts(state, actions);
     return actions;
 }
 

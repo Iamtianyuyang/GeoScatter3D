@@ -3,6 +3,7 @@
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 #include "ui/ViewportAxisTicks.hpp"
+#include "ui/WorkspaceManager.hpp"
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
@@ -264,6 +265,47 @@ void draw_viewport_overlay(
 }
 
 } // namespace
+
+void begin_viewport_frame_shortcuts(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions
+) {
+    if (ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+        actions.open_requested = true;
+    }
+    if (ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+        show_first_hidden_view(state);
+    }
+}
+
+void finalize_viewport_frame_shortcuts(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions
+) {
+    if (!ImGui::GetIO().WantTextInput &&
+        !ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_M, false)) {
+        int target = state.active_viewport_index;
+        for (const auto& frame : actions.viewport_frames) {
+            if (frame.active || frame.hovered) {
+                target = frame.index;
+            }
+        }
+        auto& measurement =
+            gs3d::app::measurement_for_view(state, target);
+        measurement.toggle_measure_mode();
+        if (!measurement.measure_mode_active()) {
+            measurement.clear_pending();
+        }
+    }
+    for (const auto& frame : actions.viewport_frames) {
+        if (frame.active || frame.hovered) {
+            state.active_viewport_index = frame.index;
+        }
+    }
+}
 
 /*
  * 视口画布主体（声明见 ViewportCanvas.hpp）。工作台布局的视图窗口和

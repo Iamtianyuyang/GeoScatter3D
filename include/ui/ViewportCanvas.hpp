@@ -43,4 +43,15 @@ void draw_viewport_canvas(
     const ViewportCanvasOptions& options = {}
 );
 
+// 帧首全局快捷键（Ctrl+O 打开 / Ctrl+N 新建视图），三种布局共用。
+void begin_viewport_frame_shortcuts(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions
+);
+
+void finalize_viewport_frame_shortcuts(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions
+);
+
 } // namespace gs3d::ui

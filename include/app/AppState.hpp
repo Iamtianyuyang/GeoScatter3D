@@ -16,14 +16,16 @@ namespace gs3d::app {
 
 /*
  * 顶层 UI 布局模式：
- *   kWorkbench    菜单栏 + 左右停靠面板 + 状态栏（经典工作台）。
+ *   kWorkbench    方案 A：菜单栏 + 左右停靠面板 + 状态栏。
  *   kFloatingDock 视口全沉浸 + 底部悬浮胶囊 Dock + 弹出卡片（方案 B，
  *                 Telegram 风）。所有面板功能收进 Dock 弹出卡片。
+ *   kAnalysisRail 方案 C：暗色图标轨 + 互斥抽屉 + 右侧分析卡片。
  * 运行时可通过菜单 / Dock 设置卡片双向切换。
  */
 enum class UiLayoutMode : int {
     kWorkbench = 0,
     kFloatingDock = 1,
+    kAnalysisRail = 2,
 };
 
 [[nodiscard]]
@@ -37,8 +39,29 @@ inline UiLayoutMode ui_layout_from_string(
     if (name == "workbench") {
         return UiLayoutMode::kWorkbench;
     }
+    if (name == "analysis-rail" || name == "rail") {
+        return UiLayoutMode::kAnalysisRail;
+    }
     return fallback;
 }
+
+enum class AnalysisDrawer : int {
+    kNone = -1,
+    kData = 0,
+    kAppearance = 1,
+    kMeasure = 2,
+    kViews = 3,
+    kSystem = 4,
+};
+
+struct AnalysisRailUiState {
+    AnalysisDrawer open_drawer = AnalysisDrawer::kData;
+    float drawer_anim = 1.0f;
+    bool navigation_card_open = true;
+    bool color_card_open = true;
+    bool performance_card_open = true;
+    bool stats_card_open = true;
+};
 
 // 悬浮 Dock 的弹出卡片种类（Dock 项从左到右）。
 enum class DockCard : int {
@@ -486,6 +509,7 @@ struct AppState {
     UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
     DockUiState dock_ui;
     TilePreloadProgressState tile_preload;
+    AnalysisRailUiState analysis_rail_ui;
     ScreenshotNoticeState screenshot_notice;
 };
 

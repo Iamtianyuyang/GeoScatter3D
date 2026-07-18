@@ -27,3 +27,5 @@
 /reasonix.toml
 /review_dump.txt
 /*.xwd
+/.playwright-mcp/
+/artifacts/

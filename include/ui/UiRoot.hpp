@@ -154,6 +154,7 @@ private:
     // targets include it without linking ImGui.
     float last_layout_work_w_ = -1.0f;
     float last_layout_work_h_ = -1.0f;
+    bool focus_workbench_dataset_ = true;
 };
 
 } // namespace gs3d::ui

@@ -38,6 +38,17 @@ void draw_screenshot_notice(
 );
 
 /*
+ * 瓦片全量预加载门禁：预加载进行中时绘制全屏加载页（数据集名 +
+ * 进度条 + 明细）、禁用视口渲染并拦截交互，返回 true——调用方本帧
+ * 不再绘制其余 UI。预加载完成或回退按需流式后返回 false，界面照常。
+ */
+[[nodiscard]]
+bool draw_preload_gate_if_active(
+    gs3d::app::AppState& state,
+    float ui_scale
+);
+
+/*
  * 独立视图窗口复用沉浸布局右上角的视角工具 pill。位置以画布右上角
  * 为基准，并绑定到画布所在的 ImGui 平台窗口，避免成为额外的系统窗口。
  */
