@@ -2,6 +2,7 @@
 
 #include "camera/Camera.hpp"
 
+#include <functional>
 #include <vector>
 #include <cstdint>
 
@@ -31,6 +32,12 @@ public:
         Camera* camera         = nullptr;
     };
 
+    // Optional per-link pivot mirror. Called with (src_viewport, dst_viewport)
+    // once for each propagated pair, AFTER the view itself has been copied.
+    // Use it to keep the orbit pivot (controller state, not stored on Camera)
+    // in lockstep across linked viewports. If null, pivots are not touched.
+    using PivotMirror = std::function<void(int src_viewport, int dst_viewport)>;
+
     // Register a camera pointer (must remain valid for the hub's lifetime).
     // initial_group = 0 = default sync group; kIndependent = no sync.
     void add(int viewport_index, Camera* camera, int initial_group = 0);
@@ -44,11 +51,13 @@ public:
 
     // After updating camera[viewport_index], propagate its view to all
     // other cameras that share the same (non-independent) group.
-    void propagate(int viewport_index);
+    // If `mirror_pivot` is non-null, also call it for each (src, dst) pair
+    // so the caller can keep orbit pivots in sync across the group.
+    void propagate(int viewport_index, PivotMirror mirror_pivot = {});
 
     // For each group, propagate its first member to the rest.
     // Use after bulk state changes (camera reset, file reload).
-    void propagate_all();
+    void propagate_all(PivotMirror mirror_pivot = {});
 
     const std::vector<Entry>& entries() const noexcept;
 

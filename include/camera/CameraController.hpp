@@ -72,6 +72,11 @@ public:
 
     void clear_orbit_pivot() noexcept;
 
+    // Mirror the orbit pivot state from another controller. Used by
+    // CameraHub propagate callbacks so linked viewports share the same
+    // focus point (or both fall back to camera.target() together).
+    void copy_pivot_from(const CameraController& src) noexcept;
+
     [[nodiscard]]
     std::optional<Vec3> orbit_pivot() const noexcept;
 
@@ -87,7 +92,7 @@ public:
 
     void set_focus_anim_duration(float seconds) noexcept;
 
-    void reset_view(Camera& camera) const noexcept;
+    void reset_view(Camera& camera) noexcept;
 
     [[nodiscard]]
     bool update(
@@ -118,7 +123,7 @@ private:
         float delta_x,
         float delta_y,
         float viewport_height
-    ) const noexcept;
+    ) noexcept;
 
     void zoom_view(
         Camera& camera,
@@ -128,7 +133,7 @@ private:
         float viewport_width,
         float viewport_height,
         bool mouse_position_valid
-    ) const noexcept;
+    ) noexcept;
 
     void adjust_near_far(Camera& camera) const noexcept;
 

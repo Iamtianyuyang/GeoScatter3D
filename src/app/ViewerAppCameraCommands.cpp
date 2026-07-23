@@ -71,7 +71,12 @@ void ViewerApp::apply_reset_camera_command(
         ctx.camera_config,
         ctx.bounds
     );
-    ctx.camera_hub.propagate(gui_cmds.reset_camera_index);
+    ctx.camera_hub.propagate(
+        gui_cmds.reset_camera_index,
+        [&](int src, int dst) {
+            ctx.controllers.at(dst).copy_pivot_from(
+                ctx.controllers.at(src));
+        });
     ctx.streaming_viewport_index =
         gui_cmds.reset_camera_index;
     ctx.tile_selection_dirty = true;

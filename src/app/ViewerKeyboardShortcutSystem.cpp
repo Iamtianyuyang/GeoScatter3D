@@ -79,7 +79,13 @@ void ViewerKeyboardShortcutSystem::process(
             context.camera_config,
             context.bounds
         );
-        context.camera_hub.propagate(context.streaming_viewport_index);
+        context.camera_hub.propagate(
+            context.streaming_viewport_index,
+            [&](int src, int dst) {
+                context.viewport_cameras.controller(dst)
+                    .copy_pivot_from(
+                        context.viewport_cameras.controller(src));
+            });
         context.tile_selection_dirty = true;
     }
     r_was_pressed_ = r_pressed;
@@ -101,7 +107,13 @@ void ViewerKeyboardShortcutSystem::process(
                     ),
                     *context.selected_focus_points[focus_index]
                 );
-            context.camera_hub.propagate(context.streaming_viewport_index);
+            context.camera_hub.propagate(
+                context.streaming_viewport_index,
+                [&](int src, int dst) {
+                    context.viewport_cameras.controller(dst)
+                        .copy_pivot_from(
+                            context.viewport_cameras.controller(src));
+                });
             context.tile_selection_dirty = true;
             gs3d::util::log::info()
                 << "[CAMERA] focused selected point in viewport "

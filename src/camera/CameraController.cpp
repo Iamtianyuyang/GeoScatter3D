@@ -38,6 +38,14 @@ void CameraController::clear_orbit_pivot() noexcept {
     orbit_pivot_.reset();
 }
 
+void CameraController::copy_pivot_from(const CameraController& src) noexcept {
+    if (src.orbit_pivot_.has_value()) {
+        orbit_pivot_ = *src.orbit_pivot_;
+    } else {
+        orbit_pivot_.reset();
+    }
+}
+
 std::optional<Vec3> CameraController::orbit_pivot() const noexcept {
     return orbit_pivot_;
 }
@@ -91,8 +99,12 @@ void CameraController::set_focus_anim_duration(float seconds) noexcept {
     focus_anim_duration_s_ = std::max(0.0f, seconds);
 }
 
-void CameraController::reset_view(Camera& camera) const noexcept {
+void CameraController::reset_view(Camera& camera) noexcept {
     if (has_bounds_) {
+        // Drop any prior explicit pivot so the reset camera rotates around
+        // its new target (= bounds centre) rather than a stale focus point.
+        orbit_pivot_.reset();
+
         // Give the camera a canonical viewing direction before fit_bounds,
         // which now preserves whatever direction it finds.
         const Vec3 center{
@@ -188,12 +200,14 @@ bool CameraController::update(
     const float viewport_height =
         static_cast<float>(input.viewport_height);
 
-    // --- Rotation: incremental rigid orbit around a stable scene pivot ---
-    // Pan moves position + target for composition, but must not move the
-    // object's rotation centre. When scene bounds are known, rotate both
-    // position and target by the same rigid transform around bounds centre.
-    // This keeps the panned object at the same screen location while it
-    // rotates. Without bounds, camera.target() remains the fallback pivot.
+    // --- Rotation: incremental rigid orbit around the orbit pivot ---
+    // The pivot is either an explicit focus point (set via focus_on /
+    // set_orbit_pivot) or, by default, the camera's current target. Pan
+    // moves position, target, AND any explicit pivot by the same world
+    // delta, so the rotation geometry (pos - pivot, target - pivot) is
+    // preserved across pans — i.e., pan is translation-invariant.
+    // The bounds centre is NOT used here; it is reserved for fit_bounds
+    // and reset_view, which is the only time we want to recentre.
 
     bool rotated_this_frame = false;
 
@@ -212,15 +226,11 @@ bool CameraController::update(
         if (config_.invert_rotate_x) angle_h = -angle_h;
         if (config_.invert_rotate_y) angle_v = -angle_v;
 
-        const Vec3 pivot = orbit_pivot_.has_value()
-            ? *orbit_pivot_
-            : has_bounds_
-                ? Vec3{
-                      0.5f * (bounds_.min.x + bounds_.max.x),
-                      0.5f * (bounds_.min.y + bounds_.max.y),
-                      0.5f * (bounds_.min.z + bounds_.max.z)
-                  }
-                : camera.target();
+        // New policy: explicit pivot wins, otherwise pivot = camera target.
+        // bounds centre is reserved for fit_bounds / reset_view only — using
+        // it here would make rotation pivot around the original scene
+        // centre even after a pan, breaking translation invariance.
+        const Vec3 pivot = orbit_pivot_.value_or(camera.target());
 
         Vec3 position_offset = sub(camera.position(), pivot);
         Vec3 target_offset = sub(camera.target(), pivot);
@@ -328,7 +338,7 @@ void CameraController::pan_view(
     float delta_x,
     float delta_y,
     float viewport_height
-) const noexcept {
+) noexcept {
     if (viewport_height <= 0.0f) {
         return;
     }
@@ -387,6 +397,15 @@ void CameraController::pan_view(
         add(camera.target(), move),
         camera.up()
     );
+
+    // Translation invariance: when the user pans, pos and target move
+    // together by `move`. An explicit orbit pivot must follow the same
+    // translation so the rotation geometry (pos - pivot, target - pivot)
+    // is preserved. Without this, panning to a new location would cause
+    // subsequent rotation to pivot around the old focus point.
+    if (orbit_pivot_.has_value()) {
+        orbit_pivot_ = add(*orbit_pivot_, move);
+    }
 }
 
 void CameraController::zoom_view(
@@ -397,7 +416,7 @@ void CameraController::zoom_view(
     float viewport_width,
     float viewport_height,
     bool mouse_position_valid
-) const noexcept {
+) noexcept {
     /*
      * Orthographic zoom: scale the visible world height.
      * Uniform, no distance/FOV floor, no singularity — can zoom to
@@ -465,6 +484,11 @@ void CameraController::zoom_view(
             add(camera.target(), move),
             camera.up()
         );
+        // Keep an explicit pivot in lockstep with the uniform translation
+        // applied to pos and target above. (Same invariant as pan.)
+        if (orbit_pivot_.has_value()) {
+            orbit_pivot_ = add(*orbit_pivot_, move);
+        }
     }
 }
 

@@ -37,7 +37,7 @@ void CameraHub::set_group(int viewport_index, int group_id) noexcept
     if (e) e->group_id = group_id;
 }
 
-void CameraHub::propagate(int viewport_index)
+void CameraHub::propagate(int viewport_index, PivotMirror mirror_pivot)
 {
     const auto* src = find(viewport_index);
     if (!src || src->group_id == kIndependent) return;
@@ -45,11 +45,14 @@ void CameraHub::propagate(int viewport_index)
     for (auto& e : entries_) {
         if (e.viewport_index != viewport_index && e.group_id == group) {
             copy_view(*src->camera, *e.camera);
+            if (mirror_pivot) {
+                mirror_pivot(viewport_index, e.viewport_index);
+            }
         }
     }
 }
 
-void CameraHub::propagate_all()
+void CameraHub::propagate_all(PivotMirror mirror_pivot)
 {
     // Collect distinct non-independent group IDs.
     std::vector<int> groups;
@@ -70,6 +73,9 @@ void CameraHub::propagate_all()
         for (auto& e : entries_) {
             if (e.group_id == g && e.viewport_index != leader->viewport_index) {
                 copy_view(*leader->camera, *e.camera);
+                if (mirror_pivot) {
+                    mirror_pivot(leader->viewport_index, e.viewport_index);
+                }
             }
         }
     }

@@ -380,6 +380,9 @@ void ViewerPickSystem::consume_ready_frame(
 
         camera.controllers[static_cast<std::size_t>(
             result.request.viewport_index
+        )].clear_orbit_pivot();
+        camera.controllers[static_cast<std::size_t>(
+            result.request.viewport_index
         )].animate_to(
             box_camera,
             desired_target,

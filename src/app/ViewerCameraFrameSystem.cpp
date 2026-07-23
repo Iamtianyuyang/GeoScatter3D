@@ -57,7 +57,13 @@ ViewerCameraFrameResult ViewerCameraFrameSystem::update(
         if (camera_update.camera_changed) {
             result.camera_changed = true;
             result.streaming_viewport_index = frame.index;
-            context.camera_hub.propagate(frame.index);
+            context.camera_hub.propagate(
+                frame.index,
+                [&](int src, int dst) {
+                    context.viewport_cameras.controller(dst)
+                        .copy_pivot_from(
+                            context.viewport_cameras.controller(src));
+                });
         }
     }
 
@@ -67,7 +73,13 @@ ViewerCameraFrameResult ViewerCameraFrameSystem::update(
         );
         camera.orbit(0.01f, 0.0f);
         camera.zoom(0.999f);
-        context.camera_hub.propagate(result.streaming_viewport_index);
+        context.camera_hub.propagate(
+            result.streaming_viewport_index,
+            [&](int src, int dst) {
+                context.viewport_cameras.controller(dst)
+                    .copy_pivot_from(
+                        context.viewport_cameras.controller(src));
+            });
         result.interacting = true;
         result.camera_changed = true;
     }
