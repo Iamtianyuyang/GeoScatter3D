@@ -50,6 +50,23 @@ void compute_gizmo_axes(
         gs3d::camera::MouseRay::to_screen(target, viewport, camera);
     if (!center) return;
 
+    // 「target→相机」单位向量：轴与它的点积即为朝向观察者的分量，
+    // 供 gizmo 做前后排序/背面变暗（dx/dy 在轴指向相机时会退化，
+    // 无法承载这一信息）。
+    const auto position = camera.position();
+    gs3d::camera::Vec3 to_eye{
+        position.x - target.x,
+        position.y - target.y,
+        position.z - target.z
+    };
+    const float to_eye_len = std::sqrt(
+        to_eye.x * to_eye.x + to_eye.y * to_eye.y + to_eye.z * to_eye.z);
+    if (to_eye_len > 1.0e-6f) {
+        to_eye.x /= to_eye_len;
+        to_eye.y /= to_eye_len;
+        to_eye.z /= to_eye_len;
+    }
+
     gs3d::app::RenderViewState::GizmoAxisEnd ends[3];
 
     for (int i = 0; i < 3; ++i) {
@@ -62,6 +79,10 @@ void compute_gizmo_axes(
 
         ends[i].dx = tip->x - center->x;
         ends[i].dy = tip->y - center->y;
+        ends[i].depth =
+            (axes[i].x * to_eye.x +
+             axes[i].y * to_eye.y +
+             axes[i].z * to_eye.z) / step;
     }
 
     view.gizmo_x_axis   = ends[0];

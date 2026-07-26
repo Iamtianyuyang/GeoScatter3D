@@ -382,6 +382,10 @@ struct RenderViewState {
     struct GizmoAxisEnd {
         float dx = 0.0f;  // 屏幕空间 X 偏移（右正）
         float dy = 0.0f;  // 屏幕空间 Y 偏移（下正）
+        // 世界轴与「target→相机」方向的点积，[-1, 1]：
+        // 正值 = 轴正端朝向观察者。UiRoot 用它做前后排序和背面变暗，
+        // 并在轴几乎指向相机（dx/dy 退化为零）时仍能画出轴端圆球。
+        float depth = 0.0f;
     };
     GizmoAxisEnd gizmo_x_axis{};
     GizmoAxisEnd gizmo_y_axis{};

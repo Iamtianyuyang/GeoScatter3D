@@ -36,7 +36,7 @@ ui_scale_multiplier = 1.15
 theme = "carbon-blue"
 # 顶层布局：workbench（方案 A）| floating-dock（方案 B）|
 # analysis-rail（方案 C：暗色分析舱）。运行期可在界面里切换。
-layout = "floating-dock"
+layout = "workbench"
 # Enable Dear ImGui Multi-Viewports: docked panels can be dragged into native
 # OS windows. On unsupported platforms, such as Wayland, ImGui may disable it.
 multi_viewports = true

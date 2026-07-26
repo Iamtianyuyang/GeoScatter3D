@@ -12,6 +12,7 @@
 #include "render/AxisGrid.hpp"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -31,8 +32,8 @@ namespace LayoutMetrics {
     constexpr float kBadgePadX   = 8.0f;
     constexpr float kBadgePadY   = 6.0f;
     constexpr float kBadgeRound  = 4.0f;
-    // 方向指示器 — 右下角，缩小并向内移
-    constexpr float kGizmoRadius      = 24.0f;
+    // 方向指示器 — 右下角，导航球风格（正端字母球需要更大半径）
+    constexpr float kGizmoRadius      = 30.0f;
     constexpr float kGizmoInsetRight  = 26.0f;
     constexpr float kGizmoInsetBottom = 26.0f;
     // 比例尺 — 左下角，放在 plot 内部
@@ -72,8 +73,14 @@ namespace AxisStyle {
     // 两级刻度
     constexpr float kMajorTickLen   = 8.0f;
     constexpr float kMinorTickLen   = 4.0f;
-    constexpr int   kMajorCountMin  = 4;
-    constexpr int   kMajorCountMax  = 6;
+    // Major 刻度密度随视口像素尺寸自适应：横轴标签是水平数字，
+    // 需要更宽的间隔；纵轴标签逐行排布，间隔可以更紧。
+    constexpr float kMajorPxPerTickX = 96.0f;
+    constexpr float kMajorPxPerTickY = 64.0f;
+    constexpr int   kMajorCountMin  = 3;
+    constexpr int   kMajorCountMax  = 10;
+    // 相邻 X 标签之间的最小空隙；不足则略过标签（刻度线保留）。
+    constexpr float kXLabelMinGap   = 12.0f;
 
     // 标签与刻度线的间距
     constexpr float kXTickToLabel = 4.0f;
@@ -444,14 +451,23 @@ void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
 }
 
 /*
- * 右下角方向指示器：缩小并内缩到 plot_rect 右下角内部，方向仍由
- * ViewerApp 每帧基于相机 view matrix 计算，所以旋转主视图时 gizmo
- * 同步旋转。
+ * 右下角方向指示器 — 导航球风格（Blender/three.js 惯例）：
+ *   · 半透明圆形底盘，轴端画在球面投影位置上；
+ *   · 正方向 = 实心彩球 + 轴字母，负方向 = 小空心环，无字母；
+ *   · 六个轴端按深度排序绘制，朝向相机的画在最上层；
+ *   · 背向观察者的轴端整体变暗，形成前后层次；
+ *   · 轴几乎指向相机时 dx/dy 退化为零，轴端球自然落在中心，
+ *     不再像旧箭头那样直接消失。
+ * 方向仍由 ViewerApp 每帧基于相机计算，旋转主视图时同步旋转。
  */
 void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
                             const ImVec2& plot_max,
                             float ui_scale)
 {
+    if (!view.gizmo_axes_valid) {
+        return;
+    }
+
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     const float r = LayoutMetrics::kGizmoRadius * ui_scale;
@@ -460,46 +476,116 @@ void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
         plot_max.y - r - LayoutMetrics::kGizmoInsetBottom * ui_scale
     };
 
-    if (view.gizmo_axes_valid) {
-        const float len = r - 1.0f * ui_scale;
-        const auto draw_axis = [&](const gs3d::app::RenderViewState::GizmoAxisEnd& end,
-                                   ImU32 color) {
-            const float mag = std::sqrt(end.dx * end.dx + end.dy * end.dy);
-            if (mag < 1.0e-6f) return;
-            const ImVec2 direction(end.dx / mag, end.dy / mag);
-            const ImVec2 normal(-direction.y, direction.x);
-            const ImVec2 tip(
-                origin.x + direction.x * len,
-                origin.y + direction.y * len
-            );
-            const float arrow_len = 6.0f * ui_scale;
-            const float arrow_half_w = 3.25f * ui_scale;
-            const ImVec2 arrow_base(
-                tip.x - direction.x * arrow_len,
-                tip.y - direction.y * arrow_len
-            );
-            const ImVec2 arrow_left(
-                arrow_base.x + normal.x * arrow_half_w,
-                arrow_base.y + normal.y * arrow_half_w
-            );
-            const ImVec2 arrow_right(
-                arrow_base.x - normal.x * arrow_half_w,
-                arrow_base.y - normal.y * arrow_half_w
-            );
-            const ImU32 outline = IM_COL32(10, 14, 20, 150);
-            dl->AddLine(origin, tip, outline, 4.0f * ui_scale);
-            dl->AddTriangleFilled(tip, arrow_left, arrow_right, outline);
-            dl->AddLine(origin, tip, color, 1.8f * ui_scale);
-            dl->AddTriangleFilled(tip, arrow_left, arrow_right, color);
+    const float ball_r  = 6.5f * ui_scale;  // 正端字母球半径
+    const float minor_r = 3.5f * ui_scale;  // 负端小环半径
+    const float len = r - ball_r - 1.0f * ui_scale;
+
+    // 底盘：让 gizmo 在任何画面内容上都有稳定的衬底。
+    dl->AddCircleFilled(origin, r + 4.0f * ui_scale,
+                        IM_COL32(12, 17, 25, 80));
+
+    struct GizmoEnd {
+        ImVec2 pos;        // 轴端圆心
+        float depth;       // 朝向观察者为正
+        ImU32 color;
+        const char* label; // 正端字母；负端为 nullptr
+    };
+
+    const gs3d::app::RenderViewState::GizmoAxisEnd* axes[3] = {
+        &view.gizmo_x_axis, &view.gizmo_y_axis, &view.gizmo_z_axis
+    };
+    const ImU32 colors[3] = {
+        to_u32(palette::kRed, 255),
+        to_u32(palette::kGreen, 255),
+        to_u32(palette::kBlue, 255),
+    };
+    const char* labels[3] = {"X", "Y", "Z"};
+
+    GizmoEnd ends[6];
+    int end_count = 0;
+    for (int i = 0; i < 3; ++i) {
+        const float dx = axes[i]->dx;
+        const float dy = axes[i]->dy;
+        const float depth = std::clamp(axes[i]->depth, -1.0f, 1.0f);
+        const float mag = std::sqrt(dx * dx + dy * dy);
+
+        // 球面投影：屏幕内位移按 sin(轴与视线夹角) 缩放，深度接近
+        // ±1（轴指向/背向相机）时轴端自然收拢到中心。
+        const float planar =
+            std::sqrt(std::max(0.0f, 1.0f - depth * depth));
+        ImVec2 direction{0.0f, 0.0f};
+        if (mag > 1.0e-6f) {
+            direction = ImVec2(dx / mag, dy / mag);
+        }
+        const ImVec2 offset{
+            direction.x * planar * len,
+            direction.y * planar * len
         };
-        draw_axis(view.gizmo_x_axis, to_u32(palette::kRed, 220));
-        draw_axis(view.gizmo_y_axis, to_u32(palette::kGreen, 220));
-        draw_axis(view.gizmo_z_axis, to_u32(palette::kBlue, 220));
-        dl->AddCircleFilled(
-            origin,
-            2.5f * ui_scale,
-            IM_COL32(232, 238, 246, 235)
-        );
+
+        ends[end_count++] = GizmoEnd{
+            ImVec2(origin.x + offset.x, origin.y + offset.y),
+            depth, colors[i], labels[i]
+        };
+        ends[end_count++] = GizmoEnd{
+            ImVec2(origin.x - offset.x, origin.y - offset.y),
+            -depth, colors[i], nullptr
+        };
+    }
+
+    // 远端先画、近端后画，重叠时朝向观察者的轴端在最上层。
+    std::sort(ends, ends + end_count,
+              [](const GizmoEnd& a, const GizmoEnd& b) {
+                  return a.depth < b.depth;
+              });
+
+    const auto with_alpha = [](ImU32 color, float alpha_mul) {
+        const ImU32 a = (color >> IM_COL32_A_SHIFT) & 0xFF;
+        const ImU32 scaled =
+            static_cast<ImU32>(static_cast<float>(a) * alpha_mul);
+        return (color & ~IM_COL32_A_MASK) |
+               (std::min<ImU32>(scaled, 255u) << IM_COL32_A_SHIFT);
+    };
+
+    for (int i = 0; i < end_count; ++i) {
+        const GizmoEnd& end = ends[i];
+        // 背面轴端变暗：深度 [-1,1] → 透明度 [0.38, 1.0]。
+        const float alpha_mul =
+            0.38f + 0.62f * (end.depth * 0.5f + 0.5f);
+        const ImU32 color = with_alpha(end.color, alpha_mul);
+
+        if (end.label != nullptr) {
+            // 正端：中心到球缘的引导线 + 实心球 + 字母。
+            const float ox = end.pos.x - origin.x;
+            const float oy = end.pos.y - origin.y;
+            const float dist = std::sqrt(ox * ox + oy * oy);
+            if (dist > ball_r) {
+                const float t = (dist - ball_r) / dist;
+                dl->AddLine(
+                    origin,
+                    ImVec2(origin.x + ox * t, origin.y + oy * t),
+                    color, 1.8f * ui_scale);
+            }
+            dl->AddCircleFilled(end.pos, ball_r, color);
+            if (axis_font() != nullptr) {
+                ImGui::PushFont(axis_font());
+            }
+            const ImVec2 ts = ImGui::CalcTextSize(end.label);
+            dl->AddText(
+                ImVec2(end.pos.x - ts.x * 0.5f,
+                       end.pos.y - ts.y * 0.5f),
+                with_alpha(IM_COL32(14, 18, 26, 255), alpha_mul),
+                end.label);
+            if (axis_font() != nullptr) {
+                ImGui::PopFont();
+            }
+        } else {
+            // 负端：暗色填充 + 彩色描边的小环。
+            dl->AddCircleFilled(end.pos, minor_r,
+                                with_alpha(IM_COL32(16, 22, 30, 235),
+                                           alpha_mul));
+            dl->AddCircle(end.pos, minor_r, color, 0,
+                          1.4f * ui_scale);
+        }
     }
 }
 
@@ -745,15 +831,22 @@ void draw_viewport_canvas(
         // 两级刻度：major（长刻度+标签+网格），minor（短刻度，无标签无网格）。
         // 每个 major interval 细分为 kMinorPerMajor 个 minor step，
         // 保证坐标轴读数更细，而背景网格线仍稀疏。
-        const int major_cnt = std::clamp(
-            static_cast<int>(std::ceil(
-                std::max(x_range, y_range) > 0.0f ? 5.0f : 4.0f)),
+        //
+        // 目标刻度数按各自轴向的像素长度自适应：宽视口给更多刻度，
+        // 窄视口自动减少，避免标签互相拥挤。
+        const int x_major_cnt = std::clamp(
+            static_cast<int>((plot_max.x - plot_min.x) /
+                (AxisStyle::kMajorPxPerTickX * ui_scale)),
+            AxisStyle::kMajorCountMin, AxisStyle::kMajorCountMax);
+        const int y_major_cnt = std::clamp(
+            static_cast<int>((plot_max.y - plot_min.y) /
+                (AxisStyle::kMajorPxPerTickY * ui_scale)),
             AxisStyle::kMajorCountMin, AxisStyle::kMajorCountMax);
 
         std::vector<float> x_major;
         if (x_range > 0.0f) {
             x_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_x_min, view.map_axis_x_max, major_cnt);
+                view.map_axis_x_min, view.map_axis_x_max, x_major_cnt);
         }
         const float x_major_step = (x_major.size() >= 2)
             ? (x_major[1] - x_major[0]) : 1.0f;
@@ -761,7 +854,7 @@ void draw_viewport_canvas(
         std::vector<float> y_major;
         if (y_range > 0.0f) {
             y_major = gs3d::render::compute_axis_ticks(
-                view.map_axis_y_min, view.map_axis_y_max, major_cnt);
+                view.map_axis_y_min, view.map_axis_y_max, y_major_cnt);
         }
         const float y_major_step = (y_major.size() >= 2)
             ? (y_major[1] - y_major[0]) : 1.0f;
@@ -780,7 +873,11 @@ void draw_viewport_canvas(
             const float tick_len_minor = AxisStyle::kMinorTickLen * ui_scale;
             const float label_gap = AxisStyle::kXTickToLabel * ui_scale;
 
-            // Major ticks 向上 + 标签在顶部外侧
+            // Major ticks 向上 + 标签在顶部外侧。
+            // x_major 升序，从左到右跟踪上一个已绘制标签的右缘；
+            // 空隙不足时略过标签本身（刻度线保留），保证任何视口
+            // 宽度下相邻标签都不会互相叠压。
+            float last_label_right = -FLT_MAX;
             for (const float tick : x_major) {
                 const float t = (tick - view.map_axis_x_min) / x_range;
                 const float px = plot_min.x + t * (plot_max.x - plot_min.x);
@@ -806,9 +903,13 @@ void draw_viewport_canvas(
                     label_min.x + ts.x,
                     label_min.y + ts.y
                 };
-                if (!rects_overlap(label_min, label_max,
+                const float label_min_gap =
+                    AxisStyle::kXLabelMinGap * ui_scale;
+                if (label_min.x >= last_label_right + label_min_gap &&
+                    !rects_overlap(label_min, label_max,
                                    badge.box_min, badge.box_max)) {
                     dl->AddText(label_min, AxisStyle::kLabel(), label);
+                    last_label_right = label_max.x;
                 }
                 if (axis_font() != nullptr) {
                     ImGui::PopFont();
