@@ -1,5 +1,6 @@
 #include "ui/ViewportCanvas.hpp"
 
+#include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 #include "ui/ViewportAxisTicks.hpp"
@@ -125,6 +126,286 @@ ImFont* small_font()
 ImFont* axis_font()
 {
     return gs3d::gui::ui_fonts().axis;
+}
+
+ImFont* medium_font()
+{
+    return gs3d::gui::ui_fonts().medium;
+}
+
+ImFont* status_font()
+{
+    return gs3d::gui::ui_fonts().status;
+}
+
+void draw_hover_property_row(
+    const char* label,
+    const char* value,
+    const float ui_scale,
+    const bool highlighted = false
+) {
+    ImGui::TableNextRow(0, 25.0f * ui_scale);
+    if (highlighted) {
+        ImGui::TableSetBgColor(
+            ImGuiTableBgTarget_RowBg0,
+            to_u32(palette::kAccent, 14)
+        );
+    }
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    if (small_font() != nullptr) {
+        ImGui::PushFont(small_font());
+    }
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        highlighted ? palette::kAccent : palette::kTextDim
+    );
+    ImGui::TextUnformatted(label);
+    ImGui::PopStyleColor();
+    if (small_font() != nullptr) {
+        ImGui::PopFont();
+    }
+
+    ImGui::TableSetColumnIndex(1);
+    ImGui::AlignTextToFramePadding();
+    if (status_font() != nullptr) {
+        ImGui::PushFont(status_font());
+    }
+    ImGui::PushStyleColor(
+        ImGuiCol_Text,
+        palette::kText
+    );
+    const float value_width = ImGui::CalcTextSize(value).x;
+    ImGui::SetCursorPosX(std::max(
+        ImGui::GetCursorPosX(),
+        ImGui::GetWindowContentRegionMax().x -
+            value_width -
+            4.0f * ui_scale
+    ));
+    ImGui::TextUnformatted(value);
+    ImGui::PopStyleColor();
+    if (status_font() != nullptr) {
+        ImGui::PopFont();
+    }
+}
+
+void draw_hover_property_tooltip(
+    const gs3d::app::RenderViewState& view,
+    const float ui_scale
+) {
+    char x_value[48];
+    char y_value[48];
+    char primary_value[48];
+    char z_value[48];
+    std::snprintf(
+        x_value,
+        sizeof(x_value),
+        "%.6f",
+        static_cast<double>(view.hover_x)
+    );
+    std::snprintf(
+        y_value,
+        sizeof(y_value),
+        "%.6f",
+        static_cast<double>(view.hover_y)
+    );
+    std::snprintf(
+        primary_value,
+        sizeof(primary_value),
+        "%.6f",
+        static_cast<double>(view.hover_fold)
+    );
+    std::snprintf(
+        z_value,
+        sizeof(z_value),
+        "%.6f",
+        static_cast<double>(view.hover_elevation)
+    );
+
+    const bool dark = theme_tokens(active_theme()).dark;
+    ImVec4 glass_bg = palette::kSurface;
+    glass_bg.w = dark ? 0.96f : 0.95f;
+    const ImVec4 glass_border = dark
+        ? ImVec4(1.0f, 1.0f, 1.0f, 0.13f)
+        : ImVec4(1.0f, 1.0f, 1.0f, 0.65f);
+    ImVec4 separator = palette::kBorder;
+    separator.w = dark ? 0.42f : 0.58f;
+
+    const float card_width = 268.0f * ui_scale;
+    const float card_height_estimate = 190.0f * ui_scale;
+    const float cursor_gap = 14.0f * ui_scale;
+    const ImGuiViewport* viewport = ImGui::GetWindowViewport();
+    const ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+    const ImVec2 work_min = viewport->WorkPos;
+    const ImVec2 work_max(
+        viewport->WorkPos.x + viewport->WorkSize.x,
+        viewport->WorkPos.y + viewport->WorkSize.y
+    );
+    ImVec2 tooltip_pos(
+        mouse_pos.x + cursor_gap,
+        mouse_pos.y + cursor_gap
+    );
+    if (tooltip_pos.x + card_width > work_max.x - cursor_gap) {
+        tooltip_pos.x = mouse_pos.x - card_width - cursor_gap;
+    }
+    if (tooltip_pos.y + card_height_estimate > work_max.y - cursor_gap) {
+        tooltip_pos.y =
+            mouse_pos.y - card_height_estimate - cursor_gap;
+    }
+    tooltip_pos.x = std::max(work_min.x + cursor_gap, tooltip_pos.x);
+    tooltip_pos.y = std::max(work_min.y + cursor_gap, tooltip_pos.y);
+    ImGui::SetNextWindowPos(tooltip_pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(card_width, 0.0f),
+        ImVec2(card_width, 300.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(12.0f * ui_scale, 10.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowRounding,
+        12.0f * ui_scale
+    );
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(7.0f * ui_scale, 5.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, glass_bg);
+    ImGui::PushStyleColor(ImGuiCol_Border, glass_border);
+    ImGui::PushStyleColor(ImGuiCol_Separator, separator);
+
+    if (ImGui::BeginTooltip()) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        const float icon_size = 22.0f * ui_scale;
+        const ImVec2 icon_max(
+            cursor.x + icon_size,
+            cursor.y + icon_size
+        );
+        dl->AddRectFilled(
+            cursor,
+            icon_max,
+            to_u32(palette::kAccent, dark ? 42 : 28),
+            6.0f * ui_scale
+        );
+        const ImVec2 icon_center(
+            cursor.x + icon_size * 0.5f,
+            cursor.y + icon_size * 0.5f
+        );
+        const float reticle_r = 4.2f * ui_scale;
+        dl->AddCircle(
+            icon_center,
+            reticle_r,
+            to_u32(palette::kAccent, 235),
+            0,
+            1.2f * ui_scale
+        );
+        dl->AddLine(
+            ImVec2(icon_center.x - 7.0f * ui_scale, icon_center.y),
+            ImVec2(icon_center.x - 2.5f * ui_scale, icon_center.y),
+            to_u32(palette::kAccent, 235),
+            1.2f * ui_scale
+        );
+        dl->AddLine(
+            ImVec2(icon_center.x + 2.5f * ui_scale, icon_center.y),
+            ImVec2(icon_center.x + 7.0f * ui_scale, icon_center.y),
+            to_u32(palette::kAccent, 235),
+            1.2f * ui_scale
+        );
+        dl->AddLine(
+            ImVec2(icon_center.x, icon_center.y - 7.0f * ui_scale),
+            ImVec2(icon_center.x, icon_center.y - 2.5f * ui_scale),
+            to_u32(palette::kAccent, 235),
+            1.2f * ui_scale
+        );
+        dl->AddLine(
+            ImVec2(icon_center.x, icon_center.y + 2.5f * ui_scale),
+            ImVec2(icon_center.x, icon_center.y + 7.0f * ui_scale),
+            to_u32(palette::kAccent, 235),
+            1.2f * ui_scale
+        );
+        ImGui::Dummy(ImVec2(icon_size + 1.0f * ui_scale, icon_size));
+        ImGui::SameLine();
+        if (medium_font() != nullptr) {
+            ImGui::PushFont(medium_font());
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, palette::kText);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("点属性");
+        ImGui::PopStyleColor();
+        if (medium_font() != nullptr) {
+            ImGui::PopFont();
+        }
+
+        const char* action_hint =
+            view.copy_feedback_frames > 0 ? "已复制" : "C 复制";
+        if (small_font() != nullptr) {
+            ImGui::PushFont(small_font());
+        }
+        const float hint_width = ImGui::CalcTextSize(action_hint).x;
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(
+            std::max(
+                ImGui::GetCursorPosX() + 10.0f * ui_scale,
+                ImGui::GetWindowContentRegionMax().x - hint_width
+            )
+        );
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            view.copy_feedback_frames > 0
+                ? palette::kGreen
+                : palette::kTextFaint
+        );
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(action_hint);
+        ImGui::PopStyleColor();
+        if (small_font() != nullptr) {
+            ImGui::PopFont();
+        }
+
+        ImGui::Separator();
+        ImGui::Spacing();
+        if (ImGui::BeginTable(
+                "##HoverPropertyValues",
+                2,
+                ImGuiTableFlags_SizingFixedFit |
+                ImGuiTableFlags_NoSavedSettings
+            )) {
+            ImGui::TableSetupColumn(
+                "##HoverPropertyLabel",
+                ImGuiTableColumnFlags_WidthFixed,
+                78.0f * ui_scale
+            );
+            ImGui::TableSetupColumn(
+                "##HoverPropertyValue",
+                ImGuiTableColumnFlags_WidthStretch
+            );
+            draw_hover_property_row("X 坐标", x_value, ui_scale);
+            draw_hover_property_row("Y 坐标", y_value, ui_scale);
+            draw_hover_property_row(
+                view.hover_primary_value_label.empty()
+                    ? "主属性"
+                    : view.hover_primary_value_label.c_str(),
+                primary_value,
+                ui_scale,
+                true
+            );
+            draw_hover_property_row(
+                view.hover_z_label.empty()
+                    ? "高程"
+                    : view.hover_z_label.c_str(),
+                z_value,
+                ui_scale
+            );
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndTooltip();
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(5);
 }
 
 void draw_mock_viewport(const ImVec2& min, const ImVec2& max)
@@ -339,6 +620,7 @@ void draw_viewport_canvas(
 {
     const int workspace_id = options.workspace_id;
     const bool show_info_badge = options.show_info_badge;
+    const bool interaction_enabled = options.interaction_enabled;
 
     ImVec2 available = ImGui::GetContentRegionAvail();
     available.x = std::max(1.0f, available.x);
@@ -364,10 +646,17 @@ void draw_viewport_canvas(
     const auto input_routing = resolve_viewport_input_routing(
         ImGui::IsItemHovered(),
         ImGui::IsItemActive(),
-        platform_window_focused
+        platform_window_focused,
+        interaction_enabled
     );
     const bool hovered = input_routing.hovered;
     const bool active = input_routing.active;
+    const bool show_hover_details =
+        interaction_enabled && view.hover_tooltip_visible;
+    if (!interaction_enabled) {
+        view.box_select_dragging = false;
+        view.stats_select_dragging = false;
+    }
 
     // UI scale for high-DPI: use font size relative to default 13 px.
     const float ui_scale = ImGui::GetFontSize() / 13.0f;
@@ -605,7 +894,7 @@ void draw_viewport_canvas(
         // readout at the axis intersection points.
         // Only active when both show_crosshair and show_map_axis are on.
         if (view.show_crosshair &&
-            view.hover_tooltip_visible &&
+            show_hover_details &&
             view.hover_screen_x >= 0.0f &&
             view.hover_screen_y >= 0.0f &&
             view.image_width > 0 && view.image_height > 0) {
@@ -726,7 +1015,7 @@ void draw_viewport_canvas(
     // Draws a crosshair+ring at the pick hit-point.  No cursor-movement
     // freshness gate — the pick result's has_hit is the single source of
     // truth.  The marker naturally clears when the next pick has no hit.
-    if (view.hover_tooltip_visible &&
+    if (show_hover_details &&
         view.hover_screen_x >= 0.0f &&
         view.hover_screen_y >= 0.0f &&
         view.image_width > 0 && view.image_height > 0) {
@@ -864,7 +1153,8 @@ void draw_viewport_canvas(
         const ImGuiIO& io = ImGui::GetIO();
         const float mx = io.MousePos.x;
         const float my = io.MousePos.y;
-        if (mx >= plot_min.x && mx < plot_max.x &&
+        if (interaction_enabled &&
+            mx >= plot_min.x && mx < plot_max.x &&
             my >= plot_min.y && my < plot_max.y) {
             const ImU32 kPreviewLine = to_u32(palette::kYellow, 100);
             dl->AddLine({px, py}, {mx, my}, kPreviewLine, 1.5f * ui_scale);
@@ -896,30 +1186,23 @@ void draw_viewport_canvas(
     frame.mouse_wheel = frame.hovered ? io.MouseWheel : 0.0f;
     frame.mouse_local_x = mouse_mapping.framebuffer_x;
     frame.mouse_local_y = mouse_mapping.framebuffer_y;
-    frame.mouse_on_image = mouse_mapping.mouse_on_image;
+    frame.mouse_on_image =
+        interaction_enabled && mouse_mapping.mouse_on_image;
 
     if (frame.hovered || frame.active) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
 
     // Tooltip: shown whenever we have valid hover data and the cursor is on the image.
-    if (frame.mouse_on_image && view.hover_tooltip_visible) {
-        ImGui::SetTooltip(
-            "x: %.6f\ny: %.6f\n%s: %.6f\n%s: %.6f",
-            static_cast<double>(view.hover_x),
-            static_cast<double>(view.hover_y),
-            view.hover_primary_value_label.c_str(),
-            static_cast<double>(view.hover_fold),
-            view.hover_z_label.c_str(),
-            static_cast<double>(view.hover_elevation)
-        );
+    if (frame.mouse_on_image && show_hover_details) {
+        draw_hover_property_tooltip(view, ui_scale);
     }
 
     // ── C key: copy hovered point values to clipboard ──
     if (view.copy_feedback_frames > 0) {
         --view.copy_feedback_frames;
     }
-    if (frame.mouse_on_image && view.hover_tooltip_visible &&
+    if (frame.mouse_on_image && show_hover_details &&
         !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
         char clip_buf[256];
         std::snprintf(clip_buf, sizeof(clip_buf),

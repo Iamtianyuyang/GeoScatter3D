@@ -11,11 +11,13 @@
 
 #include "gui/UiFonts.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -118,6 +120,29 @@ struct FrameCtx {
     float dock_top = 0.0f;              // Dock 胶囊顶边（屏幕坐标）
     float dock_height = 0.0f;
 };
+
+bool is_floating_dock_overlay_window(const ImGuiWindow* window)
+{
+    if (window == nullptr || window->Name == nullptr) {
+        return false;
+    }
+    constexpr char kOverlayPrefix[] = "##FloatingDock";
+    return std::strncmp(
+        window->Name,
+        kOverlayPrefix,
+        sizeof(kOverlayPrefix) - 1
+    ) == 0;
+}
+
+bool pointer_over_floating_dock_overlay()
+{
+    const ImGuiContext* imgui = ImGui::GetCurrentContext();
+    if (imgui == nullptr) {
+        return false;
+    }
+    return is_floating_dock_overlay_window(imgui->HoveredWindow) ||
+           is_floating_dock_overlay_window(imgui->ActiveIdWindow);
+}
 
 void add_glass_shadow(
     const FrameCtx& ctx,
@@ -3152,6 +3177,13 @@ FloatingDockFrameResult draw_floating_dock_layout(
             ViewportCanvasOptions options;
             options.workspace_id = 0;
             options.show_info_badge = false;
+            options.interaction_enabled =
+                floating_dock_allows_viewport_input(
+                    dock.open_card != gs3d::app::DockCard::kNone,
+                    dock.anim_card != gs3d::app::DockCard::kNone ||
+                        dock.card_anim > 0.0f,
+                    pointer_over_floating_dock_overlay()
+                );
             draw_viewport_canvas(
                 state.render_views[static_cast<std::size_t>(active_index)],
                 actions,

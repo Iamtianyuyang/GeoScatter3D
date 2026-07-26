@@ -205,4 +205,14 @@ TEST_CASE(
     );
     CHECK_FALSE(background.hovered);
     CHECK_FALSE(background.active);
+
+    const auto blocked_by_overlay =
+        gs3d::ui::resolve_viewport_input_routing(
+            true,
+            true,
+            true,
+            false
+        );
+    CHECK_FALSE(blocked_by_overlay.hovered);
+    CHECK_FALSE(blocked_by_overlay.active);
 }

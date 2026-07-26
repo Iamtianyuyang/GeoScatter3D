@@ -28,6 +28,12 @@ compute_floating_dock_top_overlay_layout(
     bool show_map_axis
 ) noexcept;
 
+[[nodiscard]] bool floating_dock_allows_viewport_input(
+    bool card_open,
+    bool card_animating,
+    bool pointer_over_overlay
+) noexcept;
+
 [[nodiscard]] NavigationPreviewLayout compute_navigation_preview_layout(
     float x,
     float y,

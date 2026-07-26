@@ -14,11 +14,18 @@ struct ViewportInputRouting {
 inline ViewportInputRouting resolve_viewport_input_routing(
     const bool item_hovered,
     const bool item_active,
-    const bool platform_window_focused
+    const bool platform_window_focused,
+    const bool interaction_enabled = true
 ) noexcept {
     return {
-        .hovered = platform_window_focused && item_hovered,
-        .active = platform_window_focused && item_active,
+        .hovered =
+            interaction_enabled &&
+            platform_window_focused &&
+            item_hovered,
+        .active =
+            interaction_enabled &&
+            platform_window_focused &&
+            item_active,
     };
 }
 
@@ -27,6 +34,9 @@ struct ViewportCanvasOptions {
     // 左上角「N 点 | x ms」信息 badge。悬浮 Dock 布局用独立的性能
     // HUD chip 替代它，避免与文件状态 chip 重叠。
     bool show_info_badge = true;
+    // 浮动卡片、模态层等高优先级 UI 展开时关闭视口拾取和相机输入，
+    // 同时隐藏由鼠标位置驱动的准星与属性提示。
+    bool interaction_enabled = true;
 };
 
 /*

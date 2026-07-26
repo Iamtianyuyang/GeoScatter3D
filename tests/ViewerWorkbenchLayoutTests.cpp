@@ -79,6 +79,32 @@ TEST_CASE("Floating dock top overlays clear the map-axis band", "[floating_dock]
     CHECK(without_axis.secondary_y == 97.5f);
 }
 
+TEST_CASE(
+    "Floating dock overlays take priority over viewport input",
+    "[floating_dock]"
+) {
+    CHECK(gs3d::ui::floating_dock_allows_viewport_input(
+        false,
+        false,
+        false
+    ));
+    CHECK_FALSE(gs3d::ui::floating_dock_allows_viewport_input(
+        true,
+        false,
+        false
+    ));
+    CHECK_FALSE(gs3d::ui::floating_dock_allows_viewport_input(
+        false,
+        true,
+        false
+    ));
+    CHECK_FALSE(gs3d::ui::floating_dock_allows_viewport_input(
+        false,
+        false,
+        true
+    ));
+}
+
 TEST_CASE("Navigation preview is square and contains its texture", "[floating_dock]")
 {
     const auto layout = gs3d::ui::compute_navigation_preview_layout(

@@ -29,6 +29,14 @@ FloatingDockTopOverlayLayout compute_floating_dock_top_overlay_layout(
     };
 }
 
+bool floating_dock_allows_viewport_input(
+    const bool card_open,
+    const bool card_animating,
+    const bool pointer_over_overlay
+) noexcept {
+    return !card_open && !card_animating && !pointer_over_overlay;
+}
+
 NavigationPreviewLayout compute_navigation_preview_layout(
     const float x,
     const float y,
