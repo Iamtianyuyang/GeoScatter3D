@@ -12,9 +12,13 @@
 #include "ui/Theme.hpp"
 #include "util/Stopwatch.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -58,8 +62,39 @@ gs3d::app::PreprocessedBundlePaths resolve_bundle_paths(
     return paths;
 }
 
+void configure_new_project_input(
+    gs3d::app::AppConfig& app_config,
+    const std::filesystem::path& source_path,
+    const std::string& project_name,
+    std::uint32_t thread_count
+) {
+    std::string extension = source_path.extension().string();
+    std::transform(
+        extension.begin(),
+        extension.end(),
+        extension.begin(),
+        [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        }
+    );
+    app_config.input_mode =
+        extension == ".dat" ? "dat" : "csv";
+    app_config.csv_input_path = source_path;
+    app_config.bundle_dir =
+        source_path.parent_path() /
+        (project_name + ".gs3d.bundle");
+    const auto effective_threads =
+        std::max(1u, thread_count);
+    app_config.csv_convert.num_threads =
+        effective_threads;
+    app_config.tile_build.num_threads =
+        effective_threads;
+}
+
 void preprocess_csv_input(
-    gs3d::app::AppConfig& app_config
+    gs3d::app::AppConfig& app_config,
+    const gs3d::app::ProjectPreprocessProgressCallback&
+        report_progress = {}
 ) {
     if (app_config.input_mode != "csv" &&
         app_config.input_mode != "dat") {
@@ -72,6 +107,29 @@ void preprocess_csv_input(
         );
     }
 
+    const auto report = [&report_progress](
+        float fraction,
+        std::uint32_t stage_index,
+        std::string stage,
+        std::string detail
+    ) {
+        if (!report_progress) {
+            return;
+        }
+        report_progress({
+            .fraction = fraction,
+            .stage_index = stage_index,
+            .stage = std::move(stage),
+            .detail = std::move(detail)
+        });
+    };
+
+    report(
+        0.03f,
+        0,
+        "检查数据",
+        "正在确认源文件、项目目录与输出文件。"
+    );
     auto bundle_paths =
         resolve_bundle_paths(
             app_config,
@@ -79,6 +137,12 @@ void preprocess_csv_input(
         );
     std::filesystem::create_directories(bundle_paths.bundle_dir);
     gs3d::app::apply_bundle_paths(app_config.viewer, bundle_paths);
+    report(
+        0.08f,
+        0,
+        "准备项目",
+        "项目目录已就绪，正在分析数据字段。"
+    );
 
     gs3d::util::Stopwatch preprocess_timer;
 
@@ -114,6 +178,12 @@ void preprocess_csv_input(
         csv_read_config,
         csv_chunk_plan_config
     );
+    report(
+        0.14f,
+        1,
+        "转换点数据",
+        "正在并行读取源文件并转换为 GS3D 数据。"
+    );
     gs3d::util::Stopwatch convert_timer;
     auto [convert_result, dataset] =
         converter.convert(
@@ -127,8 +197,26 @@ void preprocess_csv_input(
     gs3d::util::log::info() << "[TIME] preprocess.csv_convert_seconds = "
               << convert_timer.elapsed_seconds()
               << '\n';
+    {
+        std::ostringstream detail;
+        detail << "已转换 "
+               << convert_result.written_points
+               << " 个点，正在构建显示层级与空间索引。";
+        report(
+            0.58f,
+            2,
+            "优化数据结构",
+            detail.str()
+        );
+    }
 
     if (app_config.viewer.lod.enabled) {
+        report(
+            0.62f,
+            2,
+            "构建层级细节",
+            "正在生成多级细节数据，加快大数据集浏览。"
+        );
         gs3d::util::Stopwatch lod_timer;
         const auto lod_dataset =
             gs3d::data::Gs3dLodDataset::build(
@@ -154,9 +242,21 @@ void preprocess_csv_input(
         gs3d::util::log::info() << "[TIME] preprocess.lod_write_seconds = "
                   << lod_timer.elapsed_seconds()
                   << '\n';
+        report(
+            0.74f,
+            2,
+            "层级细节完成",
+            "层级数据已生成，正在准备空间瓦片。"
+        );
     }
 
     if (app_config.viewer.tile.enabled) {
+        report(
+            0.78f,
+            2,
+            "构建空间索引",
+            "正在按空间位置划分瓦片并写入索引。"
+        );
         gs3d::preprocess::Gs3dTileWriteConfig tile_config;
         tile_config.num_threads = app_config.tile_build.num_threads;
         tile_config.verbose = app_config.viewer.tile.verbose;
@@ -176,12 +276,30 @@ void preprocess_csv_input(
         gs3d::util::log::info() << "[TIME] preprocess.tile_write_seconds = "
                   << tile_timer.elapsed_seconds()
                   << '\n';
+        report(
+            0.93f,
+            2,
+            "空间索引完成",
+            "空间瓦片已写入，正在保存项目配置。"
+        );
     }
 
+    report(
+        0.96f,
+        3,
+        "写入项目",
+        "正在生成项目清单并校验输出路径。"
+    );
     gs3d::app::write_bundle_manifest(
         bundle_paths,
         app_config,
         dataset
+    );
+    report(
+        1.0f,
+        3,
+        "预处理完成",
+        "数据与项目清单已全部写入。"
     );
 
     gs3d::util::log::info() << "[TIME] preprocess.total_seconds = "
@@ -363,7 +481,32 @@ int main(int argc, char** argv) {
                     .current_path = std::move(current_path),
                     .recent_projects = recent_projects,
                     .preferred_gpu =
-                        app_config.viewer.graphics.preferred_gpu
+                        app_config.viewer.graphics.preferred_gpu,
+                    .preprocess_new_project =
+                        [&app_config](
+                            const std::filesystem::path&
+                                source_path,
+                            const std::string& project_name,
+                            std::uint32_t thread_count,
+                            const gs3d::app::
+                                ProjectPreprocessProgressCallback&
+                                    report_progress
+                        ) {
+                            auto project_config = app_config;
+                            configure_new_project_input(
+                                project_config,
+                                source_path,
+                                project_name,
+                                thread_count
+                            );
+                            preprocess_csv_input(
+                                project_config,
+                                report_progress
+                            );
+                            project_config.input_mode = "bundle";
+                            app_config =
+                                std::move(project_config);
+                        }
                 });
                 const auto welcome_result = welcome.run();
                 if (welcome_result.kind ==
@@ -393,16 +536,14 @@ int main(int argc, char** argv) {
                     welcome_result.kind ==
                     gs3d::app::WelcomeWindowResultKind::NewProject
                 ) {
-                    const auto extension =
-                        welcome_result.path.extension().string();
-                    app_config.input_mode =
-                        extension == ".dat" || extension == ".DAT"
-                            ? "dat"
-                            : "csv";
-                    app_config.csv_input_path = welcome_result.path;
-                    app_config.bundle_dir =
-                        welcome_result.path.parent_path() /
-                        (welcome_result.project_name + ".gs3d.bundle");
+                    if (!welcome_result.preprocessed) {
+                        configure_new_project_input(
+                            app_config,
+                            welcome_result.path,
+                            welcome_result.project_name,
+                            welcome_result.thread_count
+                        );
+                    }
                 }
                 show_welcome_window = false;
             }

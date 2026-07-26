@@ -152,6 +152,7 @@ target_link_libraries(gs3d_imgui PUBLIC
 )
 
 add_library(gs3d_platform STATIC
+    src/platform/CpuInfo.cpp
     src/platform/Window.cpp
     src/platform/NativeFileDialog.cpp
 )
@@ -576,6 +577,24 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ThreadPool
         COMMAND GeoScatter3DThreadPoolTests
+    )
+
+    add_executable(GeoScatter3DCpuInfoTests
+        tests/CpuInfoTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DCpuInfoTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DCpuInfoTests PRIVATE
+        gs3d_platform
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.CpuInfo
+        COMMAND GeoScatter3DCpuInfoTests
     )
 
     add_executable(GeoScatter3DGs3dV2Tests

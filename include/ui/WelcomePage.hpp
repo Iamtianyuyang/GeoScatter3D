@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -27,6 +28,9 @@ struct NewProjectDialogState {
     char project_name[256]{};
     std::string error_message;
     bool name_conflict = false;
+    std::uint32_t thread_count = 1;
+    std::uint32_t recommended_thread_count = 1;
+    std::uint32_t max_thread_count = 1;
 };
 
 struct WelcomePageModel {
@@ -51,11 +55,38 @@ struct WelcomePageAction {
     WelcomePageActionKind kind = WelcomePageActionKind::None;
     std::filesystem::path path;
     std::string project_name;
+    std::uint32_t thread_count = 1;
+};
+
+struct ProjectPreprocessView {
+    std::filesystem::path source_path;
+    std::string project_name;
+    std::string stage;
+    std::string detail;
+    std::string error_message;
+    float progress = 0.0f;
+    double elapsed_seconds = 0.0;
+    std::uint32_t thread_count = 1;
+    std::uint32_t stage_index = 0;
+    bool failed = false;
+};
+
+enum class ProjectPreprocessPageAction {
+    None,
+    BackToWelcome
 };
 
 // Draws one frame of the standalone welcome window.
 WelcomePageAction draw_welcome_page(
     WelcomePageModel& model,
+    float ui_scale
+);
+
+// Draws one frame of the new-project preprocessing state in the same visual
+// language as the standalone welcome page.
+ProjectPreprocessPageAction draw_project_preprocess_page(
+    const WelcomePageModel& model,
+    const ProjectPreprocessView& progress,
     float ui_scale
 );
 

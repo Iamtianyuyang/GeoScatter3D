@@ -695,6 +695,138 @@ WelcomePageAction draw_new_project_dialog(
         ImGui::GetCursorScreenPos().y + 16.0f * scale
     ));
 
+    // ── Preprocessing thread count ──
+    ImGui::Dummy(ImVec2(1.0f, 22.0f * scale));
+    draw_text(
+        draw_list, medium_font(), 19.0f * scale,
+        ImGui::GetCursorScreenPos(),
+        kMuted, "处理线程"
+    );
+    ImGui::Dummy(ImVec2(1.0f, 12.0f * scale));
+
+    const float thread_card_height = 68.0f * scale;
+    const ImVec2 thread_card_min = ImGui::GetCursorScreenPos();
+    const ImVec2 thread_card_max{
+        thread_card_min.x + input_width,
+        thread_card_min.y + thread_card_height
+    };
+    draw_list->AddRectFilled(
+        thread_card_min,
+        thread_card_max,
+        kSurface,
+        8.0f * scale
+    );
+    draw_list->AddRect(
+        thread_card_min,
+        thread_card_max,
+        kBorder,
+        8.0f * scale,
+        0,
+        1.0f * scale
+    );
+
+    draw_text(
+        draw_list, medium_font(), 16.0f * scale,
+        ImVec2(
+            thread_card_min.x + 14.0f * scale,
+            thread_card_min.y + 12.0f * scale
+        ),
+        kText, "CPU 并行处理"
+    );
+    const std::string thread_hint =
+        "默认 " +
+        std::to_string(dialog.recommended_thread_count) +
+        "（CPU 物理核心）";
+    draw_text(
+        draw_list, regular_font(), 14.0f * scale,
+        ImVec2(
+            thread_card_min.x + 14.0f * scale,
+            thread_card_min.y + 38.0f * scale
+        ),
+        kFaint, thread_hint.c_str()
+    );
+
+    const float combo_width = 142.0f * scale;
+    const float combo_height = 40.0f * scale;
+    ImGui::SetCursorScreenPos(ImVec2(
+        thread_card_max.x - combo_width - 14.0f * scale,
+        thread_card_min.y +
+            (thread_card_height - combo_height) * 0.5f
+    ));
+    ImGui::PushItemWidth(combo_width);
+    ImGui::PushStyleColor(
+        ImGuiCol_FrameBg,
+        ImGui::ColorConvertU32ToFloat4(kBackground)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_FrameBgHovered,
+        ImGui::ColorConvertU32ToFloat4(kSurfaceHover)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_FrameBgActive,
+        ImGui::ColorConvertU32ToFloat4(kBackground)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_Border,
+        ImGui::ColorConvertU32ToFloat4(kBorder)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_PopupBg,
+        ImGui::ColorConvertU32ToFloat4(kSurface)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(12.0f * scale, 10.0f * scale)
+    );
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FrameRounding,
+        7.0f * scale
+    );
+
+    const auto max_threads =
+        std::max(1u, dialog.max_thread_count);
+    dialog.thread_count = std::clamp(
+        dialog.thread_count,
+        1u,
+        max_threads
+    );
+    const std::string thread_preview =
+        std::to_string(dialog.thread_count) + " 线程";
+    if (ImGui::BeginCombo(
+            "##PreprocessThreadCount",
+            thread_preview.c_str()
+        )) {
+        for (std::uint32_t count = 1;
+             count <= max_threads;
+             ++count) {
+            std::string option =
+                std::to_string(count) + " 线程";
+            if (count == dialog.recommended_thread_count) {
+                option += " · 推荐";
+            }
+            const bool selected =
+                count == dialog.thread_count;
+            if (ImGui::Selectable(
+                    option.c_str(),
+                    selected
+                )) {
+                dialog.thread_count = count;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(5);
+    ImGui::PopItemWidth();
+    ImGui::SetCursorScreenPos(ImVec2(
+        content_min.x,
+        thread_card_max.y
+    ));
+
     // ── Error message (card style) ──
     if (!dialog.error_message.empty()) {
         ImGui::Dummy(ImVec2(1.0f, 10.0f * scale));
@@ -789,6 +921,7 @@ WelcomePageAction draw_new_project_dialog(
                 action.kind = WelcomePageActionKind::NewProject;
                 action.path = dialog.data_file_path;
                 action.project_name = dialog.project_name;
+                action.thread_count = dialog.thread_count;
                 dialog.active = false;
                 should_close = true;
             }
@@ -908,6 +1041,7 @@ WelcomePageAction draw_new_project_dialog(
                         action.kind = WelcomePageActionKind::NewProject;
                         action.path = dialog.data_file_path;
                         action.project_name = dialog.project_name;
+                        action.thread_count = dialog.thread_count;
                         dialog.active = false;
                         should_close = true;
                     }
@@ -952,7 +1086,17 @@ WelcomePageAction draw_start_panel(
             "导入 DAT / CSV 数据创建项目",
             CardIcon::NewProject
         )) {
+        const auto recommended_threads =
+            model.new_project_dialog.recommended_thread_count;
+        const auto max_threads =
+            model.new_project_dialog.max_thread_count;
         model.new_project_dialog = NewProjectDialogState{};
+        model.new_project_dialog.thread_count =
+            recommended_threads;
+        model.new_project_dialog.recommended_thread_count =
+            recommended_threads;
+        model.new_project_dialog.max_thread_count =
+            max_threads;
         model.new_project_dialog.active = true;
         model.new_project_dialog.should_open = true;
     }
@@ -1921,6 +2065,563 @@ WelcomePageAction draw_welcome_page(
         draw_gpu_selection_dialog(model, scale);
     }
 
+    return action;
+}
+
+ProjectPreprocessPageAction draw_project_preprocess_page(
+    const WelcomePageModel& model,
+    const ProjectPreprocessView& progress,
+    float ui_scale
+) {
+    ProjectPreprocessPageAction action =
+        ProjectPreprocessPageAction::None;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::PushStyleColor(
+        ImGuiCol_WindowBg,
+        ImGui::ColorConvertU32ToFloat4(kBackground)
+    );
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(0.0f, 0.0f)
+    );
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
+    if (!ImGui::Begin(
+            "##ProjectPreprocess",
+            nullptr,
+            flags
+        )) {
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor();
+        return action;
+    }
+
+    const ImVec2 canvas_min = ImGui::GetWindowPos();
+    const ImVec2 available = ImGui::GetWindowSize();
+    const float scale = std::max(ui_scale, 0.8f);
+    const float side_margin = std::clamp(
+        available.x * 0.055f,
+        24.0f * scale,
+        64.0f * scale
+    );
+    const float top_margin = std::clamp(
+        available.y * 0.055f,
+        24.0f * scale,
+        48.0f * scale
+    );
+    const float content_width = std::min(
+        std::max(0.0f, available.x - side_margin * 2.0f),
+        980.0f * scale
+    );
+    const float content_left =
+        canvas_min.x + (available.x - content_width) * 0.5f;
+    const ImVec2 content_min{
+        content_left,
+        canvas_min.y + top_margin
+    };
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_brand(
+        draw_list,
+        model,
+        content_min,
+        content_width,
+        scale
+    );
+
+    const float card_width = std::min(
+        780.0f * scale,
+        available.x - side_margin * 2.0f
+    );
+    const float card_height =
+        (progress.failed ? 410.0f : 374.0f) * scale;
+    const ImVec2 card_min{
+        canvas_min.x + (available.x - card_width) * 0.5f,
+        content_min.y + 146.0f * scale
+    };
+    const ImVec2 card_max{
+        card_min.x + card_width,
+        card_min.y + card_height
+    };
+
+    draw_list->AddRectFilled(
+        ImVec2(
+            card_min.x + 6.0f * scale,
+            card_min.y + 8.0f * scale
+        ),
+        ImVec2(
+            card_max.x + 6.0f * scale,
+            card_max.y + 8.0f * scale
+        ),
+        IM_COL32(0, 0, 0, 30),
+        14.0f * scale
+    );
+    draw_list->AddRectFilled(
+        card_min,
+        card_max,
+        kSurface,
+        14.0f * scale
+    );
+    draw_list->AddRect(
+        card_min,
+        card_max,
+        progress.failed
+            ? to_u32(palette::kRed, 110)
+            : to_u32(palette::kAccent, 65),
+        14.0f * scale,
+        0,
+        1.0f * scale
+    );
+    draw_list->AddRectFilled(
+        card_min,
+        ImVec2(
+            card_max.x,
+            card_min.y + 3.0f * scale
+        ),
+        progress.failed ? kError : kBlue,
+        14.0f * scale
+    );
+
+    const float pad_x = 34.0f * scale;
+    const float inner_left = card_min.x + pad_x;
+    const float inner_right = card_max.x - pad_x;
+    const float inner_width = inner_right - inner_left;
+
+    const ImVec2 status_dot{
+        inner_left + 5.0f * scale,
+        card_min.y + 35.0f * scale
+    };
+    draw_list->AddCircleFilled(
+        status_dot,
+        4.5f * scale,
+        progress.failed ? kError : kBlue
+    );
+    draw_text(
+        draw_list,
+        medium_font(),
+        14.0f * scale,
+        ImVec2(
+            status_dot.x + 12.0f * scale,
+            card_min.y + 24.0f * scale
+        ),
+        progress.failed ? kError : kKeywordBlue,
+        progress.failed ? "项目预处理未完成" : "新建项目 · 数据预处理"
+    );
+
+    const std::string thread_label =
+        std::to_string(progress.thread_count) + " 线程";
+    const ImVec2 thread_text_size =
+        medium_font()->CalcTextSizeA(
+            14.0f * scale,
+            1000.0f,
+            0.0f,
+            thread_label.c_str()
+        );
+    const float chip_width =
+        thread_text_size.x + 28.0f * scale;
+    const float chip_height = 30.0f * scale;
+    const ImVec2 chip_min{
+        inner_right - chip_width,
+        card_min.y + 20.0f * scale
+    };
+    draw_list->AddRectFilled(
+        chip_min,
+        ImVec2(
+            chip_min.x + chip_width,
+            chip_min.y + chip_height
+        ),
+        to_u32(palette::kAccent, 16),
+        chip_height * 0.5f
+    );
+    draw_list->AddRect(
+        chip_min,
+        ImVec2(
+            chip_min.x + chip_width,
+            chip_min.y + chip_height
+        ),
+        to_u32(palette::kAccent, 75),
+        chip_height * 0.5f
+    );
+    draw_text(
+        draw_list,
+        medium_font(),
+        14.0f * scale,
+        ImVec2(
+            chip_min.x + 14.0f * scale,
+            chip_min.y +
+                (chip_height - thread_text_size.y) * 0.5f
+        ),
+        kKeywordBlue,
+        thread_label.c_str()
+    );
+
+    const std::string project_title =
+        progress.project_name.empty()
+            ? "未命名项目"
+            : progress.project_name;
+    draw_text(
+        draw_list,
+        bold_font(),
+        30.0f * scale,
+        ImVec2(
+            inner_left,
+            card_min.y + 59.0f * scale
+        ),
+        kText,
+        project_title.c_str()
+    );
+
+    const std::string source_text =
+        "源数据  " + progress.source_path.string();
+    draw_list->PushClipRect(
+        ImVec2(inner_left, card_min.y),
+        ImVec2(inner_right, card_max.y),
+        true
+    );
+    draw_text(
+        draw_list,
+        regular_font(),
+        14.0f * scale,
+        ImVec2(
+            inner_left,
+            card_min.y + 100.0f * scale
+        ),
+        kFaint,
+        source_text.c_str()
+    );
+    draw_list->PopClipRect();
+
+    const float separator_y = card_min.y + 130.0f * scale;
+    draw_list->AddLine(
+        ImVec2(inner_left, separator_y),
+        ImVec2(inner_right, separator_y),
+        kBorder,
+        1.0f * scale
+    );
+
+    const float normalized_progress =
+        std::clamp(progress.progress, 0.0f, 1.0f);
+    const int percent = static_cast<int>(
+        std::lround(normalized_progress * 100.0f)
+    );
+    const std::string stage_title = progress.failed
+        ? "预处理发生错误"
+        : (progress.stage.empty()
+            ? "准备预处理"
+            : progress.stage);
+    draw_text(
+        draw_list,
+        medium_font(),
+        18.0f * scale,
+        ImVec2(
+            inner_left,
+            separator_y + 22.0f * scale
+        ),
+        progress.failed ? kError : kText,
+        stage_title.c_str()
+    );
+    if (!progress.failed) {
+        const std::string percent_text =
+            std::to_string(percent) + "%";
+        const ImVec2 percent_size =
+            bold_font()->CalcTextSizeA(
+                24.0f * scale,
+                1000.0f,
+                0.0f,
+                percent_text.c_str()
+            );
+        draw_text(
+            draw_list,
+            bold_font(),
+            24.0f * scale,
+            ImVec2(
+                inner_right - percent_size.x,
+                separator_y + 17.0f * scale
+            ),
+            kKeywordBlue,
+            percent_text.c_str()
+        );
+    }
+
+    const float track_y = separator_y + 58.0f * scale;
+    const float track_height = 8.0f * scale;
+    draw_list->AddRectFilled(
+        ImVec2(inner_left, track_y),
+        ImVec2(inner_right, track_y + track_height),
+        kBackground,
+        track_height * 0.5f
+    );
+    if (!progress.failed && normalized_progress > 0.0f) {
+        const float fill_right =
+            inner_left + inner_width * normalized_progress;
+        draw_list->AddRectFilled(
+            ImVec2(inner_left, track_y),
+            ImVec2(fill_right, track_y + track_height),
+            kBlue,
+            track_height * 0.5f
+        );
+        const float pulse_width =
+            std::min(56.0f * scale, fill_right - inner_left);
+        if (pulse_width > 2.0f * scale) {
+            const float travel =
+                std::max(1.0f, fill_right - inner_left);
+            const float pulse_x =
+                inner_left +
+                std::fmod(
+                    static_cast<float>(ImGui::GetTime()) *
+                        90.0f * scale,
+                    travel
+                );
+            draw_list->PushClipRect(
+                ImVec2(inner_left, track_y),
+                ImVec2(fill_right, track_y + track_height),
+                true
+            );
+            draw_list->AddRectFilled(
+                ImVec2(
+                    pulse_x - pulse_width,
+                    track_y
+                ),
+                ImVec2(
+                    pulse_x,
+                    track_y + track_height
+                ),
+                IM_COL32(255, 255, 255, 70),
+                track_height * 0.5f
+            );
+            draw_list->PopClipRect();
+        }
+    }
+
+    const float message_y = track_y + 22.0f * scale;
+    const float message_height =
+        (progress.failed ? 66.0f : 48.0f) * scale;
+    const ImU32 message_background = progress.failed
+        ? to_u32(palette::kRed, 14)
+        : to_u32(palette::kAccent, 10);
+    draw_list->AddRectFilled(
+        ImVec2(inner_left, message_y),
+        ImVec2(
+            inner_right,
+            message_y + message_height
+        ),
+        message_background,
+        8.0f * scale
+    );
+    draw_list->AddRect(
+        ImVec2(inner_left, message_y),
+        ImVec2(
+            inner_right,
+            message_y + message_height
+        ),
+        progress.failed
+            ? to_u32(palette::kRed, 65)
+            : to_u32(palette::kAccent, 35),
+        8.0f * scale
+    );
+    const std::string message = progress.failed
+        ? progress.error_message
+        : progress.detail;
+    draw_list->AddText(
+        regular_font(),
+        14.0f * scale,
+        ImVec2(
+            inner_left + 14.0f * scale,
+            message_y + 12.0f * scale
+        ),
+        progress.failed ? kError : kMuted,
+        message.empty()
+            ? "正在准备数据，请稍候…"
+            : message.c_str(),
+        nullptr,
+        inner_width - 28.0f * scale
+    );
+
+    static constexpr std::array<const char*, 4>
+        kStageLabels{
+            "数据检查",
+            "格式转换",
+            "层级与索引",
+            "写入项目"
+        };
+    const float timeline_y =
+        message_y + message_height + 32.0f * scale;
+    const float step_width =
+        inner_width /
+        static_cast<float>(kStageLabels.size());
+    const auto active_stage = std::min<std::uint32_t>(
+        progress.stage_index,
+        static_cast<std::uint32_t>(
+            kStageLabels.size() - 1
+        )
+    );
+    for (std::size_t index = 0;
+         index < kStageLabels.size();
+         ++index) {
+        const bool completed =
+            index < active_stage ||
+            (!progress.failed &&
+             normalized_progress >= 1.0f);
+        const bool active = index == active_stage;
+        const float center_x =
+            inner_left +
+            step_width *
+                (static_cast<float>(index) + 0.5f);
+        if (index + 1 < kStageLabels.size()) {
+            const float next_center_x =
+                center_x + step_width;
+            draw_list->AddLine(
+                ImVec2(
+                    center_x + 8.0f * scale,
+                    timeline_y
+                ),
+                ImVec2(
+                    next_center_x - 8.0f * scale,
+                    timeline_y
+                ),
+                completed
+                    ? to_u32(palette::kAccent, 150)
+                    : kBorder,
+                2.0f * scale
+            );
+        }
+
+        const ImU32 marker_color =
+            progress.failed && active
+                ? kError
+                : ((completed || active) ? kBlue : kBorder);
+        draw_list->AddCircleFilled(
+            ImVec2(center_x, timeline_y),
+            7.0f * scale,
+            marker_color
+        );
+        if (completed) {
+            draw_list->AddCircleFilled(
+                ImVec2(center_x, timeline_y),
+                2.5f * scale,
+                kSurface
+            );
+        }
+
+        const ImVec2 label_size =
+            regular_font()->CalcTextSizeA(
+                13.0f * scale,
+                1000.0f,
+                0.0f,
+                kStageLabels[index]
+            );
+        draw_text(
+            draw_list,
+            active ? medium_font() : regular_font(),
+            13.0f * scale,
+            ImVec2(
+                center_x - label_size.x * 0.5f,
+                timeline_y + 15.0f * scale
+            ),
+            active
+                ? (progress.failed ? kError : kText)
+                : (completed ? kMuted : kFaint),
+            kStageLabels[index]
+        );
+    }
+
+    const int elapsed_seconds = static_cast<int>(
+        std::max(0.0, progress.elapsed_seconds)
+    );
+    char elapsed_text[64];
+    std::snprintf(
+        elapsed_text,
+        sizeof(elapsed_text),
+        "已用时 %02d:%02d",
+        elapsed_seconds / 60,
+        elapsed_seconds % 60
+    );
+    const float footer_y = card_max.y - 35.0f * scale;
+    draw_text(
+        draw_list,
+        regular_font(),
+        13.0f * scale,
+        ImVec2(inner_left, footer_y),
+        kFaint,
+        elapsed_text
+    );
+
+    if (progress.failed) {
+        const ImVec2 button_size{
+            126.0f * scale,
+            38.0f * scale
+        };
+        ImGui::SetCursorScreenPos(ImVec2(
+            inner_right - button_size.x,
+            card_max.y - button_size.y - 18.0f * scale
+        ));
+        ImGui::PushStyleColor(
+            ImGuiCol_Button,
+            ImGui::ColorConvertU32ToFloat4(kBlue)
+        );
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonHovered,
+            srgb_vec4(20, 105, 255)
+        );
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonActive,
+            srgb_vec4(0, 75, 210)
+        );
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+        );
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_FrameRounding,
+            8.0f * scale
+        );
+        if (ImGui::Button(
+                "返回修改",
+                button_size
+            )) {
+            action =
+                ProjectPreprocessPageAction::BackToWelcome;
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(4);
+    } else {
+        const char* note =
+            "预处理期间请保持窗口开启";
+        const ImVec2 note_size =
+            regular_font()->CalcTextSizeA(
+                13.0f * scale,
+                1000.0f,
+                0.0f,
+                note
+            );
+        draw_text(
+            draw_list,
+            regular_font(),
+            13.0f * scale,
+            ImVec2(
+                inner_right - note_size.x,
+                footer_y
+            ),
+            kFaint,
+            note
+        );
+    }
+
+    ImGui::End();
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor();
     return action;
 }
 

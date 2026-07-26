@@ -5,6 +5,7 @@
 #include "app/UserPreferences.hpp"
 #include "gui/ImGuiLayer.hpp"
 #include "gui/UiFonts.hpp"
+#include "platform/CpuInfo.hpp"
 #include "platform/Window.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanRenderer.hpp"
@@ -16,7 +17,11 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <exception>
+#include <mutex>
+#include <thread>
 #include <utility>
 
 namespace gs3d::app {
@@ -138,6 +143,99 @@ void apply_golden_outer_window_size(
     }
 }
 
+struct ProjectPreprocessRuntimeSnapshot {
+    gs3d::ui::ProjectPreprocessView view;
+    bool active = false;
+    bool finished = false;
+    bool succeeded = false;
+};
+
+class ProjectPreprocessRuntime {
+public:
+    void begin(const gs3d::ui::WelcomePageAction& action)
+    {
+        std::scoped_lock lock(mutex_);
+        active_ = true;
+        finished_ = false;
+        succeeded_ = false;
+        started_at_ = std::chrono::steady_clock::now();
+        view_ = {};
+        view_.source_path = action.path;
+        view_.project_name = action.project_name;
+        view_.thread_count = action.thread_count;
+        view_.stage = "准备项目";
+        view_.detail = "正在检查源数据与项目输出路径…";
+        view_.progress = 0.02f;
+    }
+
+    void report(const ProjectPreprocessProgress& progress)
+    {
+        std::scoped_lock lock(mutex_);
+        view_.progress =
+            std::clamp(progress.fraction, 0.0f, 1.0f);
+        view_.stage_index = std::min(3u, progress.stage_index);
+        view_.stage = progress.stage;
+        view_.detail = progress.detail;
+    }
+
+    void succeed()
+    {
+        std::scoped_lock lock(mutex_);
+        view_.progress = 1.0f;
+        view_.stage_index = 3;
+        view_.stage = "预处理完成";
+        view_.detail = "项目数据已写入，即将进入三维视图。";
+        finished_ = true;
+        succeeded_ = true;
+    }
+
+    void fail(std::string message)
+    {
+        std::scoped_lock lock(mutex_);
+        view_.failed = true;
+        view_.error_message = std::move(message);
+        finished_ = true;
+        succeeded_ = false;
+    }
+
+    void reset()
+    {
+        std::scoped_lock lock(mutex_);
+        active_ = false;
+        finished_ = false;
+        succeeded_ = false;
+        view_ = {};
+    }
+
+    [[nodiscard]]
+    ProjectPreprocessRuntimeSnapshot snapshot() const
+    {
+        std::scoped_lock lock(mutex_);
+        auto view = view_;
+        if (active_) {
+            view.elapsed_seconds =
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() -
+                    started_at_
+                ).count();
+        }
+        return {
+            .view = std::move(view),
+            .active = active_,
+            .finished = finished_,
+            .succeeded = succeeded_
+        };
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::chrono::steady_clock::time_point started_at_{};
+    gs3d::ui::ProjectPreprocessView view_;
+    bool active_ = false;
+    bool finished_ = false;
+    bool succeeded_ = false;
+};
+
 } // namespace
 
 WelcomeWindow::WelcomeWindow(WelcomeWindowConfig config)
@@ -200,6 +298,15 @@ WelcomeWindowResult WelcomeWindow::run()
     model.logo_texture = logo.descriptor();
     model.current_path = config_.current_path;
     model.recent_projects = config_.recent_projects;
+    const auto logical_threads =
+        gs3d::platform::logical_cpu_thread_count();
+    const auto physical_cores =
+        gs3d::platform::physical_cpu_core_count();
+    model.new_project_dialog.thread_count = physical_cores;
+    model.new_project_dialog.recommended_thread_count =
+        physical_cores;
+    model.new_project_dialog.max_thread_count =
+        logical_threads;
 
     // Populate GPU list from the already-created Vulkan context.
     model.gpu_list = context.gpu_list();
@@ -212,39 +319,138 @@ WelcomeWindowResult WelcomeWindow::run()
         };
 
     WelcomeWindowResult result;
-    while (!window.should_close()) {
+    WelcomeWindowResult pending_project_result;
+    ProjectPreprocessRuntime preprocess_runtime;
+    std::thread preprocess_thread;
+    for (;;) {
+        if (window.should_close()) {
+            const auto close_snapshot =
+                preprocess_runtime.snapshot();
+            if (close_snapshot.active &&
+                !close_snapshot.finished) {
+                // The preprocessing pipeline is not cancellable. Keep the
+                // styled progress surface alive instead of hiding the
+                // application while a background join blocks.
+                glfwSetWindowShouldClose(
+                    window.native_handle(),
+                    GLFW_FALSE
+                );
+            } else {
+                break;
+            }
+        }
+
         window.poll_events();
         imgui.begin_frame();
-        const auto action = gs3d::ui::draw_welcome_page(
-            model,
-            gs3d::gui::ui_fonts().ui_scale
-        );
 
-        switch (action.kind) {
-        case gs3d::ui::WelcomePageActionKind::ContinueCurrent:
-            result.kind = WelcomeWindowResultKind::ContinueCurrent;
-            // 带上卡片实际显示的路径，调用方按它打开项目——否则会
-            // 回落到 viewer.toml 里可能过期/相对的 bundle_dir。
-            result.path = config_.current_path;
-            window.request_close();
-            break;
-        case gs3d::ui::WelcomePageActionKind::OpenProject:
-            result.kind = WelcomeWindowResultKind::OpenProject;
-            result.path = action.path;
-            window.request_close();
-            break;
-        case gs3d::ui::WelcomePageActionKind::NewProject:
-            result.kind = WelcomeWindowResultKind::NewProject;
-            result.path = action.path;
-            result.project_name = action.project_name;
-            window.request_close();
-            break;
-        case gs3d::ui::WelcomePageActionKind::ClearRecent:
-            clear_recent_projects();
-            model.recent_projects.clear();
-            break;
-        case gs3d::ui::WelcomePageActionKind::None:
-            break;
+        const auto preprocess_snapshot =
+            preprocess_runtime.snapshot();
+        if (preprocess_snapshot.active) {
+            const auto progress_action =
+                gs3d::ui::draw_project_preprocess_page(
+                    model,
+                    preprocess_snapshot.view,
+                    gs3d::gui::ui_fonts().ui_scale
+                );
+            if (preprocess_snapshot.finished &&
+                preprocess_snapshot.succeeded) {
+                if (preprocess_thread.joinable()) {
+                    preprocess_thread.join();
+                }
+                result = pending_project_result;
+                result.preprocessed = true;
+                window.request_close();
+            } else if (
+                preprocess_snapshot.finished &&
+                progress_action ==
+                    gs3d::ui::
+                        ProjectPreprocessPageAction::
+                            BackToWelcome
+            ) {
+                if (preprocess_thread.joinable()) {
+                    preprocess_thread.join();
+                }
+                preprocess_runtime.reset();
+                model.new_project_dialog.active = true;
+                model.new_project_dialog.should_open = true;
+            }
+        } else {
+            const auto action = gs3d::ui::draw_welcome_page(
+                model,
+                gs3d::gui::ui_fonts().ui_scale
+            );
+
+            switch (action.kind) {
+            case gs3d::ui::WelcomePageActionKind::ContinueCurrent:
+                result.kind =
+                    WelcomeWindowResultKind::ContinueCurrent;
+                // 带上卡片实际显示的路径，调用方按它打开项目——否则会
+                // 回落到 viewer.toml 里可能过期/相对的 bundle_dir。
+                result.path = config_.current_path;
+                window.request_close();
+                break;
+            case gs3d::ui::WelcomePageActionKind::OpenProject:
+                result.kind =
+                    WelcomeWindowResultKind::OpenProject;
+                result.path = action.path;
+                window.request_close();
+                break;
+            case gs3d::ui::WelcomePageActionKind::NewProject:
+                pending_project_result.kind =
+                    WelcomeWindowResultKind::NewProject;
+                pending_project_result.path = action.path;
+                pending_project_result.project_name =
+                    action.project_name;
+                pending_project_result.thread_count =
+                    action.thread_count;
+
+                if (!config_.preprocess_new_project) {
+                    result = pending_project_result;
+                    window.request_close();
+                    break;
+                }
+
+                preprocess_runtime.begin(action);
+                preprocess_thread = std::thread(
+                    [
+                        task = config_.preprocess_new_project,
+                        source_path = action.path,
+                        project_name = action.project_name,
+                        thread_count = action.thread_count,
+                        &preprocess_runtime
+                    ] {
+                        try {
+                            task(
+                                source_path,
+                                project_name,
+                                thread_count,
+                                [&preprocess_runtime](
+                                    const ProjectPreprocessProgress&
+                                        progress
+                                ) {
+                                    preprocess_runtime.report(
+                                        progress
+                                    );
+                                }
+                            );
+                            preprocess_runtime.succeed();
+                        } catch (const std::exception& error) {
+                            preprocess_runtime.fail(error.what());
+                        } catch (...) {
+                            preprocess_runtime.fail(
+                                "预处理失败：发生未知错误"
+                            );
+                        }
+                    }
+                );
+                break;
+            case gs3d::ui::WelcomePageActionKind::ClearRecent:
+                clear_recent_projects();
+                model.recent_projects.clear();
+                break;
+            case gs3d::ui::WelcomePageActionKind::None:
+                break;
+            }
         }
 
         renderer.draw_frame(
@@ -257,6 +463,9 @@ WelcomeWindowResult WelcomeWindow::run()
         imgui.discard_frame();
     }
 
+    if (preprocess_thread.joinable()) {
+        preprocess_thread.join();
+    }
     vkDeviceWaitIdle(context.device());
     return result;
 }
