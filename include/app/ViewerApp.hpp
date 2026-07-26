@@ -152,7 +152,7 @@ struct ViewerLodConfig {
     bool adaptive_interacting_level = false;
     double frame_time_budget_ms = 14.0;
     InteractiveDisplayMode interactive_display_mode =
-        InteractiveDisplayMode::AllowCoarseLOD;
+        InteractiveDisplayMode::KeepStableHighQuality;
     bool verbose = true;
 };
 

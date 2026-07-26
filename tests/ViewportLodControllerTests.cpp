@@ -91,6 +91,46 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "ViewportLodController keeps the displayed level for every interaction",
+    "[viewport_lod]"
+)
+{
+    gs3d::render::LodSelector selector;
+    gs3d::app::ViewportLodController controller;
+    const std::vector<float> voxel_sizes{1.0f, 4.0f, 16.0f};
+
+    selector.update(false, 1.0);
+    const auto settled = controller.select(
+        selector,
+        voxel_sizes,
+        kFarPixelsPerWorld,
+        false,
+        true,
+        0.8
+    );
+    REQUIRE(settled.has_value());
+    REQUIRE(settled->level == 2);
+
+    // Stable mode must preserve the level already on screen even when it is
+    // enabled immediately before a zoom, pan, or rotation gesture.
+    selector.update(true, 0.0);
+    for (const float world_per_pixel :
+         {kNearPixelsPerWorld, kFarPixelsPerWorld}) {
+        const auto interacting = controller.select(
+            selector,
+            voxel_sizes,
+            world_per_pixel,
+            true,
+            false,
+            0.8
+        );
+        REQUIRE(interacting.has_value());
+        CHECK(interacting->level == settled->level);
+        CHECK_FALSE(interacting->changed);
+    }
+}
+
+TEST_CASE(
     "ViewportLodController reports transitions and rejects an empty ladder",
     "[viewport_lod]"
 )

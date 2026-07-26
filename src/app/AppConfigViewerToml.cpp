@@ -147,7 +147,7 @@ void apply_lod(const toml::table& root, AppConfig& config)
         static_cast<float>(options.frame_time_budget_ms)));
 
     const std::string display_mode = string_or_default(
-        *lod, "interactive_display_mode", "coarse");
+        *lod, "interactive_display_mode", "keep_stable");
     if (display_mode == "coarse" ||
         display_mode == "allow_coarse" ||
         display_mode == "AllowCoarseLOD") {

@@ -55,7 +55,17 @@ std::optional<ViewportLodSelection> ViewportLodController::select(
     }
 
     if (!allow_coarse_lod) {
-        if (!interacting) {
+        if (interacting) {
+            // Keep the exact level that was visible when zoom, pan, or
+            // rotation began. Switching levels mid-gesture makes the tile
+            // overlay disappear and reappear as its working set catches up.
+            if (last_level_ < level_count) {
+                selection.level = last_level_;
+            } else {
+                selection.level =
+                    std::min(selection.level, frozen_display_level_);
+            }
+        } else {
             if (selection.level < frozen_display_level_) {
                 frozen_display_level_ = selection.level;
             }
@@ -65,8 +75,9 @@ std::optional<ViewportLodSelection> ViewportLodController::select(
                     spatial_level
                 );
             }
+            selection.level =
+                std::min(selection.level, frozen_display_level_);
         }
-        selection.level = std::min(selection.level, frozen_display_level_);
     }
 
     selection.frozen_display_level = frozen_display_level_;
