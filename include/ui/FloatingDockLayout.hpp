@@ -42,4 +42,13 @@ compute_floating_dock_top_overlay_layout(
     float texture_height
 ) noexcept;
 
+[[nodiscard]] NavigationPreviewLayout compute_navigation_preview_layout(
+    float x,
+    float y,
+    float available_width,
+    float available_height,
+    float texture_width,
+    float texture_height
+) noexcept;
+
 } // namespace gs3d::ui

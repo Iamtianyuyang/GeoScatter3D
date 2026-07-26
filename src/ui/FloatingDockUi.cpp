@@ -246,7 +246,6 @@ constexpr ImGuiWindowFlags kOverlayWindowFlags =
 
 constexpr ImGuiWindowFlags kFloatingPanelWindowFlags =
     ImGuiWindowFlags_NoTitleBar |
-    ImGuiWindowFlags_AlwaysAutoResize |
     ImGuiWindowFlags_NoSavedSettings |
     ImGuiWindowFlags_NoScrollbar |
     ImGuiWindowFlags_NoScrollWithMouse |
@@ -743,15 +742,20 @@ void key_value_row(
 void draw_navigation_map_preview(
     gs3d::app::AppState& state,
     int active_index,
-    float s
+    float s,
+    float available_height = 0.0f
 ) {
     auto& nm = gs3d::app::navigation_map_for_view(state, active_index);
     const float width = ImGui::GetContentRegionAvail().x;
+    const float height = available_height > 0.0f
+        ? available_height
+        : width;
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
     const auto layout = compute_navigation_preview_layout(
         cursor.x,
         cursor.y,
         width,
+        height,
         nm.tex_w,
         nm.tex_h
     );
@@ -846,10 +850,16 @@ void draw_floating_navigation_map(
     }
 
     const float s = ctx.s;
-    const float panel_width = std::clamp(
-        360.0f * s,
-        280.0f * s,
-        std::max(280.0f * s, ctx.work_size.x - 36.0f * s)
+    const ImVec2 min_size(300.0f * s, 360.0f * s);
+    const ImVec2 max_size(
+        std::max(
+            min_size.x,
+            std::min(720.0f * s, ctx.work_size.x - 32.0f * s)
+        ),
+        std::max(
+            min_size.y,
+            std::min(800.0f * s, ctx.work_size.y - 32.0f * s)
+        )
     );
     ImGui::SetNextWindowPos(
         ImVec2(
@@ -858,13 +868,29 @@ void draw_floating_navigation_map(
         ),
         ImGuiCond_Appearing
     );
+    ImGui::SetNextWindowSize(
+        ImVec2(392.0f * s, 470.0f * s),
+        ImGuiCond_Appearing
+    );
     ImGui::SetNextWindowSizeConstraints(
-        ImVec2(panel_width, 0.0f),
-        ImVec2(panel_width, ctx.work_size.y - 36.0f * s)
+        min_size,
+        max_size
     );
     push_glass_window_style(
         DockMetrics::kCardRounding * s,
         ImVec2(DockMetrics::kCardPad * s, DockMetrics::kCardPad * s)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_ResizeGrip,
+        to_u32(palette::kAccent, 72)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_ResizeGripHovered,
+        to_u32(palette::kAccent, 155)
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_ResizeGripActive,
+        to_u32(palette::kAccent, 230)
     );
     if (ImGui::Begin(
             "##FloatingDockNavigationMap",
@@ -893,16 +919,26 @@ void draw_floating_navigation_map(
                     to_u32(palette::kTextDim, 205)
                 );
                 ImGui::Text(
-                    "视图 %d · 实时更新 · 拖动标题区域可移动",
+                    "视图 %d · 拖动标题移动 · 拖动右下角缩放",
                     active_index + 1
                 );
                 ImGui::PopStyleColor();
             }
             ImGui::Spacing();
-            draw_navigation_map_preview(state, active_index, s);
+            const float preview_height = std::max(
+                160.0f * s,
+                ImGui::GetContentRegionAvail().y - 3.0f * s
+            );
+            draw_navigation_map_preview(
+                state,
+                active_index,
+                s,
+                preview_height
+            );
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor(3);
     pop_glass_window_style();
 }
 

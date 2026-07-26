@@ -44,24 +44,45 @@ NavigationPreviewLayout compute_navigation_preview_layout(
     const float texture_width,
     const float texture_height
 ) noexcept {
-    const float size = std::max(0.0f, available_width);
+    return compute_navigation_preview_layout(
+        x,
+        y,
+        available_width,
+        available_width,
+        texture_width,
+        texture_height
+    );
+}
+
+NavigationPreviewLayout compute_navigation_preview_layout(
+    const float x,
+    const float y,
+    const float available_width,
+    const float available_height,
+    const float texture_width,
+    const float texture_height
+) noexcept {
+    const float width = std::max(0.0f, available_width);
+    const float height = std::max(0.0f, available_height);
     NavigationPreviewLayout layout{
-        .container = {x, y, size, size},
-        .image = {x, y, size, size},
+        .container = {x, y, width, height},
+        .image = {x, y, width, height},
     };
-    if (size <= 0.0f ||
+    if (width <= 0.0f ||
+        height <= 0.0f ||
         texture_width <= 0.0f ||
         texture_height <= 0.0f) {
         return layout;
     }
 
     const float texture_aspect = texture_width / texture_height;
-    if (texture_aspect >= 1.0f) {
-        layout.image.height = size / texture_aspect;
-        layout.image.y += (size - layout.image.height) * 0.5f;
+    const float container_aspect = width / height;
+    if (texture_aspect >= container_aspect) {
+        layout.image.height = width / texture_aspect;
+        layout.image.y += (height - layout.image.height) * 0.5f;
     } else {
-        layout.image.width = size * texture_aspect;
-        layout.image.x += (size - layout.image.width) * 0.5f;
+        layout.image.width = height * texture_aspect;
+        layout.image.x += (width - layout.image.width) * 0.5f;
     }
     return layout;
 }

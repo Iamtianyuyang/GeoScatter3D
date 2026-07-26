@@ -127,6 +127,25 @@ TEST_CASE("Navigation preview is square and contains its texture", "[floating_do
     );
 }
 
+TEST_CASE("Navigation preview fits a resizable rectangle", "[floating_dock]")
+{
+    const auto layout = gs3d::ui::compute_navigation_preview_layout(
+        10.0f,
+        20.0f,
+        400.0f,
+        240.0f,
+        100.0f,
+        200.0f
+    );
+
+    CHECK(layout.container.width == 400.0f);
+    CHECK(layout.container.height == 240.0f);
+    CHECK(layout.image.x == 150.0f);
+    CHECK(layout.image.y == 20.0f);
+    CHECK(layout.image.width == 120.0f);
+    CHECK(layout.image.height == 240.0f);
+}
+
 TEST_CASE("Analysis rail matches the 1360 by 850 scheme C reference", "[analysis_rail]")
 {
     const auto layout = gs3d::ui::compute_analysis_rail_layout(
