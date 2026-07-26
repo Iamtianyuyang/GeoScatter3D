@@ -445,6 +445,41 @@ bool DragFloat(
     return changed;
 }
 
+bool InputFloat(
+    const char* label,
+    float* v,
+    const char* format,
+    ImGuiInputTextFlags flags
+)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) {
+        return false;
+    }
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 max(
+        pos.x + ImGui::CalcItemWidth(),
+        pos.y + ImGui::GetFrameHeight()
+    );
+    const bool changed =
+        ImGui::InputFloat(
+            label,
+            v,
+            0.0f,
+            0.0f,
+            format,
+            flags
+        );
+    field_decoration(
+        window->DrawList,
+        pos,
+        max,
+        ImGui::IsItemHovered(),
+        ImGui::IsItemActive()
+    );
+    return changed;
+}
+
 bool InputText(
     const char* label,
     char* buffer,

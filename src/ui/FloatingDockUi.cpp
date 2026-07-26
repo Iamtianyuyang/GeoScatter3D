@@ -2293,8 +2293,15 @@ void draw_card_appearance(
     {
         begin_control_row("高度缩放", ctl_w);
         float exag = settings.height_exaggeration;
-        if (widgets::SliderFloat(
-                "##DockHeightExag", &exag, 0.1f, 5.0f, "%.2fx")) {
+        if (widgets::InputFloat(
+                "##DockHeightExag",
+                &exag,
+                "%.2f"
+            )) {
+            if (!std::isfinite(exag)) {
+                exag = settings.height_exaggeration;
+            }
+            exag = std::max(exag, 0.01f);
             settings.height_exaggeration = exag;
             auto& command =
                 add_render_settings_command(actions, active_index);

@@ -63,6 +63,15 @@ bool DragFloat(
     ImGuiSliderFlags flags = 0
 );
 
+// 纯数值输入框：支持键盘精确录入，不提供拖动手势。
+// 与其他字段共用主题底色、hover 描边和键盘焦点环。
+bool InputFloat(
+    const char* label,
+    float* v,
+    const char* format = "%.3f",
+    ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsScientific
+);
+
 // 文本输入框：与数值字段共享 hover 描边和键盘焦点环。
 bool InputText(
     const char* label,
