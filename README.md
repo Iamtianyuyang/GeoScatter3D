@@ -30,7 +30,7 @@ LOD 和 tile 文件支持分级与局部加载。
 - 支持 C++20 的编译器
 - Vulkan SDK/开发包
 - GLFW 3
-- pthreads
+- 线程库（Linux 上为 pthreads，Windows 使用系统原生线程）
 - Git submodule 中的 Dear ImGui 与 Catch2
 - Python 3（仅用于 include 依赖检查）
 - `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
@@ -49,17 +49,55 @@ Catch2，可按标签或原有测试函数名单独运行，例如
 `./build/GeoScatter3DRuntimeLogicTests test_resize_debounce`。
 
 Windows 可用 vcpkg 安装 `glfw3`、`vulkan-headers`、`vulkan-loader` 和
-`glslang[tools]`，再按 CI 传入 toolchain：
+`glslang[tools]`，配置时传入 vcpkg toolchain 即可。`glslangValidator` 会通过
+toolchain 的工具目录被自动发现，无需手动指定：
 
 ```powershell
 vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows glslang[tools]:x64-windows
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DGS3D_GLSLANG_VALIDATOR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/tools/glslang/glslangValidator.exe"
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+该流程已在 Windows 11 + Visual Studio 2022 上本地验证，全部 CTest 测试通过。
+可执行文件生成于 `build/Release/`，vcpkg 会自动将 `vulkan-1.dll` 与
+`glfw3.dll` 部署到输出目录。若自动发现失败（例如未使用 vcpkg toolchain），
+可用 `-DGS3D_GLSLANG_VALIDATOR=<glslangValidator 路径>` 显式指定。
+
+注意：复用旧的构建目录时，缓存中的 `BUILD_TESTING=OFF` 会跳过所有测试目标的
+生成；如发现 ctest 只列出少量测试，删除构建目录重新配置，或显式传
+`-DBUILD_TESTING=ON`。
+
 详细的 Windows 状态和仍需手工验证的桌面路径见
 [Windows portability report](docs/windows-portability-report.md)。
+
+## 分发
+
+构建后可安装出一个自包含的分发目录（可执行文件在根目录，`config/`、
+`assets/` 在旁边，`data/` 由运行时生成）：
+
+```powershell
+cmake --install build --config Release --prefix dist
+```
+
+`dist/` 中包含 `GeoScatter3D.exe`、`GeoScatter3DPreprocess.exe`、
+`gs3d_groundtruth.exe`、运行所需 DLL（vcpkg 部署的 `vulkan-1.dll`/`glfw3.dll`
+以及 MSVC 动态 CRT 的 `msvcp140*.dll`/`vcruntime140*.dll`，目标机器无需另装
+VC++ Redistributable）、字体与 SPIR-V shader、配置模板和样例 CSV，整个目录可
+直接拷贝到目标机器运行：
+
+```powershell
+cd dist
+./GeoScatter3D.exe --config config/sample-viewer.toml
+```
+
+CPack 可将同样内容打成带版本号的压缩包（Windows 为 ZIP，其余平台为 TGZ），
+生成于构建目录下：
+
+```powershell
+cd build
+cpack -C Release
+```
 
 ## 从干净克隆打开样例
 

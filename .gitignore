@@ -21,6 +21,12 @@
 /.dbg/
 /.tools/
 
+# Distribution outputs
+/dist/
+/_CPack_Packages/
+/GeoScatter3D-*.zip
+/GeoScatter3D-*.tar.gz
+
 # Generated / temporary
 /Testing/
 /.reasonix/
