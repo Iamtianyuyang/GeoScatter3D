@@ -131,6 +131,8 @@ gpu_cache_max_tiles = 288
     CHECK(config.viewer.window.enable_multi_viewports);
     CHECK(config.viewer.graphics.preferred_gpu == "auto");
     CHECK(config.viewer.tile.gpu_cache_max_tiles == 288);
+    CHECK(config.viewer.lod.interactive_display_mode ==
+          gs3d::app::InteractiveDisplayMode::AllowCoarseLOD);
     CHECK_FALSE(config.viewer.graphics.enable_validation_layers);
     CHECK(read_file(config_path) == toml);
 }

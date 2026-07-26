@@ -105,15 +105,15 @@ use_lowest_while_interacting = true
 adaptive_interacting_level = true
 frame_time_budget_ms = 14.0
 # 交互(缩放/平移/旋转)期间前台显示策略:
-#   keep_stable    —— (默认) 交互时继续用当前相机渲染交互前已稳定显示的
+#   coarse         —— (默认) 交互时使用帧预算自适应 LOD 并关闭 tile 叠加,
+#                      优先保证相机与鼠标实时同步。
+#   keep_stable    —— 交互时继续用当前相机渲染交互前已稳定显示的
 #                      高质量数据(最高细节 LOD + 已驻留全分辨率 tile),绝不
 #                      在交互途中切到稀疏粗 LOD。相机实时跟随,数据暂不降质。
-#   coarse         —— 旧行为:交互时降到最低/自适应 LOD 并关闭 tile 叠加,
-#                      换取最低端硬件交互帧率(会出现稀疏/层状粗 LOD)。
 #   freeze_texture —— 极端兜底(当前按 keep_stable 处理)。
 # 注:keep_stable 下上面的 use_lowest_while_interacting / adaptive_interacting_level
 # 仍可保留(它们驱动的 LOD 选择继续在后台运行),只是其结果不会让前台显示降质。
-interactive_display_mode = "keep_stable"
+interactive_display_mode = "coarse"
 verbose = true
 
 [viewport]

@@ -929,7 +929,6 @@ void draw_viewport_canvas(
 
     frame.rotate =
         active &&
-        frame.mouse_on_image &&
         ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
         !io.KeyCtrl &&
         !io.KeyShift;

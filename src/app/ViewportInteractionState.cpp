@@ -13,9 +13,10 @@ ViewportInteractionState::ViewportInteractionState(
           std::max(rotate_activation_threshold_px, 0.0f)
       )
     , previous_rotate_(viewport_count, false)
-    , mouse_down_x_(viewport_count, 0.0f)
-    , mouse_down_y_(viewport_count, 0.0f)
+    , rotation_origin_valid_(viewport_count, false)
     , rotation_activated_(viewport_count, false)
+    , pending_delta_x_(viewport_count, 0.0f)
+    , pending_delta_y_(viewport_count, 0.0f)
 {
 }
 
@@ -37,18 +38,34 @@ void ViewportInteractionState::apply_rotation_gate(
     const auto index = static_cast<std::size_t>(frame.index);
     const bool pressed = frame.rotate && !previous_rotate_[index];
     if (pressed) {
-        mouse_down_x_[index] = frame.mouse_local_x;
-        mouse_down_y_[index] = frame.mouse_local_y;
+        rotation_origin_valid_[index] = frame.mouse_on_image;
         rotation_activated_[index] = false;
+        pending_delta_x_[index] = 0.0f;
+        pending_delta_y_[index] = 0.0f;
     }
 
     if (frame.rotate) {
-        if (!rotation_activated_[index]) {
-            const float dx = frame.mouse_local_x - mouse_down_x_[index];
-            const float dy = frame.mouse_local_y - mouse_down_y_[index];
+        if (!rotation_origin_valid_[index]) {
+            input.rotate = false;
+            input.delta_x = 0.0f;
+            input.delta_y = 0.0f;
+        } else if (!rotation_activated_[index]) {
+            // The press frame can contain MouseDelta accumulated before the
+            // button went down. Ignore it, then accumulate actual drag deltas
+            // in the same coordinate space consumed by CameraController.
+            if (!pressed) {
+                pending_delta_x_[index] += input.delta_x;
+                pending_delta_y_[index] += input.delta_y;
+            }
+            const float dx = pending_delta_x_[index];
+            const float dy = pending_delta_y_[index];
             if (dx * dx + dy * dy >= rotate_activation_threshold_squared_) {
                 rotation_activated_[index] = true;
                 input.rotate_begin = true;
+                input.delta_x = dx;
+                input.delta_y = dy;
+                pending_delta_x_[index] = 0.0f;
+                pending_delta_y_[index] = 0.0f;
             } else {
                 // A press or sub-threshold movement is a click, not a turn.
                 input.delta_x = 0.0f;
@@ -56,7 +73,10 @@ void ViewportInteractionState::apply_rotation_gate(
             }
         }
     } else {
+        rotation_origin_valid_[index] = false;
         rotation_activated_[index] = false;
+        pending_delta_x_[index] = 0.0f;
+        pending_delta_y_[index] = 0.0f;
     }
 
     previous_rotate_[index] = frame.rotate;

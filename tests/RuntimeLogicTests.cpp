@@ -465,16 +465,13 @@ void test_camera_uses_view_local_input()
     );
 }
 
-void test_arcball_drag_rotates_about_screen_axes()
+void test_turntable_drag_uses_world_up_and_screen_right()
 {
-    // Turntable contract (current main branch; replaces the screen-axis
-    // arcball that was tried and rolled back — see project memory
-    // [[rotation-direction]]).  Yaw is around the fixed world-up axis
-    // {0,0,1}; pitch is around cross(position_offset, world_up) with
-    // explicit pivot = (40, 0, 0).  Invariants verified here:
+    // Z-up turntable contract. Yaw is around the fixed world-up axis and
+    // pitch is around the camera's screen-right axis through the explicit
+    // pivot at (40, 0, 0). Invariants verified here:
     //   - yaw around world-up: position_offset's z component is unchanged.
-    //   - pitch around horizontal radial axis: position_offset's radial
-    //     distance to the pivot in the XY plane is preserved (only z moves).
+    //   - pitch follows screen-right even when target and pivot differ.
     //   - pivot stays at the same screen pixel for both axes.
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -535,31 +532,91 @@ void test_arcball_drag_rotates_about_screen_axes()
         expect(p.has_value(), "pivot stays on screen after horizontal drag");
     }
 
-    // Vertical drag pitches around cross(position_offset, world_up): a
-    // pure rotation around the pivot, so the 3D distance from camera to
-    // pivot is preserved (Z trades off against XY).
+    // Vertical drag pitches around -screen_right through the pivot. This is
+    // intentionally different from cross(position_offset, world_up), which
+    // changes after a pan even though the camera's screen axes do not.
     {
-        const auto cam = drag(0.0f, 60.0f);
+        const auto cross_vec = [](
+            const gs3d::camera::Vec3& a,
+            const gs3d::camera::Vec3& b
+        ) {
+            return gs3d::camera::Vec3{
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x
+            };
+        };
+        const auto normalize_vec = [](
+            const gs3d::camera::Vec3& value
+        ) {
+            const float n = std::sqrt(
+                value.x * value.x +
+                value.y * value.y +
+                value.z * value.z
+            );
+            return gs3d::camera::Vec3{
+                value.x / n,
+                value.y / n,
+                value.z / n
+            };
+        };
+        const auto rotate_axis = [&cross_vec](
+            const gs3d::camera::Vec3& value,
+            const gs3d::camera::Vec3& axis,
+            const float angle
+        ) {
+            const float c = std::cos(angle);
+            const float s = std::sin(angle);
+            const auto axis_cross_value = cross_vec(axis, value);
+            const float axis_dot_value =
+                axis.x * value.x +
+                axis.y * value.y +
+                axis.z * value.z;
+            return gs3d::camera::Vec3{
+                value.x * c +
+                    axis_cross_value.x * s +
+                    axis.x * axis_dot_value * (1.0f - c),
+                value.y * c +
+                    axis_cross_value.y * s +
+                    axis.y * axis_dot_value * (1.0f - c),
+                value.z * c +
+                    axis_cross_value.z * s +
+                    axis.z * axis_dot_value * (1.0f - c)
+            };
+        };
+
+        const auto forward = normalize_vec(gs3d::camera::Vec3{
+            camera.target().x - camera.position().x,
+            camera.target().y - camera.position().y,
+            camera.target().z - camera.position().z
+        });
+        const auto screen_right =
+            normalize_vec(cross_vec(forward, camera.up()));
+        const gs3d::camera::Vec3 pitch_axis{
+            -screen_right.x,
+            -screen_right.y,
+            -screen_right.z
+        };
         const auto off_before = gs3d::camera::Vec3{
             camera.position().x - pivot.x,
             camera.position().y - pivot.y,
-            camera.position().z - pivot.z};
+            camera.position().z - pivot.z
+        };
+        constexpr float kTwoPi = 6.28318530717958647692f;
+        const float pitch_angle = kTwoPi * 60.0f / 600.0f;
+        const auto expected_offset =
+            rotate_axis(off_before, pitch_axis, pitch_angle);
+
+        const auto cam = drag(0.0f, 60.0f);
         const auto off_after = gs3d::camera::Vec3{
             cam.position().x - pivot.x,
             cam.position().y - pivot.y,
             cam.position().z - pivot.z};
-        const float r_before = std::sqrt(
-            off_before.x * off_before.x +
-            off_before.y * off_before.y +
-            off_before.z * off_before.z);
-        const float r_after = std::sqrt(
-            off_after.x * off_after.x +
-            off_after.y * off_after.y +
-            off_after.z * off_after.z);
         expect(
-            std::abs(r_after - r_before) < 1.0e-3f,
-            "vertical drag pitches around the horizontal radial axis "
-            "(3D distance to pivot preserved)"
+            std::abs(off_after.x - expected_offset.x) < 1.0e-3f &&
+            std::abs(off_after.y - expected_offset.y) < 1.0e-3f &&
+            std::abs(off_after.z - expected_offset.z) < 1.0e-3f,
+            "vertical drag pitches around screen-right through the pivot"
         );
         const auto p = gs3d::camera::MouseRay::to_screen(pivot, viewport, cam);
         expect(p.has_value(), "pivot stays on screen after vertical drag");
@@ -3893,7 +3950,7 @@ void test_scenario_linked_viewports_after_propagation()
     LEGACY_TEST_CASE(test_scene_state_is_constructible_without_dataset_io)
     LEGACY_TEST_CASE(test_frame_upload_budget)
     LEGACY_TEST_CASE(test_camera_uses_view_local_input)
-    LEGACY_TEST_CASE(test_arcball_drag_rotates_about_screen_axes)
+    LEGACY_TEST_CASE(test_turntable_drag_uses_world_up_and_screen_right)
     LEGACY_TEST_CASE(test_zoom_keeps_cursor_anchor_fixed)
     LEGACY_TEST_CASE(test_zoom_respects_max_distance_from_bounds)
     LEGACY_TEST_CASE(test_fit_bounds_distance_is_orientation_independent)

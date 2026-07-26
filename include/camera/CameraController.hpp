@@ -50,7 +50,7 @@ struct CameraControllerConfig {
     bool invert_pan_y    = false;
 
     /*
-     * 球坐标 orbit 的俯仰角约束（弧度）。
+     * 相机视线俯仰角约束（弧度）。
      * 仅在上下极点前保留 1° 安全余量，防止方位角翻转。
      * 相机可以越过 XY 数据平面，从下方向上观察点云。
      */

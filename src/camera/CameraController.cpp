@@ -251,7 +251,7 @@ bool CameraController::update(
                     );
                 };
 
-            const Vec3 forward = normalize(
+            Vec3 forward = normalize(
                 sub(camera.target(), camera.position()));
             Vec3 right = normalize(cross(forward, camera.up()));
             if (length(right) < 1.0e-6f) {
@@ -264,13 +264,17 @@ bool CameraController::update(
                 rotate_axis(position_offset, world_up, angle_h);
             target_offset =
                 rotate_axis(target_offset, world_up, angle_h);
+            forward = rotate_axis(forward, world_up, angle_h);
             right = rotate_axis(right, world_up, angle_h);
             screen_up = rotate_axis(screen_up, world_up, angle_h);
 
-            // Clamp elevation of the camera around the scene pivot, then use
-            // the effective delta as a rigid pitch for position and target.
+            // Vertical mouse motion is defined in screen space. Clamp the
+            // camera viewing elevation, then pitch the complete camera frame
+            // around its screen-right axis through the selected pivot. Unlike
+            // cross(position - pivot, world_up), this axis does not change
+            // merely because the user panned an off-centre locked point.
             const float current_pitch = std::asin(std::clamp(
-                position_offset.z / orbit_radius, -1.0f, 1.0f));
+                -forward.z, -1.0f, 1.0f));
             const float clamped_pitch = std::clamp(
                 current_pitch + angle_v,
                 config_.min_pitch,
@@ -278,11 +282,7 @@ bool CameraController::update(
             );
             const float pitch_delta = clamped_pitch - current_pitch;
 
-            Vec3 pitch_axis =
-                normalize(cross(position_offset, world_up));
-            if (length(pitch_axis) < 1.0e-6f) {
-                pitch_axis = right;
-            }
+            const Vec3 pitch_axis = mul(right, -1.0f);
 
             position_offset =
                 rotate_axis(position_offset, pitch_axis, pitch_delta);

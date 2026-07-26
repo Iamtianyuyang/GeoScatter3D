@@ -9,7 +9,8 @@ gs3d::app::ViewportFrameCmd rotate_frame(
     const int index,
     const bool rotate,
     const float mouse_x,
-    const float mouse_y
+    const float mouse_y,
+    const bool mouse_on_image = true
 )
 {
     gs3d::app::ViewportFrameCmd frame;
@@ -17,6 +18,7 @@ gs3d::app::ViewportFrameCmd rotate_frame(
     frame.rotate = rotate;
     frame.mouse_local_x = mouse_x;
     frame.mouse_local_y = mouse_y;
+    frame.mouse_on_image = mouse_on_image;
     return frame;
 }
 
@@ -95,6 +97,71 @@ TEST_CASE(
     CHECK_FALSE(second_press.rotate_begin);
     CHECK(second_press.delta_x == 0.0f);
     CHECK(second_press.delta_y == 0.0f);
+}
+
+TEST_CASE(
+    "Viewport rotation replays the full gated drag without cursor lag",
+    "[viewport_interaction][rotation]"
+) {
+    gs3d::app::ViewportInteractionState state(1);
+
+    auto press = rotation_input(8.0f, 0.0f);
+    state.apply_rotation_gate(rotate_frame(0, true, 10.0f, 10.0f), press);
+    CHECK(press.delta_x == 0.0f);
+
+    auto first_slow_delta = rotation_input(2.0f, 0.0f);
+    state.apply_rotation_gate(
+        rotate_frame(0, true, 12.0f, 10.0f),
+        first_slow_delta
+    );
+    CHECK(first_slow_delta.delta_x == 0.0f);
+
+    auto second_slow_delta = rotation_input(2.0f, 0.0f);
+    state.apply_rotation_gate(
+        rotate_frame(0, true, 14.0f, 10.0f),
+        second_slow_delta
+    );
+    CHECK(second_slow_delta.delta_x == 0.0f);
+
+    auto activation = rotation_input(1.0f, 0.0f);
+    state.apply_rotation_gate(
+        rotate_frame(0, true, 15.0f, 10.0f),
+        activation
+    );
+    CHECK(activation.rotate_begin);
+    CHECK(activation.delta_x == 5.0f);
+    CHECK(activation.delta_y == 0.0f);
+}
+
+TEST_CASE(
+    "Viewport rotation continues outside the image after a valid press",
+    "[viewport_interaction][rotation]"
+) {
+    gs3d::app::ViewportInteractionState state(1);
+
+    auto press = rotation_input(0.0f, 0.0f);
+    state.apply_rotation_gate(
+        rotate_frame(0, true, 100.0f, 50.0f, true),
+        press
+    );
+
+    auto outside_drag = rotation_input(6.0f, -2.0f);
+    state.apply_rotation_gate(
+        rotate_frame(0, true, 106.0f, 48.0f, false),
+        outside_drag
+    );
+    CHECK(outside_drag.rotate);
+    CHECK(outside_drag.rotate_begin);
+    CHECK(outside_drag.delta_x == 6.0f);
+    CHECK(outside_drag.delta_y == -2.0f);
+
+    gs3d::app::ViewportInteractionState invalid_origin(1);
+    auto outside_press = rotation_input(0.0f, 0.0f);
+    invalid_origin.apply_rotation_gate(
+        rotate_frame(0, true, 10.0f, 10.0f, false),
+        outside_press
+    );
+    CHECK_FALSE(outside_press.rotate);
 }
 
 TEST_CASE(
