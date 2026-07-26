@@ -14,6 +14,7 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -199,11 +200,53 @@ void pop_glass_window_style() {
     ImGui::PopStyleVar(3);
 }
 
+void push_card_scrollbar_style(const float ui_scale)
+{
+    ImVec4 grab = palette::kTextFaint;
+    grab.w = 0.30f;
+    ImVec4 grab_hovered = palette::kAccent;
+    grab_hovered.w = 0.46f;
+    ImVec4 grab_active = palette::kAccent;
+    grab_active.w = 0.66f;
+
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ScrollbarSize,
+        std::max(7.0f, 7.0f * ui_scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ScrollbarRounding,
+        4.0f * ui_scale
+    );
+    ImGui::PushStyleColor(
+        ImGuiCol_ScrollbarBg,
+        ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
+    );
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, grab);
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, grab_hovered);
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, grab_active);
+}
+
+void pop_card_scrollbar_style()
+{
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar(2);
+}
+
 constexpr ImGuiWindowFlags kOverlayWindowFlags =
     ImGuiWindowFlags_NoTitleBar |
     ImGuiWindowFlags_NoResize |
     ImGuiWindowFlags_AlwaysAutoResize |
     ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags_NoSavedSettings |
+    ImGuiWindowFlags_NoScrollbar |
+    ImGuiWindowFlags_NoScrollWithMouse |
+    ImGuiWindowFlags_NoDocking |
+    ImGuiWindowFlags_NoFocusOnAppearing |
+    ImGuiWindowFlags_NoNavFocus;
+
+constexpr ImGuiWindowFlags kFloatingPanelWindowFlags =
+    ImGuiWindowFlags_NoTitleBar |
+    ImGuiWindowFlags_AlwaysAutoResize |
     ImGuiWindowFlags_NoSavedSettings |
     ImGuiWindowFlags_NoScrollbar |
     ImGuiWindowFlags_NoScrollWithMouse |
@@ -790,6 +833,77 @@ void draw_navigation_map_preview(
             caption
         );
     }
+}
+
+void draw_floating_navigation_map(
+    const FrameCtx& ctx,
+    gs3d::app::AppState& state,
+    int active_index
+) {
+    auto& dock = state.dock_ui;
+    if (!dock.navigation_map_floating) {
+        return;
+    }
+
+    const float s = ctx.s;
+    const float panel_width = std::clamp(
+        360.0f * s,
+        280.0f * s,
+        std::max(280.0f * s, ctx.work_size.x - 36.0f * s)
+    );
+    ImGui::SetNextWindowPos(
+        ImVec2(
+            ctx.work_pos.x + DockMetrics::kSideMargin * s,
+            ctx.work_pos.y + 112.0f * s
+        ),
+        ImGuiCond_Appearing
+    );
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(panel_width, 0.0f),
+        ImVec2(panel_width, ctx.work_size.y - 36.0f * s)
+    );
+    push_glass_window_style(
+        DockMetrics::kCardRounding * s,
+        ImVec2(DockMetrics::kCardPad * s, DockMetrics::kCardPad * s)
+    );
+    if (ImGui::Begin(
+            "##FloatingDockNavigationMap",
+            nullptr,
+            kFloatingPanelWindowFlags
+        )) {
+        const ImVec2 wmin = ImGui::GetWindowPos();
+        const ImVec2 wmax(
+            wmin.x + ImGui::GetWindowSize().x,
+            wmin.y + ImGui::GetWindowSize().y
+        );
+        add_glass_shadow(
+            ctx,
+            wmin,
+            wmax,
+            DockMetrics::kCardRounding * s
+        );
+
+        if (card_header("导航图", s)) {
+            dock.navigation_map_floating = false;
+        } else {
+            {
+                ScopedFont font(small_font());
+                ImGui::PushStyleColor(
+                    ImGuiCol_Text,
+                    to_u32(palette::kTextDim, 205)
+                );
+                ImGui::Text(
+                    "视图 %d · 实时更新 · 拖动标题区域可移动",
+                    active_index + 1
+                );
+                ImGui::PopStyleColor();
+            }
+            ImGui::Spacing();
+            draw_navigation_map_preview(state, active_index, s);
+        }
+    }
+    ImGui::End();
+    pop_glass_window_style();
 }
 
 // ── 视图解析 ────────────────────────────────────────────────────────
@@ -1616,7 +1730,31 @@ void draw_card_views(
             state.dock_ui.open_card = gs3d::app::DockCard::kNone;
         }
         ImGui::Spacing();
-        draw_navigation_map_preview(state, active_index, s);
+        const bool navigation_floating =
+            state.dock_ui.navigation_map_floating;
+        if (widgets::Button(
+                navigation_floating
+                    ? "收回导航图"
+                    : "弹出导航图为悬浮窗口",
+                widgets::ButtonVariant::kSecondary,
+                ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)
+            )) {
+            state.dock_ui.navigation_map_floating = !navigation_floating;
+        }
+        ImGui::Spacing();
+        if (state.dock_ui.navigation_map_floating) {
+            ScopedFont font(small_font());
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                to_u32(palette::kTextDim, 205)
+            );
+            ImGui::TextWrapped(
+                "导航图已在悬浮窗口中实时显示，可拖动标题区域调整位置。"
+            );
+            ImGui::PopStyleColor();
+        } else {
+            draw_navigation_map_preview(state, active_index, s);
+        }
         ImGui::Spacing();
     }
     {
@@ -2766,6 +2904,24 @@ const char* card_title(gs3d::app::DockCard card) {
     }
 }
 
+bool card_allows_vertical_scroll(const gs3d::app::DockCard card)
+{
+    switch (card) {
+        case gs3d::app::DockCard::kMeasure:
+        case gs3d::app::DockCard::kLayers:
+        case gs3d::app::DockCard::kAppearance:
+        case gs3d::app::DockCard::kSettings:
+        case gs3d::app::DockCard::kData:
+            return true;
+        case gs3d::app::DockCard::kViews:
+        case gs3d::app::DockCard::kPerformance:
+        case gs3d::app::DockCard::kCrosshairStyle:
+        case gs3d::app::DockCard::kNone:
+            return false;
+    }
+    return false;
+}
+
 void draw_dock_card(
     const FrameCtx& ctx,
     gs3d::app::AppState& state,
@@ -2845,9 +3001,9 @@ void draw_dock_card(
         DockMetrics::kCardRounding * s,
         ImVec2(DockMetrics::kCardPad * s, DockMetrics::kCardPad * s)
     );
+    const bool allow_vertical_scroll = card_allows_vertical_scroll(card);
+    push_card_scrollbar_style(s);
     ImGuiWindowFlags flags = kOverlayWindowFlags;
-    flags &= ~ImGuiWindowFlags_NoScrollbar;
-    flags &= ~ImGuiWindowFlags_NoScrollWithMouse;
     if (closing) {
         // 收起动画期间不再拦截输入，点击可直接落到视口。
         flags |= ImGuiWindowFlags_NoInputs;
@@ -2863,52 +3019,112 @@ void draw_dock_card(
         if (card_header(card_title(dock.anim_card), s)) {
             dock.open_card = gs3d::app::DockCard::kNone;
         }
-        switch (dock.anim_card) {
-            case gs3d::app::DockCard::kViews:
-                draw_card_views(ctx, state, active_index);
-                break;
-            case gs3d::app::DockCard::kMeasure:
-                draw_card_measure(ctx, state, active_index);
-                break;
-            case gs3d::app::DockCard::kLayers:
-                draw_card_layers(ctx, state, active_index);
-                break;
-            case gs3d::app::DockCard::kAppearance:
-                draw_card_appearance(ctx, state, actions, active_index);
-                break;
-            case gs3d::app::DockCard::kSettings:
-                draw_card_settings(
-                    ctx,
-                    state,
-                    state.render_views[static_cast<std::size_t>(active_index)],
-                    actions,
-                    result
+        const auto draw_card_body = [&]() {
+            switch (dock.anim_card) {
+                case gs3d::app::DockCard::kViews:
+                    draw_card_views(ctx, state, active_index);
+                    break;
+                case gs3d::app::DockCard::kMeasure:
+                    draw_card_measure(ctx, state, active_index);
+                    break;
+                case gs3d::app::DockCard::kLayers:
+                    draw_card_layers(ctx, state, active_index);
+                    break;
+                case gs3d::app::DockCard::kAppearance:
+                    draw_card_appearance(ctx, state, actions, active_index);
+                    break;
+                case gs3d::app::DockCard::kSettings:
+                    draw_card_settings(
+                        ctx,
+                        state,
+                        state.render_views[
+                            static_cast<std::size_t>(active_index)
+                        ],
+                        actions,
+                        result
+                    );
+                    break;
+                case gs3d::app::DockCard::kData:
+                    draw_card_data(ctx, state, actions);
+                    break;
+                case gs3d::app::DockCard::kPerformance:
+                    draw_card_performance(
+                        ctx,
+                        state,
+                        actions,
+                        active_index
+                    );
+                    break;
+                case gs3d::app::DockCard::kCrosshairStyle:
+                    draw_card_crosshair_style(
+                        ctx,
+                        state.render_views[
+                            static_cast<std::size_t>(active_index)
+                        ]
+                    );
+                    break;
+                default:
+                    break;
+            }
+        };
+
+        if (allow_vertical_scroll) {
+            static std::array<float, 8> measured_body_heights{};
+            static gs3d::app::DockCard previous_scroll_card =
+                gs3d::app::DockCard::kNone;
+
+            const std::size_t card_index =
+                static_cast<std::size_t>(card);
+            const float max_body_height = std::max(
+                96.0f * s,
+                max_height -
+                    ImGui::GetCursorPosY() -
+                    DockMetrics::kCardPad * s
+            );
+            const float cached_height =
+                measured_body_heights[card_index];
+            const float body_height = std::clamp(
+                cached_height > 0.0f
+                    ? cached_height
+                    : max_body_height,
+                48.0f * s,
+                max_body_height
+            );
+
+            ImGui::PushStyleVar(
+                ImGuiStyleVar_WindowPadding,
+                ImVec2(0.0f, 0.0f)
+            );
+            if (ImGui::BeginChild(
+                    "##FloatingDockCardBody",
+                    ImVec2(0.0f, body_height),
+                    ImGuiChildFlags_None,
+                    ImGuiWindowFlags_NoBackground |
+                        ImGuiWindowFlags_NoSavedSettings |
+                        ImGuiWindowFlags_NoNavFocus
+                )) {
+                if (previous_scroll_card != card) {
+                    ImGui::SetScrollY(0.0f);
+                }
+                const float content_start =
+                    ImGui::GetCursorPosY() + ImGui::GetScrollY();
+                draw_card_body();
+                const float content_end =
+                    ImGui::GetCursorPosY() + ImGui::GetScrollY();
+                measured_body_heights[card_index] = std::max(
+                    48.0f * s,
+                    content_end - content_start + 4.0f * s
                 );
-                break;
-            case gs3d::app::DockCard::kData:
-                draw_card_data(ctx, state, actions);
-                break;
-            case gs3d::app::DockCard::kPerformance:
-                draw_card_performance(
-                    ctx,
-                    state,
-                    actions,
-                    active_index
-                );
-                break;
-            case gs3d::app::DockCard::kCrosshairStyle:
-                draw_card_crosshair_style(
-                    ctx,
-                    state.render_views[
-                        static_cast<std::size_t>(active_index)
-                    ]
-                );
-                break;
-            default:
-                break;
+                previous_scroll_card = card;
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleVar();
+        } else {
+            draw_card_body();
         }
     }
     ImGui::End();
+    pop_card_scrollbar_style();
     pop_glass_window_style();
     ImGui::PopStyleVar();
 }
@@ -3225,6 +3441,7 @@ FloatingDockFrameResult draw_floating_dock_layout(
     draw_fabs(ctx, state, actions, active_index);
     draw_dock(ctx, state);
     draw_dock_card(ctx, state, actions, active_index, result);
+    draw_floating_navigation_map(ctx, state, active_index);
     draw_hint_pill(ctx, dock);
 
     // ── 3. Esc 收起卡片 ──

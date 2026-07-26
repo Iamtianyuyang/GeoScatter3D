@@ -89,6 +89,7 @@ struct DockUiState {
     DockCard anim_card = DockCard::kNone;
     float card_anim = 0.0f;
     bool show_perf_hud = true;
+    bool navigation_map_floating = false;
     // 首次进入布局时的引导气泡剩余秒数（“点击 Dock 图标…”）。
     float hint_seconds_left = 6.0f;
 };
