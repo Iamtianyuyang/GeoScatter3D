@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <future>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -52,10 +53,23 @@ struct VoxelKeyHash {
 
 [[nodiscard]]
 std::uint32_t resolve_lod_build_threads(
+    std::uint32_t requested_threads,
     std::size_t level_task_count
 ) noexcept {
     if (level_task_count <= 1) {
         return 1;
+    }
+
+    if (requested_threads > 0) {
+        return std::min<std::uint32_t>(
+            requested_threads,
+            static_cast<std::uint32_t>(
+                std::min<std::size_t>(
+                    level_task_count,
+                    std::numeric_limits<std::uint32_t>::max()
+                )
+            )
+        );
     }
 
     const auto hw = std::thread::hardware_concurrency();
@@ -330,13 +344,8 @@ Gs3dLodLevel build_voxel_level_serial(
     return level;
 }
 
-struct ChunkFirstPoint {
-    const Gs3dPoint* point = nullptr;
-    VoxelKey key{};
-};
-
 struct ChunkFirstPointResult {
-    std::vector<ChunkFirstPoint> ordered_points;
+    std::vector<const Gs3dPoint*> ordered_points;
 };
 
 [[nodiscard]]
@@ -346,7 +355,9 @@ Gs3dLodLevel build_voxel_level_parallel(
     std::uint64_t target_point_count,
     float voxel_scale,
     Gs3dLodVoxelMode voxel_mode,
-    float explicit_voxel_size = 0.0f
+    float explicit_voxel_size,
+    gs3d::util::ThreadPool* pool,
+    std::uint32_t thread_count
 ) {
     const auto start_time =
         std::chrono::steady_clock::now();
@@ -372,10 +383,10 @@ Gs3dLodLevel build_voxel_level_parallel(
 
     const auto& source_points = dataset.points();
     const std::size_t point_count = source_points.size();
-    const std::uint32_t thread_count =
-        resolve_lod_build_threads(point_count);
 
-    if (thread_count <= 1 || point_count < 100'000) {
+    if (pool == nullptr ||
+        thread_count <= 1 ||
+        point_count < 100'000) {
         return build_voxel_level_serial(
             dataset,
             level_index,
@@ -399,7 +410,6 @@ Gs3dLodLevel build_voxel_level_parallel(
         (point_count + static_cast<std::size_t>(thread_count) - 1u) /
         static_cast<std::size_t>(thread_count);
 
-    gs3d::util::ThreadPool pool(thread_count);
     std::vector<std::future<ChunkFirstPointResult>> futures;
     futures.reserve(thread_count);
 
@@ -413,22 +423,45 @@ Gs3dLodLevel build_voxel_level_parallel(
         const std::size_t end =
             std::min(begin + chunk_size, point_count);
 
-        futures.push_back(pool.submit([&, begin, end] {
+        futures.push_back(pool->submit([&, begin, end] {
             ChunkFirstPointResult result;
-            result.ordered_points.reserve(
+            const auto target_per_worker =
+                target_point_count /
+                    static_cast<std::uint64_t>(thread_count) +
+                (
+                    target_point_count %
+                        static_cast<std::uint64_t>(thread_count) !=
+                    0
+                        ? 1ull
+                        : 0ull
+                );
+            const auto local_reserve_count =
                 static_cast<std::size_t>(
-                    std::max<std::uint64_t>(
-                        1ull,
-                        std::min<std::uint64_t>(
-                            target_point_count,
-                            static_cast<std::uint64_t>(end - begin)
-                        ) * 2ull
+                    std::min<std::uint64_t>(
+                        static_cast<std::uint64_t>(end - begin),
+                        std::max<std::uint64_t>(
+                            1ull,
+                            std::min<std::uint64_t>(
+                                target_per_worker,
+                                std::numeric_limits<
+                                    std::uint64_t
+                                >::max() /
+                                    2ull
+                            ) *
+                                2ull
+                        )
                     )
-                )
+                );
+            result.ordered_points.reserve(
+                local_reserve_count
             );
             std::unordered_set<VoxelKey, VoxelKeyHash> local_occupied_voxels;
             local_occupied_voxels.reserve(
-                result.ordered_points.capacity() * 2u
+                std::min<std::size_t>(
+                    local_reserve_count,
+                    std::numeric_limits<std::size_t>::max() / 2u
+                ) *
+                    2u
             );
 
             for (std::size_t i = begin; i < end; ++i) {
@@ -445,7 +478,7 @@ Gs3dLodLevel build_voxel_level_parallel(
                     local_occupied_voxels.insert(key);
                 if (inserted) {
                     result.ordered_points.push_back(
-                        ChunkFirstPoint{&point, key}
+                        &point
                     );
                 }
             }
@@ -466,11 +499,18 @@ Gs3dLodLevel build_voxel_level_parallel(
 
     for (auto& future : futures) {
         auto chunk_result = future.get();
-        for (const auto& first_point : chunk_result.ordered_points) {
+        for (const auto* first_point : chunk_result.ordered_points) {
+            const auto key =
+                make_voxel_key(
+                    *first_point,
+                    dataset,
+                    voxel_size,
+                    voxel_mode
+                );
             auto [it, inserted] =
-                occupied_voxels.insert(first_point.key);
+                occupied_voxels.insert(key);
             if (inserted) {
-                level.points.push_back(*first_point.point);
+                level.points.push_back(*first_point);
             }
         }
     }
@@ -493,7 +533,9 @@ Gs3dLodLevel build_voxel_level(
     std::uint64_t target_point_count,
     float voxel_scale,
     Gs3dLodVoxelMode voxel_mode,
-    float explicit_voxel_size = 0.0f
+    float explicit_voxel_size,
+    gs3d::util::ThreadPool* pool,
+    std::uint32_t thread_count
 ) {
     return build_voxel_level_parallel(
         dataset,
@@ -501,7 +543,9 @@ Gs3dLodLevel build_voxel_level(
         target_point_count,
         voxel_scale,
         voxel_mode,
-        explicit_voxel_size
+        explicit_voxel_size,
+        pool,
+        thread_count
     );
 }
 
@@ -623,6 +667,19 @@ Gs3dLodDataset Gs3dLodDataset::build(
             config.voxel_scale,
             config.voxel_mode
         );
+    const auto build_threads =
+        resolve_lod_build_threads(
+            config.num_threads,
+            dataset.points().size()
+        );
+    std::unique_ptr<gs3d::util::ThreadPool> build_pool;
+    if (build_threads > 1 &&
+        dataset.points().size() >= 100'000) {
+        build_pool =
+            std::make_unique<gs3d::util::ThreadPool>(
+                build_threads
+            );
+    }
 
     if (config.verbose) {
         gs3d::util::log::info() << "[LOD] auto-layer: finest_target="
@@ -631,6 +688,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
                   << ", min_points=" << config.min_points_per_level
                   << ", base_voxel_size=" << base_voxel_size
                   << ", max_extent=" << max_extent
+                  << ", threads=" << build_threads
                   << '\n';
     }
 
@@ -682,7 +740,9 @@ Gs3dLodDataset Gs3dLodDataset::build(
                 expected_points,
                 config.voxel_scale,
                 config.voxel_mode,
-                voxel_size
+                voxel_size,
+                build_pool.get(),
+                build_threads
             );
 
         const auto actual_points = level.point_count();
@@ -702,6 +762,16 @@ Gs3dLodDataset Gs3dLodDataset::build(
                       << level.point_bytes()
                       << ", build_seconds="
                       << level.build_seconds
+                      << ", scan_mpoints_per_second="
+                      << (
+                             level.build_seconds > 0.0
+                                 ? static_cast<double>(
+                                       dataset.point_count()
+                                   ) /
+                                       level.build_seconds /
+                                       1'000'000.0
+                                 : 0.0
+                         )
                       << '\n';
         }
 

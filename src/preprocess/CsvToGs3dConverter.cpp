@@ -6,6 +6,7 @@
 #include "data/CsvSniffer.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "preprocess/StatisticsPass.hpp"
+#include "util/Stopwatch.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <algorithm>
@@ -14,6 +15,7 @@
 #include <future>
 #include <iostream>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -65,6 +67,26 @@ std::uint32_t resolve_thread_count(
     );
 }
 
+[[nodiscard]]
+double million_points_per_second(
+    std::uint64_t point_count,
+    double seconds
+) noexcept {
+    return seconds > 0.0
+        ? static_cast<double>(point_count) / seconds / 1'000'000.0
+        : 0.0;
+}
+
+[[nodiscard]]
+double mebibytes_per_second(
+    std::uint64_t byte_count,
+    double seconds
+) noexcept {
+    return seconds > 0.0
+        ? static_cast<double>(byte_count) / seconds / (1024.0 * 1024.0)
+        : 0.0;
+}
+
 void update_bounds(BoundsAccum& b, const CsvPointRecord& rec) noexcept {
     const double x = static_cast<double>(rec.x);
     const double y = static_cast<double>(rec.y);
@@ -110,48 +132,6 @@ void merge_bounds(
     out.zmax = std::max(out.zmax, chunk.zmax);
     out.value_min = std::min(out.value_min, chunk.value_min);
     out.value_max = std::max(out.value_max, chunk.value_max);
-}
-
-void assemble_chunk_points(
-    std::vector<gs3d::data::CsvChunkPointResult>& chunk_results,
-    std::vector<Gs3dPoint>& output_points,
-    gs3d::util::ThreadPool& pool
-) {
-    std::vector<std::size_t> offsets(
-        chunk_results.size(),
-        0
-    );
-
-    std::size_t next_offset = 0;
-    for (std::size_t i = 0; i < chunk_results.size(); ++i) {
-        offsets[i] = next_offset;
-        next_offset += chunk_results[i].points.size();
-    }
-
-    output_points.resize(next_offset);
-
-    std::vector<std::future<void>> futures;
-    futures.reserve(chunk_results.size());
-
-    for (std::size_t i = 0; i < chunk_results.size(); ++i) {
-        futures.push_back(pool.submit(
-            [&, i] {
-                auto& chunk_points = chunk_results[i].points;
-                auto* out =
-                    output_points.data() + offsets[i];
-
-                for (std::size_t j = 0; j < chunk_points.size(); ++j) {
-                    out[j] = chunk_points[j];
-                }
-
-                std::vector<Gs3dPoint>().swap(chunk_points);
-            }
-        ));
-    }
-
-    for (auto& future : futures) {
-        future.get();
-    }
 }
 
 [[nodiscard]]
@@ -291,12 +271,14 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     BoundsAccum bounds;
     gs3d::data::CsvStreamReader reader(config_);
 
+    gs3d::util::Stopwatch stats_timer;
     const auto read_stats = reader.read(
         csv_path,
         [&](const CsvPointRecord& rec, std::uint64_t) {
             update_bounds(bounds, rec);
         }
     );
+    const double stats_seconds = stats_timer.elapsed_seconds();
 
     if (read_stats.valid_records == 0) {
         throw std::runtime_error(
@@ -318,6 +300,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
         estimated_points,
         static_cast<std::size_t>(read_stats.valid_records)
     ));
+    gs3d::util::Stopwatch point_timer;
     const auto point_stats = reader.read(
         csv_path,
         [&](const CsvPointRecord& rec, std::uint64_t) {
@@ -329,6 +312,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
             });
         }
     );
+    const double point_seconds = point_timer.elapsed_seconds();
 
     if (point_stats.valid_records != read_stats.valid_records ||
         point_stats.invalid_records != read_stats.invalid_records) {
@@ -355,10 +339,32 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_sequential(
     }
 
     // Phase 4: bulk-write .gs3d (header + all points in one write call).
+    gs3d::util::Stopwatch write_timer;
     write_gs3d(gs3d_path, header, points);
+    const double write_seconds = write_timer.elapsed_seconds();
 
     const std::uint64_t output_bytes =
         Gs3dFormat::expected_file_size(header);
+
+    gs3d::util::log::info()
+        << "[TIME] csv.stats_seconds = " << stats_seconds << '\n'
+        << "[PERF] csv.stats_mpoints_per_second = "
+        << million_points_per_second(
+               read_stats.valid_records,
+               stats_seconds
+           )
+        << '\n'
+        << "[TIME] csv.point_convert_seconds = " << point_seconds << '\n'
+        << "[PERF] csv.point_convert_mpoints_per_second = "
+        << million_points_per_second(
+               point_stats.valid_records,
+               point_seconds
+           )
+        << '\n'
+        << "[TIME] csv.write_seconds = " << write_seconds << '\n'
+        << "[PERF] csv.write_mib_per_second = "
+        << mebibytes_per_second(output_bytes, write_seconds)
+        << '\n';
 
     CsvConvertResult result;
     result.written_points  = static_cast<std::uint64_t>(points.size());
@@ -385,6 +391,7 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     gs3d::data::CsvChunkReader reader(config_);
     gs3d::util::ThreadPool pool(worker_count);
 
+    gs3d::util::Stopwatch stats_timer;
     std::vector<std::future<gs3d::data::CsvChunkStatsResult>> stat_futures;
     stat_futures.reserve(chunks.size());
 
@@ -403,14 +410,23 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     std::uint64_t written_points = 0;
     std::uint64_t invalid_records = 0;
     std::vector<std::uint64_t> chunk_point_counts(chunks.size(), 0);
+    std::vector<bool> seen_chunks(chunks.size(), false);
 
     for (auto& future : stat_futures) {
         auto chunk = future.get();
+        if (chunk.chunk_id >= chunks.size() ||
+            seen_chunks[chunk.chunk_id]) {
+            throw std::runtime_error(
+                "CsvToGs3dConverter: invalid parallel chunk plan"
+            );
+        }
+        seen_chunks[chunk.chunk_id] = true;
         written_points += chunk.valid_records;
         invalid_records += chunk.invalid_records;
         merge_bounds(bounds, has_bounds, chunk);
         chunk_point_counts[chunk.chunk_id] = chunk.valid_records;
     }
+    const double stats_seconds = stats_timer.elapsed_seconds();
 
     if (!has_bounds || written_points == 0) {
         throw std::runtime_error(
@@ -440,22 +456,66 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
     statistics.origin_z = origin_z;
     statistics.empty = false;
 
-    std::vector<std::future<gs3d::data::CsvChunkPointResult>> point_futures;
+    std::vector<Gs3dPoint> points;
+    if (written_points >
+        static_cast<std::uint64_t>(points.max_size())) {
+        throw std::runtime_error(
+            "CsvToGs3dConverter: point count exceeds addressable memory"
+        );
+    }
+    points.resize(static_cast<std::size_t>(written_points));
+
+    std::vector<std::size_t> chunk_offsets(chunks.size(), 0);
+    std::size_t next_offset = 0;
+    for (std::size_t chunk_id = 0;
+         chunk_id < chunk_point_counts.size();
+         ++chunk_id) {
+        chunk_offsets[chunk_id] = next_offset;
+        next_offset += static_cast<std::size_t>(
+            chunk_point_counts[chunk_id]
+        );
+    }
+
+    gs3d::util::log::info()
+        << "[CSV] direct final-buffer conversion: bytes="
+        << points.size() * sizeof(Gs3dPoint)
+        << '\n';
+
+    gs3d::util::Stopwatch point_timer;
+    std::vector<
+        std::future<gs3d::data::CsvChunkPointWriteResult>
+    > point_futures;
     point_futures.reserve(chunks.size());
     for (const auto& chunk : chunks) {
-        point_futures.push_back(pool.submit([&, chunk] {
-            return reader.parse_chunk_for_points(
+        const auto chunk_id =
+            static_cast<std::size_t>(chunk.chunk_id);
+        auto* output_begin =
+            points.data() + chunk_offsets[chunk_id];
+        const auto output_count =
+            static_cast<std::size_t>(chunk_point_counts[chunk_id]);
+
+        point_futures.push_back(pool.submit([
+            &reader,
+            &csv_path,
+            &sniff,
+            &statistics,
+            chunk,
+            output_begin,
+            output_count
+        ] {
+            return reader.parse_chunk_into_points(
                 csv_path,
                 sniff,
                 chunk,
-                statistics
+                statistics,
+                std::span<Gs3dPoint>(
+                    output_begin,
+                    output_count
+                )
             );
         }));
     }
 
-    std::vector<gs3d::data::CsvChunkPointResult> chunk_results(
-        chunks.size()
-    );
     std::uint64_t second_pass_points = 0;
     std::uint64_t second_pass_invalid = 0;
     for (auto& future : point_futures) {
@@ -468,8 +528,8 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
                 "statistics and point conversion passes"
             );
         }
-        chunk_results[chunk.chunk_id] = std::move(chunk);
     }
+    const double point_seconds = point_timer.elapsed_seconds();
 
     if (second_pass_points != written_points ||
         second_pass_invalid != invalid_records) {
@@ -477,13 +537,6 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
             "CsvToGs3dConverter: parallel conversion pass counts differ"
         );
     }
-
-    std::vector<Gs3dPoint> points;
-    assemble_chunk_points(
-        chunk_results,
-        points,
-        pool
-    );
 
     const auto header = build_header(
         bounds,
@@ -500,12 +553,36 @@ std::pair<CsvConvertResult, Gs3dDataset> CsvToGs3dConverter::convert_parallel(
         );
     }
 
+    gs3d::util::Stopwatch write_timer;
     write_gs3d(gs3d_path, header, points);
+    const double write_seconds = write_timer.elapsed_seconds();
 
     CsvConvertResult result;
     result.written_points = static_cast<std::uint64_t>(points.size());
     result.invalid_records = invalid_records;
     result.output_file_size = Gs3dFormat::expected_file_size(header);
+
+    gs3d::util::log::info()
+        << "[TIME] csv.stats_seconds = " << stats_seconds << '\n'
+        << "[PERF] csv.stats_mpoints_per_second = "
+        << million_points_per_second(written_points, stats_seconds)
+        << '\n'
+        << "[TIME] csv.point_convert_seconds = "
+        << point_seconds
+        << '\n'
+        << "[PERF] csv.point_convert_mpoints_per_second = "
+        << million_points_per_second(
+               second_pass_points,
+               point_seconds
+           )
+        << '\n'
+        << "[TIME] csv.write_seconds = " << write_seconds << '\n'
+        << "[PERF] csv.write_mib_per_second = "
+        << mebibytes_per_second(
+               result.output_file_size,
+               write_seconds
+           )
+        << '\n';
 
     Gs3dDataset dataset(header, std::move(points), gs3d_path);
     return {result, std::move(dataset)};

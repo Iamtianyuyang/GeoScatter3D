@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,13 @@ struct CsvChunkPointResult {
     std::vector<CsvParseError> errors;
 };
 
+struct CsvChunkPointWriteResult {
+    std::uint32_t chunk_id = 0;
+    std::uint64_t valid_records = 0;
+    std::uint64_t invalid_records = 0;
+    std::vector<CsvParseError> errors;
+};
+
 struct CsvRawPoint {
     double x = 0.0;
     double y = 0.0;
@@ -116,6 +124,15 @@ public:
         const CsvSniffResult& sniff,
         const CsvByteChunk& chunk,
         const gs3d::preprocess::StatisticsResult& statistics
+    ) const;
+
+    [[nodiscard]]
+    CsvChunkPointWriteResult parse_chunk_into_points(
+        const std::filesystem::path& path,
+        const CsvSniffResult& sniff,
+        const CsvByteChunk& chunk,
+        const gs3d::preprocess::StatisticsResult& statistics,
+        std::span<Gs3dPoint> output_points
     ) const;
 
     [[nodiscard]]

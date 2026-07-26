@@ -26,7 +26,8 @@ namespace {
 
 [[nodiscard]]
 gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
-    const gs3d::app::ViewerAppConfig& viewer
+    const gs3d::app::ViewerAppConfig& viewer,
+    std::uint32_t num_threads
 ) {
     gs3d::data::Gs3dLodBuildConfig config;
     config.include_full_resolution_level = false;
@@ -34,6 +35,7 @@ gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
     config.growth_factor = viewer.lod.growth_factor;
     config.min_points_per_level = viewer.lod.min_points_per_level;
     config.voxel_scale = viewer.lod.voxel_scale;
+    config.num_threads = num_threads;
     config.verbose = viewer.lod.verbose;
 
     if (viewer.lod.voxel_mode == "XYZ") {
@@ -221,7 +223,10 @@ void preprocess_csv_input(
         const auto lod_dataset =
             gs3d::data::Gs3dLodDataset::build(
                 dataset,
-                make_lod_build_config(app_config.viewer)
+                make_lod_build_config(
+                    app_config.viewer,
+                    app_config.csv_convert.num_threads
+                )
             );
         if (lod_dataset.empty()) {
             app_config.viewer.lod.enabled = false;

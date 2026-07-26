@@ -3,6 +3,7 @@
 #include "data/DataSchema.hpp"
 #include "data/Gs3dDataset.hpp"
 #include "data/Gs3dFormat.hpp"
+#include "data/Gs3dLodDataset.hpp"
 #include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dReader.hpp"
 #include "data/Gs3dTileFormat.hpp"
@@ -573,6 +574,92 @@ void test_tile_format_stride_for_unknown_version_throws()
     );
 }
 
+void test_parallel_lod_matches_serial_output()
+{
+    constexpr std::uint32_t width = 400;
+    constexpr std::uint32_t height = 300;
+    std::vector<gs3d::data::Gs3dPoint> points;
+    points.reserve(
+        static_cast<std::size_t>(width) *
+        static_cast<std::size_t>(height)
+    );
+
+    for (std::uint32_t y = 0; y < height; ++y) {
+        for (std::uint32_t x = 0; x < width; ++x) {
+            points.push_back({
+                static_cast<float>(x),
+                static_cast<float>(y),
+                static_cast<float>((x + y) % 13),
+                static_cast<float>((x * 3 + y * 5) % 29)
+            });
+        }
+    }
+
+    auto header = gs3d::data::Gs3dFormat::create_empty_header();
+    header.point_count = points.size();
+    header.bbox_min_x = 0.0f;
+    header.bbox_max_x = static_cast<float>(width - 1);
+    header.bbox_min_y = 0.0f;
+    header.bbox_max_y = static_cast<float>(height - 1);
+    header.bbox_min_z = 0.0f;
+    header.bbox_max_z = 12.0f;
+    header.value_min = 0.0f;
+    header.value_max = 28.0f;
+
+    const gs3d::data::Gs3dDataset dataset(
+        header,
+        std::move(points),
+        {},
+        false
+    );
+
+    gs3d::data::Gs3dLodBuildConfig serial_config;
+    serial_config.finest_target_points = 10'000;
+    serial_config.growth_factor = 2.0f;
+    serial_config.min_points_per_level = 500;
+    serial_config.num_threads = 1;
+    serial_config.verbose = false;
+
+    auto parallel_config = serial_config;
+    parallel_config.num_threads = 4;
+
+    const auto serial =
+        gs3d::data::Gs3dLodDataset::build(
+            dataset,
+            serial_config
+        );
+    const auto parallel =
+        gs3d::data::Gs3dLodDataset::build(
+            dataset,
+            parallel_config
+        );
+
+    REQUIRE(serial.level_count() == parallel.level_count());
+    for (std::size_t level_index = 0;
+         level_index < serial.level_count();
+         ++level_index) {
+        const auto& expected = serial.level(level_index);
+        const auto& actual = parallel.level(level_index);
+        REQUIRE(expected.point_count() == actual.point_count());
+        CHECK(expected.voxel_size == actual.voxel_size);
+
+        bool same_points = true;
+        for (std::size_t point_index = 0;
+             same_points &&
+             point_index < expected.points.size();
+             ++point_index) {
+            const auto& a = expected.points[point_index];
+            const auto& b = actual.points[point_index];
+            same_points =
+                a.x == b.x &&
+                a.y == b.y &&
+                a.z == b.z &&
+                a.value == b.value;
+        }
+        CHECK(same_points);
+    }
+}
+
 } // namespace
 
 #define LEGACY_TEST_CASE(test_function) \
@@ -599,5 +686,6 @@ void test_tile_format_stride_for_unknown_version_throws()
     LEGACY_TEST_CASE(test_tile_format_v1_and_v2_are_supported_versions)
     LEGACY_TEST_CASE(test_tile_record_validates_both_strides)
     LEGACY_TEST_CASE(test_tile_format_stride_for_unknown_version_throws)
+    LEGACY_TEST_CASE(test_parallel_lod_matches_serial_output)
 
 #undef LEGACY_TEST_CASE

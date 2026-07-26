@@ -102,6 +102,11 @@ struct Gs3dLodBuildConfig {
      */
     float voxel_scale = 1.0f;
 
+    /*
+     * 预处理线程预算。0 表示自动选择。
+     */
+    std::uint32_t num_threads = 0;
+
     bool verbose = true;
 };
 

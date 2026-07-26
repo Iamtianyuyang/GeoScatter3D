@@ -524,6 +524,73 @@ CsvChunkPointResult CsvChunkReader::parse_chunk_for_points(
     return result;
 }
 
+CsvChunkPointWriteResult CsvChunkReader::parse_chunk_into_points(
+    const std::filesystem::path& path,
+    const CsvSniffResult& sniff,
+    const CsvByteChunk& chunk,
+    const gs3d::preprocess::StatisticsResult& statistics,
+    std::span<Gs3dPoint> output_points
+) const {
+    CsvChunkPointWriteResult result;
+    result.chunk_id = chunk.chunk_id;
+
+    const auto buffer = read_chunk_buffer(path, chunk);
+
+    for_each_chunk_line(
+        buffer,
+        chunk.aligned_begin,
+        [&](std::string_view line,
+            std::uint64_t line_begin,
+            std::uint64_t local_line_number) {
+            if (read_config_.skip_empty_lines && is_blank_line(line)) {
+                return;
+            }
+
+            if (read_config_.allow_comment_lines &&
+                is_comment_line(line, read_config_)) {
+                return;
+            }
+
+            CsvPointRecord record;
+            CsvParseErrorCode error_code = CsvParseErrorCode::Unknown;
+            if (parse_record_from_line(
+                    line,
+                    sniff.delimiter_mode,
+                    sniff.resolved_schema,
+                    record,
+                    error_code
+                )) {
+                if (result.valid_records >= output_points.size()) {
+                    throw std::runtime_error(
+                        "CsvChunkReader: input gained valid records "
+                        "between conversion passes"
+                    );
+                }
+
+                output_points[
+                    static_cast<std::size_t>(result.valid_records)
+                ] = make_gs3d_point(record, statistics);
+                ++result.valid_records;
+            } else {
+                ++result.invalid_records;
+                append_error(
+                    result.errors,
+                    chunk_config_,
+                    CsvParseError{
+                        .chunk_id = chunk.chunk_id,
+                        .byte_offset = line_begin,
+                        .line_number = local_line_number,
+                        .code = error_code,
+                        .line_preview = trim_line_preview(line),
+                    }
+                );
+            }
+        }
+    );
+
+    return result;
+}
+
 CsvChunkBufferedPointResult CsvChunkReader::parse_chunk_buffered_points(
     const std::filesystem::path& path,
     const CsvSniffResult& sniff,
