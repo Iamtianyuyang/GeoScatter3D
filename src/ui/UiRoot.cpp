@@ -1063,19 +1063,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 );
                 ImGui::EndMenu();
             }
-            const float search_x =
-                ImGui::GetWindowWidth() - 286.0f * ui_scale;
-            if (ImGui::GetCursorPosX() < search_x) {
-                ImGui::SetCursorPosX(search_x);
-                ImGui::PushStyleColor(ImGuiCol_Button, palette::kFrame);
-                ImGui::Button(
-                    "搜索命令…    Ctrl K",
-                    ImVec2(238.0f * ui_scale, 0.0f)
-                );
-                ImGui::PopStyleColor();
-                ImGui::SameLine(0.0f, 6.0f * ui_scale);
-                ImGui::Button("徐", ImVec2(28.0f * ui_scale, 0.0f));
-            }
             ImGui::EndMenuBar();
         }
         if (menu_font != nullptr) {

@@ -160,7 +160,8 @@ TEST_CASE("Analysis rail matches the 1360 by 850 scheme C reference", "[analysis
     CHECK(layout.center_x == 326.0f);
     CHECK(layout.topbar_height == 50.0f);
     CHECK(layout.cards_width == 252.0f);
-    CHECK(layout.viewport_width == 782.0f);
+    CHECK(layout.cards_gap == 10.0f);
+    CHECK(layout.viewport_width == 772.0f);
     CHECK(layout.viewport_height == 776.0f);
     CHECK(layout.status_y == 826.0f);
     CHECK(layout.status_height == 24.0f);

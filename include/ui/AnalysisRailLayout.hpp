@@ -7,6 +7,7 @@ struct AnalysisRailLayout {
     float drawer_width = 0.0f;
     float topbar_height = 0.0f;
     float cards_width = 0.0f;
+    float cards_gap = 0.0f;
     float status_height = 0.0f;
     float center_x = 0.0f;
     float viewport_x = 0.0f;

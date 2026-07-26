@@ -1173,34 +1173,75 @@ void draw_rail(
 ) {
     auto& rail = state.analysis_rail_ui;
     const float rail_width = 54.0f * scale;
-    const float logo = 34.0f * scale;
+    const float logo = 36.0f * scale;
     ImGui::SetCursorPos(ImVec2(
         (rail_width - logo) * 0.5f,
-        10.0f * scale
+        9.0f * scale
     ));
     ImGui::InvisibleButton("##AnalysisLogo", ImVec2(logo, logo));
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilledMultiColor(
+    const bool logo_hovered = ImGui::IsItemHovered();
+    draw->AddRectFilled(
+        ImVec2(min.x, min.y + 3.0f * scale),
+        ImVec2(max.x, max.y + 3.0f * scale),
+        IM_COL32(0, 0, 0, 42),
+        10.0f * scale
+    );
+    draw->AddRectFilled(
         min,
         max,
-        IM_COL32(63, 210, 255, 255),
-        IM_COL32(124, 92, 255, 255),
-        IM_COL32(124, 92, 255, 255),
-        IM_COL32(63, 210, 255, 255)
+        logo_hovered
+            ? IM_COL32(24, 48, 65, 255)
+            : IM_COL32(18, 34, 48, 255),
+        10.0f * scale
     );
-    const ImVec2 logo_text = ImGui::CalcTextSize("G3");
-    draw->AddText(
-        ImVec2(
-            (min.x + max.x - logo_text.x) * 0.5f,
-            (min.y + max.y - logo_text.y) * 0.5f
-        ),
-        IM_COL32_WHITE,
-        "G3"
+    draw->AddRect(
+        min,
+        max,
+        logo_hovered
+            ? IM_COL32(64, 211, 255, 210)
+            : IM_COL32(64, 211, 255, 112),
+        10.0f * scale,
+        0,
+        logo_hovered ? 1.5f * scale : 1.0f
     );
+    draw->AddRectFilled(
+        ImVec2(min.x + 5.0f * scale, min.y + 6.0f * scale),
+        ImVec2(min.x + 7.0f * scale, max.y - 6.0f * scale),
+        IM_COL32(64, 211, 255, 235),
+        1.0f * scale
+    );
+    {
+        ScopedFont font(bold_font());
+        const ImVec2 g_size = ImGui::CalcTextSize("G");
+        const ImVec2 three_size = ImGui::CalcTextSize("3");
+        const float total_width =
+            g_size.x + three_size.x - 1.0f * scale;
+        const float text_x =
+            min.x + (logo - total_width) * 0.5f + 2.0f * scale;
+        const float text_y =
+            min.y + (logo - g_size.y) * 0.5f - 0.5f * scale;
+        draw->AddText(
+            ImVec2(text_x, text_y),
+            IM_COL32(237, 245, 250, 255),
+            "G"
+        );
+        draw->AddText(
+            ImVec2(
+                text_x + g_size.x - 1.0f * scale,
+                text_y - 2.0f * scale
+            ),
+            IM_COL32(64, 211, 255, 255),
+            "3"
+        );
+    }
+    if (logo_hovered) {
+        ImGui::SetTooltip("GeoScatter3D");
+    }
 
-    ImGui::SetCursorPosY(54.0f * scale);
+    ImGui::SetCursorPosY(58.0f * scale);
     const std::array<gs3d::app::AnalysisDrawer, 5> drawers{
         gs3d::app::AnalysisDrawer::kData,
         gs3d::app::AnalysisDrawer::kAppearance,
@@ -1229,33 +1270,6 @@ void draw_rail(
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0.0f, 4.0f * scale));
     }
-    ImGui::SetCursorPos(ImVec2(
-        (rail_width - 30.0f * scale) * 0.5f,
-        ImGui::GetWindowHeight() - 42.0f * scale
-    ));
-    ImGui::InvisibleButton(
-        "##AnalysisAvatar",
-        ImVec2(30.0f * scale, 30.0f * scale)
-    );
-    const ImVec2 avatar_min = ImGui::GetItemRectMin();
-    const ImVec2 avatar_max = ImGui::GetItemRectMax();
-    draw->AddCircleFilled(
-        ImVec2(
-            (avatar_min.x + avatar_max.x) * 0.5f,
-            (avatar_min.y + avatar_max.y) * 0.5f
-        ),
-        15.0f * scale,
-        IM_COL32(255, 104, 126, 255)
-    );
-    const ImVec2 avatar_text = ImGui::CalcTextSize("我");
-    draw->AddText(
-        ImVec2(
-            (avatar_min.x + avatar_max.x - avatar_text.x) * 0.5f,
-            (avatar_min.y + avatar_max.y - avatar_text.y) * 0.5f
-        ),
-        IM_COL32_WHITE,
-        "我"
-    );
 }
 
 void draw_topbar(

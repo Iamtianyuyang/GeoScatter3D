@@ -29,6 +29,10 @@ AnalysisRailLayout compute_analysis_rail_layout(
         center_width,
         252.0f * scale
     );
+    const float cards_gap = std::min(
+        std::max(0.0f, center_width - cards),
+        10.0f * scale
+    );
     const float viewport_height =
         std::max(0.0f, height - topbar - status);
     return {
@@ -36,11 +40,15 @@ AnalysisRailLayout compute_analysis_rail_layout(
         .drawer_width = drawer,
         .topbar_height = topbar,
         .cards_width = cards,
+        .cards_gap = cards_gap,
         .status_height = status,
         .center_x = center_x,
         .viewport_x = center_x,
         .viewport_y = topbar,
-        .viewport_width = std::max(0.0f, center_width - cards),
+        .viewport_width = std::max(
+            0.0f,
+            center_width - cards - cards_gap
+        ),
         .viewport_height = viewport_height,
         .cards_x = width - cards,
         .status_y = height - status,
