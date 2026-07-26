@@ -61,9 +61,6 @@ namespace AxisStyle {
     // 信息 badge
     inline ImU32 kBadgeBg()    { return to_u32(palette::kMenuBg, 185); }
     inline ImU32 kBadgeText()  { return to_u32(palette::kText, 245); }
-    // 方向指示器
-    inline ImU32 kGizmoBg()    { return to_u32(palette::kMenuBg, 200); }
-
     // 线宽
     constexpr float kAxisLineWidth   = 1.0f;
     constexpr float kFrameWidth      = 1.0f;
@@ -182,23 +179,46 @@ void draw_orientation_gizmo(const gs3d::app::RenderViewState& view,
         plot_max.y - r - LayoutMetrics::kGizmoInsetBottom * ui_scale
     };
 
-    dl->AddCircleFilled(origin, r, AxisStyle::kGizmoBg());
-
     if (view.gizmo_axes_valid) {
-        const float len = r - 2.0f * ui_scale;
+        const float len = r - 1.0f * ui_scale;
         const auto draw_axis = [&](const gs3d::app::RenderViewState::GizmoAxisEnd& end,
                                    ImU32 color) {
             const float mag = std::sqrt(end.dx * end.dx + end.dy * end.dy);
             if (mag < 1.0e-6f) return;
-            const float s = len / mag;
-            dl->AddLine(origin,
-                        ImVec2(origin.x + end.dx * s,
-                               origin.y + end.dy * s),
-                        color, 1.5f * ui_scale);
+            const ImVec2 direction(end.dx / mag, end.dy / mag);
+            const ImVec2 normal(-direction.y, direction.x);
+            const ImVec2 tip(
+                origin.x + direction.x * len,
+                origin.y + direction.y * len
+            );
+            const float arrow_len = 6.0f * ui_scale;
+            const float arrow_half_w = 3.25f * ui_scale;
+            const ImVec2 arrow_base(
+                tip.x - direction.x * arrow_len,
+                tip.y - direction.y * arrow_len
+            );
+            const ImVec2 arrow_left(
+                arrow_base.x + normal.x * arrow_half_w,
+                arrow_base.y + normal.y * arrow_half_w
+            );
+            const ImVec2 arrow_right(
+                arrow_base.x - normal.x * arrow_half_w,
+                arrow_base.y - normal.y * arrow_half_w
+            );
+            const ImU32 outline = IM_COL32(10, 14, 20, 150);
+            dl->AddLine(origin, tip, outline, 4.0f * ui_scale);
+            dl->AddTriangleFilled(tip, arrow_left, arrow_right, outline);
+            dl->AddLine(origin, tip, color, 1.8f * ui_scale);
+            dl->AddTriangleFilled(tip, arrow_left, arrow_right, color);
         };
         draw_axis(view.gizmo_x_axis, to_u32(palette::kRed, 220));
         draw_axis(view.gizmo_y_axis, to_u32(palette::kGreen, 220));
         draw_axis(view.gizmo_z_axis, to_u32(palette::kBlue, 220));
+        dl->AddCircleFilled(
+            origin,
+            2.5f * ui_scale,
+            IM_COL32(232, 238, 246, 235)
+        );
     }
 }
 

@@ -241,6 +241,33 @@ void icon_ruler(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
     dl->AddLine(icon_pt(c, k, 9.0f, 11.0f), icon_pt(c, k, 11.0f, 13.0f), col, th);
 }
 
+void icon_settings(
+    ImDrawList* dl,
+    const ImVec2& c,
+    float k,
+    ImU32 col,
+    float th
+) {
+    const float outer_r = k * 0.29f;
+    const float tooth_inner_r = k * 0.36f;
+    const float tooth_outer_r = k * 0.47f;
+    dl->AddCircle(c, outer_r, col, 0, th);
+    dl->AddCircle(c, k * 0.10f, col, 0, th);
+    for (int i = 0; i < 8; ++i) {
+        const float angle =
+            static_cast<float>(i) * 3.14159265358979323846f / 4.0f;
+        const ImVec2 inner(
+            c.x + std::cos(angle) * tooth_inner_r,
+            c.y + std::sin(angle) * tooth_inner_r
+        );
+        const ImVec2 outer(
+            c.x + std::cos(angle) * tooth_outer_r,
+            c.y + std::sin(angle) * tooth_outer_r
+        );
+        dl->AddLine(inner, outer, col, th);
+    }
+}
+
 void icon_layers(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
     static const float top[][2] = {
         {12.0f, 3.0f}, {21.0f, 8.0f}, {12.0f, 13.0f}, {3.0f, 8.0f}
@@ -359,11 +386,6 @@ void icon_camera(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) 
         {9.0f, 6.5f}, {10.2f, 4.0f}, {13.8f, 4.0f}, {15.0f, 6.5f}
     };
     icon_stroke(dl, c, k, col, th, notch, 4);
-}
-
-void icon_plus(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
-    dl->AddLine(icon_pt(c, k, 12.0f, 5.0f), icon_pt(c, k, 12.0f, 19.0f), col, th);
-    dl->AddLine(icon_pt(c, k, 5.0f, 12.0f), icon_pt(c, k, 19.0f, 12.0f), col, th);
 }
 
 void icon_close(ImDrawList* dl, const ImVec2& c, float k, ImU32 col, float th) {
@@ -1235,7 +1257,7 @@ void draw_fabs(
             if (measuring) {
                 icon_close(dl, center, main_d * 0.44f, fg, 2.6f * s);
             } else {
-                icon_plus(dl, center, main_d * 0.44f, fg, 2.6f * s);
+                icon_ruler(dl, center, main_d * 0.48f, fg, 2.4f * s);
             }
             set_tooltip(measuring
                 ? "退出测量模式（快捷键 M）"
@@ -1322,29 +1344,11 @@ void draw_dock_item(
         rmin.y + DockMetrics::kItemPadY * s +
             DockMetrics::kIconSize * s * 0.5f
     );
-    if (item.icon != nullptr) {
-        item.icon(dl, icon_center, DockMetrics::kIconSize * s, fg, 2.0f * s);
-    } else {
-        // 「我的」：橙粉渐变头像圆。
-        const float r = DockMetrics::kIconSize * s * 0.52f;
-        dl->AddCircleFilled(icon_center, r, IM_COL32(255, 154, 86, 255));
-        dl->AddCircleFilled(
-            ImVec2(icon_center.x + r * 0.30f, icon_center.y + r * 0.30f),
-            r * 0.85f,
-            IM_COL32(255, 94, 126, 170)
-        );
-        ScopedFont font(small_font());
-        const ImVec2 ts = ImGui::CalcTextSize("我");
-        dl->AddText(
-            ImVec2(icon_center.x - ts.x * 0.5f, icon_center.y - ts.y * 0.5f),
-            IM_COL32(255, 255, 255, 255),
-            "我"
-        );
-    }
+    item.icon(dl, icon_center, DockMetrics::kIconSize * s, fg, 2.0f * s);
 
     // 角标（「视图」项 = 已开启视图数）。
     if (badge > 0) {
-        char text[8];
+        char text[12];
         std::snprintf(text, sizeof(text), "%d", badge);
         ScopedFont font(small_font());
         const ImVec2 ts = ImGui::CalcTextSize(text);
@@ -1437,7 +1441,7 @@ void draw_dock(
             {"##dock_measure", "测量", icon_ruler,   gs3d::app::DockCard::kMeasure},
             {"##dock_layers",  "图层", icon_layers,  gs3d::app::DockCard::kLayers},
             {"##dock_props",   "属性", icon_sliders, gs3d::app::DockCard::kAppearance},
-            {"##dock_mine",    "我的", nullptr,      gs3d::app::DockCard::kSettings},
+            {"##dock_settings", "设置", icon_settings, gs3d::app::DockCard::kSettings},
         };
         bool first = true;
         for (const auto& item : items) {
