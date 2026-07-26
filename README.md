@@ -73,8 +73,19 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 分发
 
-构建后可安装出一个自包含的分发目录（可执行文件在根目录，`config/`、
-`assets/` 在旁边，`data/` 由运行时生成）：
+一键脚本会依次完成依赖检查、配置、编译、测试、安装 `dist/` 和打包：
+
+```powershell
+./scripts/package-windows.ps1
+```
+
+```bash
+./scripts/package-linux.sh
+```
+
+两者均支持跳过测试（`-SkipTests` / `--skip-tests`）。以下为各步骤的
+手动等价命令。构建后可安装出一个自包含的分发目录（可执行文件在根目录，
+`config/`、`assets/` 在旁边，`data/` 由运行时生成）：
 
 ```powershell
 cmake --install build --config Release --prefix dist
