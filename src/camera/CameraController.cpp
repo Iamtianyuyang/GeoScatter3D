@@ -201,11 +201,11 @@ bool CameraController::update(
         static_cast<float>(input.viewport_height);
 
     // --- Rotation: incremental rigid orbit around the orbit pivot ---
-    // The pivot is either an explicit focus point (set via focus_on /
-    // set_orbit_pivot) or, by default, the camera's current target. Pan
-    // moves position, target, AND any explicit pivot by the same world
-    // delta, so the rotation geometry (pos - pivot, target - pivot) is
-    // preserved across pans — i.e., pan is translation-invariant.
+    // The pivot is either an explicit world-space focus point (set via
+    // focus_on / set_orbit_pivot) or, by default, the camera's current
+    // target. Pan moves position and target. Therefore the implicit pivot
+    // follows a pan, while an explicitly selected point remains locked to
+    // the same world coordinate.
     // The bounds centre is NOT used here; it is reserved for fit_bounds
     // and reset_view, which is the only time we want to recentre.
 
@@ -397,15 +397,6 @@ void CameraController::pan_view(
         add(camera.target(), move),
         camera.up()
     );
-
-    // Translation invariance: when the user pans, pos and target move
-    // together by `move`. An explicit orbit pivot must follow the same
-    // translation so the rotation geometry (pos - pivot, target - pivot)
-    // is preserved. Without this, panning to a new location would cause
-    // subsequent rotation to pivot around the old focus point.
-    if (orbit_pivot_.has_value()) {
-        orbit_pivot_ = add(*orbit_pivot_, move);
-    }
 }
 
 void CameraController::zoom_view(
@@ -484,11 +475,8 @@ void CameraController::zoom_view(
             add(camera.target(), move),
             camera.up()
         );
-        // Keep an explicit pivot in lockstep with the uniform translation
-        // applied to pos and target above. (Same invariant as pan.)
-        if (orbit_pivot_.has_value()) {
-            orbit_pivot_ = add(*orbit_pivot_, move);
-        }
+        // An explicit pivot is a selected world-space point and must not
+        // follow this cursor-anchored camera translation.
     }
 }
 

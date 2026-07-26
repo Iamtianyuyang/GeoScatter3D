@@ -578,6 +578,8 @@ void test_zoom_keeps_cursor_anchor_fixed()
     );
 
     gs3d::camera::CameraController controller;
+    const gs3d::camera::Vec3 locked_pivot{1.0f, 2.0f, 0.0f};
+    controller.set_orbit_pivot(locked_pivot);
 
     const float initial_ortho = camera.ortho_height();
     const gs3d::camera::Viewport viewport{800, 600};
@@ -606,6 +608,13 @@ void test_zoom_keeps_cursor_anchor_fixed()
     expect(
         camera.ortho_height() < initial_ortho,
         "ortho zoom in shrinks ortho_height"
+    );
+    expect(
+        controller.orbit_pivot().has_value() &&
+        std::abs(controller.orbit_pivot()->x - locked_pivot.x) < 1.0e-6f &&
+        std::abs(controller.orbit_pivot()->y - locked_pivot.y) < 1.0e-6f &&
+        std::abs(controller.orbit_pivot()->z - locked_pivot.z) < 1.0e-6f,
+        "cursor-anchored zoom keeps an explicit pivot world-locked"
     );
     if (anchor.has_value()) {
         const auto anchor_screen =
@@ -3130,14 +3139,13 @@ void test_hover_cleared_when_no_hit()
 //
 // Invariant under the new policy:
 //   pivot = orbit_pivot_.value_or(camera.target())
-//   pan  : pos += D, tgt += D, orbit_pivot_ += D if set
+//   pan  : pos += D, tgt += D, explicit orbit_pivot_ remains world-locked
 //   rotate: rigid (pos - pivot, tgt - pivot) preserved
 // =====================================================================
 
-// A3a-1: with an explicit pivot set, a pan moves the pivot by the same
-// world delta as pos and tgt. (Without the fix, pan_view touched only
-// pos/tgt and the explicit pivot was left behind.)
-void test_pan_moves_explicit_pivot_with_camera()
+// A3a-1: an explicit pivot represents the selected world-space point.
+// Panning moves the camera, not the selected point.
+void test_pan_keeps_explicit_pivot_world_locked()
 {
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -3151,8 +3159,8 @@ void test_pan_moves_explicit_pivot_with_camera()
     const gs3d::camera::Vec3 explicit_pivot{2.0f, 3.0f, 0.5f};
     controller.set_orbit_pivot(explicit_pivot);
 
-    // Record state, pan, then verify all three (pos, tgt, pivot) moved
-    // by the same world delta.
+    // Record state, pan, then verify pos and target moved together while
+    // the explicit pivot remained at the selected world coordinate.
     const auto pos_before = camera.position();
     const auto tgt_before = camera.target();
     const auto piv_before = *controller.orbit_pivot();
@@ -3177,11 +3185,6 @@ void test_pan_moves_explicit_pivot_with_camera()
         tgt_after.x - tgt_before.x,
         tgt_after.y - tgt_before.y,
         tgt_after.z - tgt_before.z};
-    const auto dpiv = gs3d::camera::Vec3{
-        piv_after.x - piv_before.x,
-        piv_after.y - piv_before.y,
-        piv_after.z - piv_before.z};
-
     // Use a small tolerance: floating-point noise from the pixel→world
     // conversion is well below 1e-3.
     const float tol = 1.0e-3f;
@@ -3192,10 +3195,10 @@ void test_pan_moves_explicit_pivot_with_camera()
         "pan moves pos and tgt by the same world delta"
     );
     expect(
-        std::abs(dpiv.x - dtgt.x) < tol &&
-        std::abs(dpiv.y - dtgt.y) < tol &&
-        std::abs(dpiv.z - dtgt.z) < tol,
-        "pan moves the explicit orbit pivot by the same world delta"
+        std::abs(piv_after.x - piv_before.x) < tol &&
+        std::abs(piv_after.y - piv_before.y) < tol &&
+        std::abs(piv_after.z - piv_before.z) < tol,
+        "pan keeps the explicit orbit pivot at its selected world point"
     );
 }
 
@@ -3693,8 +3696,8 @@ void test_scenario_focus_then_rotation()
     );
 }
 
-// 4) focus 后 pan 再旋转 — focus sets explicit pivot, pan moves it,
-// then rotation pivots around the moved pivot.
+// 4) focus 后 pan 再旋转 — focus sets a world-space pivot, pan changes
+// the composition, then rotation still pivots around that selected point.
 void test_scenario_focus_then_pan_then_rotation()
 {
     using namespace scenarios;
@@ -3712,27 +3715,39 @@ void test_scenario_focus_then_pan_then_rotation()
 
     pan(cam, ctl, 300.0f, 0.0f);
 
-    // Pan moved pos, tgt, AND the explicit pivot by the same world delta.
+    // Pan moves the camera target but must not move the selected point.
     expect(cam.target().x != tgt_before_pan.x,
            "pan after focus moves target");
     expect(
-        std::abs(ctl.orbit_pivot()->x - piv_before_pan.x) > 0.01f,
-           "pan after focus moves explicit pivot (this is the new fix)");
+        std::abs(ctl.orbit_pivot()->x - piv_before_pan.x) < 1.0e-6f &&
+        std::abs(ctl.orbit_pivot()->y - piv_before_pan.y) < 1.0e-6f &&
+        std::abs(ctl.orbit_pivot()->z - piv_before_pan.z) < 1.0e-6f,
+        "pan after focus keeps the explicit pivot world-locked");
 
-    // Now rotate — the (moved) pivot must stay on screen.
-    const auto moved_pivot = *ctl.orbit_pivot();
+    // Rotation around the locked point must preserve its post-pan screen
+    // position; it need not be at screen centre after the composition moved.
+    const gs3d::camera::Viewport viewport{800, 600};
+    const auto pivot_screen_before_rotate =
+        gs3d::camera::MouseRay::to_screen(piv_before_pan, viewport, cam);
     rotate(cam, ctl, 60.0f, 20.0f);
 
-    const gs3d::camera::Viewport viewport{800, 600};
-    const auto sb = gs3d::camera::MouseRay::to_screen(
-        moved_pivot, viewport, cam);
-    expect(sb.has_value(),
-           "4. focus+pan+rotation: moved pivot projectable");
-    if (sb) {
+    const auto pivot_screen_after_rotate =
+        gs3d::camera::MouseRay::to_screen(piv_before_pan, viewport, cam);
+    expect(
+        pivot_screen_before_rotate.has_value() &&
+        pivot_screen_after_rotate.has_value(),
+        "4. focus+pan+rotation: locked pivot remains projectable");
+    if (pivot_screen_before_rotate && pivot_screen_after_rotate) {
         expect(
-            std::abs(sb->x - 400.0f) < 5.0f &&
-            std::abs(sb->y - 300.0f) < 5.0f,
-            "4. focus+pan+rotation: pivot stays near screen centre"
+            std::abs(
+                pivot_screen_after_rotate->x -
+                pivot_screen_before_rotate->x
+            ) < 0.1f &&
+            std::abs(
+                pivot_screen_after_rotate->y -
+                pivot_screen_before_rotate->y
+            ) < 0.1f,
+            "4. focus+pan+rotation: rotation stays anchored to locked point"
         );
     }
 }
@@ -3939,7 +3954,7 @@ void test_scenario_linked_viewports_after_propagation()
     LEGACY_TEST_CASE(test_zoom_in_past_distance_floor_keeps_zooming_via_fov)
     LEGACY_TEST_CASE(test_fov_clamped_at_min)
     LEGACY_TEST_CASE(test_hover_cleared_when_no_hit)
-    LEGACY_TEST_CASE(test_pan_moves_explicit_pivot_with_camera)
+    LEGACY_TEST_CASE(test_pan_keeps_explicit_pivot_world_locked)
     LEGACY_TEST_CASE(test_rotation_uses_target_as_implicit_pivot)
     LEGACY_TEST_CASE(test_pan_then_rotation_preserves_orbit_geometry)
     LEGACY_TEST_CASE(test_orbit_is_invariant_under_uniform_world_translation)
