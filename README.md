@@ -20,7 +20,11 @@ LOD 和 tile 文件支持分级与局部加载。
 - 交互时使用低 LOD，隐藏标签页停止离屏渲染，减少旋转、移动和缩放卡顿。
 - TOML 配置和 Vulkan validation layer 开关。
 
-尚未接线的 UI 功能见 [架构与现状](docs/architecture.md#尚未完成)。
+- 欢迎页 + 三种布局 (工作台/悬浮 Dock/暗色分析舱), 主题可在 视图→主题 切换。
+
+当前功能状态与未实现项清单见
+[架构与现状](docs/architecture.md#当前功能状态), 全部配置键见
+[viewer.toml 配置参考](docs/config-reference.md)。
 
 ## 构建
 
@@ -32,7 +36,8 @@ LOD 和 tile 文件支持分级与局部加载。
 - GLFW 3
 - 线程库（Linux 上为 pthreads，Windows 使用系统原生线程）
 - Git submodule 中的 Dear ImGui 与 Catch2
-- Python 3（仅用于 include 依赖检查）
+- Python 3（配置期硬性依赖：`find_package(Python3 REQUIRED)`，用于 include
+  依赖检查与工程护栏测试脚本）
 - `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
 
 ```bash
@@ -112,7 +117,8 @@ cpack -C Release
 
 ## 从干净克隆打开样例
 
-仓库提供了 25 行的 [样例 CSV](examples/sample-points.csv) 和可直接运行的
+仓库提供了 26 行的[样例 CSV](examples/sample-points.csv)（1 行表头 +
+25 行数据，对应 25 个 golden 点）和可直接运行的
 [样例配置](config/sample-viewer.toml)。以下命令从零开始生成数据并打开窗口：
 
 ```bash
@@ -129,9 +135,18 @@ cmake --build build -j
 ./build/GeoScatter3DPreprocess --config config/sample-viewer.toml
 ```
 
-默认配置入口是 [config/viewer.toml](config/viewer.toml)。`input.mode = "csv"`
-会在启动时重新生成 GS3D 和启用的 tile 数据；`input.mode = "gs3d"` 直接打开现有
-GS3D 文件。
+默认配置入口是 [config/viewer.toml](config/viewer.toml)。四种输入模式：
+
+- `input.mode = "csv"`：启动时重新生成 GS3D 和启用的 LOD/tile；
+- `input.mode = "dat"`：同 csv，解析分隔符自动检测（逗号/制表/空白）的 `.dat` 文件；
+- `input.mode = "gs3d"`：直接打开现有 `.gs3d` 文件；
+- `input.mode = "bundle"`：打开目录式 `.gs3d.bundle` 项目
+  （`bundle_dir` 指向包含 `manifest.toml` 的目录，默认配置即此模式）。
+
+注意：默认 `config/viewer.toml` 的 `bundle_dir` 指向 `data/` 下的文件，
+而 `data/` 整体被 .gitignore 忽略，干净克隆下默认配置不可直接使用；
+请用 `config/sample-viewer.toml` 或先运行预处理生成自己的 bundle。
+全部配置键见 [docs/config-reference.md](docs/config-reference.md)。
 
 ## 用户偏好
 
@@ -169,9 +184,11 @@ GS3D_LOG_LEVEL=warning GS3D_LOG_BENCHMARK=0 \
 include/ + src/
   app/         配置、应用状态和主循环编排
   camera/      相机、输入控制和多视口同步
+  core/        领域数据边界：PointData、TileData、DatasetDescriptor
   data/        CSV/GS3D/LOD/tile 格式与读取
   preprocess/  CSV 转换、统计、LOD 与 tile 写入
   render/      Vulkan 资源、点管线、LOD/tile GPU 数据和离屏视口
+  scene/       SceneState（渲染/场景状态）
   gui/ + ui/   ImGui 生命周期与界面绘制
   platform/    GLFW 窗口
   util/        线程池、计时与统一日志

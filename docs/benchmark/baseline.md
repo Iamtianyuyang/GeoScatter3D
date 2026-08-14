@@ -4,14 +4,22 @@
 `data/test.csv`/`data/test.gs3d`（3300 万行）跑出的基线，对应
 [docs/plan/geoscatter3d-tasks.md](../plan/geoscatter3d-tasks.md) 的 Task 2。
 
+> 状态: 历史基准记录 | 日期: 2026-07 | 配置基线注记: 2026-08-14
+> 本文“数据集”一行的 LOD 描述基于旧 `target_point_counts` 阶梯
+> （3M/1M/0.3M）；`config/viewer.toml` 已改为 Potree 式自动分层
+> （`finest_target_points=2M` / `growth_factor=1.414` /
+> `min_points_per_level=100K`），层级由数据分布自动决定，不再使用
+> 固定目标点数阶梯。`data/` 目录被 .gitignore 忽略，3300 万点测试
+> 数据不在仓库内；干净克隆可用样例 CSV 生成 25 点 bundle 复跑流程。
+
 ## 测试环境
 
 - CPU：AMD Ryzen 9 7945HX with Radeon Graphics（笔记本，内置 Radeon 核显）
 - GPU（本次实测用）：NVIDIA GeForce RTX 5060 Laptop GPU（独显，`VulkanContext`
   默认选中的物理设备）
 - OS：Linux 6.14（Ubuntu 24.04 系）
-- 数据集：`data/test.gs3d`，33,021,622 点，LOD 3 级（3M/1M/0.3M 目标点数阶梯），
-  tile 159 个
+- 数据集：`data/test.gs3d`，33,021,622 点，LOD 3 级（旧 `target_point_counts`
+  阶梯 3M/1M/0.3M，已废弃，见上注），tile 159 个
 
 **备注**：这台机器的 CPU 本身带 Radeon 核显，理论上可以不换机器、只切换 Vulkan
 物理设备选择就测核显路径（Layer 1 C）。目前 `VulkanContext` 还没有暴露选择物理
@@ -70,6 +78,12 @@ P95/P99 在 tile 重新选择触发异步上传期间偏高（每帧花费在
 
 把 [memory-budget.md](memory-budget.md) 建议的 `tile.gpu_cache_max_tiles: 128→512`、
 `tile.cpu_cache_max_bytes: 512MB→4GB` 写入 `config/viewer.toml` 后，同样命令重跑：
+
+> 注记：本次回归当时采用建议值 512；`config/viewer.toml` 最终落地值为
+> `gpu_cache_max_tiles = 288`（注释：覆盖高峰可见集及相邻视野缓冲），
+> `cpu_cache_max_bytes = 4GiB` 已按建议落地；后新增 `preload_all` 全量
+> 预加载模式（`preload_max_bytes=1.5GiB`），启动后不再按需流式，重载
+> 延迟指标仅适用于未启用预加载或超预算回退的场景。
 
 | 指标 | 基线（旧配置） | 新配置 | 结论 |
 |---|---|---|---|

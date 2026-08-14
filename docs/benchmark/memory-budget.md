@@ -5,6 +5,17 @@
 （`Gs3dPoint` 16 字节/点，已用 `data/test.gs3d` 528,346,064 字节 / 33,021,622 点
 ≈16.0 字节/点验证）做公式推算，等拿到更大/真实数据后用 Task 1 的基准工具复测校准。
 
+> 状态: 纸面推算记录 | 日期: 2026-07 | 落地对照: 2026-08-14
+> 本文推算基于旧 `target_point_counts` LOD 阶梯（3M/1M/0.3M）与
+> 512MB/128 的旧缓存配置。实际落地 (Task 4 + 后续)：
+> `tile.cpu_cache_max_bytes` 4GiB、`tile.gpu_cache_max_tiles` 288
+> （建议值 512，落地为 288）、LOD 改为 Potree 式自动分层
+> （`finest_target_points=2M`/`growth_factor=1.414`/
+> `min_points_per_level=100K`，层数由数据分布决定，不再使用固定
+> 目标点数阶梯）。
+> 推算量级结论（内存不是 1 亿点瓶颈）与“硬截断会致块状伪影”的
+> 设计结论仍然成立，见 [baseline.md](baseline.md) 已知局限。
+
 ## 核心结论：内存不是 1 亿点的瓶颈
 
 `Gs3dPoint{x,y,z,value}` 是 16 字节/点。**1 亿点的全量原始数据总共只有
@@ -47,12 +58,15 @@ LOD CPU + GPU                       0.1 GB
 
 ## 建议的新配置值（Task 4 落地）
 
+> 注记：此表为建议值；最终落地见文首对照（gpu_cache_max_tiles 落地为 288，
+> target_point_counts 一行已被 Potree 自动分层配置取代）。
+
 | 字段 | 当前值 | 建议新值 | 理由 |
 |---|---|---|---|
-| `tile.cpu_cache_max_bytes` | 536,870,912（512MB） | 4,294,967,296（4GB） | 让大部分/全部 tile 常驻 CPU 缓存，减少重复磁盘读取，直接帮助"减少重载时间"这条验收标准 |
-| `tile.gpu_cache_max_tiles` | 128 | 512 | LRU 软预算；调大它给相邻视野留余量，但可见 tile pinning 仍可在极端视图超过该值 |
-| `tile.gpu_upload_budget_bytes` | 8,388,608（8MB/帧） | 暂不改 | 这是吞吐限速参数（防止单帧上传过多拖慢 fps），不是容量参数，留给 Layer 1 D（防闪烁）阶段根据帧时间实测再调 |
-| `lod.target_point_counts` | [3000000, 1000000, 300000] | 暂不改 | 内存占用可忽略，调整这个阶梯是为了 fps 不是为了内存，留给 Layer 1 C/D |
+| `tile.cpu_cache_max_bytes` | 536,870,912（512MB） | 4,294,967,296（4GB）**已落地** | 让大部分/全部 tile 常驻 CPU 缓存，减少重复磁盘读取，直接帮助"减少重载时间"这条验收标准 |
+| `tile.gpu_cache_max_tiles` | 128 | 512（落地为 **288**） | LRU 软预算；调大它给相邻视野留余量，但可见 tile pinning 仍可在极端视图超过该值 |
+| `tile.gpu_upload_budget_bytes` | 8,388,608（8MB/帧） | 已改为 33,554,432（32MiB/帧）**已落地** | 吞吐限速参数；原 8MiB 上限主导冷加载延迟，提高后仍按帧限速 |
+| `lod.target_point_counts` | [3000000, 1000000, 300000] | 已废弃（改为 Potree 式自动分层） | 自动分层按数据分布定层数与点数，无需人工重调；对应配置为 `lod.finest_target_points` / `lod.growth_factor` / `lod.min_points_per_level` |
 
 ## 已知局限
 

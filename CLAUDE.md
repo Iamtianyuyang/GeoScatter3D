@@ -2,12 +2,17 @@
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues for `Iamtianyuyang/GeoScatter3D`. See `docs/agents/issue-tracker.md`.
+Issues are tracked on the **Multica** platform (this repo's workspace), not
+GitHub Issues. Use the `multica` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Use the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
+GitHub labels are no longer used. Multica issue statuses: `todo`,
+`in_progress`, `in_review`, `blocked`, `done`, `backlog`, `cancelled`.
+See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.
+Start with `docs/architecture.md` (current feature state), `docs/config-reference.md`,
+`docs/spec/gs3d-format.md`, and `README.md`. This repo does not use the
+`CONTEXT.md` / `docs/adr/` layout. See `docs/agents/domain.md`.

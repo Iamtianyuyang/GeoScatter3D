@@ -1,5 +1,51 @@
 # GeoScatter3D 架构与现状
 
+> 状态: 现行 | 核对基准: 2026-08-14, main@1f0eb84 + TIA-90/TIA-93 修复
+
+## 架构总览
+
+```mermaid
+flowchart LR
+    subgraph Input["输入层"]
+        TOML["viewer.toml / CLI"] --> APP["AppConfig"]
+        CSV["csv/dat"] --> PRE["GeoScatter3DPreprocess"]
+        PRE --> BND[".gs3d.bundle"]
+        BND --> DS[("source.gs3d +
+        lod.gs3dlod +
+        tiles.gs3dtiles(+.index)")]
+        GS3D["gs3d 模式"] --> DS
+    end
+
+    subgraph App["应用层"]
+        APP --> SESSION["ViewerDatasetSession"]
+        SESSION --> DS
+        SESSION --> GPUCLOUD["PointCloudGpu /
+        PointCloudLodGpu /
+        PointCloudTileGpu"]
+        APP --> STATE["AppState"]
+        UI["ui: UiRoot /
+        WelcomeWindow /
+        WorkbenchUi/FloatingDockUi/AnalysisRailUi"] --> ACTIONS["UiActions 命令队列"]
+        ACTIONS --> APP
+        STATE --> UI
+    end
+
+    subgraph Render["渲染层"]
+        GPUCLOUD --> PIPE["PointPipeline"]
+        PIPE --> OFF["OffscreenFramebuffer[N]"]
+        OFF --> IMG["ImGui::Image[N]"]
+        CAM["Camera/CameraController/CameraHub"] --> OFF
+    end
+
+    UI --> IMG
+    APP --> CAM
+```
+
+组件分层: `platform` (GLFW 窗口) → `gui`/`ui` (ImGui 生命周期与面板) →
+`app` (配置/状态/编排) → `render` (Vulkan 资源与绘制) / `camera`
+(相机数学与同步) / `data`+`preprocess` (格式与转换)。
+UI 只产出命令 (`UiActions`), 状态由 `AppState` 持有, 主循环消费。
+
 ## 数据流
 
 ```text
@@ -8,8 +54,10 @@ viewer.toml / CLI
         v
 AppConfigLoader
         |
-        +-- input=csv --> Statistics/CsvChunkReader --> Gs3dWriter
-        |                                      \----> Gs3dTileWriter
+        +-- input=csv|dat --> Statistics/CsvChunkReader --> Gs3dWriter
+        |                                          \----> Gs3dTileWriter
+        |
+        +-- input=bundle --> PreprocessedBundle (manifest.toml 解析)
         |
         v
 Gs3dDataset metadata/full points + optional LOD/tile sidecars
@@ -36,7 +84,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 ## 启动流程
 
 1. `main()` 读取 TOML 和命令行覆盖项。
-2. CSV 模式先生成 GS3D；启用 tile 时同时生成 tile index/data。
+2. CSV/DAT 模式先生成 GS3D；启用 tile 时同时生成 tile index/data；bundle
+   模式按 manifest 解析已有产物。
 3. LOD sidecar 可用时只加载 GS3D header；需要构建 LOD 或全量渲染时才加载点数组。
 4. 创建窗口、Vulkan context、swapchain、renderer 和 ImGui。
 5. 预分配最多 4 个独立离屏视口，默认显示配置指定的 1 个视图，并创建点渲染
@@ -104,13 +153,42 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 - `ImGuiLayer` 在 `ViewportManager` 之后析构，保证 descriptor 先注销、ImGui
   backend 后关闭。
 
-## 尚未完成
+## 当前功能状态
 
-- 打开、保存、添加数据、移除、属性、截图和首选项动作尚未由应用层处理。
-- 框选和测量尚未接线。
-- 当前 UI 只提供单个“联动相机”组，尚不能创建和命名多个同步组。
-- 色带、裁剪、光照、截图等高级可视化功能尚未实现，界面中也不再展示无效控件。
-- 没有数据集热切换，打开新文件仍需重启。
+以下清单对应 TIA-81 审查时的"尚未完成"节, 已按当前代码逐项核验
+(2026-08-14):
+
+**已实现并接线:**
+
+- 截图: `include/app/ScreenshotService.hpp` + `src/app/ViewerAppScreenshot.cpp`,
+  菜单/按钮触发, 原生另存为对话框, 后台编码 PNG。
+- 属性映射与着色: `include/app/ViewerAttributeMapping.hpp`, value/z
+  双通道独立选择 (高度/着色来源), 切换零成本 (只改 push constant)。
+- 框选: `include/camera/BoxSelect.hpp` + `src/camera/BoxSelect.cpp`,
+  anchor 走 GPU pick, 松开后 `fit_screen_rect` 反投影聚焦。
+- 测量: `include/app/MeasurementManager.hpp` + `src/ui/MeasurementPanel.cpp`,
+  距离/区域统计 (Shift+拖拽), 结果持久化到 `bundle_dir/analysis.toml`。
+- 色带: `src/ui/AnalysisRailUi.cpp` 色带选择 UI (9 个色带, 索引 0-8, 含
+  Rainbow256 离散 Jet LUT), `include/render/PointPipeline.hpp` 的 colormap_index。
+- 值域裁切: `src/ui/RenderSettingsPanel.cpp` (value_clip 开关与范围)。
+- 打开数据: 文件菜单/快捷键触发原生文件对话框, 以重启方式打开新
+  数据文件或 GS3D Bundle 项目 (`src/app/ViewerAppGuiCommands.cpp`)。
+- hover 信息与最近点查询: GPU pick 生产路径 + 悬停十字线/数值读出
+  (见上"GPU Pick Contract")。
+- 导航图、导航球、自适应坐标轴刻度、高度缩放、点形状、多视图与
+  三种布局 (workbench / floating-dock / analysis-rail)。
+
+**仍未实现/有明确边界:**
+
+- 保存/另存为、添加数据、移除数据、首选项面板等"项目编辑"动作
+  无对应实现; 打开新数据以重启进程完成, 无数据集热切换。
+- 相机联动仍只有单个"联动相机"布尔组 (`RenderViewState.camera_linked`,
+  `include/app/AppState.hpp:286`), 尚不能创建和命名多个同步组。
+- 无空间裁剪与光照/着色模型: 管线 push constant 存在 `spatial_clip_enable`
+  flag (PointPipeline.hpp:56) 但无 UI/应用层接线 (渲染端恒为 0);
+  仅值域裁切与色带映射可用。
+- dock 布局持久化已生效 (TIA-90): 见 [config-reference.md](config-reference.md)
+  的 `ui_layout_ini_path`。
 
 ## 重大风险
 
@@ -155,7 +233,8 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    测量和渲染设置职责迁出；每个切片都附带交互烟测并压低 `UiRoot.cpp` 预算。
 2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
    逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
-3. **稳定的文件格式层**：用明确的小端字段编码替代 C++ struct 原样写盘，把版本、
-   校验和兼容策略集中管理。
+3. ~~稳定的文件格式层~~ **已完成** (TIA-93)：GS3D v2 / LOD / tile 已统一为
+   显式小端字段编码，LOD v1 已废弃，tile 读取端按 stride 强校验；
+   格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。
 4. **Swapchain 变更接口**：明确通知 ImGui 和依赖 render pass 的管线重建，而不是
    依赖当前隐含的初始化顺序。
