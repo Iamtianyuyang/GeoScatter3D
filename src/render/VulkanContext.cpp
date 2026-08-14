@@ -72,6 +72,10 @@ VkPhysicalDevice VulkanContext::physical_device() const noexcept {
     return physical_device_;
 }
 
+bool VulkanContext::independent_blend_supported() const noexcept {
+    return supported_features_.independentBlend == VK_TRUE;
+}
+
 VkDevice VulkanContext::device() const noexcept {
     return device_;
 }
@@ -173,6 +177,10 @@ void VulkanContext::pick_physical_device() {
     physical_device_ = gpu_list_[active_gpu_index_].physical_device;
     queue_family_indices_ = find_queue_families(physical_device_);
 
+    // 缓存物理设备 feature 支持情况，供 create_logical_device 按支持度
+    // 决定启用哪些 feature（禁止启用设备不支持的 feature）。
+    vkGetPhysicalDeviceFeatures(physical_device_, &supported_features_);
+
     // Build selection summary for logging and UI.
     const auto& gpu = gpu_list_[active_gpu_index_];
     if (selection.fallback_to_auto) {
@@ -250,6 +258,14 @@ void VulkanContext::create_logical_device() {
 
     VkPhysicalDeviceFeatures device_features{};
 
+    // S2 修复（TIA-91）：PointPipeline 的 3 个 color attachment 使用不同
+    // colorWriteMask（RGBA / R / R），必须启用 independentBlend，否则违反
+    // VUID-VkPipelineColorBlendStateCreateInfo-pAttachments-00605。
+    // 仅在物理设备支持时启用（启用不支持的 feature 同样违规/创建失败）；
+    // 不支持时由 PointPipeline 回退为统一 colorWriteMask。
+    device_features.independentBlend =
+        supported_features_.independentBlend;
+
     // ImGui 多视口副窗口与主窗口共用 dynamic rendering 管线，
     // 由此副窗口交换链能继承主交换链的 sRGB 格式（配色一致）。
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{};
@@ -258,11 +274,6 @@ void VulkanContext::create_logical_device() {
     dynamic_rendering_features.dynamicRendering = VK_TRUE;
 
     const auto device_extensions = required_device_extensions();
-
-    std::vector<const char*> layers;
-    if (config_.enable_validation_layers) {
-        layers.push_back(VALIDATION_LAYER_NAME);
-    }
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -277,11 +288,6 @@ void VulkanContext::create_logical_device() {
     create_info.enabledExtensionCount =
         static_cast<std::uint32_t>(device_extensions.size());
     create_info.ppEnabledExtensionNames = device_extensions.data();
-
-    create_info.enabledLayerCount =
-        static_cast<std::uint32_t>(layers.size());
-    create_info.ppEnabledLayerNames =
-        layers.empty() ? nullptr : layers.data();
 
     check_vk(
         vkCreateDevice(physical_device_, &create_info, nullptr, &device_),

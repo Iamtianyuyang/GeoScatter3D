@@ -132,7 +132,22 @@ private:
     std::vector<VkCommandBuffer> command_buffers_;
 
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphores_{};
-    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphores_{};
+
+    /*
+     * 每 swapchain image 一个 render-finished 信号量（S1 修复，TIA-91）。
+     *
+     * 旧实现按 frame slot 索引（MAX_FRAMES_IN_FLIGHT=2），与 swapchain
+     * image 数（通常 3）不同步：slot 的 fence 只保证 *submit* 完成，不保证
+     * 该帧的 vkQueuePresentKHR 已消费 render_finished 信号量。slot 复用
+     * 时若 present 仍在等待，信号量仍处于 signaled 态，再次 signal 违反
+     * VUID-vkQueueSubmit-pSignalSemaphores-00067，且会丢信号导致 present
+     * 永不完成 → acquire 永久阻塞 → 渲染循环死锁冻结（TIA-88 实测复现）。
+     *
+     * 按 image 索引后：vkAcquireNextImageKHR 不会在上一轮 present 完成
+     * 前返回同一张 image，而 present 的 wait 会消费该信号量，因此复用前
+     * 必然已回到 unsignaled 态，可安全 signal。
+     */
+    std::vector<VkSemaphore> render_finished_semaphores_;
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_{};
 
     GpuFrameTimer gpu_frame_timer_;
@@ -152,6 +167,8 @@ private:
     void create_command_pool();
     void create_command_buffers();
     void create_sync_objects();
+    void create_render_finished_semaphores();
+    void destroy_render_finished_semaphores();
 
     void recreate_swapchain_resources(gs3d::platform::Window& window);
 
