@@ -7,27 +7,19 @@
 namespace gs3d::ui {
 
 /*
- * 三套可切换 UI 主题：
- *   carbon-blue      碳蓝 · 浅色测绘（默认，冷白表面 + 克制蓝）
- *   deep-graphite    石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）
- *   instrument-amber 仪器 · 琥珀测绘（中性深灰 + 低饱和琥珀）
- *
- * ThemeTokens 里的颜色一律按设计稿的 sRGB 值书写（0-1 浮点，未线性化）。
- * apply_theme() 负责：
- *   1. 重写 palette:: 全局语义色（直接作为显示色写入，见 UiPalette.hpp）；
- *   2. 以 StyleColorsLight/Dark 为底重建 ImGuiStyle 颜色表；
- *   3. 按主题设置圆角（乘 ui_scale）。
- * 可在任意帧调用（菜单切换即时生效）；启动阶段先 set_startup_theme()，
- * ImGuiLayer::init() 会以 active_theme() 完成首次应用。
+ * 四套可切换 UI 主题（TIA-92 新增高对比）。
+ * 语义层级：bg < surface < raised < border；text > text_dim > text_faint。
+ * raised 用于顶栏/状态栏等抬升表面。
  */
 
 enum class ThemeId : int {
     kCarbonBlue = 0,
     kDeepGraphite = 1,
     kInstrumentAmber = 2,
+    kHighContrastLight = 3,
 };
 
-inline constexpr int kThemeCount = 3;
+inline constexpr int kThemeCount = 4;
 
 struct ThemeTokens {
     const char* id;   // 配置文件里的标识，如 "carbon-blue"
@@ -39,9 +31,10 @@ struct ThemeTokens {
     ImVec4 text;          // 正文
     ImVec4 text_dim;      // 弱文字
     ImVec4 text_faint;    // 更弱文字
-    ImVec4 menu_bg;       // 菜单栏
+    ImVec4 menu_bg;       // 菜单栏/顶栏
     ImVec4 surface;       // 面板/弹窗
     ImVec4 surface_hover; // 卡片悬停
+    ImVec4 raised;        // 抬升表面：顶栏/状态栏
     ImVec4 frame;         // 输入框底
     ImVec4 frame_hover;   // 输入框悬停
     ImVec4 border;        // 边框

@@ -154,17 +154,26 @@ struct AttrDescriptor {
     float range() const noexcept { return max_val - min_val; }
 };
 
+/*
+ * TIA-92: 业务面板默认开启；性能与调试面板默认关闭。
+ * 日志面板已下线，不再出现在注册表中；tools 已移至顶栏。
+ */
 struct PanelVisibilityState {
-    bool tools = true;
     bool dataset = true;
     bool render_settings = true;
-    bool debug_log = false;
     bool tile_inspector = false;
     bool lod_view = false;
-    bool performance = true;
+    bool performance = false;
     bool navigation_map = true;
     bool measurement = true;
     bool region_stats = true;
+};
+
+// TIA-92: 快捷键总览 overlay 与 Ctrl+P 面板命令面板的跨帧 UI 状态。
+struct UiChromeState {
+    bool shortcut_overlay_open = false;
+    bool panel_palette_open = false;
+    std::array<char, 64> panel_palette_query{};
 };
 
 struct DatasetSummaryState {
@@ -240,6 +249,8 @@ struct RenderSettingsState {
     float target_fps = 60.0f;
     float max_points_per_pixel = 2.0f;
     bool high_quality = true;
+    bool appearance_section_open = true;
+    bool colormap_section_open = true;
 
     std::string cache_usage = "0 / 256 (soft budget)";
     std::string cpu_cache_usage = "0 / 0 MB";
@@ -513,6 +524,7 @@ struct AppState {
     VkDescriptorSet logo_texture = VK_NULL_HANDLE;
     UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
     DockUiState dock_ui;
+    UiChromeState ui_chrome;
     TilePreloadProgressState tile_preload;
     AnalysisRailUiState analysis_rail_ui;
     ScreenshotNoticeState screenshot_notice;

@@ -118,10 +118,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。`UiRoot.cpp` 仍有 1207 行（视口画布绘制已拆分到
-   `ViewportCanvas.cpp`，供工作台视图窗口与悬浮 Dock 沉浸布局共用），剩余的 docking
-   编排、菜单与面板绘制仍集中在一个文件；下一刀按 UI 边界拆出菜单/工作台编排和独立
-   panel，且每次拆分都降低对应预算。工程护栏以 912 / 716 / 1207 / 763 行分别约束 `ViewerApp.cpp`、
+   调度与错误边界。`UiRoot.cpp` 仍有 887 行（视口画布绘制已拆分到
+   `ViewportCanvas.cpp`，TIA-92 把顶栏/状态栏/快捷键总览/命令面板拆到 AppChrome.cpp），剩余的 docking
+   编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 887 / 763 行分别约束 `ViewerApp.cpp`、
    `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
    比较只允许下降，本地快速检查仍与 `HEAD^` 比较。当前 PR 早于 main 上的护栏，故仅在
    此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。

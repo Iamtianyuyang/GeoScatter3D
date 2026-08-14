@@ -4,6 +4,8 @@
 #include "app/ResourcePath.hpp"
 #include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/IconFont.hpp"
+#include "ui/IconFont.hpp"
 #include "ui/UiRoot.hpp"
 
 #include "backends/imgui_impl_glfw.h"

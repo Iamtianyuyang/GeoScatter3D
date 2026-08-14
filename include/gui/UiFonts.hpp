@@ -12,6 +12,8 @@ struct UiFonts {
     ImFont* panel_title = nullptr;
     ImFont* axis = nullptr;
     ImFont* status = nullptr;
+    ImFont* icons = nullptr;
+    ImFont* mono = nullptr;
     // UI-only scale derived from the monitor's resolution (NOT from
     // glfwGetWindowContentScale). 1080p => 1.0, clamped to [1.0, kMaxUiScale].
     // Used solely for ImGui appearance (font sizes + style metrics). It must

@@ -295,6 +295,7 @@ target_link_libraries(gs3d_viewport_camera PUBLIC
 # link this target, so these sources compile once per build.
 add_library(gs3d_app STATIC
     src/gui/ImGuiLayer.cpp
+    src/ui/AppChrome.cpp
     src/ui/Theme.cpp
     src/ui/Widgets.cpp
     src/ui/UiRoot.cpp
@@ -796,6 +797,32 @@ if(BUILD_TESTING)
         NAME GeoScatter3D.RuntimeLogic
         COMMAND GeoScatter3DRuntimeLogicTests
     )
+
+    add_executable(GeoScatter3DUiPanelRegistryTests
+        tests/UiPanelRegistryTests.cpp
+    )
+    target_include_directories(GeoScatter3DUiPanelRegistryTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+    )
+    target_link_libraries(GeoScatter3DUiPanelRegistryTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+    add_test(NAME GeoScatter3D.UiPanelRegistry COMMAND GeoScatter3DUiPanelRegistryTests)
+
+    add_executable(GeoScatter3DUserPreferencesTests
+        tests/UserPreferencesTests.cpp
+    )
+    target_include_directories(GeoScatter3DUserPreferencesTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+    )
+    target_link_libraries(GeoScatter3DUserPreferencesTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+    add_test(NAME GeoScatter3D.UserPreferences COMMAND GeoScatter3DUserPreferencesTests)
 
     add_executable(GeoScatter3DViewerDatasetSessionTests
         tests/ViewerDatasetSessionTests.cpp

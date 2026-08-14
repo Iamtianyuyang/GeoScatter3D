@@ -82,4 +82,27 @@ void ViewerApp::apply_reset_camera_command(
     ctx.tile_selection_dirty = true;
 }
 
+
+void ViewerApp::apply_camera_view_axis_command(
+    const UiActions& gui_cmds,
+    ViewerAppCameraCommandContext& ctx
+) {
+    if (gui_cmds.camera_view_axis < 0 || gui_cmds.camera_view_axis >= 6) return;
+    int vi = ctx.streaming_viewport_index;
+    if (vi < 0 || vi >= ctx.n_viewports) return;
+    auto& camera = ctx.viewport_manager.camera(vi);
+    ctx.controllers[static_cast<std::size_t>(vi)].clear_orbit_pivot();
+    static constexpr gs3d::camera::Vec3 kDirs[6] = {
+        {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    const auto& d = kDirs[static_cast<std::size_t>(gui_cmds.camera_view_axis)];
+    float dist = std::max(camera.distance(), 1e-3f);
+    gs3d::camera::Vec3 up = std::abs(d.z) > 0.999f
+        ? gs3d::camera::Vec3{0,1,0} : gs3d::camera::Vec3{0,0,1};
+    camera.look_at({camera.target().x+d.x*dist, camera.target().y+d.y*dist, camera.target().z+d.z*dist}, camera.target(), up);
+    ctx.camera_hub.propagate(vi, [&](int src, int dst) { ctx.controllers.at(dst).copy_pivot_from(ctx.controllers.at(src)); });
+    ctx.tile_selection_dirty = true;
+}
+
+
+
 } // namespace gs3d::app

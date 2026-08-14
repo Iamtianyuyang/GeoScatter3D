@@ -36,3 +36,5 @@
 /.playwright-mcp/
 /artifacts/
 /.uitest-venv/
+build_env.cmd
+rebuild.cmd

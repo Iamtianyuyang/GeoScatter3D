@@ -38,6 +38,11 @@ bool Button(
 // 工具栏胶囊按钮（“+ 视图 / 截图 / 测量”）。active 画选中态。
 bool Chip(const char* label, bool active = false);
 
+bool ChipIconText(const char* id, const char* icon, const char* label, bool active = false, const char* tooltip = nullptr);
+bool IconButton(const char* id, const char* icon, const char* tooltip = nullptr, bool active = false, ImVec2 size = ImVec2(0,0));
+void IconLabel(const char* icon, const char* text);
+bool CollapsingSection(const char* id, const char* label, bool open);
+
 // 自绘复选框：圆角方块 + accent 填充对勾。
 bool Checkbox(const char* label, bool* v);
 

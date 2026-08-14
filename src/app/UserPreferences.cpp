@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 
 namespace gs3d::app {
@@ -16,75 +15,72 @@ namespace {
 [[nodiscard]]
 std::filesystem::path user_config_directory()
 {
-    if (const char* override_path =
-            std::getenv("GS3D_USER_CONFIG_DIR")) {
-        if (override_path[0] != '\0') {
-            return override_path;
-        }
+    if (const char* o = std::getenv("GS3D_USER_CONFIG_DIR")) {
+        if (o[0] != '\0') return o;
     }
-
-    std::filesystem::path config_root;
+    std::filesystem::path root;
 #if defined(_WIN32)
-    if (const char* appdata = std::getenv("APPDATA")) {
-        if (appdata[0] != '\0') {
-            config_root = appdata;
-        }
+    if (const char* a = std::getenv("APPDATA")) {
+        if (a[0] != '\0') root = a;
     }
 #else
-    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME")) {
-        if (xdg_config[0] != '\0') {
-            config_root = xdg_config;
-        }
+    if (const char* x = std::getenv("XDG_CONFIG_HOME")) {
+        if (x[0] != '\0') root = x;
     }
-    if (config_root.empty()) {
-        if (const char* home = std::getenv("HOME")) {
-            if (home[0] != '\0') {
-                config_root =
-                    std::filesystem::path(home) / ".config";
-            }
+    if (root.empty()) {
+        if (const char* h = std::getenv("HOME")) {
+            if (h[0] != '\0') root = std::filesystem::path(h) / ".config";
         }
     }
 #endif
-
-    if (config_root.empty()) {
+    if (root.empty()) {
         std::error_code ec;
-        config_root = std::filesystem::temp_directory_path(ec);
-        if (ec) {
-            config_root = ".";
-        }
+        root = std::filesystem::temp_directory_path(ec);
+        if (ec) root = ".";
     }
-
-    return config_root / "geoscatter3d";
+    return root / "geoscatter3d";
 }
 
 [[nodiscard]]
-std::string escape_toml_string(std::string_view value)
+toml::table load_existing(const std::filesystem::path& p)
 {
-    std::string escaped;
-    escaped.reserve(value.size());
-    for (const char ch : value) {
-        switch (ch) {
-        case '\\':
-            escaped += "\\\\";
-            break;
-        case '"':
-            escaped += "\\\"";
-            break;
-        case '\n':
-            escaped += "\\n";
-            break;
-        case '\r':
-            escaped += "\\r";
-            break;
-        case '\t':
-            escaped += "\\t";
-            break;
-        default:
-            escaped += ch;
-            break;
-        }
+    try { return toml::parse_file(p.string()); }
+    catch (const std::exception& e) {
+        gs3d::util::log::warning() << "[WARN] Ignoring invalid preferences at " << p << ": " << e.what() << '\n';
+        return {};
     }
-    return escaped;
+}
+
+bool write_preferences(const std::filesystem::path& p, const toml::table& root)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(p.parent_path(), ec);
+    if (ec) {
+        gs3d::util::log::warning() << "[WARN] Failed to create prefs dir " << p.parent_path() << ": " << ec.message() << '\n';
+        return false;
+    }
+    auto tmp = std::filesystem::path(p.string() + ".tmp");
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) { gs3d::util::log::warning() << "[WARN] Failed to write prefs at " << tmp << '\n'; return false; }
+        out << root;
+        if (!out.good()) { gs3d::util::log::warning() << "[WARN] Failed while writing prefs at " << tmp << '\n'; return false; }
+    }
+    std::filesystem::rename(tmp, p, ec);
+    if (!ec) return true;
+    std::filesystem::remove(p, ec);
+    ec.clear();
+    std::filesystem::rename(tmp, p, ec);
+    if (!ec) return true;
+    gs3d::util::log::warning() << "[WARN] Failed to finalize prefs at " << p << ": " << ec.message() << '\n';
+    return false;
+}
+
+toml::table* ensure_table(toml::table& root, std::string_view section)
+{
+    auto* t = root[section].as_table();
+    if (!t) { root.insert(section, toml::table{}); t = root[section].as_table(); }
+    return t;
 }
 
 } // namespace
@@ -96,74 +92,44 @@ std::filesystem::path user_preferences_path()
 
 std::optional<std::string> load_preferred_gpu_preference()
 {
-    const auto path = user_preferences_path();
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec) || ec) {
-        return std::nullopt;
-    }
-
-    try {
-        const auto root = toml::parse_file(path.string());
-        const auto* graphics = root["graphics"].as_table();
-        if (graphics == nullptr) {
-            return std::nullopt;
-        }
-        return (*graphics)["preferred_gpu"].value<std::string>();
-    } catch (const std::exception& error) {
-        gs3d::util::log::warning() << "[WARN] Ignoring invalid user preferences at "
-                  << path << ": " << error.what() << '\n';
-        return std::nullopt;
-    }
+    auto root = load_existing(user_preferences_path());
+    auto* g = root["graphics"].as_table();
+    if (!g) return std::nullopt;
+    return (*g)["preferred_gpu"].value<std::string>();
 }
 
-bool save_preferred_gpu_preference(std::string_view preferred_gpu)
+bool save_preferred_gpu_preference(std::string_view gpu)
 {
-    const auto path = user_preferences_path();
+    auto path = user_preferences_path();
+    auto root = load_existing(path);
+    auto* g = ensure_table(root, "graphics");
+    g->insert_or_assign("preferred_gpu", std::string(gpu));
+    return write_preferences(path, root);
+}
+
+std::optional<UiPreferences> load_ui_preferences()
+{
+    auto path = user_preferences_path();
     std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec) {
-        gs3d::util::log::warning() << "[WARN] Failed to create user preferences directory "
-                  << path.parent_path() << ": " << ec.message() << '\n';
-        return false;
-    }
+    if (!std::filesystem::is_regular_file(path, ec) || ec) return std::nullopt;
+    auto root = load_existing(path);
+    auto* ui = root["ui"].as_table();
+    if (!ui) return std::nullopt;
+    UiPreferences p;
+    p.theme = (*ui)["theme"].value<std::string>().value_or("");
+    p.layout = (*ui)["layout"].value<std::string>().value_or("");
+    if (p.theme.empty() && p.layout.empty()) return std::nullopt;
+    return p;
+}
 
-    const auto temporary_path =
-        std::filesystem::path(path.string() + ".tmp");
-    {
-        std::ofstream output(temporary_path, std::ios::trunc);
-        if (!output) {
-            gs3d::util::log::warning() << "[WARN] Failed to write user preferences at "
-                      << temporary_path << '\n';
-            return false;
-        }
-        output << "[graphics]\n"
-               << "preferred_gpu = \""
-               << escape_toml_string(preferred_gpu)
-               << "\"\n";
-        if (!output.good()) {
-            gs3d::util::log::warning() << "[WARN] Failed while writing user preferences at "
-                      << temporary_path << '\n';
-            return false;
-        }
-    }
-
-    std::filesystem::rename(temporary_path, path, ec);
-    if (!ec) {
-        return true;
-    }
-
-    // Windows cannot replace an existing file with rename(). Retry after
-    // removing the old file, matching the existing recent-projects storage.
-    std::filesystem::remove(path, ec);
-    ec.clear();
-    std::filesystem::rename(temporary_path, path, ec);
-    if (!ec) {
-        return true;
-    }
-
-    gs3d::util::log::warning() << "[WARN] Failed to finalize user preferences at "
-              << path << ": " << ec.message() << '\n';
-    return false;
+bool save_ui_preferences(const UiPreferences& p)
+{
+    auto path = user_preferences_path();
+    auto root = load_existing(path);
+    auto* ui = ensure_table(root, "ui");
+    ui->insert_or_assign("theme", p.theme);
+    ui->insert_or_assign("layout", p.layout);
+    return write_preferences(path, root);
 }
 
 } // namespace gs3d::app
