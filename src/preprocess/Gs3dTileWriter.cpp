@@ -75,78 +75,6 @@ struct LocalTileStats {
     }
 };
 
-template <typename T>
-void write_binary(
-    std::ofstream& file,
-    const T& value,
-    const char* error_message
-) {
-    file.write(
-        reinterpret_cast<const char*>(&value),
-        static_cast<std::streamsize>(sizeof(T))
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(error_message);
-    }
-}
-
-void write_points(
-    std::ofstream& file,
-    const std::vector<Gs3dPoint>& points
-) {
-    if (points.empty()) {
-        throw std::runtime_error(
-            "Gs3dTileWriter: cannot write empty point array"
-        );
-    }
-
-    const auto byte_count =
-        static_cast<std::streamsize>(
-            points.size() * sizeof(Gs3dPoint)
-        );
-
-    file.write(
-        reinterpret_cast<const char*>(points.data()),
-        byte_count
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(
-            "Gs3dTileWriter: failed to write tile point data"
-        );
-    }
-}
-
-template <typename PointT>
-void write_points_span(
-    std::ofstream& file,
-    const PointT* points,
-    std::size_t point_count
-) {
-    if (points == nullptr || point_count == 0) {
-        throw std::runtime_error(
-            "Gs3dTileWriter: cannot write empty point span"
-        );
-    }
-
-    const auto byte_count =
-        static_cast<std::streamsize>(
-            point_count * sizeof(PointT)
-        );
-
-    file.write(
-        reinterpret_cast<const char*>(points),
-        byte_count
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(
-            "Gs3dTileWriter: failed to write tile point data"
-        );
-    }
-}
-
 [[nodiscard]]
 std::uint64_t file_size_or_zero(
     const std::filesystem::path& path
@@ -704,11 +632,16 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
         data_header
     );
 
-    write_binary(
+    Gs3dTileFormat::write_data_file_header(
         file,
-        data_header,
-        "Gs3dTileWriter: failed to write tile data file header"
+        data_header
     );
+
+    if (!file.good()) {
+        throw std::runtime_error(
+            "Gs3dTileWriter: failed to write tile data file header"
+        );
+    }
 
     std::vector<Gs3dTileRecord> records;
     records.reserve(
@@ -810,11 +743,16 @@ std::vector<Gs3dTileRecord> write_tile_data_file(
     const auto write_prepared_chunk =
         [&](const PreparedTileChunk& prepared_chunk) {
             if (!prepared_chunk.points.empty()) {
-                write_points_span(
+                Gs3dTileFormat::write_points(
                     file,
-                    prepared_chunk.points.data(),
-                    prepared_chunk.points.size()
+                    prepared_chunk.points
                 );
+
+                if (!file.good()) {
+                    throw std::runtime_error(
+                        "Gs3dTileWriter: failed to write tile point data"
+                    );
+                }
             }
 
             for (const auto& meta : prepared_chunk.tiles) {
@@ -953,22 +891,33 @@ void write_tile_index_file(
         index_header
     );
 
-    write_binary(
+    Gs3dTileFormat::write_index_file_header(
         file,
-        index_header,
-        "Gs3dTileWriter: failed to write tile index file header"
+        index_header
     );
+
+    if (!file.good()) {
+        throw std::runtime_error(
+            "Gs3dTileWriter: failed to write tile index file header"
+        );
+    }
 
     for (const auto& record : records) {
         Gs3dTileFormat::validate_tile_record(
+            record,
+            index_header.point_stride
+        );
+
+        Gs3dTileFormat::write_tile_record(
+            file,
             record
         );
 
-        write_binary(
-            file,
-            record,
-            "Gs3dTileWriter: failed to write tile record"
-        );
+        if (!file.good()) {
+            throw std::runtime_error(
+                "Gs3dTileWriter: failed to write tile record"
+            );
+        }
     }
 
     file.flush();

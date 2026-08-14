@@ -4,7 +4,10 @@
 
 #include <array>
 #include <cstdint>
+#include <iosfwd>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace gs3d::data {
 
@@ -214,6 +217,16 @@ public:
         const Gs3dTileRecord& record
     );
 
+    /*
+     * 严格按已知 stride 校验单条 tile 记录：point_data_bytes 必须恰好等于
+     * point_count × point_stride。混合/损坏 stride 的文件必须被显式拒绝，
+     * 不允许读取端按错误 stride 解码导致尾部点静默置零。
+     */
+    static void validate_tile_record(
+        const Gs3dTileRecord& record,
+        std::uint32_t point_stride
+    );
+
     static void validate_index_against_data(
         const Gs3dTileIndexFileHeader& index_header,
         const Gs3dTileDataFileHeader& data_header
@@ -240,6 +253,61 @@ public:
         float b,
         float epsilon = 1.0e-4f
     ) noexcept;
+
+    /*
+     * 显式小端序列化：所有整数与 IEEE-754 字段按小端逐字节写入/读出，
+     * 与宿主字节序无关（参考 Gs3dFormat 的 GS3D v2 可移植编码）。
+     * 在小端主机上与原生 struct 直写字节级一致。
+     */
+    static void write_index_file_header(
+        std::ostream& out,
+        const Gs3dTileIndexFileHeader& header
+    );
+
+    static void read_index_file_header(
+        std::istream& in,
+        Gs3dTileIndexFileHeader& header,
+        const char* error_message
+    );
+
+    static void write_data_file_header(
+        std::ostream& out,
+        const Gs3dTileDataFileHeader& header
+    );
+
+    static void read_data_file_header(
+        std::istream& in,
+        Gs3dTileDataFileHeader& header,
+        const char* error_message
+    );
+
+    static void write_tile_record(
+        std::ostream& out,
+        const Gs3dTileRecord& record
+    );
+
+    static void read_tile_record(
+        std::istream& in,
+        Gs3dTileRecord& record,
+        const char* error_message
+    );
+
+    static void write_points(
+        std::ostream& out,
+        std::span<const Gs3dPointWithId> points
+    );
+
+    static void read_points(
+        std::istream& in,
+        std::vector<Gs3dPoint>& points,
+        const char* error_message
+    );
+
+    static void read_points(
+        std::istream& in,
+        std::vector<Gs3dPointWithId>& points,
+        const char* error_message
+    );
 
     [[nodiscard]]
     static std::string index_file_header_summary(

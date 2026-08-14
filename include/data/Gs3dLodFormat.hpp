@@ -5,7 +5,10 @@
 
 #include <array>
 #include <cstdint>
+#include <iosfwd>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace gs3d::data {
 
@@ -13,7 +16,15 @@ inline constexpr std::array<char, 8> GS3D_LOD_MAGIC{
     'G', 'S', '3', 'D', 'L', 'O', 'D', '\0'
 };
 
+/*
+ * .gs3dlod 版本。
+ *
+ * v1 已正式废弃：只支持 v2。v1 文件（旧原生布局）会被 validate_file_header
+ * 显式拒绝并提示重新生成，不再提供兼容读取路径。GS3D_LOD_VERSION_V1 仅用于
+ * 报错信息区分「v1 已废弃」与「未知版本」。
+ */
 inline constexpr std::uint32_t GS3D_LOD_VERSION = 2;
+inline constexpr std::uint32_t GS3D_LOD_VERSION_V1 = 1;
 
 enum class Gs3dLodFormatVoxelMode : std::uint32_t {
     XY = 1,
@@ -41,8 +52,8 @@ struct Gs3dLodFileHeader {
     float value_max = 0.0f;
 
     /*
-     * v2 新增：构建时锚参数，用于检测配置变更（growth_factor 存 ×1000
-     * 的整数值，如 1414 表示 1.414）。v1 文件这些字段为 0。
+     * 构建时锚参数：预处理写入 build() 所用的配置，读取端/工具链可用于检测
+     * 配置变更（growth_factor 存 ×1000 的整数值，如 1414 表示 1.414）。
      */
     std::uint64_t build_finest_target_points = 0;
     std::uint64_t build_growth_factor_x1000 = 0;
@@ -84,8 +95,47 @@ public:
     [[nodiscard]]
     static Gs3dLodFileHeader make_file_header(
         const Gs3dHeader& source_header,
-        std::uint64_t level_count
+        std::uint64_t level_count,
+        const Gs3dLodBuildConfig& build_config = {}
     ) noexcept;
+
+    /*
+     * 显式小端序列化：所有整数与 IEEE-754 字段按小端逐字节写入/读出，
+     * 与宿主字节序无关（参考 Gs3dFormat 的 GS3D v2 可移植编码）。
+     * 在小端主机上与原生 struct 直写字节级一致。
+     */
+    static void write_file_header(
+        std::ostream& out,
+        const Gs3dLodFileHeader& header
+    );
+
+    static void read_file_header(
+        std::istream& in,
+        Gs3dLodFileHeader& header,
+        const char* error_message
+    );
+
+    static void write_level_header(
+        std::ostream& out,
+        const Gs3dLodLevelHeader& header
+    );
+
+    static void read_level_header(
+        std::istream& in,
+        Gs3dLodLevelHeader& header,
+        const char* error_message
+    );
+
+    static void write_points(
+        std::ostream& out,
+        std::span<const Gs3dPoint> points
+    );
+
+    static void read_points(
+        std::istream& in,
+        std::vector<Gs3dPoint>& points,
+        const char* error_message
+    );
 
     [[nodiscard]]
     static Gs3dLodLevelHeader make_level_header(
