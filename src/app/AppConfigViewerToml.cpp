@@ -119,8 +119,6 @@ void apply_lod(const toml::table& root, AppConfig& config)
         *lod, "sidecar_path", options.sidecar_path);
     options.auto_load_sidecar = bool_or_default(
         *lod, "auto_load_sidecar", options.auto_load_sidecar);
-    options.auto_save_sidecar = bool_or_default(
-        *lod, "auto_save_sidecar", options.auto_save_sidecar);
     options.finest_target_points = uint64_or_default(
         *lod, "finest_target_points", options.finest_target_points);
     options.growth_factor = float_or_default(

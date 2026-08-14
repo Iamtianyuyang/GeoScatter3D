@@ -675,14 +675,14 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
          std::abs(work_size.y - last_layout_work_h_) >
              0.25f * last_layout_work_h_);
 
-    if (dock_layout_initialized_ &&
-        dock_layout_signature_ == signature &&
-        !size_changed_significantly) {
+    const ImGuiID dockspace_id = ImGui::GetID("GeoScatter3D.DockSpace");
+    if (keep_current_dock_layout(
+            dock_layout_, dock_layout_.signature == signature,
+            size_changed_significantly,
+            ImGui::DockBuilderGetNode(dockspace_id) != nullptr,
+            signature)) {
         return;
     }
-
-    const ImGuiID dockspace_id =
-        ImGui::GetID("GeoScatter3D.DockSpace");
     ImGui::DockBuilderRemoveNode(dockspace_id);
     ImGui::DockBuilderAddNode(
         dockspace_id,
@@ -820,8 +820,8 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     }
 
     ImGui::DockBuilderFinish(dockspace_id);
-    dock_layout_initialized_ = true;
-    dock_layout_signature_ = signature;
+    dock_layout_.initialized = true;
+    dock_layout_.signature = signature;
     last_layout_work_w_ = work_size.x;
     last_layout_work_h_ = work_size.y;
     focus_workbench_dataset_ = true;
@@ -847,7 +847,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                         gs3d::gui::ui_fonts().ui_scale);
         }
         if (actions.restore_default_workspace_requested) {
-            dock_layout_initialized_ = false;
+            dock_layout_.initialized = false;
         }
         for (auto& view : state.render_views) {
             if (view.visible &&
@@ -947,7 +947,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 }
                 if (ImGui::MenuItem("恢复默认工作区")) {
                     restore_default_workspace(state);
-                    dock_layout_initialized_ = false;
+                    dock_layout_.initialized = false;
                 }
                 draw_menu_section_label("布局");
                 ImGui::MenuItem(

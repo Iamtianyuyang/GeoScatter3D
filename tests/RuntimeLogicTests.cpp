@@ -194,6 +194,281 @@ void test_gpu_preference_is_user_scoped()
     std::filesystem::remove_all(test_root, ec);
 }
 
+void test_render_settings_preferences_roundtrip()
+{
+    const auto nonce =
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count();
+    const auto test_root =
+        std::filesystem::temp_directory_path() /
+        ("gs3d-render-settings-prefs-" + std::to_string(nonce));
+    ScopedEnvironmentVariable config_root_override(
+        "GS3D_USER_CONFIG_DIR"
+    );
+    expect(
+        config_root_override.set(test_root.string()),
+        "render settings test can set config directory override"
+    );
+
+    expect(
+        !gs3d::app::load_render_settings_preferences().has_value(),
+        "missing user render settings fall back to defaults"
+    );
+
+    gs3d::app::RenderSettingsPreferences preferences;
+    preferences.point_size = 3.5f;
+    preferences.point_shape = 2;
+    preferences.height_attr_index = 0;
+    preferences.color_attr_index = 1;
+    preferences.height_exaggeration = 2.25f;
+    preferences.colormap_index = 4;
+    preferences.value_clip_enabled = true;
+    preferences.value_clip_min = 0.1f;
+    preferences.value_clip_max = 0.9f;
+    expect(
+        gs3d::app::save_render_settings_preferences(preferences),
+        "render settings are persisted to the user preferences file"
+    );
+    const auto preferences_path =
+        gs3d::app::user_preferences_path();
+    expect(
+        std::filesystem::is_regular_file(preferences_path),
+        "render settings write a user preferences file"
+    );
+
+    const auto loaded = gs3d::app::load_render_settings_preferences();
+    expect(loaded.has_value(), "render settings load after save");
+    if (loaded) {
+        expect(loaded->point_size == 3.5f,
+               "point size survives the roundtrip");
+        expect(loaded->point_shape == 2,
+               "point shape survives the roundtrip");
+        expect(loaded->height_attr_index == 0,
+               "height attribute survives the roundtrip");
+        expect(loaded->color_attr_index == 1,
+               "color attribute survives the roundtrip");
+        expect(loaded->height_exaggeration == 2.25f,
+               "height exaggeration survives the roundtrip");
+        expect(loaded->colormap_index == 4,
+               "colormap index survives the roundtrip");
+        expect(loaded->value_clip_enabled,
+               "value clip enable survives the roundtrip");
+        expect(loaded->value_clip_min == 0.1f &&
+                   loaded->value_clip_max == 0.9f,
+               "value clip range survives the roundtrip");
+    }
+
+    // 两个段互不覆盖：GPU 偏好与渲染设置写入同一文件的不同段。
+    expect(
+        gs3d::app::save_preferred_gpu_preference(
+            "uuid:0123456789abcdef0123456789abcdef"
+        ),
+        "GPU preference can be saved alongside render settings"
+    );
+    expect(
+        gs3d::app::save_render_settings_preferences(preferences),
+        "render settings can be re-saved without losing other sections"
+    );
+    const auto gpu = gs3d::app::load_preferred_gpu_preference();
+    expect(
+        gpu.has_value() &&
+            *gpu == "uuid:0123456789abcdef0123456789abcdef",
+        "GPU preference survives a render settings write"
+    );
+    expect(
+        gs3d::app::save_preferred_gpu_preference(
+            "uuid:fedcba9876543210fedcba9876543210"
+        ),
+        "GPU preference can be re-saved after render settings"
+    );
+    const auto loaded_again =
+        gs3d::app::load_render_settings_preferences();
+    expect(
+        loaded_again.has_value() && loaded_again->point_size == 3.5f,
+        "render settings survive a GPU preference write"
+    );
+
+    // 损坏的偏好文件不崩溃，回退到默认值。
+    {
+        std::ofstream out(preferences_path, std::ios::trunc);
+        out << "[render_settings\nbroken";
+    }
+    expect(
+        !gs3d::app::load_render_settings_preferences().has_value(),
+        "invalid user preferences file degrades to defaults"
+    );
+
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
+}
+
+void test_apply_saved_render_settings_preferences()
+{
+    gs3d::app::RenderSettingsPreferences preferences;
+    preferences.point_size = 2.0f;
+    preferences.point_shape = 1;
+    preferences.height_attr_index = 7;   // 超出属性表 → 应钳制
+    preferences.color_attr_index = 0;
+    preferences.height_exaggeration = 1.75f;
+    preferences.colormap_index = 2;
+    preferences.value_clip_enabled = true;
+    preferences.value_clip_min = 0.2f;
+    preferences.value_clip_max = 0.8f;
+
+    gs3d::app::AppState state;
+    state.render_settings.height_by_options = {"fold", "elevation"};
+    state.render_settings.color_by_options = {"fold", "elevation"};
+    state.render_settings_by_view.resize(2);
+    state.render_settings_by_view[0] = state.render_settings;
+    state.render_settings_by_view[1] = state.render_settings;
+
+    gs3d::app::apply_render_settings_preferences(state, preferences);
+    expect(state.render_settings.point_size == 2.0f,
+           "applied point size comes from preferences");
+    expect(state.render_settings.point_shape == 1,
+           "applied point shape comes from preferences");
+    expect(state.render_settings.height_attr_index == 1,
+           "height attribute index is clamped to the attribute list");
+    expect(state.render_settings.color_attr_index == 0,
+           "color attribute index comes from preferences");
+    expect(state.render_settings.height_exaggeration == 1.75f,
+           "applied height exaggeration comes from preferences");
+    expect(state.render_settings.colormap_index == 2,
+           "applied colormap index comes from preferences");
+    expect(state.render_settings.value_clip_enabled &&
+               state.render_settings.value_clip_min == 0.2f &&
+               state.render_settings.value_clip_max == 0.8f,
+           "applied value clip comes from preferences");
+    // 各视图副本播种由 make_initial_viewer_app_state 负责，见
+    // ViewerAppStateInitializationTests 的偏好种子测试。
+}
+
+void test_writable_file_resolution()
+{
+    const auto nonce =
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count();
+    const auto test_root =
+        std::filesystem::temp_directory_path() /
+        ("gs3d-writable-path-" + std::to_string(nonce));
+    const auto release_root = test_root / "release";
+    const auto config_dir = release_root / "config";
+    const auto config_path = config_dir / "viewer.toml";
+    const auto executable_path = release_root / "GeoScatter3D";
+    std::filesystem::create_directories(config_dir);
+    std::filesystem::create_directories(release_root);
+
+    gs3d::app::ResourcePathContext context;
+    context.config_path = config_path;
+    context.executable_path = executable_path;
+
+    // 绝对路径原样返回。
+    const auto absolute = release_root / "user.ini";
+    expect(
+        gs3d::app::ResourcePath::resolve_writable_file(
+            absolute, context
+        ) == absolute,
+        "absolute writable path is kept as-is"
+    );
+
+    // 文件尚不存在 → 落到第一个搜索根（配置目录的父目录 = 发布根）。
+    // 文件名带随机串，避免与进程 CWD 下的同名文件（如仓库 config/）
+    // 产生歧义。
+    const auto probe_name =
+        "config/gs3d-test-layout-" + std::to_string(nonce) + ".ini";
+    const auto resolved =
+        gs3d::app::ResourcePath::resolve_writable_file(
+            probe_name, context
+        );
+    expect(
+        resolved == release_root / probe_name,
+        "missing writable path falls back to the primary search root"
+    );
+
+    // 文件已存在于某搜索根 → 命中既有位置（不受 CWD 影响）。
+    const auto legacy_location = config_dir / "imgui_layout.ini";
+    std::ofstream out(legacy_location, std::ios::trunc);
+    out << "[Window]\n";
+    out.close();
+    const auto resolved_existing =
+        gs3d::app::ResourcePath::resolve_writable_file(
+            "imgui_layout.ini", context
+        );
+    expect(
+        resolved_existing == legacy_location,
+        "existing writable file is resolved at its current location"
+    );
+
+    // 空路径保持为空（不持久化）。
+    expect(
+        gs3d::app::ResourcePath::resolve_writable_file({}, context)
+            .empty(),
+        "empty writable path stays empty"
+    );
+
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
+}
+
+void test_default_dock_layout_decision()
+{
+    using gs3d::ui::DockLayoutPersistState;
+    // 首帧、无持久化节点 → 构建默认布局。
+    DockLayoutPersistState state;
+    expect(
+        !gs3d::ui::keep_current_dock_layout(
+            state, false, false, false, 0x11),
+        "first frame without a persisted layout builds the default"
+    );
+    expect(state.built_once,
+           "first build marks the session built-once flag");
+
+    // 首帧、ini 已恢复持久化节点 → 采纳用户布局，不重建。
+    DockLayoutPersistState adopted;
+    expect(
+        gs3d::ui::keep_current_dock_layout(
+            adopted, false, false, true, 0x22),
+        "first frame adopts a persisted layout without rebuilding"
+    );
+    expect(adopted.initialized && adopted.signature == 0x22,
+           "adoption records initialized flag and signature");
+
+    // 稳态 → 保持现状。
+    expect(
+        gs3d::ui::keep_current_dock_layout(
+            adopted, true, false, true, 0x22),
+        "steady state keeps the current layout"
+    );
+
+    // 面板可见性变化（签名不一致）→ 重建默认布局。
+    expect(
+        !gs3d::ui::keep_current_dock_layout(
+            adopted, false, false, true, 0x22),
+        "panel visibility change rebuilds the default layout"
+    );
+
+    // 大幅 resize → 重建。
+    DockLayoutPersistState resized;
+    resized.initialized = true;
+    resized.built_once = true;
+    resized.signature = 0x33;
+    expect(
+        !gs3d::ui::keep_current_dock_layout(
+            resized, true, true, false, 0x33),
+        "significant resize rebuilds the default layout"
+    );
+
+    // 运行期"恢复默认工作区"（initialized 被清空）→ 即使节点仍存在也重建。
+    adopted.initialized = false;
+    expect(
+        !gs3d::ui::keep_current_dock_layout(
+            adopted, false, false, true, 0x22),
+        "explicit restore rebuilds even with a persisted layout"
+    );
+}
+
 void test_resource_path_resolves_assets_from_executable_directory()
 {
     const auto nonce =
@@ -3941,6 +4216,10 @@ void test_scenario_linked_viewports_after_propagation()
 
     LEGACY_TEST_CASE(test_recent_projects_persist_and_dedupe)
     LEGACY_TEST_CASE(test_gpu_preference_is_user_scoped)
+    LEGACY_TEST_CASE(test_render_settings_preferences_roundtrip)
+    LEGACY_TEST_CASE(test_apply_saved_render_settings_preferences)
+    LEGACY_TEST_CASE(test_writable_file_resolution)
+    LEGACY_TEST_CASE(test_default_dock_layout_decision)
     LEGACY_TEST_CASE(test_resource_path_resolves_assets_from_executable_directory)
     LEGACY_TEST_CASE(test_default_viewer_config_is_portable)
     LEGACY_TEST_CASE(test_resize_debounce)

@@ -1,5 +1,6 @@
 #include "app/ViewerAppStateInitialization.hpp"
 #include "app/ViewerDatasetDescriptor.hpp"
+#include "app/UserPreferences.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -162,4 +163,69 @@ TEST_CASE("Initial viewer app state resolves the configured UI layout")
         CHECK(unknown_state.ui_layout_mode ==
               gs3d::app::UiLayoutMode::kWorkbench);
     }
+}
+
+TEST_CASE("User render settings preferences seed the initial state")
+{
+    auto header = gs3d::data::Gs3dFormat::create_empty_header();
+    header.point_count = 1;
+    const gs3d::data::Gs3dDataset dataset(
+        header,
+        {{0.0f, 0.0f, 0.0f, 0.0f}},
+        {},
+        false
+    );
+    const auto descriptor = gs3d::app::make_viewer_dataset_descriptor(
+        dataset,
+        "prefs.gs3d",
+        {}
+    );
+    const std::vector<gs3d::app::AttrDescriptor> attributes{
+        {"fold", gs3d::app::AttrPhysicalSource::Value, 1.0f, 9.0f},
+        {"elevation", gs3d::app::AttrPhysicalSource::Z, 2.0f, 8.0f}
+    };
+    const gs3d::data::Gs3dLodDataset lod_dataset;
+    const std::optional<gs3d::data::Gs3dTileReader> tile_reader;
+    const gs3d::app::ViewerAppStateInitializationInput input{
+        descriptor,
+        attributes,
+        lod_dataset,
+        tile_reader,
+        false,
+        2,
+        2,
+        false
+    };
+
+    gs3d::app::RenderSettingsPreferences preferences;
+    preferences.point_size = 4.0f;
+    preferences.point_shape = 3;
+    preferences.height_attr_index = 0;
+    preferences.color_attr_index = 1;
+    preferences.height_exaggeration = 3.0f;
+    preferences.colormap_index = 5;
+    preferences.value_clip_enabled = true;
+    preferences.value_clip_min = 0.25f;
+    preferences.value_clip_max = 0.75f;
+
+    const auto state = gs3d::app::make_initial_viewer_app_state(
+        input, "workbench", preferences
+    );
+    CHECK(state.render_settings.point_size == 4.0f);
+    CHECK(state.render_settings.point_shape == 3);
+    CHECK(state.render_settings.height_attr_index == 0);
+    CHECK(state.render_settings.color_attr_index == 1);
+    CHECK(state.render_settings.height_exaggeration == 3.0f);
+    CHECK(state.render_settings.colormap_index == 5);
+    CHECK(state.render_settings.value_clip_enabled);
+    CHECK(state.render_settings.value_clip_min == 0.25f);
+    CHECK(state.render_settings.value_clip_max == 0.75f);
+    REQUIRE(state.render_settings_by_view.size() == 2);
+    CHECK(state.render_settings_by_view[0].point_size == 4.0f);
+    CHECK(state.render_settings_by_view[1].point_size == 4.0f);
+
+    // 缺省（nullopt）保持内置默认，与历史行为一致。
+    const auto default_state =
+        gs3d::app::make_initial_viewer_app_state(input);
+    CHECK(default_state.render_settings.point_size == 1.5f);
 }

@@ -140,7 +140,6 @@ struct ViewerLodConfig {
     bool keep_full_buffer = false;
     std::filesystem::path sidecar_path = "data/test.gs3dlod";
     bool auto_load_sidecar = true;
-    bool auto_save_sidecar = true;
     std::uint64_t finest_target_points = 2'000'000ull;
     float growth_factor = 1.414f;
     std::uint64_t min_points_per_level = 100'000ull;

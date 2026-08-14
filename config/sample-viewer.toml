@@ -44,7 +44,6 @@ mode = "fit"
 enabled = false
 keep_full_buffer = true
 auto_load_sidecar = false
-auto_save_sidecar = false
 
 [viewport]
 count = 1

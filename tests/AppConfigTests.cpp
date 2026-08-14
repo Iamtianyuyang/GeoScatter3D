@@ -85,28 +85,33 @@ TEST_CASE(
     write_file(vertex_shader, "vertex");
     write_file(fragment_shader, "fragment");
 
-    const std::string toml = R"(
-[input]
-mode = "csv"
-csv_path = "data/input.csv"
-bundle_dir = "data/output.gs3d.bundle"
-
-[shader]
-vertex_shader_path = "assets/shaders/point.vert.spv"
-fragment_shader_path = "assets/shaders/point.frag.spv"
-
-[window]
-width = 1024
-height = 768
-multi_viewports = true
-
-[graphics]
-preferred_gpu = "auto"
-
-[tile]
-enabled = false
-gpu_cache_max_tiles = 288
-)";
+    const auto stamp =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    // 随机后缀避免与进程 CWD 下的同名文件（如仓库 config/）产生歧义。
+    const std::string layout_ini_name =
+        "gs3d-test-layout-" + std::to_string(stamp) + ".ini";
+    const std::string toml =
+        "[input]\n"
+        "mode = \"csv\"\n"
+        "csv_path = \"data/input.csv\"\n"
+        "bundle_dir = \"data/output.gs3d.bundle\"\n"
+        "\n"
+        "[shader]\n"
+        "vertex_shader_path = \"assets/shaders/point.vert.spv\"\n"
+        "fragment_shader_path = \"assets/shaders/point.frag.spv\"\n"
+        "\n"
+        "[window]\n"
+        "width = 1024\n"
+        "height = 768\n"
+        "multi_viewports = true\n"
+        "ui_layout_ini_path = \"" + layout_ini_name + "\"\n"
+        "\n"
+        "[graphics]\n"
+        "preferred_gpu = \"auto\"\n"
+        "\n"
+        "[tile]\n"
+        "enabled = false\n"
+        "gpu_cache_max_tiles = 288\n";
     write_file(config_path, toml);
 
     std::vector<std::string> args = {
@@ -129,6 +134,10 @@ gpu_cache_max_tiles = 288
     CHECK(config.viewer.window.width == 1024);
     CHECK(config.viewer.window.height == 768);
     CHECK(config.viewer.window.enable_multi_viewports);
+    // ui_layout_ini_path 走 ResourcePath 搜索根回退：发布根下尚不存在时
+    // 落到第一个搜索根（配置目录的父目录），而非 CWD。
+    CHECK(config.viewer.window.ui_layout_ini_path ==
+          root / layout_ini_name);
     CHECK(config.viewer.graphics.preferred_gpu == "auto");
     CHECK(config.viewer.tile.gpu_cache_max_tiles == 288);
     CHECK(config.viewer.lod.interactive_display_mode ==
@@ -255,7 +264,6 @@ enabled = true
 keep_full_buffer = true
 sidecar_path = "detail.gs3dlod"
 auto_load_sidecar = false
-auto_save_sidecar = false
 finest_target_points = 123456
 growth_factor = 1.8
 min_points_per_level = 789
