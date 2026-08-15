@@ -197,7 +197,6 @@ int ViewerApp::run() {
     try {
         open_request_.reset();
         gs3d::util::Stopwatch startup_timer;
-
         auto dataset_session = prepare_viewer_dataset(config_);
         if (!dataset_session.has_value()) {
             return 1;
@@ -648,6 +647,7 @@ int ViewerApp::run() {
                 .tile_selection_dirty = tile_selection_dirty
             };
             apply_reset_camera_command(gui_cmds, cam_ctx);
+            apply_camera_view_axis_command(gui_cmds, cam_ctx); // nav-ball click
             render_settings.apply_commands(
                 gui_cmds.render_settings_commands,
                 app_state,

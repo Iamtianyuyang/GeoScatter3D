@@ -37,15 +37,16 @@ constexpr ThemeTokens kCarbonBlue{
     .dark = false,
 
     .bg = rgb(0xF5F7FA),
-    .text = rgb(0x17212B),
-    .text_dim = rgb(0x4D5C6B),
-    .text_faint = rgb(0x758397),
+    .text = rgb(0x121B26),
+    .text_dim = rgb(0x43515F),
+    .text_faint = rgb(0x6E7D8F),
     .menu_bg = rgb(0xFFFFFF),
     .surface = rgb(0xFBFCFD),
     .surface_hover = rgb(0xF0F4F8),
+    .raised = rgb(0xFFFFFF),
     .frame = rgb(0xF4F7FA),
     .frame_hover = rgb(0xE8EEF5),
-    .border = rgb(0xCAD4DF),
+    .border = rgb(0xB9C6D6),
 
     .accent = rgb(0x2176D2),
     .accent_active = rgb(0x175EAA),
@@ -89,14 +90,15 @@ constexpr ThemeTokens kDeepGraphite{
 
     .bg = rgb(0x10151C),
     .text = rgb(0xF1F5FA),
-    .text_dim = rgb(0xB9C5D3),
+    .text_dim = rgb(0xC2CDDA),
     .text_faint = rgb(0x8E9BAA),
     .menu_bg = rgb(0x151B23),
     .surface = rgb(0x1C2430),
     .surface_hover = rgb(0x273343),
+    .raised = rgb(0x18202B),
     .frame = rgb(0x121923),
     .frame_hover = rgb(0x293746),
-    .border = rgb(0x526274),
+    .border = rgb(0x5D7086),
 
     .accent = rgb(0x5BA7F7),
     .accent_active = rgb(0x3487DD),
@@ -145,6 +147,7 @@ constexpr ThemeTokens kInstrumentAmber{
     .menu_bg = rgb(0x191E18),
     .surface = rgb(0x222821),
     .surface_hover = rgb(0x2E382C),
+    .raised = rgb(0x1D241D),
     .frame = rgb(0x121712),
     .frame_hover = rgb(0x303B2E),
     .border = rgb(0x596653),
@@ -183,10 +186,56 @@ constexpr ThemeTokens kInstrumentAmber{
     .tab_rounding = 2.0f,
 };
 
+// ── 高对比 · 浅色测绘（TIA-92）────────────────────
+constexpr ThemeTokens kHighContrastLight{
+    .id = "high-contrast",
+    .name = "高对比 · 浅色测绘",
+    .dark = false,
+    .bg = rgb(0xFFFFFF),
+    .text = rgb(0x0A0F14),
+    .text_dim = rgb(0x2E3945),
+    .text_faint = rgb(0x5A6A7A),
+    .menu_bg = rgb(0xFFFFFF),
+    .surface = rgb(0xFFFFFF),
+    .surface_hover = rgb(0xE9EEF4),
+    .raised = rgb(0xFFFFFF),
+    .frame = rgb(0xF2F5F8),
+    .frame_hover = rgb(0xDFE6EE),
+    .border = rgb(0x7C8CA0),
+    .accent = rgb(0x0D5FCC),
+    .accent_active = rgb(0x08469A),
+    .on_accent = rgb(0xFFFFFF),
+    .green = rgb(0x1B7F36),
+    .blue = rgb(0x0D5FCC),
+    .purple = rgb(0x7D3BB0),
+    .yellow = rgb(0xB8860B),
+    .teal = rgb(0x14856F),
+    .var_blue = rgb(0x2D7FF0),
+    .orange = rgb(0xB0561E),
+    .gray = rgb(0x6E6E6E),
+    .red = rgb(0xC62828),
+    .viewport_bg = rgb(0x1A1D23),
+    .viewport_border = rgb(0x3A4655),
+    .scrollbar_grab = rgb(0x9AA7B8),
+    .scrollbar_grab_hovered = rgb(0x7C8CA0),
+    .scrollbar_grab_active = rgb(0x5F7086),
+    .tab_dimmed = rgb(0xE4E9F0),
+    .button_alpha = 0.55f,
+    .button_hover_alpha = 0.90f,
+    .window_rounding = 4.0f,
+    .child_rounding = 2.0f,
+    .frame_rounding = 2.0f,
+    .popup_rounding = 3.0f,
+    .scrollbar_rounding = 3.0f,
+    .grab_rounding = 2.0f,
+    .tab_rounding = 2.0f,
+};
+
 constexpr const ThemeTokens* kThemes[kThemeCount] = {
     &kCarbonBlue,
     &kDeepGraphite,
     &kInstrumentAmber,
+    &kHighContrastLight,
 };
 
 ThemeId g_active_theme = ThemeId::kCarbonBlue;
@@ -235,6 +284,7 @@ void apply_theme(ThemeId id, float ui_scale)
     palette::kMenuBg = to_linear(t.menu_bg);
     palette::kSurface = to_linear(t.surface);
     palette::kSurfaceHover = to_linear(t.surface_hover);
+    palette::kRaised = to_linear(t.raised);
     palette::kFrame = to_linear(t.frame);
     palette::kBorder = to_linear(t.border);
     palette::kGreen = to_linear(t.green);
@@ -324,7 +374,7 @@ void apply_theme(ThemeId id, float ui_scale)
     colors[ImGuiCol_TitleBgActive] = t.surface;
     colors[ImGuiCol_TitleBgCollapsed] = with_alpha(t.bg, 0.51f);
 
-    colors[ImGuiCol_MenuBarBg] = t.menu_bg;
+    colors[ImGuiCol_MenuBarBg] = t.raised;
 
     // Low-contrast track + clearly stepped thumb states. The narrower track
     // saves panel width while GrabMinSize keeps short documents usable.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ImGui Repo Navigator"
+  short_description: "Find ImGui APIs and similar OSS references"
+  default_prompt: "Use $imgui-repo-navigator to find the right Dear ImGui APIs, backend files, examples, upstream references, and similar open-source implementations for this task."

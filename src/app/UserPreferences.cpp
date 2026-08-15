@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 
 namespace gs3d::app {
@@ -19,148 +18,119 @@ namespace {
 [[nodiscard]]
 std::filesystem::path user_config_directory()
 {
-    if (const char* override_path =
-            std::getenv("GS3D_USER_CONFIG_DIR")) {
-        if (override_path[0] != '\0') {
-            return override_path;
-        }
+    if (const char* o = std::getenv("GS3D_USER_CONFIG_DIR")) {
+        if (o[0] != '\0') return o;
     }
-
-    std::filesystem::path config_root;
+    std::filesystem::path root;
 #if defined(_WIN32)
-    if (const char* appdata = std::getenv("APPDATA")) {
-        if (appdata[0] != '\0') {
-            config_root = appdata;
-        }
+    if (const char* a = std::getenv("APPDATA")) {
+        if (a[0] != '\0') root = a;
     }
 #else
-    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME")) {
-        if (xdg_config[0] != '\0') {
-            config_root = xdg_config;
-        }
+    if (const char* x = std::getenv("XDG_CONFIG_HOME")) {
+        if (x[0] != '\0') root = x;
     }
-    if (config_root.empty()) {
-        if (const char* home = std::getenv("HOME")) {
-            if (home[0] != '\0') {
-                config_root =
-                    std::filesystem::path(home) / ".config";
-            }
+    if (root.empty()) {
+        if (const char* h = std::getenv("HOME")) {
+            if (h[0] != '\0') root = std::filesystem::path(h) / ".config";
         }
     }
 #endif
-
-    if (config_root.empty()) {
+    if (root.empty()) {
         std::error_code ec;
-        config_root = std::filesystem::temp_directory_path(ec);
-        if (ec) {
-            config_root = ".";
-        }
+        root = std::filesystem::temp_directory_path(ec);
+        if (ec) root = ".";
     }
-
-    return config_root / "geoscatter3d";
-}
-
-[[nodiscard]]
-std::string escape_toml_string(std::string_view value)
-{
-    std::string escaped;
-    escaped.reserve(value.size());
-    for (const char ch : value) {
-        switch (ch) {
-        case '\\':
-            escaped += "\\\\";
-            break;
-        case '"':
-            escaped += "\\\"";
-            break;
-        case '\n':
-            escaped += "\\n";
-            break;
-        case '\r':
-            escaped += "\\r";
-            break;
-        case '\t':
-            escaped += "\\t";
-            break;
-        default:
-            escaped += ch;
-            break;
-        }
-    }
-    return escaped;
+    return root / "geoscatter3d";
 }
 
 // 读取既有偏好文件（解析失败按空表处理，不阻断写入）。
 [[nodiscard]]
-toml::table load_existing_preferences(
-    const std::filesystem::path& path
-) {
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec) || ec) {
-        return {};
-    }
-    try {
-        return toml::parse_file(path.string());
-    } catch (const std::exception& error) {
+toml::table load_existing(const std::filesystem::path& p)
+{
+    try { return toml::parse_file(p.string()); }
+    catch (const std::exception& e) {
         gs3d::util::log::warning()
-            << "[WARN] Ignoring invalid user preferences at "
-            << path << ": " << error.what() << '\n';
+            << "[WARN] Ignoring invalid preferences at "
+            << p << ": " << e.what() << '\n';
         return {};
     }
 }
 
 // 原子写整份偏好文件：先写临时文件再重命名，中断不会留下截断文件。
 // Windows 无法直接 rename 覆盖已存在文件，先移除旧文件重试。
-bool write_preferences_file(
-    const std::filesystem::path& path,
+bool write_preferences(
+    const std::filesystem::path& p,
     const toml::table& root
 ) {
     std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
+    std::filesystem::create_directories(p.parent_path(), ec);
     if (ec) {
         gs3d::util::log::warning()
             << "[WARN] Failed to create user preferences directory "
-            << path.parent_path() << ": " << ec.message() << '\n';
+            << p.parent_path() << ": " << ec.message() << '\n';
         return false;
     }
 
-    const auto temporary_path =
-        std::filesystem::path(path.string() + ".tmp");
+    const auto tmp = std::filesystem::path(p.string() + ".tmp");
     {
-        std::ofstream output(temporary_path, std::ios::trunc);
-        if (!output) {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
             gs3d::util::log::warning()
                 << "[WARN] Failed to write user preferences at "
-                << temporary_path << '\n';
+                << tmp << '\n';
             return false;
         }
-        output << root;
-        if (!output.good()) {
+        out << root;
+        if (!out.good()) {
             gs3d::util::log::warning()
                 << "[WARN] Failed while writing user preferences at "
-                << temporary_path << '\n';
+                << tmp << '\n';
             return false;
         }
     }
 
-    std::filesystem::rename(temporary_path, path, ec);
-    if (!ec) {
-        return true;
-    }
+    std::filesystem::rename(tmp, p, ec);
+    if (!ec) return true;
 
     // Windows cannot replace an existing file with rename(). Retry after
     // removing the old file, matching the existing recent-projects storage.
-    std::filesystem::remove(path, ec);
+    std::filesystem::remove(p, ec);
     ec.clear();
-    std::filesystem::rename(temporary_path, path, ec);
-    if (!ec) {
-        return true;
-    }
+    std::filesystem::rename(tmp, p, ec);
+    if (!ec) return true;
 
     gs3d::util::log::warning()
         << "[WARN] Failed to finalize user preferences at "
-        << path << ": " << ec.message() << '\n';
+        << p << ": " << ec.message() << '\n';
     return false;
+}
+
+toml::table* ensure_table(toml::table& root, std::string_view section)
+{
+    auto* t = root[section].as_table();
+    if (!t) {
+        root.insert(section, toml::table{});
+        t = root[section].as_table();
+    }
+    return t;
+}
+
+// 转义 TOML 字符串中的特殊字符（双引号、反斜杠、换行）。
+[[nodiscard]]
+std::string escape_toml_string(std::string_view s)
+{
+    std::string result;
+    result.reserve(s.size());
+    for (char c : s) {
+        switch (c) {
+        case '"':  result += "\\\""; break;
+        case '\\': result += "\\\\"; break;
+        case '\n': result += "\\n";  break;
+        default:   result += c;      break;
+        }
+    }
+    return result;
 }
 
 } // namespace
@@ -172,7 +142,7 @@ std::filesystem::path user_preferences_path()
 
 std::optional<std::string> load_preferred_gpu_preference()
 {
-    const auto root = load_existing_preferences(user_preferences_path());
+    const auto root = load_existing(user_preferences_path());
     const auto* graphics = root["graphics"].as_table();
     if (graphics == nullptr) {
         return std::nullopt;
@@ -183,22 +153,20 @@ std::optional<std::string> load_preferred_gpu_preference()
 bool save_preferred_gpu_preference(std::string_view preferred_gpu)
 {
     const auto path = user_preferences_path();
-    auto root = load_existing_preferences(path);
-    toml::table* graphics = root["graphics"].as_table();
-    if (graphics == nullptr) {
-        root.insert("graphics", toml::table{});
-        graphics = root["graphics"].as_table();
-    }
+    auto root = load_existing(path);
+    auto* graphics = ensure_table(root, "graphics");
     graphics->insert_or_assign(
         "preferred_gpu", escape_toml_string(preferred_gpu)
     );
-    return write_preferences_file(path, root);
+    return write_preferences(path, root);
 }
+
+// --- Render settings persistence (TIA-90) ---
 
 std::optional<RenderSettingsPreferences>
 load_render_settings_preferences()
 {
-    const auto root = load_existing_preferences(user_preferences_path());
+    const auto root = load_existing(user_preferences_path());
     const auto* section = root["render_settings"].as_table();
     if (section == nullptr) {
         return std::nullopt;
@@ -241,12 +209,8 @@ bool save_render_settings_preferences(
     const RenderSettingsPreferences& preferences
 ) {
     const auto path = user_preferences_path();
-    auto root = load_existing_preferences(path);
-    toml::table* section = root["render_settings"].as_table();
-    if (section == nullptr) {
-        root.insert("render_settings", toml::table{});
-        section = root["render_settings"].as_table();
-    }
+    auto root = load_existing(path);
+    auto* section = ensure_table(root, "render_settings");
     section->insert_or_assign("point_size", preferences.point_size);
     section->insert_or_assign("point_shape", preferences.point_shape);
     section->insert_or_assign(
@@ -270,7 +234,7 @@ bool save_render_settings_preferences(
     section->insert_or_assign(
         "value_clip_max", preferences.value_clip_max
     );
-    return write_preferences_file(path, root);
+    return write_preferences(path, root);
 }
 
 void apply_render_settings_preferences(
@@ -310,6 +274,34 @@ void apply_render_settings_preferences(
             ) - 1
         );
     }
+}
+
+// --- UI preferences (TIA-92 碳蓝工作台 2.0) ---
+
+std::optional<UiPreferences> load_ui_preferences()
+{
+    auto path = user_preferences_path();
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec) || ec)
+        return std::nullopt;
+    auto root = load_existing(path);
+    auto* ui = root["ui"].as_table();
+    if (!ui) return std::nullopt;
+    UiPreferences p;
+    p.theme = (*ui)["theme"].value<std::string>().value_or("");
+    p.layout = (*ui)["layout"].value<std::string>().value_or("");
+    if (p.theme.empty() && p.layout.empty()) return std::nullopt;
+    return p;
+}
+
+bool save_ui_preferences(const UiPreferences& p)
+{
+    auto path = user_preferences_path();
+    auto root = load_existing(path);
+    auto* ui = ensure_table(root, "ui");
+    ui->insert_or_assign("theme", p.theme);
+    ui->insert_or_assign("layout", p.layout);
+    return write_preferences(path, root);
 }
 
 } // namespace gs3d::app

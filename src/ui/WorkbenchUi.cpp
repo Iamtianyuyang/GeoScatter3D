@@ -1,13 +1,17 @@
 #include "ui/WorkbenchUi.hpp"
 
+#include "gui/UiFonts.hpp"
+#include "ui/IconFont.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/Widgets.hpp"
+#include "ui/WorkspaceManager.hpp"
 
 #include "imgui.h"
 
 namespace gs3d::ui {
 
 namespace {
+ImFont* icon_font() { return gs3d::gui::ui_fonts().icons; }
 
 void toggle_map_axis(gs3d::app::RenderViewState& view)
 {
@@ -64,6 +68,7 @@ void draw_reticle_popup(gs3d::app::RenderViewState& view)
 } // namespace
 
 void draw_workbench_view_controls(
+    gs3d::app::AppState& state,
     gs3d::app::RenderViewState& view,
     gs3d::app::UiActions& actions,
     const float ui_scale
@@ -113,6 +118,17 @@ void draw_workbench_view_controls(
         ImGui::OpenPopup("##WorkbenchReticleStyle");
     }
     draw_reticle_popup(view);
+
+    ImGui::SameLine();
+    bool can_add = gs3d::ui::has_hidden_view(state);
+    ImGui::BeginDisabled(!can_add);
+    char ibuf[5]; icons::utf8(icons::kAdd.codepoint, ibuf);
+    if (icon_font()) ImGui::PushFont(icon_font());
+    bool clicked = ImGui::SmallButton(ibuf);
+    if (icon_font()) ImGui::PopFont();
+    ImGui::EndDisabled();
+    if (clicked && can_add) gs3d::ui::show_first_hidden_view(state);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("新建视图 (Ctrl+N)");
 
     const ImVec2 min = ImGui::GetWindowPos();
     const ImVec2 max{

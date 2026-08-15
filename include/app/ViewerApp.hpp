@@ -225,6 +225,11 @@ private:
         ViewerAppCameraCommandContext& ctx
     );
 
+    void apply_camera_view_axis_command(
+        const UiActions& gui_cmds,
+        ViewerAppCameraCommandContext& ctx
+    );
+
     void apply_project_open_commands(
         const UiActions& gui_cmds,
         gs3d::platform::Window& window

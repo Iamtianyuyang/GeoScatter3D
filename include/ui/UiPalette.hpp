@@ -46,7 +46,8 @@ inline ImVec4 kTextDim  = srgb_vec4(0x6F, 0x6F, 0x6F); // 弱文字
 inline ImVec4 kTextFaint = srgb_vec4(0xA0, 0xA0, 0xA0); // 更弱文字
 
 // ── 派生表面（中性灰阶）─────────────────────────────────
-inline ImVec4 kMenuBg   = srgb_vec4(0xFF, 0xFF, 0xFF); // 菜单栏
+inline ImVec4 kMenuBg   = srgb_vec4(0xFF, 0xFF, 0xFF); // 菜单栏/顶栏
+inline ImVec4 kRaised   = srgb_vec4(0xFF, 0xFF, 0xFF); // 抬升表面
 inline ImVec4 kSurface  = srgb_vec4(0xFF, 0xFF, 0xFF); // 面板/弹窗
 inline ImVec4 kSurfaceHover = srgb_vec4(0xF5, 0xF5, 0xF5); // 卡片悬停
 inline ImVec4 kFrame    = srgb_vec4(0xF7, 0xF8, 0xFA); // 输入框

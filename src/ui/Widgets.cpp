@@ -1,7 +1,9 @@
 #include "ui/Widgets.hpp"
 
 #include "gui/UiFonts.hpp"
+#include "ui/IconFont.hpp"
 #include "ui/UiPalette.hpp"
+#include "ui/UiRoot.hpp"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -207,6 +209,10 @@ bool Button(
     return pressed;
 }
 
+namespace {
+ImFont* icon_font() { return gs3d::gui::ui_fonts().icons; }
+} // namespace
+
 bool Chip(const char* label, bool active)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -254,6 +260,89 @@ bool Chip(const char* label, bool active)
     centered_text(
         dl, pos, max, label, text_end,
         u32(lit ? palette::kAccent : palette::kText));
+    return pressed;
+}
+
+
+bool ChipIconText(const char* id, const char* icon, const char* label, bool active, const char* tooltip) {
+    ImGuiWindow* w = ImGui::GetCurrentWindow(); if (w->SkipItems) return false;
+    float s = uscale();
+    ImVec2 its = icon_font() ? icon_font()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, icon) : ImVec2(0,0);
+    const char* te = ImGui::FindRenderedTextEnd(label);
+    ImVec2 ts = ImGui::CalcTextSize(label, te);
+    float gap = 5.0f * s;
+    ImVec2 sz(its.x + gap + ts.x + 24.0f*s, ts.y + 7.0f*s);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    bool pressed = ImGui::InvisibleButton(id, sz);
+    bool hov = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+    ImDrawList* dl = w->DrawList;
+    ImVec2 mx(pos.x+sz.x, pos.y+sz.y); float r = sz.y * 0.5f;
+    if (active) { ImVec4 bg = palette::kAccent; bg.w = (held?0.24f:0.15f)*ImGui::GetStyle().Alpha; dl->AddRectFilled(pos, mx, ImGui::ColorConvertFloat4ToU32(bg), r); }
+    else dl->AddRectFilled(pos, mx, u32(held ? palette::kFrameHover : palette::kSurfaceHover), r);
+    bool lit = active||hov||held;
+    dl->AddRect(pos, mx, u32(lit ? palette::kAccent : palette::kBorder), r, 0, 1.0f*s);
+    ImU32 tc = u32(lit ? palette::kAccent : palette::kText);
+    if (icon_font()) ImGui::PushFont(icon_font());
+    dl->AddText({pos.x+8.0f*s, pos.y+(sz.y-its.y)*0.5f}, tc, icon);
+    if (icon_font()) ImGui::PopFont();
+    dl->AddText({pos.x+8.0f*s+its.x+gap, pos.y+(sz.y-ts.y)*0.5f}, tc, label, te);
+    if (tooltip && hov) ImGui::SetTooltip("%s", tooltip);
+    return pressed;
+}
+
+bool IconButton(const char* id, const char* icon, const char* tooltip, bool active, ImVec2 size_arg) {
+    ImGuiWindow* w = ImGui::GetCurrentWindow(); if (w->SkipItems) return false;
+    float s = uscale();
+    ImVec2 its = icon_font() ? icon_font()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, icon) : ImVec2(0,0);
+    ImVec2 sz(size_arg.x ? size_arg.x : its.x+14.0f*s, size_arg.y ? size_arg.y : its.y+10.0f*s);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    bool pressed = ImGui::InvisibleButton(id, sz);
+    bool hov = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+    ImDrawList* dl = w->DrawList;
+    ImVec2 mx(pos.x+sz.x, pos.y+sz.y); float r = ImGui::GetStyle().FrameRounding;
+    ImVec4 bg(0,0,0,0);
+    if (active) { bg = palette::kAccent; bg.w = (held?0.28f:0.16f)*ImGui::GetStyle().Alpha; }
+    else if (held) { bg = palette::kAccent; bg.w = 0.20f; }
+    else if (hov) { bg = palette::kAccent; bg.w = 0.10f; }
+    if (bg.w > 0) dl->AddRectFilled(pos, mx, ImGui::ColorConvertFloat4ToU32(bg), r);
+    bool lit = active||hov||held;
+    dl->AddRect(pos, mx, u32(lit?palette::kAccent:palette::kBorder), r, 0, 1.0f*s);
+    if (icon_font()) ImGui::PushFont(icon_font());
+    dl->AddText({pos.x+(sz.x-its.x)*0.5f, pos.y+(sz.y-its.y)*0.5f}, u32(lit?palette::kAccent:palette::kText), icon);
+    if (icon_font()) ImGui::PopFont();
+    if (tooltip && hov) ImGui::SetTooltip("%s", tooltip);
+    return pressed;
+}
+
+void IconLabel(const char* icon, const char* text) {
+    if (icon_font()) ImGui::PushFont(icon_font());
+    ImGui::TextUnformatted(icon);
+    if (icon_font()) ImGui::PopFont();
+    ImGui::SameLine(0.0f, 5.0f*uscale());
+    ImGui::TextUnformatted(text);
+}
+
+bool CollapsingSection(const char* id, const char* label, bool open) {
+    ImGuiWindow* w = ImGui::GetCurrentWindow(); if (w->SkipItems) return false;
+    float s = uscale();
+    ImVec2 ts = ImGui::CalcTextSize(label);
+    float width = ImGui::GetContentRegionAvail().x;
+    ImVec2 sz(std::max(width, ts.x+24.0f*s), ts.y+8.0f*s);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    bool pressed = ImGui::InvisibleButton(id, sz);
+    bool hov = ImGui::IsItemHovered();
+    ImVec2 mx(pos.x+sz.x, pos.y+sz.y);
+    ImDrawList* dl = w->DrawList;
+    if (hov) dl->AddRectFilled(pos, mx, u32(palette::kAccent, 0.06f), ImGui::GetStyle().FrameRounding);
+    dl->AddLine({pos.x, mx.y-1.0f}, {mx.x, mx.y-1.0f}, u32(palette::kBorder, 90));
+    char ib[5];
+    if (icon_font()) ImGui::PushFont(icon_font());
+    dl->AddText({pos.x+2.0f*s, pos.y+(sz.y-ts.y)*0.5f}, u32(palette::kTextDim, 220),
+        open ? gs3d::ui::icons::utf8(gs3d::ui::icons::kExpandMore.codepoint, ib) : gs3d::ui::icons::utf8(gs3d::ui::icons::kExpandLess.codepoint, ib));
+    if (icon_font()) ImGui::PopFont();
+    if (panel_title_font()) ImGui::PushFont(panel_title_font());
+    dl->AddText({pos.x+20.0f*s, pos.y+(sz.y-ts.y)*0.5f}, u32(palette::kTextDim, 230), label);
+    if (panel_title_font()) ImGui::PopFont();
     return pressed;
 }
 

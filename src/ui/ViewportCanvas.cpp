@@ -657,14 +657,8 @@ void begin_viewport_frame_shortcuts(
     gs3d::app::AppState& state,
     gs3d::app::UiActions& actions
 ) {
-    if (ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_O, false)) {
-        actions.open_requested = true;
-    }
-    if (ImGui::GetIO().KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_N, false)) {
-        show_first_hidden_view(state);
-    }
+    if (!ImGui::GetIO().WantTextInput && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) actions.open_requested = true;
+    if (!ImGui::GetIO().WantTextInput && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) show_first_hidden_view(state);
 }
 
 void finalize_viewport_frame_shortcuts(

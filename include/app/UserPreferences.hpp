@@ -55,4 +55,15 @@ void apply_render_settings_preferences(
     const RenderSettingsPreferences& preferences
 );
 
+// UI 偏好（主题 + 布局），跨重启保留（TIA-92 碳蓝工作台 2.0）。
+struct UiPreferences {
+    std::string theme;
+    std::string layout;
+};
+
+[[nodiscard]]
+std::optional<UiPreferences> load_ui_preferences();
+
+bool save_ui_preferences(const UiPreferences& preferences);
+
 } // namespace gs3d::app

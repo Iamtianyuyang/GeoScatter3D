@@ -17,7 +17,6 @@ namespace gs3d::ui {
 
 namespace {
 constexpr const char* kPerformanceWindowName = "性能###Performance";
-constexpr const char* kDebugLogWindowName = "日志###DebugLog";
 constexpr const char* kTileInspectorWindowName = "瓦片###TileInspector";
 constexpr const char* kLodViewWindowName = "细节层级###LodView";
 
@@ -142,15 +141,6 @@ void draw_auxiliary_panels(
             if (widgets::Button(
                     "清空缓存", widgets::ButtonVariant::kDanger)) {
                 actions.clear_cache_requested = true;
-            }
-        }
-        ImGui::End();
-    }
-
-    if (state.panels.debug_log) {
-        if (ImGui::Begin(kDebugLogWindowName, &state.panels.debug_log)) {
-            for (const auto& line : state.debug_log.lines) {
-                ImGui::TextUnformatted(line.c_str());
             }
         }
         ImGui::End();

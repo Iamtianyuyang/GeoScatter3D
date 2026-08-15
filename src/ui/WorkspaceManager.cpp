@@ -236,9 +236,7 @@ void prune_workspace_windows(gs3d::app::AppState& state)
             ),
             workspace.viewport_indices.end()
         );
-        if (workspace.viewport_indices.empty()) {
-            workspace.visible = false;
-        }
+
     }
 
     state.workspace_windows.erase(
@@ -246,7 +244,7 @@ void prune_workspace_windows(gs3d::app::AppState& state)
             state.workspace_windows.begin(),
             state.workspace_windows.end(),
             [](const auto& workspace) {
-                return !workspace.visible || workspace.viewport_indices.empty();
+                return !workspace.visible;
             }
         ),
         state.workspace_windows.end()

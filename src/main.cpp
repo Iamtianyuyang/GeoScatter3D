@@ -450,6 +450,17 @@ int main(int argc, char** argv) {
             app_config.viewer.graphics.preferred_gpu = *preferred_gpu;
         }
 
+        // TIA-92: 主题/布局持久化在用户偏好文件 [ui] 段
+        if (const auto ui_prefs = gs3d::app::load_ui_preferences()) {
+            if (!ui_prefs->theme.empty()) app_config.viewer.window.theme = ui_prefs->theme;
+            if (!ui_prefs->layout.empty()) app_config.viewer.window.layout = ui_prefs->layout;
+        }
+
+        if (const auto ui_prefs = gs3d::app::load_ui_preferences()) {
+            if (!ui_prefs->theme.empty()) app_config.viewer.window.theme = ui_prefs->theme;
+            if (!ui_prefs->layout.empty()) app_config.viewer.window.layout = ui_prefs->layout;
+        }
+
         // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
         // ImGuiLayer::init() 会以 active_theme() 完成首次应用。
         gs3d::ui::set_startup_theme(

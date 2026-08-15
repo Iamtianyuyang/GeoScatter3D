@@ -172,7 +172,7 @@ void draw_render_settings(
             ImVec2(0.0f, 5.0f * scale)
         );
 
-        draw_panel_section_label("点云外观");
+        if (widgets::CollapsingSection("##AppSec", "点云外观", settings.appearance_section_open)) settings.appearance_section_open = !settings.appearance_section_open;;
 
         float point_size = settings.point_size;
         const bool two_col = panel_supports_two_column();
@@ -275,7 +275,7 @@ void draw_render_settings(
         }
 
         ImGui::Spacing();
-        draw_panel_section_label("色调映射");
+        if (widgets::CollapsingSection("##ColSec", "色调映射", settings.colormap_section_open)) settings.colormap_section_open = !settings.colormap_section_open;;
 
         // ── 色标选择 ──
         {

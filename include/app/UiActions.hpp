@@ -105,6 +105,7 @@ struct UiActions {
     bool toggle_fullscreen_requested = false;
     bool restore_default_workspace_requested = false;
     int reset_camera_index = -1;
+    int camera_view_axis = -1; // 0..5 = +X -X +Y -Y +Z -Z (nav-ball click)
 
     bool  point_size_changed = false;
     float point_size = 1.0f;

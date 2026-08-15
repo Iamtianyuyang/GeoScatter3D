@@ -111,7 +111,6 @@ AppState make_initial_viewer_app_state(
     if (input.benchmark_enabled) {
         state.panels.dataset = false;
         state.panels.render_settings = false;
-        state.panels.debug_log = false;
         state.panels.tile_inspector = false;
         state.panels.lod_view = false;
         state.panels.performance = false;
