@@ -2,6 +2,10 @@
 
 依据：[docs/spec/geoscatter3d-competition.md](../spec/geoscatter3d-competition.md)
 
+> 状态: 历史规划 | 核对: 2026-08-14 (main@1f0eb84)
+> 本计划的六项 Layer 2 功能中，E/F/G/I/J 已实现；H（区域书签）未实现。
+> 完成度跟踪见 [geoscatter3d-tasks.md](geoscatter3d-tasks.md)。
+
 ## 现状核查（codegraph 实测，非 docs/architecture.md 转述）
 
 - `Gs3dPoint{x,y,z,value}`（[Gs3dFormat.hpp:42](../../include/data/Gs3dFormat.hpp#L42)）已经够用：
@@ -15,8 +19,10 @@
 - 相机联动分组已实现：`CameraHub`（[CameraHub.hpp:24](../../include/camera/CameraHub.hpp#L24)）。
 - 鼠标射线/平面求交已实现：`MouseRay`（[MouseRay.hpp:20](../../include/camera/MouseRay.hpp#L20)），
   可直接复用做拾取和框选反投影。
-- 全文搜索确认**完全不存在**：`bookmark`、`axis`（自有代码中）、`tooltip`（自有代码中）——
-  坐标轴/网格、悬浮提示、区域书签是纯新功能，没有可复用的半成品。
+- 全文搜索确认**完全不存在**：`bookmark`（自有代码中）——区域书签仍是纯新功能，
+  没有可复用的半成品。坐标轴/网格（`include/render/AxisGrid.hpp` + 自适应刻度）、
+  悬浮提示（hover tooltip：GPU pick 生产路径 + 十字线/数值读出）在本文档撰写后
+  **已实现**，不再是新功能。
 - 瓦片流式 LOD 主干（`PointCloudTileGpu` 后台读取+主线程上传两步法、`TilePointCache`
   字节预算 LRU、`FrameUploadBudget` 限速）已经成型，本计划是在这套主干上调参和补功能，
   不重写。
@@ -42,8 +48,10 @@
 ### Layer 1 — 规模与性能加固（依赖 A 的基线，B/D 可并行，D 早做有利于及早发现问题）
 
 **B. 内存预算调优**：按 1 亿点目标重算 `config/viewer.toml` 里的
-`target_point_counts`（目前阶梯顶端只有 3,000,000）、`cpu_cache_max_bytes`、
-`gpu_cache_max_tiles`、`gpu_upload_budget_bytes`。先做字节预算的纸面推导
+`target_point_counts`（目前阶梯顶端只有 3,000,000；已落地为 Potree 式自动分层
+`finest_target_points`/`growth_factor`/`min_points_per_level`）、
+`cpu_cache_max_bytes`（已落地 4GiB）、`gpu_cache_max_tiles`（已落地 288）、
+`gpu_upload_budget_bytes`（已落地 32MiB）。先做字节预算的纸面推导
 （16 字节/点 × 各层级驻留点数，对照 20GB 上限留安全边际），再用基准工具实测校准。
 
 **D. 防闪烁**：审查 tile 加载/驱逐的过渡逻辑，确认没有 LRU 驱逐导致的突然消隐/

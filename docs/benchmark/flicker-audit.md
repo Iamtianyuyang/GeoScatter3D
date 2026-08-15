@@ -3,44 +3,59 @@
 对应 [docs/plan/geoscatter3d-tasks.md](../plan/geoscatter3d-tasks.md) Task 5。
 **只读审查，不含代码改动**——产出问题清单，修复留给 Task 6。
 
+> 状态: 历史审查记录 | 原文日期: 2026-07 | 引用更新: 2026-08-14
+> (main@1f0eb84)
+>
+> Task 5/6 已落地: 修复后的代码在
+> `src/app/ViewerAppTileStreaming.cpp` (阶段 2/3 提交路径) 保留注释
+> "Anti-flicker (docs/benchmark/flicker-audit.md Task 5/6)"。
+> 本文引用行号已按 1f0eb84 的拆分后文件更新。
+
 ## 结论：确认存在一个会导致明显"掉细节再补回来"的闪烁路径
 
 不是 GPU 资源驱逐（LRU eviction）本身的问题——`PointCloudTileGpu::evict_to_budget`
-（[PointCloudTileGpu.cpp:307-337](../../src/render/PointCloudTileGpu.cpp#L307-L337)）
+（[PointCloudTileGpu.cpp:468-490](../../src/render/PointCloudTileGpu.cpp#L468-L490)）
 只在新选中的 tile 已经全部上传完成、标记为 `pinned_tile_ids` 之后才驱逐旧 tile，
 不会驱逐当前要显示的 tile，这部分设计是对的。
 
-**真正的问题在 `ViewerApp::run()` 的 tile 选择切换逻辑**：一旦相机移动导致
+**真正的问题在 tile 选择切换逻辑**（审查时为 `ViewerApp::run()` 内联，后随
+拆分迁移至 `src/app/ViewerAppTileStreaming.cpp`）：一旦相机移动导致
 `tile_result.changed`（选中了一组新的 tile id），代码会立即清空当前正在显示的
 `viewport_tile_ids[view_index]`——**即使旧的全分辨率 tile 此刻仍然完整驻留在 GPU
 上、完全可以继续渲染**。
 
 ## 具体路径
 
-[ViewerApp.cpp:1233-1246](../../src/app/ViewerApp.cpp#L1233-L1246)：
+[ViewerAppTileStreaming.cpp:546-566](../../src/app/ViewerAppTileStreaming.cpp#L546-L566)
+（审查时为 ViewerApp.cpp:1233-1246 的
+`saved_selection_ready` 判断 + 清空分支，现已由 Task 6 修复，见下）：
 
 ```cpp
-const bool saved_selection_ready =
-    viewport_tile_ids[view_index] == tile_result.tile_ids &&
-    std::all_of(..., has_resident_tile...);
-if (!saved_selection_ready) {
-    viewport_tile_ids[view_index].clear();       // <-- 旧 tile 立即从渲染列表移除
-    viewport_tile_query_boxes[view_index].reset();
-}
+if (ctx.tile_result.changed) {
+    tiles.selection_changed_at = ctx.current_time;
+    /*
+     * Anti-flicker (docs/benchmark/flicker-audit.md
+     * Task 5/6): do NOT clear viewport_tile_ids here.
+     * ...
+     */
 ```
 
 只要新选中的 `tile_result.tile_ids` 和当前显示的不完全一致（任何一次相机移动后
-几乎必然如此），`saved_selection_ready` 就是 false，于是立即清空
+几乎必然如此），旧实现中 `saved_selection_ready` 就是 false，于是立即清空
 `viewport_tile_ids[view_index]`——**不管旧 tile 是否还在 GPU 上**。
 
-渲染端 [ViewerApp.cpp:1578-1601](../../src/app/ViewerApp.cpp#L1578-L1601) 的
-`any_tile_resident` 判断遍历的正是这个被清空的 `selected_tile_ids`：
+渲染端 [ViewerViewportRenderSystem.cpp:65-87](../../src/app/ViewerViewportRenderSystem.cpp#L65-L87)
+（审查时为 ViewerApp.cpp:1578-1601）的 `any_tile_resident` 判断遍历的正是这个被清空的
+`selected_tile_ids`：
 
 ```cpp
-const auto& selected_tile_ids = viewport_tile_ids[view_index];
-const bool any_tile_resident = std::any_of(selected_tile_ids..., has_resident_tile...);
+const auto& selected_tile_ids =
+    ctx.tile_stream.viewport_tile_ids[request_index];
+bool any_tile_resident = false;
 ...
-const bool tile_will_render = !interacting && any_tile_resident;
+const bool tile_will_render =
+    (options_.render_tiles_while_interacting || !ctx.interacting) &&
+    any_tile_resident;
 ```
 
 `selected_tile_ids` 一旦被清空，`any_tile_resident` 必然是 false（空区间的
@@ -78,10 +93,11 @@ tile 集合只在新集合完全上传完成的那一帧被替换，而不是在
 
 ## Task 6：修复落地
 
-去掉了 [ViewerApp.cpp](../../src/app/ViewerApp.cpp) 里"选择一变就立即清空
-`viewport_tile_ids[view_index]`"的那段逻辑（原 1233-1247 行的
-`saved_selection_ready` 判断 + 清空分支），旧 tile 集合现在会一直保持显示，
+去掉了 tile 选择切换里"选择一变就立即清空 `viewport_tile_ids[view_index]`"
+的那段逻辑（原 ViewerApp.cpp 1233-1247 行，拆分后位于
+`ViewerAppTileStreaming.cpp` 阶段 2/3 提交路径），旧 tile 集合现在会一直保持显示，
 直到新选择的 `sync.complete` 为真时才整体替换（替换逻辑本来就存在，不用新写）。
+当前代码在该处保留注释明确引用本审查 (Task 5/6)。
 
 验证：
 - `ctest --test-dir build` 两个套件仍通过，无回归。
@@ -93,7 +109,8 @@ tile 集合只在新集合完全上传完成的那一帧被替换，而不是在
   在有屏幕的机器上跑 `GeoScatter3D` 交互对比修复前后的录屏。
 - **未处理的边角情况**：当新选择处于多帧分批上传期间，`evict_to_budget` 只
   pin 住新批次里已就位的 tile，不会主动 pin 住正在显示的旧 tile；只要
-  `resident_tile_budget_`（现在是 512，见 Task 4）远大于同时存在的新旧 tile
+  `resident_tile_budget_`（当前配置 288，见 Task 4 落地值与
+  [config-reference.md](../config-reference.md)）远大于同时存在的新旧 tile
   总数，就不会有问题，但如果未来 tile 数量逼近这个预算上限，仍有极小概率被
   提前驱逐。如果发生，留作后续加固项（给 `sync_from_cached_tiles` 加一个"额外
   pin 集合"参数）。

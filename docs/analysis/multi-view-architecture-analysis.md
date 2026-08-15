@@ -1,6 +1,7 @@
 # Geoscatter3D 多视图架构分析报告
 
 > **状态**: 只读分析 | **日期**: 2026-07-07 | **作者**: Claude Fable 5
+> **行号截至**: 2026-08-14 (main@1f0eb84，仅本文“关键文件”表中的行号)
 >
 > 本报告不包含代码修改，仅做架构评估。目标：主窗口内分屏多视图 + 视图拖拽成独立 OS 窗口。
 
@@ -27,12 +28,12 @@
 | 组件 | 现状 | 关键文件 |
 |---|---|---|
 | `ViewportManager` | 管理 N 个 `(Camera, OffscreenFramebuffer)` 对（上限 kMaxViewportCount=4），1-4 视口 | `include/render/ViewportManager.hpp:33` |
-| `RenderViewState` | 每视口一份 UI 状态：hover、框选、测量投影、坐标轴、准星、gizmo | `include/app/AppState.hpp:159` |
-| `ViewportFrameCmd` | ImGui→App 每视口鼠标事件 | `include/app/UiActions.hpp:9` |
-| `CameraHub` | 观察者式相机同步，支持分组联动 | `include/camera/CameraHub.hpp:24` |
-| `GpuPickReadback` | per-viewport 数组存储 pick 请求/结果 | `ViewerApp.cpp:2499-2541` |
-| `CameraController` | 每视口一个独立实例 | `ViewerApp.cpp:2590-2597` |
-| ImGui 视口窗口 | UiRoot::draw_viewport_window 画 N 个 ImGui 窗口，每个显示各自的离屏纹理 | `src/ui/UiRoot.cpp:355` |
+| `RenderViewState` | 每视口一份 UI 状态：hover、框选、测量投影、坐标轴、准星、gizmo | `include/app/AppState.hpp:281`（2026-08-14 核验：`PanelVisibilityState` 在 :157，`RenderViewState` 移至 :281，`camera_linked` 在 :286） |
+| `ViewportFrameCmd` | ImGui→App 每视口鼠标事件 | `include/app/UiActions.hpp` |
+| `CameraHub` | 观察者式相机同步，支持分组联动 | `include/camera/CameraHub.hpp` |
+| `GpuPickReadback` | per-viewport 数组存储 pick 请求/结果 | `include/app/ViewerAppGpuPick.hpp`（原 ViewerApp.cpp:2499-2541，后拆分至 `src/app/ViewerAppPickSystem.cpp` 等） |
+| `CameraController` | 每视口一个独立实例 | `src/app/ViewportCameraSystem.cpp`（原 ViewerApp.cpp:2590-2597） |
+| ImGui 视口窗口 | UiRoot::draw_viewport_window 画 N 个 ImGui 窗口，每个显示各自的离屏纹理 | `src/ui/UiRoot.cpp`（视口画布已拆至 `src/ui/ViewportCanvas.cpp`） |
 
 **当前限制**：
 - 多视口**共享同一个 LOD 级别**和**同一组瓦片选择**——瓦片选择只在一个"流式主视口"(`streaming_viewport_index`)上运行，结果跨所有视口使用
@@ -84,7 +85,7 @@
 | 状态 | 说明 | 存储位置 |
 |---|---|---|
 | ✅ Camera (position, target, up, fov, ortho_height, projection_mode) | 已在 ViewportManager::Entry 中每视口一份 | `ViewportManager::entries_[]` |
-| ✅ CameraController (orbit_pivot, animation, speed) | 每视口一个 CameraController | `ViewerApp.cpp:2590 controllers[]` |
+| ✅ CameraController (orbit_pivot, animation, speed) | 每视口一个 CameraController | `src/app/ViewportCameraSystem.cpp`（原 ViewerApp.cpp:2590 controllers[]） |
 | ✅ Viewport 尺寸 | Camera::viewport_width_/height_ | Per-Camera |
 
 ### 2.2 渲染目标
@@ -514,7 +515,7 @@ Phase 3 (future): Per-view 着色设置
 
 | 文件 | 关键内容 |
 |---|---|
-| `src/app/ViewerApp.cpp` | 主渲染循环、所有全局状态、tile/LOD 选择、pick、测量、交互 |
+| `src/app/ViewerApp.cpp` | 主渲染循环、跨帧状态与编排（tile/LOD 选择已拆至 ViewerAppTileStreaming.cpp，pick 已拆至 ViewerPickSystem/ViewerAppGpuPick，测量拆至 MeasurementManager，视口渲染拆至 ViewerViewportRenderSystem） |
 | `include/app/AppState.hpp` | AppState、RenderViewState、MeasurementManager、NavigationMapState |
 | `include/app/UiActions.hpp` | ViewportFrameCmd 结构 |
 | `include/render/ViewportManager.hpp` | ViewportManager、Entry (Camera+Framebuffer 对) |

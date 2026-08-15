@@ -1,5 +1,10 @@
 # Spec: GeoScatter3D 比赛版查看器
 
+> 状态: 历史规划文档（竞赛版） | 核对: 2026-08-14 (main@1f0eb84)
+> 本 spec 是竞赛版规划的历史记录，大部分 Success Criteria 已实现
+> （见 [docs/plan/geoscatter3d-tasks.md](../plan/geoscatter3d-tasks.md) 完成度
+> 跟踪）。文中以下项按当前代码修正：测试目标命名、依赖清单、LTO 未落地。
+
 ## Objective
 
 把 GeoScatter3D 现有的 Vulkan + ImGui 桌面查看器，补全为能在比赛中演示的 1 亿点级
@@ -17,52 +22,61 @@ GPU 上传两步流程、`TilePointCache` 字节预算 LRU 缓存、`FrameUpload
 - Vulkan（渐进式 LOD/瓦片点渲染管线）
 - GLFW 3（窗口/输入）
 - Dear ImGui（`third_party/imgui`，docking 分支，git submodule）
-- tomlplusplus（`third_party/tomlplusplus`，header-only，配置文件解析）
+- Catch2（`third_party/catch2`，git submodule，单元测试框架，`BUILD_TESTING` 时引入）
+- tomlplusplus（`third_party/tomlplusplus`，vendored header-only，配置文件解析）
+- stb（`third_party/stb`，vendored，图像加载）与 nanosvg（`third_party/nanosvg`，
+  vendored，SVG logo 光栅化）
 - 自定义二进制格式：GS3D（全量点）、GS3D-LOD（多级降采样 sidecar）、GS3D-Tile
-  （空间分块 + 索引）
+  （空间分块 + 索引），规范见 [gs3d-format.md](gs3d-format.md)
 - 不引入新的第三方依赖（除非走「Ask first」流程获批）——这是开源协议合规约束下
   最简单可靠的选择，也避免比赛前 4 周内引入未验证的新依赖风险。
+  注：vendored 的 stb/nanosvg/tomlplusplus 树内暂无 LICENSE 文件，
+  如用于对外分发建议补 license 声明（TIA-81 建议项）。
 
 ## Commands
 
 ```bash
 git submodule update --init --recursive
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ./build/GeoScatter3D --config config/viewer.toml
 ```
 
-性能优先的构建调整（相对现状的优化点，需要落地到 `CMakeLists.txt`）：
+性能优先的构建调整（相对现状的优化点）：
 
 - `CMAKE_BUILD_TYPE=Release` 始终用于性能验证和演示构建；Debug 仅用于功能调试。
-- 开启 LTO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION`），跨 TU 内联收益大，构建时间增量
-  可接受（项目规模中等）。
+- ~~开启 LTO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION`）~~ **未落地**：
+  `CMakeLists.txt` 当前无任何 INTERPROCEDURAL 设置；如需启用需另行评估
+  （2026-08-14 核对）。
 - 不默认开启 `-march=native`：比赛现场机器的具体 CPU 未知，硬编码会有移植风险；
   如需针对已知评测机型单独调优，作为可选 CMake cache 变量提供，不进默认路径。
 - 新增一个手动运行的性能基准目标（见 Testing Strategy），不进入默认 `ctest` 套件，
-  避免日常开发循环被大数据集加载拖慢。
+  避免日常开发循环被大数据集加载拖慢。（已落地：`GeoScatter3DBenchmark`）
 
 ## Project Structure
 
 ```
-include/<module>/   → 头文件，按模块分组：app, camera, data, gui, platform,
-                       preprocess, render, ui, util
+include/<module>/   → 头文件，按模块分组：app, camera, core, data, gui, platform,
+                       preprocess, render, scene, ui, util
 src/<module>/       → 对应实现，镜像 include 结构
 src/main.cpp        → 入口
-tests/              → 手写断言式测试可执行文件，按关注点分文件
-  Gs3dFormatTests.cpp        → 数据格式正确性
-  RuntimePerformanceTests.cpp → 运行时逻辑（resize 调度、相机等）单元行为
-  <新增>BenchmarkSuite.cpp    → 性能基准（见下）
-third_party/        → git submodule（imgui）+ vendored header-only（tomlplusplus）
-config/viewer.toml  → 运行时配置入口
-data/               → 测试数据（test.csv 等），赛方提供同结构数据
+tests/              → Catch2 测试可执行文件，按关注点分文件
+  Gs3dFormatTests.cpp / Gs3dV2Tests.cpp → 数据格式正确性（目标 GeoScatter3DDataTests）
+  RuntimeLogicTests.cpp                  → 运行时逻辑（resize 调度、相机等）单元行为
+                                          （目标 GeoScatter3DRuntimeLogicTests）
+  BenchmarkSuite.cpp                     → 性能基准（目标 GeoScatter3DBenchmark，手动运行）
+third_party/        → git submodule（imgui、catch2）+ vendored header-only
+                      （tomlplusplus）+ vendored（stb、nanosvg）
+config/viewer.toml  → 运行时配置入口（全量键说明见 docs/config-reference.md）
+data/               → 测试数据（test.csv 等，gitignored），赛方提供同结构数据
 assets/shaders/     → 编译后的 SPIR-V
+scripts/            → 工程护栏与打包脚本（check_engineering_guardrails.py 等）
 docs/
-  architecture.md   → 历史架构笔记（本次工作不依赖其内容判断现状，已用 codegraph
-                       重新扫描确认）
-  intent/           → 确认过的意图记录
-  spec/             → 本文件及后续规格
+  architecture.md   → 架构与现状（含当前功能状态清单）
+  config-reference.md → viewer.toml 配置参考
+  spec/             → 本文件及格式规范（gs3d-format.md）
+  benchmark/        → 基准/内存预算/闪烁审查记录
 ```
 
 ## Code Style
@@ -105,14 +119,13 @@ private:
 
 ## Testing Strategy
 
-延续现有的两层手写断言测试模型（无外部测试框架，`tests/*.cpp` 自带 `expect()` 计数器
-+ `main` 返回失败数），新增第三层性能基准：
+延续现有的测试模型（已从手写断言迁移至 **Catch2**），三层：
 
-1. **数据正确性**（`GeoScatter3DDataTests`，对应 `Gs3dFormatTests.cpp`）
+1. **数据正确性**（`GeoScatter3DDataTests`，对应 `Gs3dFormatTests.cpp`/`Gs3dV2Tests.cpp`）
    覆盖 GS3D/LOD/Tile 格式的读写一致性。每次改格式必须跑这层。
-2. **运行时逻辑**（`GeoScatter3DRuntimeTests`，对应 `RuntimePerformanceTests.cpp`）
+2. **运行时逻辑**（`GeoScatter3DRuntimeLogicTests`，对应 `RuntimeLogicTests.cpp`）
    覆盖纯逻辑（resize 防抖、相机变换等），不需要 GPU，跑得快，进默认 `ctest`。
-3. **性能基准**（新增，`GeoScatter3DBenchmark`，手动运行，不进默认 `ctest`）
+3. **性能基准**（`GeoScatter3DBenchmark`，手动运行，不进默认 `ctest`）
    先用现有 `data/test.csv`（3300 万行）跑出基线，1 亿点规模暂按架构设计推导留
    余量，等拿到更大数据再复测。测量项：
    - 进程峰值内存——核显平台用人工读取系统工具（`htop`/`smem`/任务管理器），
