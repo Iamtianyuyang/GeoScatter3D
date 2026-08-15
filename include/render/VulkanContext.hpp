@@ -55,6 +55,15 @@ public:
     [[nodiscard]]
     VkPhysicalDevice physical_device() const noexcept;
 
+    /*
+     * 物理设备是否支持 independentBlend（S2 修复，TIA-91）。
+     * PointPipeline 的 3 个 color attachment 使用不同 colorWriteMask
+     * （RGBA / R / R），仅在启用该 feature 时合法（否则违反
+     * VUID-VkPipelineColorBlendStateCreateInfo-pAttachments-00605）。
+     */
+    [[nodiscard]]
+    bool independent_blend_supported() const noexcept;
+
     [[nodiscard]]
     VkDevice device() const noexcept;
 
@@ -94,6 +103,9 @@ private:
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
+
+    // 选中物理设备后查询一次，供 feature 启用决策（independentBlend）使用。
+    VkPhysicalDeviceFeatures supported_features_{};
 
     VkQueue graphics_queue_ = VK_NULL_HANDLE;
     VkQueue present_queue_ = VK_NULL_HANDLE;

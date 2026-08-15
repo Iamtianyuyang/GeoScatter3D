@@ -1,4 +1,5 @@
 #include "render/PointPipeline.hpp"
+#include "util/Log.hpp"
 
 #include <cstddef>
 #include <fstream>
@@ -226,18 +227,35 @@ void PointPipeline::create_graphics_pipeline(
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState color_blend_attachments[3]{};
-    color_blend_attachments[0].colorWriteMask =
+    /*
+     * S2（TIA-91）：attachment 0 是 RGBA 颜色图，attachment 1/2 是单通道
+     * pick 图（R32_UINT / R32_SFLOAT），三者的 colorWriteMask 不同
+     * （RGBA / R / R）。这要求 independentBlend feature；不支持时回退为
+     * 统一 RGBA 掩码——对单通道格式而言不存在的 G/B/A 分量被格式丢弃，
+     * 渲染语义等价。
+     */
+    const VkColorComponentFlags rgba_mask =
         VK_COLOR_COMPONENT_R_BIT |
         VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT |
         VK_COLOR_COMPONENT_A_BIT;
+
+    const bool independent_blend = context_.independent_blend_supported();
+
+    if (!independent_blend) {
+        gs3d::util::log::error()
+            << "[WARN] PointPipeline: independentBlend not supported, "
+               "using uniform RGBA colorWriteMask for all attachments.\n";
+    }
+
+    VkPipelineColorBlendAttachmentState color_blend_attachments[3]{};
+    color_blend_attachments[0].colorWriteMask = rgba_mask;
     color_blend_attachments[0].blendEnable = VK_FALSE;
     color_blend_attachments[1].colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT;
+        independent_blend ? VK_COLOR_COMPONENT_R_BIT : rgba_mask;
     color_blend_attachments[1].blendEnable = VK_FALSE;
     color_blend_attachments[2].colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT;
+        independent_blend ? VK_COLOR_COMPONENT_R_BIT : rgba_mask;
     color_blend_attachments[2].blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo color_blending{};

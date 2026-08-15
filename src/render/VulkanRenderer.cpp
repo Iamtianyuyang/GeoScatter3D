@@ -147,7 +147,7 @@ void VulkanRenderer::draw_frame(
     };
 
     VkSemaphore signal_semaphores[] = {
-        render_finished_semaphores_[current_frame_]
+        render_finished_semaphores_[image_index]
     };
 
     VkSubmitInfo submit_info{};
@@ -376,16 +376,6 @@ void VulkanRenderer::create_sync_objects() {
         );
 
         check_vk(
-            vkCreateSemaphore(
-                context_.device(),
-                &semaphore_info,
-                nullptr,
-                &render_finished_semaphores_[i]
-            ),
-            "VulkanRenderer: failed to create render finished semaphore"
-        );
-
-        check_vk(
             vkCreateFence(
                 context_.device(),
                 &fence_info,
@@ -395,6 +385,51 @@ void VulkanRenderer::create_sync_objects() {
             "VulkanRenderer: failed to create in-flight fence"
         );
     }
+
+    create_render_finished_semaphores();
+}
+
+void VulkanRenderer::create_render_finished_semaphores() {
+    const std::uint32_t count = swapchain_.image_count();
+
+    if (count == 0) {
+        throw std::runtime_error(
+            "VulkanRenderer: swapchain has no images; "
+            "cannot create render-finished semaphores"
+        );
+    }
+
+    render_finished_semaphores_.resize(count, VK_NULL_HANDLE);
+
+    VkSemaphoreCreateInfo semaphore_info{};
+    semaphore_info.sType =
+        VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    for (std::uint32_t i = 0; i < count; ++i) {
+        check_vk(
+            vkCreateSemaphore(
+                context_.device(),
+                &semaphore_info,
+                nullptr,
+                &render_finished_semaphores_[i]
+            ),
+            "VulkanRenderer: failed to create render finished semaphore"
+        );
+    }
+}
+
+void VulkanRenderer::destroy_render_finished_semaphores() {
+    for (VkSemaphore semaphore : render_finished_semaphores_) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(
+                context_.device(),
+                semaphore,
+                nullptr
+            );
+        }
+    }
+
+    render_finished_semaphores_.clear();
 }
 
 void VulkanRenderer::recreate_swapchain_resources(
@@ -407,6 +442,12 @@ void VulkanRenderer::recreate_swapchain_resources(
     vkDeviceWaitIdle(context_.device());
 
     swapchain_.recreate(window);
+
+    // 旧 swapchain 的 per-image render-finished 信号量随图像一并作废：
+    // vkDeviceWaitIdle 已保证旧图像的所有 present/submit 完成，信号量
+    // 均可安全销毁；新 swapchain 的图像数可能不同，须按新数量重建。
+    destroy_render_finished_semaphores();
+    create_render_finished_semaphores();
 }
 
 void VulkanRenderer::record_command_buffer(
@@ -532,17 +573,9 @@ void VulkanRenderer::record_command_buffer(
 }
 
 void VulkanRenderer::cleanup_sync_objects() {
+    destroy_render_finished_semaphores();
+
     for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        if (render_finished_semaphores_[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore(
-                context_.device(),
-                render_finished_semaphores_[i],
-                nullptr
-            );
-
-            render_finished_semaphores_[i] = VK_NULL_HANDLE;
-        }
-
         if (image_available_semaphores_[i] != VK_NULL_HANDLE) {
             vkDestroySemaphore(
                 context_.device(),
