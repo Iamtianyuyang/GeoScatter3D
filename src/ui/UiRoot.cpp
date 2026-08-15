@@ -565,7 +565,10 @@ void draw_panel_section_label(const char* label)
 void UiRoot::build_default_layout(const gs3d::app::AppState& state)
 {
     const std::uint32_t signature = visible_view_signature(state);
-    const ImVec2 work_size = ImGui::GetMainViewport()->WorkSize;
+    ImVec2 work_size = ImGui::GetMainViewport()->WorkSize;
+    // 窗口最小化时 WorkSize 可能为 (0,0)，ImGui 断言要求正尺寸。
+    work_size.x = std::max(1.0f, work_size.x);
+    work_size.y = std::max(1.0f, work_size.y);
 
     const bool size_changed_significantly =
         last_layout_work_w_ > 0.0f && last_layout_work_h_ > 0.0f &&
