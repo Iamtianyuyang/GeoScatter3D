@@ -29,6 +29,7 @@
 #include "app/ViewportCameraSystem.hpp"
 #include "app/ViewportPresentationState.hpp"
 #include "app/ViewportResizeScheduler.hpp"
+#include "app/UserPreferences.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/WorkspaceManager.hpp"
 #include "render/ViewportManager.hpp"
@@ -391,10 +392,7 @@ int ViewerApp::run() {
 
         ViewerFrameClock frame_clock;
 
-        print_controls(
-                        config_.lod.enabled,
-                        config_.tile.enabled
-                    );
+        print_controls(config_.lod.enabled, config_.tile.enabled);
 
         auto dataset_descriptor = make_viewer_dataset_descriptor(
             dataset,
@@ -428,7 +426,8 @@ int ViewerApp::run() {
             config_.benchmark.enabled
         };
         AppState app_state = make_initial_viewer_app_state(
-            initial_state_input, config_.window.layout);
+            initial_state_input, config_.window.layout,
+            gs3d::app::load_render_settings_preferences());
         viewport_presentation.initialize_visibility(app_state);
 
         app_state.logo_texture = render_runtime.logo_descriptor();

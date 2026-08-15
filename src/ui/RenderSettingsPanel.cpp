@@ -4,9 +4,12 @@
 #include "ui/Widgets.hpp"
 #include "ui/UiRoot.hpp"
 
+#include "app/UserPreferences.hpp"
+
 #include "imgui.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <vector>
 
@@ -92,6 +95,39 @@ gs3d::app::RenderSettingsCommand& add_render_settings_command(
     return command;
 }
 
+// 运行期设置持久化（TIA-90）：面板每次产生修改命令后，把用户可编辑的
+// 关键设置写入用户偏好文件，重启恢复。拖拽连续变更时按固定间隔节流，
+// 避免一帧写一次磁盘。
+void persist_render_settings_if_edited(
+    const gs3d::app::RenderSettingsState& settings,
+    bool edited_this_frame
+) {
+    if (!edited_this_frame) {
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    constexpr auto kPersistInterval = std::chrono::milliseconds(400);
+    static auto last_persist = Clock::time_point{};
+    const auto now = Clock::now();
+    if (last_persist != Clock::time_point{} &&
+        now - last_persist < kPersistInterval) {
+        return;
+    }
+    last_persist = now;
+
+    gs3d::app::RenderSettingsPreferences preferences;
+    preferences.point_size = settings.point_size;
+    preferences.point_shape = settings.point_shape;
+    preferences.height_attr_index = settings.height_attr_index;
+    preferences.color_attr_index = settings.color_attr_index;
+    preferences.height_exaggeration = settings.height_exaggeration;
+    preferences.colormap_index = settings.colormap_index;
+    preferences.value_clip_enabled = settings.value_clip_enabled;
+    preferences.value_clip_min = settings.value_clip_min;
+    preferences.value_clip_max = settings.value_clip_max;
+    gs3d::app::save_render_settings_preferences(preferences);
+}
+
 } // namespace
 
 void draw_render_settings(
@@ -114,6 +150,11 @@ void draw_render_settings(
     }
     auto& settings =
         render_settings != nullptr ? *render_settings : state.render_settings;
+
+    // 记录本面板产生的命令数：判定"本窗口是否发生编辑"，避免其他面板的
+    // 命令触发本面板误持久化。
+    const std::size_t command_count_before =
+        actions.render_settings_commands.size();
 
     ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(window_name, open)) {
@@ -342,6 +383,12 @@ void draw_render_settings(
         ImGui::PopStyleVar(3);
     }
     ImGui::End();
+
+    // 本窗口发生了设置修改 → 持久化到用户偏好（重启恢复）。
+    persist_render_settings_if_edited(
+        settings,
+        actions.render_settings_commands.size() > command_count_before
+    );
 }
 
 } // namespace gs3d::ui

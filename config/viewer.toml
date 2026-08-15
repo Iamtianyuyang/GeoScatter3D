@@ -83,7 +83,6 @@ keep_full_buffer = false
 
 # sidecar_path = "data/field_and_ele_source_rec_50m.gs3dlod"
 auto_load_sidecar = true
-auto_save_sidecar = true
 # Potree 式自动分层（替代旧的 target_point_counts / target_point_ratios）。
 #   finest_target_points: 最精细层目标点数，反推锚定 voxel_size_0。
 #   growth_factor: voxel_size 倍增系数。XY 数据 √2≈1.414 每层点数约减半。

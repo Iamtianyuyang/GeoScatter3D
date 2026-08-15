@@ -52,7 +52,6 @@ enabled = true
 keep_full_buffer = false
 sidecar_path = "data/test.gs3dlod"
 auto_load_sidecar = true
-auto_save_sidecar = true
 target_point_counts = [3000000, 2000000, 1500000, 1000000]
 target_point_ratios = [0.09, 0.06, 0.045, 0.03]
 voxel_mode = "XY"

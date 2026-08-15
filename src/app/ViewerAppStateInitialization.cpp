@@ -1,5 +1,7 @@
 #include "app/ViewerAppStateInitialization.hpp"
 
+#include "app/UserPreferences.hpp"
+
 #include <algorithm>
 #include <string>
 
@@ -23,7 +25,8 @@ namespace {
 
 AppState make_initial_viewer_app_state(
     const ViewerAppStateInitializationInput& input,
-    std::string_view ui_layout
+    std::string_view ui_layout,
+    std::optional<RenderSettingsPreferences> user_render_preferences
 ) {
     AppState state;
     state.ui_layout_mode = ui_layout_from_string(ui_layout);
@@ -76,6 +79,13 @@ AppState make_initial_viewer_app_state(
         state.dataset.attributes.push_back(attr.name);
         state.render_settings.height_by_options.push_back(attr.name);
         state.render_settings.color_by_options.push_back(attr.name);
+    }
+
+    // 用户偏好覆盖默认渲染设置；随后按此播种各视图副本（TIA-90）。
+    if (user_render_preferences.has_value()) {
+        apply_render_settings_preferences(
+            state, *user_render_preferences
+        );
     }
 
     state.render_settings_by_view.assign(

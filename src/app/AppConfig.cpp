@@ -238,8 +238,8 @@ void resolve_viewer_resource_paths(
         );
 
     /*
-     * .gs3dlod 可能还不存在，因为 auto_save_sidecar 会在运行时生成。
-     * 所以不能用 resolve_existing_file。
+     * .gs3dlod 由预处理工具（preprocess / engine）生成，可能在配置时
+     * 尚不存在，所以不能用 resolve_existing_file。
      */
     if (!input_mode_is_bundle(config)) {
         config.viewer.lod.sidecar_path = resolve_non_existing_path(
@@ -247,6 +247,10 @@ void resolve_viewer_resource_paths(
             config_path
         );
     }
+
+    config.viewer.window.ui_layout_ini_path =
+        ResourcePath::resolve_writable_file(
+            config.viewer.window.ui_layout_ini_path, context);
 
     if (!input_mode_is_csv(config) &&
         !input_mode_is_bundle(config) &&
@@ -647,10 +651,6 @@ void AppConfigPrinter::print(const AppConfig& config) {
           << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.auto_load_sidecar = "
             << (config.viewer.lod.auto_load_sidecar ? "true" : "false")
-            << '\n';
-
-    gs3d::util::log::info() << "[CONFIG] lod.auto_save_sidecar = "
-            << (config.viewer.lod.auto_save_sidecar ? "true" : "false")
             << '\n';
     gs3d::util::log::info() << "[CONFIG] lod.finest_target_points = "
               << config.viewer.lod.finest_target_points

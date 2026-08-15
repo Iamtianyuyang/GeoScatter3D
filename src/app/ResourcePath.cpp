@@ -75,6 +75,41 @@ std::filesystem::path ResourcePath::resolve_optional_file(
     return {};
 }
 
+std::filesystem::path ResourcePath::resolve_writable_file(
+    const std::filesystem::path& path,
+    const ResourcePathContext& context
+) {
+    if (path.empty()) {
+        return {};
+    }
+
+    if (path.is_absolute()) {
+        return normalize(path);
+    }
+
+    const auto roots = search_roots(context);
+
+    // 已有持久化文件时优先命中既有位置（防止 CWD 漂移导致读写分离）。
+    for (const auto& root : roots) {
+        if (root.empty()) {
+            continue;
+        }
+        const auto candidate = normalize(root / path);
+        if (is_existing_regular_file(candidate)) {
+            return candidate;
+        }
+    }
+
+    // 尚无文件：落到第一个搜索根下创建；无可用根时退回 CWD（旧行为）。
+    for (const auto& root : roots) {
+        if (!root.empty()) {
+            return normalize(root / path);
+        }
+    }
+
+    return normalize(path);
+}
+
 std::filesystem::path ResourcePath::current_working_directory() {
     return normalize(std::filesystem::current_path());
 }

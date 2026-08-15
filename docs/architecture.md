@@ -114,7 +114,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 912 行，其中 `ViewerApp::run()` 独占 716 行。运行时资源、
+1. `ViewerApp.cpp` 当前有 911 行，其中 `ViewerApp::run()` 独占 714 行。运行时资源、
    tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
