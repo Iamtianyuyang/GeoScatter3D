@@ -2,6 +2,7 @@
 
 #include "app/AppState.hpp"
 #include "app/BenchmarkSession.hpp"
+#include "app/ViewerAppControlPlane.hpp"
 #include "app/ViewerAppRunState.hpp"
 
 #include <array>
@@ -84,6 +85,10 @@ struct ViewerWindowConfig {
     // 或 "analysis-rail"（方案 C）。运行时仍可在界面里切换。
     std::string layout = "workbench";
     bool enable_multi_viewports = true;
+
+    // --headless 时窗口不显示（无可见 UI、无交互），渲染/交换链/截图
+    // 路径与 GUI 模式完全一致。
+    bool visible = true;
 
     // Number of 3D views visible at startup. More can be opened up to 4.
     int viewport_count = 1;
@@ -196,6 +201,8 @@ struct ViewerAppConfig {
     ViewerBenchmarkConfig benchmark;
     ViewerPickDebugConfig pick_debug;
 
+    // TIA-109: 控制面（TCP + JSON-RPC）。编译默认包含，运行时默认不监听。
+    ViewerControlPlaneConfig control_plane;
 };
 
 class ViewerApp {

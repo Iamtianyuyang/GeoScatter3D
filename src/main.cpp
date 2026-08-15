@@ -20,9 +20,59 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
+
+// TIA-109: 控制面开关（编译默认包含，运行时默认不监听）。
+//   --control-plane          启用，默认端口 12735
+//   --control-plane=PORT     启用并指定端口
+//   --control-plane PORT     同上（下个参数为纯数字时视为端口）
+void parse_control_plane_args(
+    int argc,
+    char** argv,
+    gs3d::app::ViewerControlPlaneConfig& config
+) {
+    auto is_all_digits = [](const std::string& text) {
+        return !text.empty() &&
+               std::all_of(text.begin(), text.end(), [](const char c) {
+                   return c >= '0' && c <= '9';
+               });
+    };
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        constexpr std::string_view kPrefix = "--control-plane=";
+        if (arg == "--control-plane") {
+            config.enabled = true;
+            if (i + 1 < argc && is_all_digits(argv[i + 1])) {
+                config.port = static_cast<std::uint16_t>(
+                    std::stoi(argv[i + 1])
+                );
+            }
+        } else if (arg.rfind(kPrefix, 0) == 0) {
+            config.enabled = true;
+            const std::string port_text = arg.substr(kPrefix.size());
+            if (!is_all_digits(port_text)) {
+                throw std::runtime_error(
+                    "--control-plane: invalid port: " + port_text
+                );
+            }
+            config.port = static_cast<std::uint16_t>(
+                std::stoi(port_text)
+            );
+        }
+    }
+}
+
+bool has_flag(int argc, char** argv, const std::string_view flag) {
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] == flag) {
+            return true;
+        }
+    }
+    return false;
+}
 
 [[nodiscard]]
 gs3d::data::Gs3dLodBuildConfig make_lod_build_config(
@@ -392,6 +442,8 @@ gs3d::app::ViewerAppConfig make_viewer_config(
 
     viewer.input.bundle_dir = app_config.bundle_dir;
 
+    viewer.control_plane = app_config.control_plane;
+
     return viewer;
 }
 
@@ -443,6 +495,12 @@ int main(int argc, char** argv) {
                 argv
             );
 
+        // TIA-109: 控制面开关（--control-plane[=port] / --headless / --no-welcome）。
+        parse_control_plane_args(argc, argv, app_config.control_plane);
+        if (has_flag(argc, argv, "--headless")) {
+            app_config.viewer.window.visible = false;
+        }
+        const bool no_welcome = has_flag(argc, argv, "--no-welcome");
         // GPU UUIDs identify hardware on one machine. Keep the project
         // template portable and apply a per-user choice only after it loads.
         if (const auto preferred_gpu =
@@ -468,7 +526,7 @@ int main(int argc, char** argv) {
         );
 
         bool show_welcome_window =
-            !app_config.viewer.benchmark.enabled;
+            !app_config.viewer.benchmark.enabled && !no_welcome;
         for (;;) {
             if (show_welcome_window) {
                 const auto recent_projects =

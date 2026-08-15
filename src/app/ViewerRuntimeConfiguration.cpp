@@ -10,6 +10,7 @@ gs3d::platform::WindowConfig make_window_config(
         .height = config.height,
         .title = config.title,
         .resizable = config.resizable,
+        .visible = config.visible,
     };
 }
 

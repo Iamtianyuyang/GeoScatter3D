@@ -12,6 +12,8 @@ struct WindowConfig {
     std::uint32_t height = 720;
     std::string title = "GeoScatter3D 三维散点查看器";
     bool resizable = true;
+    // false = 创建隐藏窗口（--headless 控制面模式；渲染照常进行）。
+    bool visible = true;
 };
 
 struct WindowSize {

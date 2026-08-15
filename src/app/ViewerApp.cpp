@@ -302,10 +302,8 @@ int ViewerApp::run() {
                   << viewport_manager.camera(0).distance() << '\n';
 
         /*
-         * 瓦片流式状态：每视口可见瓦片集与 clip 包围盒、CPU 缓存、异步
-         * future、全量预加载进度。见 ViewerAppTileStreaming.hpp；必须
-         * 声明在 tile_reader / tile_point_ids_by_tile 之后（后台 future
-         * 引用它们，析构时先 join future）。
+         * 瓦片流式状态（见 ViewerAppTileStreaming.hpp）；须声明在
+         * tile_reader 之后：后台 future 引用它们，析构时先 join。
          */
         TileStreamingSystem tile_streaming(
             config_.tile,
@@ -485,9 +483,12 @@ int ViewerApp::run() {
             resolve_hover_point_from_visible_tiles
         };
 
-        // ponytail: screenshot staging — allocated on demand in post_pass, read
-        // back after draw_frame. Only one screenshot at a time.
+        // ponytail: screenshot staging — one capture at a time.
         ScreenshotService screenshot_service;
+        // TIA-109: 控制面会话（TCP+JSON-RPC+帧同步截图）；未启用时零开销。
+        ControlPlaneSession control_session(
+            config_.control_plane, app_state, screenshot_service, swapchain
+        );
         ViewerFrameRenderer frame_renderer(
             window,
             context,
@@ -520,19 +521,11 @@ int ViewerApp::run() {
 
             pick_system.consume_ready_frames(renderer, pick_frame_context);
 
-            // Pairs the level rendered last frame with its measured
-            // duration, driving LodSelectorConfig::adaptive_interacting_level
-            // (no-op otherwise). Must run before lod_level_for_frame is
-            // reassigned for *this* frame, further down.
+            // 配对上一帧 LOD 级别与实测时长（须在 lod_level_for_frame
+            // 重赋值前运行，否则 no-op）。
             if (config_.lod.enabled && delta_seconds > 0.0) {
-                /*
-                 * On VK_PRESENT_MODE_FIFO_KHR the total wall-clock frame
-                 * time includes vsync present-wait inside vkAcquireNextImageKHR
-                 * (~16.67ms at 60Hz).  Subtracting that wait gives a better
-                 * estimate of actual GPU render time so the adaptive LOD
-                 * budget (14ms) doesn't silently pin to the lowest level on
-                 * FIFO-only systems (iGPU / older hardware).
-                 */
+                // FIFO vsync 的 present-wait 计入墙钟帧时长，减去后才不会
+                // 让自适应 LOD 预算（14ms）在 FIFO 系统上误判。
                 const double present_wait_ms =
                     renderer.last_acquire_wait_ms();
                 lod_selector.report_frame_time(
@@ -598,6 +591,11 @@ int ViewerApp::run() {
 
             const int default_view_source =
                 viewport_presentation.first_visible_main_view(app_state);
+            // TIA-109: 请求在帧边界应用 —— 必须在 new_frame 之前，命令的
+            // 效果才会出现在本帧 UI 绘制与截图里（帧同步，不会截到上一帧）。
+            control_session.poll();
+            if (control_session.quit_requested()) window.request_close();
+
             auto gui_cmds = imgui_layer.new_frame(app_state);
             viewport_presentation.copy_newly_visible_views(
                 app_state,

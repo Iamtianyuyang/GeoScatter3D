@@ -32,12 +32,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-glfw3-vulkan-glslang-v2
+          key: vcpkg-x64-windows-glfw3-vulkan-glslang-nlohmann-v3
 
       - name: Install dependencies
         run: >
           vcpkg install glfw3:x64-windows vulkan-headers:x64-windows
           vulkan-loader:x64-windows glslang[tools]:x64-windows
+          nlohmann-json:x64-windows
 
       - name: Configure
         run: >
@@ -75,7 +76,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools
+          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools libnlohmann-json3-dev
 
       - name: Configure
         run: >

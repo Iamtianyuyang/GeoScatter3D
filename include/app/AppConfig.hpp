@@ -81,6 +81,9 @@ struct AppConfig {
     CsvConvertConfig csv_convert;
     TileBuildConfig tile_build;
 
+    // TIA-109: 控制面开关（--control-plane[=port]，默认端口 12735）。
+    ViewerControlPlaneConfig control_plane;
+
     std::string input_mode = "gs3d";
     std::filesystem::path csv_input_path;
     std::filesystem::path bundle_dir;

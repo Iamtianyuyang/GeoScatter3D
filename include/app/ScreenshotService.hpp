@@ -1,12 +1,15 @@
 #pragma once
 
+#include "control/CapturedImage.hpp"
 #include "platform/NativeFileDialog.hpp"
 
 #include <vulkan/vulkan.h>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -89,6 +92,17 @@ public:
         const gs3d::render::VulkanSwapchain& swapchain
     );
 
+    // TIA-109 控制面截图：与文件截图共用同一 GPU 读回路径（post_pass 拷贝
+    // → write_pending 回读），但结果编码为内存 PNG，不弹保存面板、不写文件。
+    // 返回 false 表示本帧无法武装（视口区域无效或已有截图进行中）。
+    bool request_control_capture(
+        const AppState& state,
+        const gs3d::render::VulkanSwapchain& swapchain
+    );
+
+    // 取回已完成的内存 PNG（一次性；未完成返回 nullopt）。
+    [[nodiscard]] std::optional<gs3d::control::CapturedImage> take_control_png();
+
 private:
     [[nodiscard]] bool prepare_capture(
         const AppState& state,
@@ -104,6 +118,12 @@ private:
     std::vector<std::future<ScreenshotWriteResult>> write_tasks_;
     std::string capture_error_;
     bool pending_ = false;
+
+    // 控制面内存截图路径：pending_ && in_memory_ 表示编码到 memory_png_。
+    bool in_memory_ = false;
+    std::vector<std::uint8_t> memory_png_;
+    bool memory_png_ready_ = false;
+    std::chrono::steady_clock::time_point in_memory_armed_at_{};
 };
 
 } // namespace gs3d::app
