@@ -17,6 +17,10 @@ find_package(glfw3 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# TIA-109: 控制面 JSON 依赖（header-only nlohmann/json）。
+# Windows 走 vcpkg（nlohmann-json），Linux 走发行版包（libnlohmann-json3-dev）。
+find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
+
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 
 # Shader sources are the canonical inputs. Generated SPIR-V lives only in the
@@ -192,6 +196,36 @@ target_link_libraries(gs3d_platform PUBLIC
     Threads::Threads
 )
 
+# TIA-109: 控制面（ComponentRegistry + JSON-RPC + TCP 服务器）。
+# 依赖面刻意压到最小：AppState 仅头文件使用，测试无需 Vulkan 运行时。
+add_library(gs3d_control STATIC
+    src/control/ComponentRegistry.cpp
+    src/control/PanelComponents.cpp
+    src/control/JsonRpc.cpp
+    src/control/Base64.cpp
+    src/control/ControlPlane.cpp
+    include/control/ComponentRegistry.hpp
+    include/control/PanelComponents.hpp
+    include/control/JsonRpc.hpp
+    include/control/Base64.hpp
+    include/control/CapturedImage.hpp
+    include/control/ControlPlane.hpp
+)
+
+target_include_directories(gs3d_control PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${NLOHMANN_JSON_INCLUDE_DIR}
+)
+
+target_link_libraries(gs3d_control PUBLIC
+    Vulkan::Vulkan
+    Threads::Threads
+)
+
+if(WIN32)
+    target_link_libraries(gs3d_control PRIVATE ws2_32)
+endif()
+
 add_library(gs3d_render STATIC
     src/camera/BoxSelect.cpp
     src/camera/Camera.cpp
@@ -340,6 +374,7 @@ add_library(gs3d_app STATIC
     src/app/ViewerAppPointIds.cpp
     src/app/ViewerAppTileStreaming.cpp
     src/app/ViewerViewportRenderSystem.cpp
+    src/app/ViewerAppControlPlane.cpp
 
     include/gui/ImGuiLayer.hpp
     include/ui/Theme.hpp
@@ -362,6 +397,7 @@ add_library(gs3d_app STATIC
     include/ui/SvgLogoTexture.hpp
 
     include/app/ViewerApp.hpp
+    include/app/ViewerAppControlPlane.hpp
     include/app/ViewerDatasetSession.hpp
     include/app/ViewerDatasetDescriptor.hpp
     include/app/ViewerBenchmarkController.hpp
@@ -479,6 +515,7 @@ target_link_libraries(gs3d_app PUBLIC
     gs3d_render
     gs3d_imgui
     gs3d_platform
+    gs3d_control
     glfw
 )
 
@@ -1075,6 +1112,60 @@ if(BUILD_TESTING)
     add_test(
         NAME GeoScatter3D.ScreenshotService
         COMMAND GeoScatter3DScreenshotServiceTests
+    )
+
+    add_executable(GeoScatter3DComponentRegistryTests
+        tests/ComponentRegistryTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DComponentRegistryTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DComponentRegistryTests PRIVATE
+        gs3d_control
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ComponentRegistry
+        COMMAND GeoScatter3DComponentRegistryTests
+    )
+
+    add_executable(GeoScatter3DJsonRpcTests
+        tests/JsonRpcTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DJsonRpcTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DJsonRpcTests PRIVATE
+        gs3d_control
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.JsonRpc
+        COMMAND GeoScatter3DJsonRpcTests
+    )
+
+    add_executable(GeoScatter3DControlPlaneTests
+        tests/ControlPlaneTests.cpp
+    )
+
+    target_include_directories(GeoScatter3DControlPlaneTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(GeoScatter3DControlPlaneTests PRIVATE
+        gs3d_control
+        Catch2::Catch2WithMain
+    )
+
+    add_test(
+        NAME GeoScatter3D.ControlPlane
+        COMMAND GeoScatter3DControlPlaneTests
     )
 
     add_executable(GeoScatter3DNavigationMapSystemTests

@@ -31,6 +31,13 @@ bool future_is_ready(std::future<T>& future) {
             std::future_status::ready;
 }
 
+// stbi_write_png_to_func 的回调：把编码字节追加进内存缓冲。
+void append_png_bytes(void* context, void* data, const int size) {
+    auto* out = static_cast<std::vector<std::uint8_t>*>(context);
+    const auto* bytes = static_cast<const std::uint8_t*>(data);
+    out->insert(out->end(), bytes, bytes + size);
+}
+
 void set_screenshot_notice(
     AppState& state,
     const ScreenshotNoticeKind kind,
@@ -280,6 +287,40 @@ void ScreenshotService::request(
     );
 }
 
+bool ScreenshotService::request_control_capture(
+    const AppState& app_state,
+    const gs3d::render::VulkanSwapchain& swapchain
+) {
+    static_cast<void>(app_state);
+    if (pending_) {
+        return false;  // 已有截图进行中（文件对话框路径或上一次控制面截图）
+    }
+    // 控制面截图 = 整个窗口画面（含面板/Dock），而非仅活动视口画布：
+    // 外部 AI 需要看到它正在控制的全部 UI。多视口时所有视口都在画面内。
+    offset_ = {0, 0};
+    extent_ = swapchain.extent();
+    if (extent_.width == 0 || extent_.height == 0) {
+        return false;
+    }
+    in_memory_ = true;
+    memory_png_ready_ = false;
+    in_memory_armed_at_ = std::chrono::steady_clock::now();
+    pending_ = true;
+    return true;
+}
+
+std::optional<gs3d::control::CapturedImage> ScreenshotService::take_control_png() {
+    if (!memory_png_ready_) {
+        return std::nullopt;
+    }
+    memory_png_ready_ = false;
+    return gs3d::control::CapturedImage{
+        .png_bytes = std::move(memory_png_),
+        .width = extent_.width,
+        .height = extent_.height
+    };
+}
+
 // post_pass: after the swapchain render pass ends, copy the viewport
 // region to a staging buffer so write_pending_screenshot() can read it
 // back on the CPU after draw_frame.
@@ -437,6 +478,17 @@ void ScreenshotService::write_pending(
     const gs3d::render::VulkanSwapchain& swapchain
 ) {
     if (!pending_ || staging_buffer_ == VK_NULL_HANDLE) {
+        // 控制面截图武装后若长时间没有帧被记录（交换链重建/窗口不可用），
+        // 主动放弃，避免 pending_ 永久卡死后续截图。
+        if (pending_ && in_memory_ &&
+            std::chrono::steady_clock::now() - in_memory_armed_at_ >
+                std::chrono::seconds(2)) {
+            gs3d::util::log::error()
+                << "[SCREENSHOT] control capture abandoned: no frame recorded\n";
+            pending_ = false;
+            in_memory_ = false;
+            memory_png_ready_ = false;
+        }
         return;
     }
 
@@ -488,6 +540,27 @@ void ScreenshotService::write_pending(
     staging_buffer_ = VK_NULL_HANDLE;
     staging_memory_ = VK_NULL_HANDLE;
     pending_ = false;
+
+    // 控制面内存截图：编码进 memory_png_，不写文件、不弹保存面板。
+    if (in_memory_) {
+        in_memory_ = false;
+        memory_png_.clear();
+        const int encoded = stbi_write_png_to_func(
+            &append_png_bytes,
+            &memory_png_,
+            w,
+            h,
+            4,
+            pixels.data(),
+            w * 4
+        );
+        memory_png_ready_ = encoded != 0 && !memory_png_.empty();
+        if (!memory_png_ready_) {
+            gs3d::util::log::error()
+                << "[SCREENSHOT] in-memory PNG encode failed\n";
+        }
+        return;
+    }
 
     const auto output_path = output_path_;
     output_path_.clear();
