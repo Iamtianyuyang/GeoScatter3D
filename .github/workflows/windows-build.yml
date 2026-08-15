@@ -76,11 +76,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          # ubuntu-24.04 runner's base-suite mirror serves only main, so
-          # universe-only packages (libnlohmann-json3-dev, …) are invisible
-          # to apt until universe is enabled explicitly.
-          sudo apt-get install --yes software-properties-common
-          sudo add-apt-repository -y universe
+          # The ubuntu-24.04 runner's mirrorlist serves the base 'noble'
+          # suite with 'main' only, so universe-only packages
+          # (libnlohmann-json3-dev) are invisible to apt. Add universe
+          # straight from archive.ubuntu.com to bypass the mirror.
+          sudo add-apt-repository -y "deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble universe"
           sudo apt-get update
           sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools libnlohmann-json3-dev
 
