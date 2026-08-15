@@ -138,6 +138,13 @@ public:
     [[nodiscard]]
     const std::filesystem::path& source_path() const noexcept;
 
+    /*
+     * build() 使用的构建配置。写入端用其填充文件头中的构建时锚参数
+     * （build_finest_target_points 等）；从文件读回的 dataset 保留默认值。
+     */
+    [[nodiscard]]
+    const Gs3dLodBuildConfig& build_config() const noexcept;
+
     [[nodiscard]]
     std::string summary() const;
 
@@ -155,6 +162,7 @@ private:
     Gs3dHeader source_header_{};
     std::filesystem::path source_path_;
     std::vector<Gs3dLodLevel> levels_;
+    Gs3dLodBuildConfig build_config_{};
 
 private:
     void add_level(Gs3dLodLevel level);

@@ -170,6 +170,15 @@ private:
         const Gs3dTileQueryBox& box
     ) noexcept;
 
+    /*
+     * 读取前逐记录校验：point_data_bytes 必须严格等于
+     * point_count × data header stride，否则显式报错，禁止按错误
+     * stride 解码导致尾部点静默置零。
+     */
+    void validate_record_stride(
+        const Gs3dTileRecord& record
+    ) const;
+
     void build_grid_map() noexcept;
 };
 

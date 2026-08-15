@@ -10,25 +10,6 @@ namespace gs3d::data {
 
 namespace {
 
-template <typename T>
-T read_binary(
-    std::ifstream& file,
-    const char* error_message
-) {
-    T value{};
-
-    file.read(
-        reinterpret_cast<char*>(&value),
-        static_cast<std::streamsize>(sizeof(T))
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(error_message);
-    }
-
-    return value;
-}
-
 std::vector<Gs3dPoint> read_points(
     std::ifstream& file,
     std::uint64_t point_count,
@@ -63,16 +44,11 @@ std::vector<Gs3dPoint> read_points(
         static_cast<std::size_t>(point_count)
     );
 
-    file.read(
-        reinterpret_cast<char*>(points.data()),
-        static_cast<std::streamsize>(point_data_bytes)
+    Gs3dLodFormat::read_points(
+        file,
+        points,
+        "Gs3dLodReader: failed to read point data"
     );
-
-    if (!file.good()) {
-        throw std::runtime_error(
-            "Gs3dLodReader: failed to read point data"
-        );
-    }
 
     return points;
 }
@@ -140,11 +116,12 @@ Gs3dLodReadResult Gs3dLodReader::read(
         );
     }
 
-    const auto file_header =
-        read_binary<Gs3dLodFileHeader>(
-            file,
-            "Gs3dLodReader: failed to read file header"
-        );
+    Gs3dLodFileHeader file_header{};
+    Gs3dLodFormat::read_file_header(
+        file,
+        file_header,
+        "Gs3dLodReader: failed to read file header"
+    );
 
     Gs3dLodFormat::validate_file_header(
         file_header
@@ -181,11 +158,12 @@ Gs3dLodReadResult Gs3dLodReader::read(
     for (std::uint64_t i = 0;
          i < file_header.level_count;
          ++i) {
-        const auto level_header =
-            read_binary<Gs3dLodLevelHeader>(
-                file,
-                "Gs3dLodReader: failed to read level header"
-            );
+        Gs3dLodLevelHeader level_header{};
+        Gs3dLodFormat::read_level_header(
+            file,
+            level_header,
+            "Gs3dLodReader: failed to read level header"
+        );
 
         Gs3dLodFormat::validate_level_header(
             level_header
@@ -277,11 +255,12 @@ Gs3dLodReadResult Gs3dLodReader::read_without_source_validation(
         );
     }
 
-    const auto file_header =
-        read_binary<Gs3dLodFileHeader>(
-            file,
-            "Gs3dLodReader: failed to read file header"
-        );
+    Gs3dLodFileHeader file_header{};
+    Gs3dLodFormat::read_file_header(
+        file,
+        file_header,
+        "Gs3dLodReader: failed to read file header"
+    );
 
     Gs3dLodFormat::validate_file_header(
         file_header

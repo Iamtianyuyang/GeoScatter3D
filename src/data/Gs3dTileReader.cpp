@@ -11,25 +11,6 @@ namespace gs3d::data {
 
 namespace {
 
-template <typename T>
-T read_binary(
-    std::ifstream& file,
-    const char* error_message
-) {
-    T value{};
-
-    file.read(
-        reinterpret_cast<char*>(&value),
-        static_cast<std::streamsize>(sizeof(T))
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(error_message);
-    }
-
-    return value;
-}
-
 std::vector<Gs3dTileRecord> read_tile_records(
     std::ifstream& file,
     std::uint64_t tile_count
@@ -55,11 +36,13 @@ std::vector<Gs3dTileRecord> read_tile_records(
     );
 
     for (std::uint64_t i = 0; i < tile_count; ++i) {
-        auto record =
-            read_binary<Gs3dTileRecord>(
-                file,
-                "Gs3dTileReader: failed to read tile record"
-            );
+        Gs3dTileRecord record{};
+
+        Gs3dTileFormat::read_tile_record(
+            file,
+            record,
+            "Gs3dTileReader: failed to read tile record"
+        );
 
         Gs3dTileFormat::validate_tile_record(
             record
@@ -123,6 +106,11 @@ void validate_records_against_headers(
     std::uint64_t accumulated_points = 0;
     std::uint64_t accumulated_bytes = 0;
 
+    const std::uint64_t payload_begin =
+        sizeof(Gs3dTileDataFileHeader);
+    const std::uint64_t payload_end =
+        payload_begin + data_header.total_point_bytes;
+
     for (std::size_t i = 0; i < records.size(); ++i) {
         const auto& record = records[i];
 
@@ -132,10 +120,21 @@ void validate_records_against_headers(
             );
         }
 
+        /*
+         * 逐记录强校验：每条记录必须严格符合 data header 声明的 stride。
+         * 聚合校验（累计字节数 == total_point_bytes）无法发现混合 stride
+         * 的损坏/手工拼装文件，这里逐记录拒绝，禁止读取端按错误 stride
+         * 解码导致尾部点静默置零。
+         */
+        Gs3dTileFormat::validate_tile_record(
+            record,
+            data_header.point_stride
+        );
+
         accumulated_points += record.point_count;
         accumulated_bytes += record.point_data_bytes;
 
-        if (record.point_data_offset < sizeof(Gs3dTileDataFileHeader)) {
+        if (record.point_data_offset < payload_begin) {
             throw std::runtime_error(
                 "Gs3dTileReader: tile point_data_offset is before data payload"
             );
@@ -148,6 +147,34 @@ void validate_records_against_headers(
         if (end_offset < record.point_data_offset) {
             throw std::runtime_error(
                 "Gs3dTileReader: tile data offset overflow"
+            );
+        }
+
+        /*
+         * 记录的数据区间必须落在 data payload 范围内，且相邻记录必须
+         * 连续铺满 payload，不允许空洞/重叠（损坏或手工拼装文件的典型
+         * 特征，旧代码会在读取时静默读到空洞处的零字节）。
+         */
+        if (end_offset > payload_end) {
+            throw std::runtime_error(
+                "Gs3dTileReader: tile data range exceeds data payload"
+            );
+        }
+
+        if (i > 0) {
+            const auto& previous = records[i - 1];
+            const std::uint64_t previous_end =
+                previous.point_data_offset +
+                previous.point_data_bytes;
+
+            if (record.point_data_offset != previous_end) {
+                throw std::runtime_error(
+                    "Gs3dTileReader: tile data ranges are not contiguous"
+                );
+            }
+        } else if (record.point_data_offset != payload_begin) {
+            throw std::runtime_error(
+                "Gs3dTileReader: first tile data offset is not at payload start"
             );
         }
     }
@@ -169,6 +196,14 @@ void validate_records_against_headers(
             "Gs3dTileReader: accumulated point bytes mismatch"
         );
     }
+
+    if (records.back().point_data_offset +
+            records.back().point_data_bytes !=
+        payload_end) {
+        throw std::runtime_error(
+            "Gs3dTileReader: tile data does not cover the full payload"
+        );
+    }
 }
 
 Gs3dTileDataFileHeader read_data_header(
@@ -186,11 +221,13 @@ Gs3dTileDataFileHeader read_data_header(
         );
     }
 
-    const auto data_header =
-        read_binary<Gs3dTileDataFileHeader>(
-            data_file,
-            "Gs3dTileReader: failed to read tile data header"
-        );
+    Gs3dTileDataFileHeader data_header{};
+
+    Gs3dTileFormat::read_data_file_header(
+        data_file,
+        data_header,
+        "Gs3dTileReader: failed to read tile data header"
+    );
 
     Gs3dTileFormat::validate_data_file_header(
         data_header
@@ -245,11 +282,12 @@ Gs3dTileReader Gs3dTileReader::open(
         );
     }
 
-    const auto index_header =
-        read_binary<Gs3dTileIndexFileHeader>(
-            index_file,
-            "Gs3dTileReader: failed to read tile index header"
-        );
+    Gs3dTileIndexFileHeader index_header{};
+    Gs3dTileFormat::read_index_file_header(
+        index_file,
+        index_header,
+        "Gs3dTileReader: failed to read tile index header"
+    );
 
     Gs3dTileFormat::validate_index_file_header(
         index_header
@@ -314,11 +352,12 @@ Gs3dTileReader Gs3dTileReader::open_without_source_validation(
         );
     }
 
-    const auto index_header =
-        read_binary<Gs3dTileIndexFileHeader>(
-            index_file,
-            "Gs3dTileReader: failed to read tile index header"
-        );
+    Gs3dTileIndexFileHeader index_header{};
+    Gs3dTileFormat::read_index_file_header(
+        index_file,
+        index_header,
+        "Gs3dTileReader: failed to read tile index header"
+    );
 
     Gs3dTileFormat::validate_index_file_header(
         index_header
@@ -411,6 +450,10 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
     const auto& tile_record =
         record(tile_id);
 
+    validate_record_stride(
+        tile_record
+    );
+
     if (tile_record.point_count >
         static_cast<std::uint64_t>(
             std::numeric_limits<std::size_t>::max()
@@ -459,18 +502,11 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
 
     std::vector<Gs3dPoint> points(count);
 
-    data_file.read(
-        reinterpret_cast<char*>(points.data()),
-        static_cast<std::streamsize>(
-            sizeof(Gs3dPoint) * count
-        )
+    Gs3dTileFormat::read_points(
+        data_file,
+        points,
+        "Gs3dTileReader: failed to read tile points"
     );
-
-    if (!data_file.good()) {
-        throw std::runtime_error(
-            "Gs3dTileReader: failed to read tile points"
-        );
-    }
 
     return points;
 }
@@ -486,6 +522,10 @@ Gs3dTilePointBlock Gs3dTileReader::read_tile_points_with_ids(
 ) const {
     const auto& tile_record =
         record(tile_id);
+
+    validate_record_stride(
+        tile_record
+    );
 
     if (tile_record.point_count >
         static_cast<std::uint64_t>(
@@ -534,16 +574,11 @@ Gs3dTilePointBlock Gs3dTileReader::read_tile_points_with_ids(
          */
         std::vector<Gs3dPointWithId> raw(count);
 
-        data_file.read(
-            reinterpret_cast<char*>(raw.data()),
-            static_cast<std::streamsize>(tile_record.point_data_bytes)
+        Gs3dTileFormat::read_points(
+            data_file,
+            raw,
+            "Gs3dTileReader: failed to read tile points with ids"
         );
-
-        if (!data_file.good()) {
-            throw std::runtime_error(
-                "Gs3dTileReader: failed to read tile points with ids"
-            );
-        }
 
         result.points.resize(count);
         result.point_ids.resize(count);
@@ -563,19 +598,29 @@ Gs3dTilePointBlock Gs3dTileReader::read_tile_points_with_ids(
          */
         result.points.resize(count);
 
-        data_file.read(
-            reinterpret_cast<char*>(result.points.data()),
-            static_cast<std::streamsize>(tile_record.point_data_bytes)
+        Gs3dTileFormat::read_points(
+            data_file,
+            result.points,
+            "Gs3dTileReader: failed to read tile points (v1)"
         );
-
-        if (!data_file.good()) {
-            throw std::runtime_error(
-                "Gs3dTileReader: failed to read tile points (v1)"
-            );
-        }
     }
 
     return result;
+}
+
+void Gs3dTileReader::validate_record_stride(
+    const Gs3dTileRecord& record
+) const {
+    const std::uint64_t expected_bytes =
+        record.point_count *
+        static_cast<std::uint64_t>(data_header_.point_stride);
+
+    if (record.point_data_bytes != expected_bytes) {
+        throw std::runtime_error(
+            "Gs3dTileReader: tile record point_data_bytes does not match "
+            "the data header stride"
+        );
+    }
 }
 
 std::vector<Gs3dTileRecord> Gs3dTileReader::query_records_by_bbox(

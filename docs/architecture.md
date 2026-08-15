@@ -127,7 +127,11 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
    大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
-   已有 v1 数据应重建为 v2，LOD/tile sidecar 也需要独立评估相同的可移植性问题。
+   已有 v1 数据应重建为 v2。LOD（`.gs3dlod`）与 tile（`.gs3dtiles` 索引/数据）
+   sidecar 已同样统一为显式小端编码：LOD v1 已正式废弃并被读取端显式拒绝（提示
+   重新生成 v2）；tile 读取端按 data header 声明的 `point_stride` 逐记录强校验，
+   并校验记录数据区间位于 payload 内且连续铺满，版本与 stride 不一致、混合 stride、
+   空洞等损坏/手工拼装文件会被显式拒绝，不再可能按错误 stride 解码静默置零。
 3. swapchain 重建假设颜色格式和 image count 不变。显示模式或 surface 能力变化时，
    ImGui pipeline/render pass 以及 image-count 配置可能失配。
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按

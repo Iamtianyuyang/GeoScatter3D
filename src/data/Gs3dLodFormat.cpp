@@ -1,10 +1,124 @@
 #include "data/Gs3dLodFormat.hpp"
 
+#include "data/Gs3dByteOrder.hpp"
+
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
+#include <cstring>
+#include <istream>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 
 namespace gs3d::data {
+
+namespace {
+
+constexpr std::size_t kLodPointBatchSize = 4096;
+
+void encode_file_header(
+    const Gs3dLodFileHeader& header,
+    std::array<std::byte, sizeof(Gs3dLodFileHeader)>& bytes
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(bytes.data(), header.magic.data(), header.magic.size());
+    offset = header.magic.size();
+
+    write_u32_le(bytes, offset, header.version);
+    write_u32_le(bytes, offset, header.header_size);
+    write_u64_le(bytes, offset, header.source_point_count);
+    write_u64_le(bytes, offset, header.level_count);
+
+    write_float_le(bytes, offset, header.bbox_min_x);
+    write_float_le(bytes, offset, header.bbox_min_y);
+    write_float_le(bytes, offset, header.bbox_min_z);
+
+    write_float_le(bytes, offset, header.bbox_max_x);
+    write_float_le(bytes, offset, header.bbox_max_y);
+    write_float_le(bytes, offset, header.bbox_max_z);
+
+    write_float_le(bytes, offset, header.value_min);
+    write_float_le(bytes, offset, header.value_max);
+
+    write_u64_le(bytes, offset, header.build_finest_target_points);
+    write_u64_le(bytes, offset, header.build_growth_factor_x1000);
+    write_u64_le(bytes, offset, header.build_min_points_per_level);
+    write_u64_le(bytes, offset, header.reserved);
+}
+
+void decode_file_header(
+    const std::array<std::byte, sizeof(Gs3dLodFileHeader)>& bytes,
+    Gs3dLodFileHeader& header
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(header.magic.data(), bytes.data(), header.magic.size());
+    offset = header.magic.size();
+
+    header.version = read_u32_le(bytes, offset);
+    header.header_size = read_u32_le(bytes, offset);
+    header.source_point_count = read_u64_le(bytes, offset);
+    header.level_count = read_u64_le(bytes, offset);
+
+    header.bbox_min_x = read_float_le(bytes, offset);
+    header.bbox_min_y = read_float_le(bytes, offset);
+    header.bbox_min_z = read_float_le(bytes, offset);
+
+    header.bbox_max_x = read_float_le(bytes, offset);
+    header.bbox_max_y = read_float_le(bytes, offset);
+    header.bbox_max_z = read_float_le(bytes, offset);
+
+    header.value_min = read_float_le(bytes, offset);
+    header.value_max = read_float_le(bytes, offset);
+
+    header.build_finest_target_points = read_u64_le(bytes, offset);
+    header.build_growth_factor_x1000 = read_u64_le(bytes, offset);
+    header.build_min_points_per_level = read_u64_le(bytes, offset);
+    header.reserved = read_u64_le(bytes, offset);
+}
+
+void encode_level_header(
+    const Gs3dLodLevelHeader& header,
+    std::array<std::byte, sizeof(Gs3dLodLevelHeader)>& bytes
+) {
+    std::size_t offset = 0;
+
+    write_u32_le(bytes, offset, header.level_index);
+    write_u32_le(bytes, offset, header.voxel_mode);
+    write_u64_le(bytes, offset, header.source_point_count);
+    write_u64_le(bytes, offset, header.target_point_count);
+    write_u64_le(bytes, offset, header.point_count);
+    write_u64_le(bytes, offset, header.point_data_bytes);
+    write_float_le(bytes, offset, header.voxel_size);
+    write_u32_le(bytes, offset, header.level_header_size);
+    write_u64_le(bytes, offset, header.reserved0);
+    write_u64_le(bytes, offset, header.reserved1);
+    write_u64_le(bytes, offset, header.reserved2);
+}
+
+void decode_level_header(
+    const std::array<std::byte, sizeof(Gs3dLodLevelHeader)>& bytes,
+    Gs3dLodLevelHeader& header
+) {
+    std::size_t offset = 0;
+
+    header.level_index = read_u32_le(bytes, offset);
+    header.voxel_mode = read_u32_le(bytes, offset);
+    header.source_point_count = read_u64_le(bytes, offset);
+    header.target_point_count = read_u64_le(bytes, offset);
+    header.point_count = read_u64_le(bytes, offset);
+    header.point_data_bytes = read_u64_le(bytes, offset);
+    header.voxel_size = read_float_le(bytes, offset);
+    header.level_header_size = read_u32_le(bytes, offset);
+    header.reserved0 = read_u64_le(bytes, offset);
+    header.reserved1 = read_u64_le(bytes, offset);
+    header.reserved2 = read_u64_le(bytes, offset);
+}
+
+} // namespace
 
 bool Gs3dLodFormat::is_valid_magic(
     const std::array<char, 8>& magic
@@ -20,7 +134,8 @@ bool Gs3dLodFormat::is_supported_version(
 
 Gs3dLodFileHeader Gs3dLodFormat::make_file_header(
     const Gs3dHeader& source_header,
-    std::uint64_t level_count
+    std::uint64_t level_count,
+    const Gs3dLodBuildConfig& build_config
 ) noexcept {
     Gs3dLodFileHeader header;
 
@@ -42,6 +157,22 @@ Gs3dLodFileHeader Gs3dLodFormat::make_file_header(
 
     header.value_min = source_header.value_min;
     header.value_max = source_header.value_max;
+
+    header.build_finest_target_points =
+        build_config.finest_target_points;
+
+    const double growth_x1000 =
+        build_config.growth_factor > 0.0f
+            ? std::llround(
+                  static_cast<double>(build_config.growth_factor) *
+                  1000.0
+              )
+            : 0.0;
+    header.build_growth_factor_x1000 =
+        static_cast<std::uint64_t>(std::max(growth_x1000, 0.0));
+
+    header.build_min_points_per_level =
+        build_config.min_points_per_level;
 
     return header;
 }
@@ -69,6 +200,135 @@ Gs3dLodLevelHeader Gs3dLodFormat::make_level_header(
     validate_level_header(header);
 
     return header;
+}
+
+void Gs3dLodFormat::write_file_header(
+    std::ostream& out,
+    const Gs3dLodFileHeader& header
+) {
+    std::array<std::byte, sizeof(Gs3dLodFileHeader)> bytes{};
+    encode_file_header(header, bytes);
+
+    out.write(
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+}
+
+void Gs3dLodFormat::read_file_header(
+    std::istream& in,
+    Gs3dLodFileHeader& header,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dLodFileHeader)> bytes{};
+
+    in.read(
+        reinterpret_cast<char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+
+    if (!in) {
+        throw std::runtime_error(error_message);
+    }
+
+    decode_file_header(bytes, header);
+}
+
+void Gs3dLodFormat::write_level_header(
+    std::ostream& out,
+    const Gs3dLodLevelHeader& header
+) {
+    std::array<std::byte, sizeof(Gs3dLodLevelHeader)> bytes{};
+    encode_level_header(header, bytes);
+
+    out.write(
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+}
+
+void Gs3dLodFormat::read_level_header(
+    std::istream& in,
+    Gs3dLodLevelHeader& header,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dLodLevelHeader)> bytes{};
+
+    in.read(
+        reinterpret_cast<char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+
+    if (!in) {
+        throw std::runtime_error(error_message);
+    }
+
+    decode_level_header(bytes, header);
+}
+
+void Gs3dLodFormat::write_points(
+    std::ostream& out,
+    std::span<const Gs3dPoint> points
+) {
+    std::array<std::byte, sizeof(Gs3dPoint) * kLodPointBatchSize> bytes{};
+
+    for (std::size_t begin = 0; begin < points.size();) {
+        const auto count = std::min(
+            kLodPointBatchSize,
+            points.size() - begin
+        );
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto& point = points[begin + i];
+            write_float_le(bytes, offset, point.x);
+            write_float_le(bytes, offset, point.y);
+            write_float_le(bytes, offset, point.z);
+            write_float_le(bytes, offset, point.value);
+        }
+
+        out.write(
+            reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
+        );
+
+        begin += count;
+    }
+}
+
+void Gs3dLodFormat::read_points(
+    std::istream& in,
+    std::vector<Gs3dPoint>& points,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dPoint) * kLodPointBatchSize> bytes{};
+
+    for (std::size_t begin = 0; begin < points.size();) {
+        const auto count = std::min(
+            kLodPointBatchSize,
+            points.size() - begin
+        );
+
+        in.read(
+            reinterpret_cast<char*>(bytes.data()),
+            static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
+        );
+
+        if (!in) {
+            throw std::runtime_error(error_message);
+        }
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            auto& point = points[begin + i];
+            point.x = read_float_le(bytes, offset);
+            point.y = read_float_le(bytes, offset);
+            point.z = read_float_le(bytes, offset);
+            point.value = read_float_le(bytes, offset);
+        }
+
+        begin += count;
+    }
 }
 
 Gs3dLodFormatVoxelMode Gs3dLodFormat::to_format_voxel_mode(
@@ -136,6 +396,13 @@ void Gs3dLodFormat::validate_file_header(
     }
 
     if (!is_supported_version(header.version)) {
+        if (header.version == GS3D_LOD_VERSION_V1) {
+            throw std::runtime_error(
+                "Gs3dLodFormat: .gs3dlod v1 is deprecated and no longer "
+                "supported; regenerate the file with v2"
+            );
+        }
+
         throw std::runtime_error(
             "Gs3dLodFormat: unsupported .gs3dlod version"
         );
@@ -304,17 +571,15 @@ std::string Gs3dLodFormat::file_header_summary(
         << header.value_min << ", "
         << header.value_max << "]\n";
 
-    if (header.version >= 2) {
-        oss << "  build_finest_target_points: "
-            << header.build_finest_target_points
-            << '\n';
-        oss << "  build_growth_factor_x1000: "
-            << header.build_growth_factor_x1000
-            << '\n';
-        oss << "  build_min_points_per_level: "
-            << header.build_min_points_per_level
-            << '\n';
-    }
+    oss << "  build_finest_target_points: "
+        << header.build_finest_target_points
+        << '\n';
+    oss << "  build_growth_factor_x1000: "
+        << header.build_growth_factor_x1000
+        << '\n';
+    oss << "  build_min_points_per_level: "
+        << header.build_min_points_per_level
+        << '\n';
 
     return oss.str();
 }

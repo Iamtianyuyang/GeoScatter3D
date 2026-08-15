@@ -623,6 +623,7 @@ Gs3dLodDataset Gs3dLodDataset::build(
     Gs3dLodDataset lod_dataset;
     lod_dataset.source_header_ = dataset.header();
     lod_dataset.source_path_ = dataset.source_path();
+    lod_dataset.build_config_ = config;
 
     if (config.include_full_resolution_level) {
         auto level =
@@ -865,6 +866,10 @@ const Gs3dHeader& Gs3dLodDataset::source_header() const noexcept {
 const std::filesystem::path&
 Gs3dLodDataset::source_path() const noexcept {
     return source_path_;
+}
+
+const Gs3dLodBuildConfig& Gs3dLodDataset::build_config() const noexcept {
+    return build_config_;
 }
 
 std::string Gs3dLodDataset::summary() const {

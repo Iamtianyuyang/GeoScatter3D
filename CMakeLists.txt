@@ -410,6 +410,7 @@ add_library(gs3d_app STATIC
     include/data/CsvChunkReader.hpp
     include/data/DataSchema.hpp
     include/data/Delimiter.hpp
+    include/data/Gs3dByteOrder.hpp
     include/data/Gs3dFormat.hpp
     include/data/Gs3dReader.hpp
     include/data/Gs3dDataset.hpp

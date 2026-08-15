@@ -1,10 +1,285 @@
 #include "data/Gs3dTileFormat.hpp"
 
+#include "data/Gs3dByteOrder.hpp"
+
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
+#include <cstring>
+#include <istream>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 
 namespace gs3d::data {
+
+namespace {
+
+constexpr std::size_t kTilePointBatchSize = 4096;
+
+void encode_index_file_header(
+    const Gs3dTileIndexFileHeader& header,
+    std::array<std::byte, sizeof(Gs3dTileIndexFileHeader)>& bytes
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(bytes.data(), header.magic.data(), header.magic.size());
+    offset = header.magic.size();
+
+    write_u32_le(bytes, offset, header.version);
+    write_u32_le(bytes, offset, header.header_size);
+    write_u64_le(bytes, offset, header.source_point_count);
+    write_u64_le(bytes, offset, header.tile_count);
+    write_u64_le(bytes, offset, header.total_point_count);
+    write_u32_le(bytes, offset, header.point_stride);
+    write_u32_le(bytes, offset, header.tile_record_size);
+    write_float_le(bytes, offset, header.tile_size_x);
+    write_float_le(bytes, offset, header.tile_size_y);
+    write_float_le(bytes, offset, header.grid_origin_x);
+    write_float_le(bytes, offset, header.grid_origin_y);
+    write_u32_le(bytes, offset, header.grid_count_x);
+    write_u32_le(bytes, offset, header.grid_count_y);
+    write_float_le(bytes, offset, header.bbox_min_x);
+    write_float_le(bytes, offset, header.bbox_min_y);
+    write_float_le(bytes, offset, header.bbox_min_z);
+    write_float_le(bytes, offset, header.bbox_max_x);
+    write_float_le(bytes, offset, header.bbox_max_y);
+    write_float_le(bytes, offset, header.bbox_max_z);
+    write_float_le(bytes, offset, header.value_min);
+    write_float_le(bytes, offset, header.value_max);
+    write_u32_le(bytes, offset, header.split_mode);
+    write_u32_le(bytes, offset, header.reserved_u32);
+    write_u64_le(bytes, offset, header.reserved0);
+    write_u64_le(bytes, offset, header.reserved1);
+    write_u64_le(bytes, offset, header.reserved2);
+}
+
+void decode_index_file_header(
+    const std::array<std::byte, sizeof(Gs3dTileIndexFileHeader)>& bytes,
+    Gs3dTileIndexFileHeader& header
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(header.magic.data(), bytes.data(), header.magic.size());
+    offset = header.magic.size();
+
+    header.version = read_u32_le(bytes, offset);
+    header.header_size = read_u32_le(bytes, offset);
+    header.source_point_count = read_u64_le(bytes, offset);
+    header.tile_count = read_u64_le(bytes, offset);
+    header.total_point_count = read_u64_le(bytes, offset);
+    header.point_stride = read_u32_le(bytes, offset);
+    header.tile_record_size = read_u32_le(bytes, offset);
+    header.tile_size_x = read_float_le(bytes, offset);
+    header.tile_size_y = read_float_le(bytes, offset);
+    header.grid_origin_x = read_float_le(bytes, offset);
+    header.grid_origin_y = read_float_le(bytes, offset);
+    header.grid_count_x = read_u32_le(bytes, offset);
+    header.grid_count_y = read_u32_le(bytes, offset);
+    header.bbox_min_x = read_float_le(bytes, offset);
+    header.bbox_min_y = read_float_le(bytes, offset);
+    header.bbox_min_z = read_float_le(bytes, offset);
+    header.bbox_max_x = read_float_le(bytes, offset);
+    header.bbox_max_y = read_float_le(bytes, offset);
+    header.bbox_max_z = read_float_le(bytes, offset);
+    header.value_min = read_float_le(bytes, offset);
+    header.value_max = read_float_le(bytes, offset);
+    header.split_mode = read_u32_le(bytes, offset);
+    header.reserved_u32 = read_u32_le(bytes, offset);
+    header.reserved0 = read_u64_le(bytes, offset);
+    header.reserved1 = read_u64_le(bytes, offset);
+    header.reserved2 = read_u64_le(bytes, offset);
+}
+
+void encode_data_file_header(
+    const Gs3dTileDataFileHeader& header,
+    std::array<std::byte, sizeof(Gs3dTileDataFileHeader)>& bytes
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(bytes.data(), header.magic.data(), header.magic.size());
+    offset = header.magic.size();
+
+    write_u32_le(bytes, offset, header.version);
+    write_u32_le(bytes, offset, header.header_size);
+    write_u64_le(bytes, offset, header.source_point_count);
+    write_u64_le(bytes, offset, header.tile_count);
+    write_u64_le(bytes, offset, header.total_point_count);
+    write_u64_le(bytes, offset, header.total_point_bytes);
+    write_u32_le(bytes, offset, header.point_stride);
+    write_u32_le(bytes, offset, header.reserved_u32);
+    write_u64_le(bytes, offset, header.reserved0);
+    write_u64_le(bytes, offset, header.reserved1);
+    write_u64_le(bytes, offset, header.reserved2);
+}
+
+void decode_data_file_header(
+    const std::array<std::byte, sizeof(Gs3dTileDataFileHeader)>& bytes,
+    Gs3dTileDataFileHeader& header
+) {
+    std::size_t offset = 0;
+
+    std::memcpy(header.magic.data(), bytes.data(), header.magic.size());
+    offset = header.magic.size();
+
+    header.version = read_u32_le(bytes, offset);
+    header.header_size = read_u32_le(bytes, offset);
+    header.source_point_count = read_u64_le(bytes, offset);
+    header.tile_count = read_u64_le(bytes, offset);
+    header.total_point_count = read_u64_le(bytes, offset);
+    header.total_point_bytes = read_u64_le(bytes, offset);
+    header.point_stride = read_u32_le(bytes, offset);
+    header.reserved_u32 = read_u32_le(bytes, offset);
+    header.reserved0 = read_u64_le(bytes, offset);
+    header.reserved1 = read_u64_le(bytes, offset);
+    header.reserved2 = read_u64_le(bytes, offset);
+}
+
+void encode_tile_record(
+    const Gs3dTileRecord& record,
+    std::array<std::byte, sizeof(Gs3dTileRecord)>& bytes
+) {
+    std::size_t offset = 0;
+
+    write_u64_le(bytes, offset, record.tile_id);
+    write_u32_le(bytes, offset, record.tile_x);
+    write_u32_le(bytes, offset, record.tile_y);
+    write_u64_le(bytes, offset, record.point_count);
+    write_u64_le(bytes, offset, record.point_data_offset);
+    write_u64_le(bytes, offset, record.point_data_bytes);
+    write_float_le(bytes, offset, record.bbox_min_x);
+    write_float_le(bytes, offset, record.bbox_min_y);
+    write_float_le(bytes, offset, record.bbox_min_z);
+    write_float_le(bytes, offset, record.bbox_max_x);
+    write_float_le(bytes, offset, record.bbox_max_y);
+    write_float_le(bytes, offset, record.bbox_max_z);
+    write_float_le(bytes, offset, record.value_min);
+    write_float_le(bytes, offset, record.value_max);
+    write_u64_le(bytes, offset, record.reserved0);
+}
+
+void decode_tile_record(
+    const std::array<std::byte, sizeof(Gs3dTileRecord)>& bytes,
+    Gs3dTileRecord& record
+) {
+    std::size_t offset = 0;
+
+    record.tile_id = read_u64_le(bytes, offset);
+    record.tile_x = read_u32_le(bytes, offset);
+    record.tile_y = read_u32_le(bytes, offset);
+    record.point_count = read_u64_le(bytes, offset);
+    record.point_data_offset = read_u64_le(bytes, offset);
+    record.point_data_bytes = read_u64_le(bytes, offset);
+    record.bbox_min_x = read_float_le(bytes, offset);
+    record.bbox_min_y = read_float_le(bytes, offset);
+    record.bbox_min_z = read_float_le(bytes, offset);
+    record.bbox_max_x = read_float_le(bytes, offset);
+    record.bbox_max_y = read_float_le(bytes, offset);
+    record.bbox_max_z = read_float_le(bytes, offset);
+    record.value_min = read_float_le(bytes, offset);
+    record.value_max = read_float_le(bytes, offset);
+    record.reserved0 = read_u64_le(bytes, offset);
+}
+
+void validate_tile_record_geometry(
+    const Gs3dTileRecord& record
+) {
+    if (record.point_count == 0) {
+        throw std::runtime_error(
+            "Gs3dTileFormat: tile point_count is zero"
+        );
+    }
+
+    if (record.bbox_max_x < record.bbox_min_x ||
+        record.bbox_max_y < record.bbox_min_y ||
+        record.bbox_max_z < record.bbox_min_z) {
+        throw std::runtime_error(
+            "Gs3dTileFormat: tile invalid bbox"
+        );
+    }
+
+    if (record.value_max < record.value_min) {
+        throw std::runtime_error(
+            "Gs3dTileFormat: tile invalid value range"
+        );
+    }
+}
+
+void write_points_with_stride(
+    std::ostream& out,
+    const Gs3dPointWithId* points,
+    std::size_t point_count
+) {
+    std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
+
+    for (std::size_t begin = 0; begin < point_count;) {
+        const auto count = std::min(
+            kTilePointBatchSize,
+            point_count - begin
+        );
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto& point = points[begin + i];
+            write_float_le(bytes, offset, point.x);
+            write_float_le(bytes, offset, point.y);
+            write_float_le(bytes, offset, point.z);
+            write_float_le(bytes, offset, point.value);
+            write_u32_le(bytes, offset, point.point_id);
+        }
+
+        out.write(
+            reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(
+                count * sizeof(Gs3dPointWithId)
+            )
+        );
+
+        begin += count;
+    }
+}
+
+void read_points_with_stride(
+    std::istream& in,
+    Gs3dPointWithId* points,
+    std::size_t point_count,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
+
+    for (std::size_t begin = 0; begin < point_count;) {
+        const auto count = std::min(
+            kTilePointBatchSize,
+            point_count - begin
+        );
+
+        in.read(
+            reinterpret_cast<char*>(bytes.data()),
+            static_cast<std::streamsize>(
+                count * sizeof(Gs3dPointWithId)
+            )
+        );
+
+        if (!in) {
+            throw std::runtime_error(error_message);
+        }
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            auto& point = points[begin + i];
+            point.x = read_float_le(bytes, offset);
+            point.y = read_float_le(bytes, offset);
+            point.z = read_float_le(bytes, offset);
+            point.value = read_float_le(bytes, offset);
+            point.point_id = read_u32_le(bytes, offset);
+        }
+
+        begin += count;
+    }
+}
+
+} // namespace
 
 bool Gs3dTileFormat::is_valid_index_magic(
     const std::array<char, 8>& magic
@@ -183,9 +458,164 @@ Gs3dTileRecord Gs3dTileFormat::make_tile_record(
     record.value_min = value_min;
     record.value_max = value_max;
 
-    validate_tile_record(record);
+    validate_tile_record(record, point_stride);
 
     return record;
+}
+
+void Gs3dTileFormat::write_index_file_header(
+    std::ostream& out,
+    const Gs3dTileIndexFileHeader& header
+) {
+    std::array<std::byte, sizeof(Gs3dTileIndexFileHeader)> bytes{};
+    encode_index_file_header(header, bytes);
+
+    out.write(
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+}
+
+void Gs3dTileFormat::read_index_file_header(
+    std::istream& in,
+    Gs3dTileIndexFileHeader& header,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dTileIndexFileHeader)> bytes{};
+
+    in.read(
+        reinterpret_cast<char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+
+    if (!in) {
+        throw std::runtime_error(error_message);
+    }
+
+    decode_index_file_header(bytes, header);
+}
+
+void Gs3dTileFormat::write_data_file_header(
+    std::ostream& out,
+    const Gs3dTileDataFileHeader& header
+) {
+    std::array<std::byte, sizeof(Gs3dTileDataFileHeader)> bytes{};
+    encode_data_file_header(header, bytes);
+
+    out.write(
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+}
+
+void Gs3dTileFormat::read_data_file_header(
+    std::istream& in,
+    Gs3dTileDataFileHeader& header,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dTileDataFileHeader)> bytes{};
+
+    in.read(
+        reinterpret_cast<char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+
+    if (!in) {
+        throw std::runtime_error(error_message);
+    }
+
+    decode_data_file_header(bytes, header);
+}
+
+void Gs3dTileFormat::write_tile_record(
+    std::ostream& out,
+    const Gs3dTileRecord& record
+) {
+    std::array<std::byte, sizeof(Gs3dTileRecord)> bytes{};
+    encode_tile_record(record, bytes);
+
+    out.write(
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+}
+
+void Gs3dTileFormat::read_tile_record(
+    std::istream& in,
+    Gs3dTileRecord& record,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dTileRecord)> bytes{};
+
+    in.read(
+        reinterpret_cast<char*>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size())
+    );
+
+    if (!in) {
+        throw std::runtime_error(error_message);
+    }
+
+    decode_tile_record(bytes, record);
+}
+
+void Gs3dTileFormat::write_points(
+    std::ostream& out,
+    std::span<const Gs3dPointWithId> points
+) {
+    write_points_with_stride(
+        out,
+        points.data(),
+        points.size()
+    );
+}
+
+void Gs3dTileFormat::read_points(
+    std::istream& in,
+    std::vector<Gs3dPoint>& points,
+    const char* error_message
+) {
+    std::array<std::byte, sizeof(Gs3dPoint) * kTilePointBatchSize> bytes{};
+
+    for (std::size_t begin = 0; begin < points.size();) {
+        const auto count = std::min(
+            kTilePointBatchSize,
+            points.size() - begin
+        );
+
+        in.read(
+            reinterpret_cast<char*>(bytes.data()),
+            static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
+        );
+
+        if (!in) {
+            throw std::runtime_error(error_message);
+        }
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            auto& point = points[begin + i];
+            point.x = read_float_le(bytes, offset);
+            point.y = read_float_le(bytes, offset);
+            point.z = read_float_le(bytes, offset);
+            point.value = read_float_le(bytes, offset);
+        }
+
+        begin += count;
+    }
+}
+
+void Gs3dTileFormat::read_points(
+    std::istream& in,
+    std::vector<Gs3dPointWithId>& points,
+    const char* error_message
+) {
+    read_points_with_stride(
+        in,
+        points.data(),
+        points.size(),
+        error_message
+    );
 }
 
 void Gs3dTileFormat::validate_index_file_header(
@@ -230,6 +660,13 @@ void Gs3dTileFormat::validate_index_file_header(
     if (!is_valid_point_stride(header.point_stride)) {
         throw std::runtime_error(
             "Gs3dTileFormat: invalid point stride"
+        );
+    }
+
+    if (header.point_stride !=
+        point_stride_for_version(header.version)) {
+        throw std::runtime_error(
+            "Gs3dTileFormat: point stride does not match version"
         );
     }
 
@@ -315,6 +752,13 @@ void Gs3dTileFormat::validate_data_file_header(
         );
     }
 
+    if (header.point_stride !=
+        point_stride_for_version(header.version)) {
+        throw std::runtime_error(
+            "Gs3dTileFormat: data point stride does not match version"
+        );
+    }
+
     const std::uint64_t expected_bytes =
         header.total_point_count *
         static_cast<std::uint64_t>(header.point_stride);
@@ -329,17 +773,12 @@ void Gs3dTileFormat::validate_data_file_header(
 void Gs3dTileFormat::validate_tile_record(
     const Gs3dTileRecord& record
 ) {
-    if (record.point_count == 0) {
-        throw std::runtime_error(
-            "Gs3dTileFormat: tile point_count is zero"
-        );
-    }
+    validate_tile_record_geometry(record);
 
     /*
-     * Accept both v1 (16-byte) and v2 (20-byte) strides.
-     * The tile record alone doesn't carry the stride — the caller
-     * must pass the data-header stride if a specific check is needed.
-     * For standalone validation we accept either.
+     * 无 stride 上下文的独立校验：接受 v1（16 字节）或 v2（20 字节）
+     * 两种记录字节数。调用方已知 stride 时必须使用带 point_stride 的
+     * 重载逐记录强校验，防止混合 stride 文件通过聚合校验。
      */
     const bool valid_v1 =
         record.point_data_bytes ==
@@ -355,18 +794,22 @@ void Gs3dTileFormat::validate_tile_record(
             "Gs3dTileFormat: tile point_data_bytes mismatch"
         );
     }
+}
 
-    if (record.bbox_max_x < record.bbox_min_x ||
-        record.bbox_max_y < record.bbox_min_y ||
-        record.bbox_max_z < record.bbox_min_z) {
-        throw std::runtime_error(
-            "Gs3dTileFormat: tile invalid bbox"
-        );
-    }
+void Gs3dTileFormat::validate_tile_record(
+    const Gs3dTileRecord& record,
+    std::uint32_t point_stride
+) {
+    validate_tile_record_geometry(record);
 
-    if (record.value_max < record.value_min) {
+    const std::uint64_t expected_bytes =
+        record.point_count *
+        static_cast<std::uint64_t>(point_stride);
+
+    if (record.point_data_bytes != expected_bytes) {
         throw std::runtime_error(
-            "Gs3dTileFormat: tile invalid value range"
+            "Gs3dTileFormat: tile point_data_bytes does not match "
+            "the declared point stride"
         );
     }
 }

@@ -2,6 +2,7 @@
 
 #include "data/Gs3dLodFormat.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
@@ -11,50 +12,6 @@ namespace {
 
 using gs3d::data::Gs3dLodDataset;
 using gs3d::data::Gs3dLodFormat;
-using gs3d::data::Gs3dPoint;
-
-template <typename T>
-void write_binary(
-    std::ofstream& file,
-    const T& value,
-    const char* error_message
-) {
-    file.write(
-        reinterpret_cast<const char*>(&value),
-        static_cast<std::streamsize>(sizeof(T))
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(error_message);
-    }
-}
-
-void write_points(
-    std::ofstream& file,
-    const std::vector<Gs3dPoint>& points
-) {
-    if (points.empty()) {
-        throw std::runtime_error(
-            "Gs3dLodWriter: cannot write empty point array"
-        );
-    }
-
-    const auto byte_count =
-        static_cast<std::streamsize>(
-            points.size() * sizeof(Gs3dPoint)
-        );
-
-    file.write(
-        reinterpret_cast<const char*>(points.data()),
-        byte_count
-    );
-
-    if (!file.good()) {
-        throw std::runtime_error(
-            "Gs3dLodWriter: failed to write point data"
-        );
-    }
-}
 
 [[nodiscard]]
 std::uint64_t file_size_or_zero(
@@ -126,18 +83,24 @@ Gs3dLodWriteStats Gs3dLodWriter::write(
             lod_dataset.source_header(),
             static_cast<std::uint64_t>(
                 lod_dataset.level_count()
-            )
+            ),
+            lod_dataset.build_config()
         );
 
     Gs3dLodFormat::validate_file_header(
         file_header
     );
 
-    write_binary(
+    Gs3dLodFormat::write_file_header(
         file,
-        file_header,
-        "Gs3dLodWriter: failed to write file header"
+        file_header
     );
+
+    if (!file.good()) {
+        throw std::runtime_error(
+            "Gs3dLodWriter: failed to write file header"
+        );
+    }
 
     Gs3dLodWriteStats stats;
     stats.path = path;
@@ -163,16 +126,27 @@ Gs3dLodWriteStats Gs3dLodWriter::write(
             level_header
         );
 
-        write_binary(
+        Gs3dLodFormat::write_level_header(
             file,
-            level_header,
-            "Gs3dLodWriter: failed to write level header"
+            level_header
         );
 
-        write_points(
+        if (!file.good()) {
+            throw std::runtime_error(
+                "Gs3dLodWriter: failed to write level header"
+            );
+        }
+
+        Gs3dLodFormat::write_points(
             file,
             level.points
         );
+
+        if (!file.good()) {
+            throw std::runtime_error(
+                "Gs3dLodWriter: failed to write point data"
+            );
+        }
 
         stats.total_points += level.point_count();
         stats.total_point_bytes += level.point_bytes();
