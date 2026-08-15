@@ -21,6 +21,7 @@ inline constexpr int kSocketWouldBlock = WSAEWOULDBLOCK;
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 using SocketHandle = int;
