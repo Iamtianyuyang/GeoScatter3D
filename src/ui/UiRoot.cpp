@@ -804,7 +804,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
         if (chrome_result.restore_default_workspace_requested) {
             restore_default_workspace(state);
-            dock_layout_initialized_ = false;
+            dock_layout_.initialized = false;
         }
         {
             const float content_avail_y = ImGui::GetContentRegionAvail().y;
