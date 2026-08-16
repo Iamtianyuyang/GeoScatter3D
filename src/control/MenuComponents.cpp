@@ -200,7 +200,36 @@ protected:
     }
 };
 
-} // namespace
+// ── TIA-159 方向 B：UI 模式切换 ────────────────────────────────
+
+class UiModeComponent final : public MenuComponentBase {
+public:
+    UiModeComponent(gs3d::app::AppState& s)
+        : MenuComponentBase(s,
+            {"ui.mode", "界面模式", "切换界面模式（数据/外观/性能/工具）",
+             ComponentType::kMenu, false},
+            {{"set_value", "设置模式 (value: 0=数据, 1=外观, 2=性能, 3=工具)", true},
+             {"get_state", "获取当前模式", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        // click 循环切换模式
+        int m = static_cast<int>(app_state_.ui_chrome.ui_mode) + 1;
+        if (m >= static_cast<int>(gs3d::app::UiMode::kCount)) m = 0;
+        app_state_.ui_chrome.ui_mode = static_cast<gs3d::app::UiMode>(m);
+    }
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "set_value") {
+            const int mode = params.value("value", 0);
+            if (mode >= 0 && mode < static_cast<int>(gs3d::app::UiMode::kCount)) {
+                app_state_.ui_chrome.ui_mode = static_cast<gs3d::app::UiMode>(mode);
+            }
+            return nlohmann::json{{"id", info().id}, {"mode", static_cast<int>(app_state_.ui_chrome.ui_mode)}};
+        }
+        return MenuComponentBase::execute(command, params);
+    }
+};
+
+} // anonymous namespace
 
 std::vector<std::unique_ptr<Component>> make_menu_components(
     gs3d::app::AppState& app_state,
@@ -216,6 +245,7 @@ std::vector<std::unique_ptr<Component>> make_menu_components(
     result.push_back(std::make_unique<WindowNewWorkspaceComponent>(app_state));
     result.push_back(std::make_unique<HelpWelcomeComponent>(app_state));
     result.push_back(std::make_unique<HelpShortcutsComponent>(app_state));
+    result.push_back(std::make_unique<UiModeComponent>(app_state));
     return result;
 }
 
