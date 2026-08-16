@@ -607,13 +607,15 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     );
     const float left_ratio = default_left_width / work_width;
 
-    const bool has_left_panels =
-        state.panels.dataset ||
+    // TIA-111 方向 B：可折叠侧边栏
+    const bool sidebar_visible = state.ui_chrome.sidebar_visible;
+    const bool has_left_panels = sidebar_visible &&
+        (state.panels.dataset ||
         state.panels.tile_inspector ||
         state.panels.lod_view ||
         state.panels.navigation_map ||
         state.panels.measurement ||
-        state.panels.region_stats;
+        state.panels.region_stats);
     const bool has_right_panels =
         state.panels.render_settings ||
         state.panels.performance;
@@ -720,43 +722,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     if (draw_preload_gate_if_active(state, ui_scale)) {
         return actions;
     }
-    if (state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock) {
-        const FloatingDockFrameResult dock_result =
-            draw_floating_dock_layout(state, actions, ui_scale);
-        if (dock_result.theme_change_requested) {
-            apply_theme(dock_result.requested_theme,
-                        gs3d::gui::ui_fonts().ui_scale);
-        }
-        if (actions.restore_default_workspace_requested) {
-            dock_layout_.initialized = false;
-        }
-        for (auto& view : state.render_views) {
-            if (view.visible &&
-                (view.detached || view.force_undock_next_frame)) {
-                draw_viewport_window(state, view, actions);
-            }
-        }
-        draw_screenshot_notice(state, ui_scale);
-        finalize_viewport_frame_shortcuts(state, actions);
-        return actions;
-    }
-    if (state.ui_layout_mode == gs3d::app::UiLayoutMode::kAnalysisRail) {
-        const auto rail_result = draw_analysis_rail_layout(
-            state, actions, gs3d::gui::ui_fonts().ui_scale);
-        if (rail_result.theme_change_requested) {
-            apply_theme(rail_result.requested_theme,
-                        gs3d::gui::ui_fonts().ui_scale);
-        }
-        for (auto& view : state.render_views) {
-            if (view.visible &&
-                (view.detached || view.force_undock_next_frame)) {
-                draw_viewport_window(state, view, actions);
-            }
-        }
-        draw_screenshot_notice(state, ui_scale);
-        finalize_viewport_frame_shortcuts(state, actions);
-        return actions;
-    }
+    // TIA-111 方向 B：单一布局 + 可折叠侧边栏，移除三套并行布局模式。
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiWindowFlags host_flags =

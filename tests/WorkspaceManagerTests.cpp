@@ -28,7 +28,8 @@ TEST_CASE("Workspace creation claims one hidden viewport", "[workspace]")
     CHECK(state.render_views[1].visible);
     CHECK(gs3d::ui::view_is_owned_by_workspace(state, 1));
     CHECK(gs3d::ui::main_workspace_viewports(state) == std::vector<int>{0});
-    CHECK(gs3d::ui::visible_view_signature(state) == 1u);
+    // TIA-111：签名包含侧边栏位（bit 24）
+    CHECK(gs3d::ui::visible_view_signature(state) == (1u | (1u << 24)));
 }
 
 TEST_CASE("Closed workspace returns its views to the hidden pool", "[workspace]")

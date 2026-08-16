@@ -82,6 +82,58 @@ constexpr ThemeTokens kCarbonBlue{
     .tab_rounding = 6.0f,
 };
 
+// ── 方案 A2：碳蓝 2.0 · 深色测绘（高对比度 + 紧凑间距）──────────────
+constexpr ThemeTokens kCarbonBlueDark{
+    .id = "carbon-blue-dark",
+    .name = "碳蓝 2.0 · 深色测绘",
+    .dark = true,
+
+    .bg = rgb(0x0D1117),
+    .text = rgb(0xE6EDF3),
+    .text_dim = rgb(0x8B949E),
+    .text_faint = rgb(0x6E7681),
+    .menu_bg = rgb(0x161B22),
+    .surface = rgb(0x1C2128),
+    .surface_hover = rgb(0x252C35),
+    .raised = rgb(0x151A22),
+    .frame = rgb(0x0D1117),
+    .frame_hover = rgb(0x1F2937),
+    .border = rgb(0x30363D),
+
+    .accent = rgb(0x58A6FF),
+    .accent_active = rgb(0x388BFD),
+    .on_accent = rgb(0x0D1117),
+
+    .green = rgb(0x3FB950),
+    .blue = rgb(0x58A6FF),
+    .purple = rgb(0xBC8CFF),
+    .yellow = rgb(0xD29922),
+    .teal = rgb(0x39D353),
+    .var_blue = rgb(0x79C0FF),
+    .orange = rgb(0xD18616),
+    .gray = rgb(0x8B949E),
+    .red = rgb(0xF85149),
+
+    .viewport_bg = rgb(0x010409),
+    .viewport_border = rgb(0x21262D),
+
+    .scrollbar_grab = rgb(0x30363D),
+    .scrollbar_grab_hovered = rgb(0x484F58),
+    .scrollbar_grab_active = rgb(0x6E7681),
+    .tab_dimmed = rgb(0x161B22),
+
+    .button_alpha = 0.30f,
+    .button_hover_alpha = 0.55f,
+
+    .window_rounding = 6.0f,
+    .child_rounding = 3.0f,
+    .frame_rounding = 3.0f,
+    .popup_rounding = 5.0f,
+    .scrollbar_rounding = 5.0f,
+    .grab_rounding = 3.0f,
+    .tab_rounding = 4.0f,
+};
+
 // ── 方案 B：石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）──────────────────
 constexpr ThemeTokens kDeepGraphite{
     .id = "deep-graphite",
@@ -233,12 +285,13 @@ constexpr ThemeTokens kHighContrastLight{
 
 constexpr const ThemeTokens* kThemes[kThemeCount] = {
     &kCarbonBlue,
+    &kCarbonBlueDark,
     &kDeepGraphite,
     &kInstrumentAmber,
     &kHighContrastLight,
 };
 
-ThemeId g_active_theme = ThemeId::kCarbonBlue;
+ThemeId g_active_theme = ThemeId::kCarbonBlueDark;
 
 } // namespace
 

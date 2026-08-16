@@ -14,12 +14,13 @@ namespace gs3d::ui {
 
 enum class ThemeId : int {
     kCarbonBlue = 0,
-    kDeepGraphite = 1,
-    kInstrumentAmber = 2,
-    kHighContrastLight = 3,
+    kCarbonBlueDark = 1,
+    kDeepGraphite = 2,
+    kInstrumentAmber = 3,
+    kHighContrastLight = 4,
 };
 
-inline constexpr int kThemeCount = 4;
+inline constexpr int kThemeCount = 5;
 
 struct ThemeTokens {
     const char* id;   // 配置文件里的标识，如 "carbon-blue"

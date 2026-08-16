@@ -67,6 +67,10 @@ std::uint32_t visible_view_signature(const gs3d::app::AppState& state)
             signature |= 1u << static_cast<std::uint32_t>(view.viewport_index);
         }
     }
+    // TIA-111 方向 B：侧边栏状态也影响布局签名
+    if (state.ui_chrome.sidebar_visible) {
+        signature |= 1u << 24;
+    }
     return signature;
 }
 

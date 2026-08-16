@@ -1,10 +1,11 @@
 # Task Assignment
 
-**Issue ID:** 96ea4ab0-2a62-4b32-81b9-b5d860333420
+**Issue ID:** 7bf76479-4ae8-4933-b093-32a9c78ffa84
 
-**Trigger:** New Assignment
+**Trigger:** Comment Reply
+**Triggering comment ID:** `eac16a21-fc64-4c0e-aba7-33a4bf10bb0e`
 
 ## Quick Start
 
-Run `multica issue get 96ea4ab0-2a62-4b32-81b9-b5d860333420 --output json` to fetch the full issue details.
+Run `multica issue get 7bf76479-4ae8-4933-b093-32a9c78ffa84 --output json` to fetch the full issue details.
 
