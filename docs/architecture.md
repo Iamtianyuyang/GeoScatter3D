@@ -1,6 +1,7 @@
 # GeoScatter3D 架构与现状
 
-> 状态: 现行 | 核对基准: 2026-08-14, main@1f0eb84 + TIA-90/TIA-93 修复
+> 状态: 现行 | 核对基准: 2026-08-16, main@8162b1a (TIA-111 之后；布局/主题
+> 现状按代码核验，详见 [operations.md](operations.md) 第 1 节)
 
 ## 架构总览
 
@@ -79,6 +80,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 | `render` | Vulkan context/buffer/pipeline/cloud/viewport | Vulkan 资源所有权与命令录制 |
 | `camera` | `Camera`, `CameraInput`, `CameraController`, `CameraHub` | 相机数学、视图局部输入映射和可选同步组传播 |
 | `gui`/`ui` | `ImGuiLayer`, `UiRoot` | ImGui 生命周期、Adobe 风格 docking 布局和 UI 命令生成 |
+| `control` | `ControlPlane`, `ComponentRegistry` | TCP + JSON-RPC 2.0 控制面（服务器线程 + 主线程帧边界 `poll()`）、29 个可驱动组件（面板/菜单/工具栏/状态栏/overlay/gizmo/canvas） |
 | `platform` | `Window` | GLFW 初始化、主窗口和键盘/事件处理 |
 
 ## 启动流程
@@ -105,6 +107,12 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 6. 每个视图由独立 ImGui 窗口采样，可作为中央标签页或拖成跨屏平台窗口；输入不再
    依赖 GLFW 主窗口鼠标坐标。
 7. resize 请求稳定 150 ms 后批量处理，一批只执行一次 GPU 空闲同步。
+
+控制面命令在主循环里按固定时序插入：
+`control_session.poll()`（帧边界取请求）→ `imgui_layer.new_frame`（UI 绘制）→
+`apply_control_actions()`（控制面动作并入 `UiActions`，主题切换直接
+`apply_theme`）→ 相机/渲染设置/拾取命令 → `frame_renderer.render()`。
+因此 `toggle` 后本帧 UI 即变化、`screenshot` 必含处理帧效果（帧同步保证）。
 
 ## GPU Pick Contract
 
@@ -176,7 +184,14 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 - hover 信息与最近点查询: GPU pick 生产路径 + 悬停十字线/数值读出
   (见上"GPU Pick Contract")。
 - 导航图、导航球、自适应坐标轴刻度、高度缩放、点形状、多视图与
-  三种布局 (workbench / floating-dock / analysis-rail)。
+  可折叠侧边栏（TIA-111 方向 B）。
+- **布局现状（TIA-111 后）**：`UiLayoutMode` 枚举/配置键/休眠代码仍在
+  （workbench / floating-dock / analysis-rail 三套设计意图见
+  [operations.md](operations.md) §1.1），但 `UiRoot::draw` 只渲染 workbench
+  （docking + 侧边栏）一套；实测三个 `layout` 配置值启动窗口像素一致。
+- **主题现状**：5 套（`include/ui/Theme.hpp`），代码默认 `kCarbonBlueDark`
+  （深色），`config/viewer.toml` 默认 `carbon-blue`（浅色）覆盖；运行期菜单
+  视图→主题 五套齐全，写入用户偏好 `[ui] theme`。
 
 **仍未实现/有明确边界:**
 
@@ -196,9 +211,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。`UiRoot.cpp` 仍有 856 行（视口画布绘制已拆分到
+   调度与错误边界。`UiRoot.cpp` 仍有 857 行（视口画布绘制已拆分到
    `ViewportCanvas.cpp`，TIA-92 把顶栏/状态栏/快捷键总览/命令面板拆到 AppChrome.cpp），剩余的 docking
-   编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 856 / 763 行分别约束 `ViewerApp.cpp`、
+   编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 857 / 763 行分别约束 `ViewerApp.cpp`、
    `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
    比较只允许下降，本地快速检查仍与 `HEAD^` 比较。当前 PR 早于 main 上的护栏，故仅在
    此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。

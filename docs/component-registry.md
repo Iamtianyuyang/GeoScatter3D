@@ -1,7 +1,8 @@
 # 组件注册契约（ComponentRegistry · TIA-109）
 
-本文档是下一阶段（imgui-coder）把**每一个** UI 组件接入控制面的契约。
-定稿后不应频繁改动；有疑问先讨论，不要绕开注册表另起炉灶。
+本文档是控制面组件的**注册契约**（TIA-109 设计，TIA-111 已全量接入）：
+控制面的命令分发**只走注册表**。注册表以 `list_components` 实时返回为准
+（实测 29 个组件，2026-08-16）。有疑问先讨论，不要绕开注册表另起炉灶。
 
 ## 1. 核心原则：未注册即失败，注册表是唯一入口
 
@@ -57,7 +58,7 @@ public:
 - `get_state`/`execute` 只在主线程（渲染循环）调用；实现**不得阻塞**、
   不得重入注册表。
 
-## 3. 当前注册的组件（阶段 1）
+## 3. 当前注册的组件（TIA-111 全量接入，共 29 个）
 
 | id | 类型 | 能力 | 说明 |
 |---|---|---|---|
@@ -70,9 +71,31 @@ public:
 | `panel.tile_inspector` | panel（debug） | 同上 | 瓦片调试面板 |
 | `panel.lod_view` | panel（debug） | 同上 | LOD 调试面板 |
 | `viewport.main` | viewport | get_state | 活动视口渲染状态（fps/点数/尺寸等） |
+| `menu.file.open` | menu | click / get_state | Ctrl+O 打开数据文件 |
+| `menu.file.open_bundle` | menu | click / get_state | 打开 GS3D Bundle 项目 |
+| `menu.file.screenshot` | menu | click / get_state | 触发截图保存 |
+| `menu.view.new_view` | menu | click / get_state | Ctrl+N 新建视图 |
+| `menu.view.restore_workspace` | menu | click / get_state | 恢复默认工作区 |
+| `menu.view.theme` | menu | click / set_value / get_state | 主题切换；`set_value` 按 `value % 4` 归一（0-3），高对比 (4) 不可达 |
+| `menu.window.new_workspace` | menu | click / get_state | 新建工作窗口 |
+| `menu.help.welcome` | menu | click / get_state | 显示欢迎页 |
+| `menu.help.shortcuts` | menu | click / get_state | 快捷键总览 overlay |
+| `toolbar.open` | toolbar | click / get_state | 顶栏打开按钮 |
+| `toolbar.screenshot` | toolbar | click / get_state | 顶栏截图按钮 |
+| `toolbar.add_view` | toolbar | click / get_state | 顶栏新建视图按钮 |
+| `toolbar.measure` | toolbar | click / get_state | 测量模式开关 |
+| `toolbar.link_camera` | toolbar | click / get_state | 相机联动开关 |
+| `toolbar.panel_palette` | toolbar | click / get_state | 面板命令面板开关 |
+| `status.bar` | status | get_state | 状态栏只读状态 |
+| `overlay.shortcut` | overlay | toggle / set_visible / get_state | 快捷键总览 |
+| `overlay.panel_palette` | overlay | toggle / set_visible / get_state | 面板命令面板 |
+| `gizmo.navigation` | gizmo | click / get_state | 导航球 |
+| `canvas.viewport` | canvas | get_state / focus_point / reset_camera | 视口画布 |
 
 面板组件的装配在 `src/control/PanelComponents.cpp`（`make_panel_components`），
-与控制面会话（`src/app/ViewerAppControlPlane.cpp`）注入的是同一个 `AppState`。
+菜单/工具栏/状态栏/overlay/gizmo/canvas 组件分别由 `MenuComponents.cpp`、
+`ToolbarComponents.cpp` 装配；全部组件在 `ViewerAppControlPlane.cpp`
+的 `ControlPlaneSession` 构造时注册，与 UI 绘制共享同一个 `AppState`。
 
 ## 4. 如何接入新组件（imgui-coder 步骤）
 
@@ -99,10 +122,11 @@ public:
 - 参数用 JSON 对象；布尔值参数统一用 `{"value": bool}`（`set_value` 的
   通用约定），组件可额外声明语义化参数（如 `set_visible` 的 `{"visible": bool}`）。
 
-## 6. 下一阶段（全量接入）清单
+## 6. 已接入 / 后续清单
 
-- 每个可交互元素（菜单项、按钮、滑块、下拉、复选框、输入框、gizmo、overlay、
-  状态栏、工具栏）注册为组件；只读元素至少提供 `get_state`。
-- 「UI 绘制唯一入口」强绑定：面板/控件的绘制改为经由注册表描述符驱动，
-  使「新增 UI 元素不注册就画不出来」成为编译/测试期事实。
-- 事件订阅（`subscribe`）留给后续阶段（协议层已预留方法位）。
+- 已接入（TIA-111）：全部 8 张面板、9 个菜单项、6 个工具栏按钮、状态栏、
+  2 个 overlay、导航球、视口画布（共 29 个组件，`list_components` 实测）。
+- 后续仍可做：
+  - 「UI 绘制唯一入口」强绑定：面板/控件的绘制改为经由注册表描述符驱动，
+    使「新增 UI 元素不注册就画不出来」成为编译/测试期事实；
+  - 事件订阅（`subscribe`）留给后续阶段（协议层已预留方法位）。

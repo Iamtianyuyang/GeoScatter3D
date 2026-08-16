@@ -7,6 +7,8 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
+- **`docs/operations.md`** — 能力清单（布局/主题/面板/多视图现状，以代码为准）、
+  构建与运行命令、控制面驱动会话、进程善后硬性约定、红线登记。新智能体先读这篇。
 - **`docs/architecture.md`** — 架构与现状（数据流、逐帧流程、资源所有权、
   当前功能状态、重大风险）。以其中的“当前功能状态”清单为准，
   不要依赖过时的“尚未完成”表述（该节已重写为现状核验）。

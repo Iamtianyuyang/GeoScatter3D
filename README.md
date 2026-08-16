@@ -20,11 +20,16 @@ LOD 和 tile 文件支持分级与局部加载。
 - 交互时使用低 LOD，隐藏标签页停止离屏渲染，减少旋转、移动和缩放卡顿。
 - TOML 配置和 Vulkan validation layer 开关。
 
-- 欢迎页 + 三种布局 (工作台/悬浮 Dock/暗色分析舱), 主题可在 视图→主题 切换。
+- 欢迎页 + 可折叠侧边栏工作台（docking）布局, 主题可在 视图→主题 切换（5 套：
+  碳蓝·浅色 / 碳蓝 2.0·深色 / 石墨·深色 / 仪器琥珀·深色 / 高对比·浅色）。
+  代码里仍保留 workbench / floating-dock / analysis-rail 三套布局的设计与休眠
+  实现，但 TIA-111 后实际只渲染 workbench 一套（详见
+  [docs/operations.md](docs/operations.md)）。
 
 当前功能状态与未实现项清单见
 [架构与现状](docs/architecture.md#当前功能状态), 全部配置键见
-[viewer.toml 配置参考](docs/config-reference.md)。
+[viewer.toml 配置参考](docs/config-reference.md), 构建/运行/控制面驱动/
+进程善后手册见 [操作手册](docs/operations.md)。
 
 ## 构建
 
