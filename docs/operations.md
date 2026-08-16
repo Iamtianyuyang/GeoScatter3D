@@ -32,9 +32,13 @@
 `UiRoot::draw()` 的三布局分发，当前代码里 `ui_layout_mode` 只有两处读取：
 `ViewerAppStateInitialization.cpp:32`（从配置写入状态）与
 `AppChrome.cpp:357`（持久化到用户偏好）。`floating-dock` / `analysis-rail`
-的绘制函数与切换按钮仍保留在源码中，但没有任何调用点。**实测**：分别以
-`layout = "workbench" / "floating-dock" / "analysis-rail"` 启动，窗口截图
-（1721x957）逐像素完全一致（零差异），证明配置键在 HEAD 上无视觉效果。
+的绘制函数与切换按钮仍保留在源码中，但没有任何调用点。**实测（TIA-151
+第二轮，隐藏窗口 + 控制面 swapchain 回读，2054x1242）**：分别以
+`layout = "workbench" / "floating-dock" / "analysis-rail"` 启动，排除实时
+文本带（工具栏 LOD/点数、状态栏 FPS/相机坐标——同一次运行相隔 6 s 的两张
+截图也只在这些位置变化）后**零差异**，证明配置键在 HEAD 上无视觉效果。
+（首轮桌面截屏的 1721x957 图与此结论一致，但取图方式不可复现，故以
+本段隐藏窗口实测为准。）
 
 - 「运行时可通过菜单 / Dock 设置卡片双向切换」是 `AppState.hpp` 里的**过期注释**；
   切换按钮（方案 A/B/C）只存在于休眠布局内部的设置卡片/抽屉中，当前 UI 无入口。
@@ -172,7 +176,7 @@ Windows 实测结果（2026-08-16，VS2026 + vcpkg）：构建成功，
 | `--validation` | 启用 Vulkan validation layers（调试用） |
 | `--control-plane` | 启用控制面，默认端口 **12735**（只绑 127.0.0.1） |
 | `--control-plane=PORT` / `--control-plane PORT` | 指定端口（下个参数为纯数字时视为端口） |
-| `--headless` | 隐藏窗口运行（渲染/截图路径与 GUI 一致；需要可用 GPU 与桌面会话） |
+| `--headless` | 隐藏窗口运行（渲染/截图路径与 GUI 一致；需要可用 GPU 与桌面会话）。**同时忽略持久化布局** `ui_layout_ini_path`（TIA-151：该 ini 可能记录其他视口上的窗口，ImGui 多视口会为它们创建可见原生窗口——既闯入桌面又让主窗口截图缺内容） |
 | `--no-welcome` | 跳过欢迎窗口直接进入查看器（**自动化流程必须带**，见第 5 节） |
 
 端口被占用时控制面启动失败但应用继续以 GUI 方式运行，不崩溃（实测日志行为）。
@@ -263,13 +267,39 @@ print(req("quit", rid=8))                       # 干净退出 → {"ok": true}�
 
 ### 4.3 驱动要点
 
-- `screenshot` 返回**活动主视口画布区域**（非整窗）的 PNG Base64；同一时刻只
-  允许一张在途，超过 2 s 回 `-32000` 超时。先 `toggle` 再 `screenshot`，
-  截图里就能看到效果（帧同步，不会截到上一帧）。
+- `screenshot` 返回**整个窗口完整客户区**（swapchain 全幅回读，`offset={0,0}`、
+  extent=swapchain extent，见 `ViewerAppScreenshot.cpp:request_control_capture`），
+  PNG Base64；宽高=实际渲染分辨率（如 1280x720 逻辑窗口 @1.25 DPI → 2054x1242，
+  含全部面板/Dock）。同一时刻只允许一张在途，超过 2 s 回 `-32000` 超时。
+  先 `toggle` 再 `screenshot`，截图里就能看到效果（帧同步，不会截到上一帧）。
+  （UI 保存面板路径的截图才裁剪到活动主视口画布区域；控制面截图不裁剪。）
 - `toggle`/`set_value`/`click` 在帧边界应用，返回时已生效（结果含新状态）。
-- `--headless` 下控制面与截图路径完全一致（实测 2054x1242 PNG 正常回读）。
+- `--headless` 下控制面与截图路径完全一致（实测 2054x1242 PNG 正常回读；
+  隐藏窗口时 swapchain acquire/present 正常，validation layers 无 VUID 报错）。
 - 组件清单以 `list_components` 实时返回为准；29 个组件 = 8 面板 + viewport.main
   + 9 菜单 + 6 工具栏 + 状态栏 + 2 overlay + 导航球 + 视口画布。
+
+### 4.4 自动化截图规范（硬性约定：禁止桌面截屏）
+
+> 背景：TIA-151 评估期间截图走桌面/窗口截屏，窗口抢占了人类决策者的前台，
+> 被遮挡/未完整露出时截图残缺；且窗口本身干扰办公。以下为**硬性要求**。
+
+1. **禁止任何 OS 级桌面/窗口截屏**：BitBlt / PrintWindow / 截图工具
+   （PowerToys、微信、PIL ImageGrab 等）一律不得用于取证截图；也不得让
+   窗口获得前台焦点。
+2. **取图一律走控制面 `screenshot`（swapchain 回读）**，输出=完整客户区、
+   与实际渲染分辨率一致、不受遮挡影响。
+3. **全程隐藏窗口**：自动化启动必须 `--headless`（窗口创建即隐藏，
+   `GLFW_VISIBLE=false`）+ `--no-welcome`；`--headless` 已保证不加载
+   持久化布局、不创建可见原生窗口（TIA-151 实测：运行期间枚举顶层窗口
+   全部 `IsWindowVisible=False`、`MainWindowHandle=0`）。
+4. 验证窗口未出现（运行期间可执行）：
+
+   ```powershell
+   Get-Process -Name GeoScatter3D | Select-Object MainWindowHandle  # 期望 0
+   ```
+
+5. 取证截图的分辨率以控制面返回的 `width`/`height` 为准，汇报时注明。
 
 ## 5. 进程善后规范（硬性约定）
 
@@ -313,8 +343,9 @@ TIA-151 全程验证：每次运行均以 `quit` 退出，结束时
 | 6 | 控制面只绑 `127.0.0.1`、无认证（设计决策）；并发连接上限 60；单条消息 64 MiB；单飞截图（同一时刻一张，2 s 超时） | `docs/control-plane.md` §2/§6 |
 | 7 | `ThreadPool::shutdown()` 取消未开始工作并令对应 future 抛 `TaskCancelled`；pool 必须比它返回的每个 future 活得更久 | `src/util/`（见 architecture.md 风险 6） |
 | 8 | 控制面 `menu.view.theme` 的 `set_value` 只接受主题 0-3（`% 4`），高对比主题 (4) 不可达；UI 菜单则五套齐全 | `src/control/MenuComponents.cpp` |
-| 9 | 控制面 `screenshot` 截的是**活动主视口画布区域**，不是整窗/整 UI | `docs/control-plane.md` §3 |
+| 9 | 控制面 `screenshot` 截的是**整窗完整客户区**（swapchain 全幅回读，非画布裁剪；UI 保存面板路径才裁剪画布） | `ViewerAppScreenshot.cpp:request_control_capture` |
 | 10 | 控制面在**欢迎窗口阶段不监听**；自动化必须 `--no-welcome` | `docs/control-plane.md` §6、本手册第 5 节 |
+| 11 | **禁止 OS 级桌面/窗口截屏取证**（BitBlt/PrintWindow/第三方工具）；窗口不得获得前台焦点；取图一律控制面 `screenshot`（swapchain 回读），自动化全程 `--headless` 隐藏窗口 | 本手册 §4.4、`src/main.cpp`（headless 忽略布局 ini） |
 
 ## 7. 给文档读者的核对指引
 

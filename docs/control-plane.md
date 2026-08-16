@@ -108,7 +108,9 @@ GeoScatter3D.exe --bundle <dir> --no-welcome --headless --control-plane=12735
 返回的截图必定是「请求被处理那一帧」的渲染结果 —— 先发 `toggle` 再发
 `screenshot`，截图里就能看到 toggle 的效果，不会截到上一帧。
 
-- 截图内容是当前活动主视口的画布区域（与 GUI 的「截图」按钮一致）。
+- 截图内容是**整个窗口完整客户区**（swapchain 全幅回读，`ViewerAppScreenshot.cpp`
+  的 `request_control_capture`：`offset={0,0}`、extent=swapchain extent；宽高即实际
+  渲染分辨率）。注意与 GUI 的「截图」按钮不同——后者裁剪到活动主视口画布区域。
 - 同一时刻只允许一张控制面截图；已有进行中时返回错误。
 - 超过 2 s 未完成回送 `-32000 screenshot capture timed out`。
 

@@ -24,11 +24,15 @@ C++20 大规模三维散点/点云桌面查看器（Vulkan + GLFW + Dear ImGui d
 - **自动化驱动必须** `--no-welcome` 启动、控制面 `quit` 退出；收尾跑
   `Get-Process -Name GeoScatter3D` 确认为空（背景：TIA-150 曾堆积 7 个卡在
   欢迎窗口的进程）。详见 operations.md 第 5 节。
+- **自动化截图必须全程隐藏窗口**（`--headless` + `--no-welcome`），取图一律走
+  控制面 `screenshot`（swapchain 回读）；**禁止 OS 级桌面/窗口截屏**
+  （BitBlt/PrintWindow/第三方工具）与抢前台焦点（背景：TIA-151 截屏曾闯入
+  人类决策者桌面）。详见 operations.md 第 4.4 节。
 - **文档与代码冲突时以代码为准**，并同步更新文档（见 operations.md 第 7 节与
   `docs/agents/domain.md`）。
 - **红线登记**：ui_scale 禁止流入 Vulkan 渲染尺寸链、GPU pick point_id 仅单次
-  运行内稳定、LOD v1 拒绝/tile stride 强校验、`max_visible_tiles` 已废弃等，
-  见 operations.md 第 6 节。
+  运行内稳定、LOD v1 拒绝/tile stride 强校验、`max_visible_tiles` 已废弃、
+  禁止桌面截屏取证等，见 operations.md 第 6 节。
 
 ## 工程流程
 
