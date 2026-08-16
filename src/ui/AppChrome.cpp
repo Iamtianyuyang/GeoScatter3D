@@ -204,6 +204,11 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
         state.ui_chrome.panel_palette_open = true;
         state.ui_chrome.panel_palette_query[0] = '\0';
     }
+    ImGui::SameLine();
+    // TIA-111 方向 B：可折叠侧边栏切换按钮
+    if (icon_button("##SB", icons::kMenu, "切换侧边栏", state.ui_chrome.sidebar_visible)) {
+        state.ui_chrome.sidebar_visible = !state.ui_chrome.sidebar_visible;
+    }
     pop_menu_style();
     if (medium_font()) ImGui::PopFont();
 

@@ -173,6 +173,7 @@ struct PanelVisibilityState {
 struct UiChromeState {
     bool shortcut_overlay_open = false;
     bool panel_palette_open = false;
+    bool sidebar_visible = true;  // TIA-111 方向 B：可折叠侧边栏
     std::array<char, 64> panel_palette_query{};
 };
 

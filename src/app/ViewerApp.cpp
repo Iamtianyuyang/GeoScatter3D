@@ -149,29 +149,12 @@ ViewerViewportRenderOptions make_viewport_render_options(
     };
 }
 
-void print_controls(
-    bool lod_enabled,
-    bool tile_enabled
-){
-    gs3d::util::log::info() << "[OK] Entering render loop.\n";
-    gs3d::util::log::info() << "操作说明：\n";
-    gs3d::util::log::info() << "  左键拖动：轨道旋转\n";
-    gs3d::util::log::info() << "  右键拖动：视角平移\n";
-    gs3d::util::log::info() << "  滚轮：缩放到光标位置\n";
-    gs3d::util::log::info() << "  Ctrl+左键拖动：框选\n";
-    gs3d::util::log::info() << "  双击点：选择并设置旋转中心\n";
-    gs3d::util::log::info() << "  F：聚焦选中点\n";
-    gs3d::util::log::info() << "  + / -：调整点大小\n";
-    gs3d::util::log::info() << "  R：恢复全局视图\n";
-    gs3d::util::log::info() << "  Tab：切换着色属性\n";
-    gs3d::util::log::info() << "  Esc：退出\n";
-    gs3d::util::log::info() << "渲染模式：\n";
-    gs3d::util::log::info() << "  LOD         : "
-              << (lod_enabled ? "启用" : "关闭")
-              << '\n';
-    gs3d::util::log::info() << "  全分辨率瓦片："
-              << (tile_enabled ? "启用" : "关闭")
-              << '\n';
+void print_controls(bool lod_enabled, bool tile_enabled) {
+    gs3d::util::log::info() << "[OK] Entering render loop.\n"
+        << "操作: 左键拖动=轨道旋转, 右键拖动=视角平移, 滚轮=缩放, "
+        << "Ctrl+左键=框选, 双击=选择, F=聚焦, +/-=点大小, R=恢复, Tab=属性, Esc=退出\n"
+        << "LOD: " << (lod_enabled ? "启用" : "关闭")
+        << ", 瓦片: " << (tile_enabled ? "启用" : "关闭") << '\n';
 }
 } // namespace
 
@@ -329,19 +312,11 @@ int ViewerApp::run() {
             );
         }
 
-        gs3d::util::log::info() << "[OK] CameraController initialized.\n";
-        gs3d::util::log::info() << "camera position = ["
-                  << viewport_manager.camera(0).position().x << ", "
-                  << viewport_manager.camera(0).position().y << ", "
-                  << viewport_manager.camera(0).position().z << "]\n";
-
-        gs3d::util::log::info() << "camera target = ["
-                  << viewport_manager.camera(0).target().x << ", "
-                  << viewport_manager.camera(0).target().y << ", "
-                  << viewport_manager.camera(0).target().z << "]\n";
-
-        gs3d::util::log::info() << "camera distance = "
-                  << viewport_manager.camera(0).distance() << '\n';
+        const auto& cam0 = viewport_manager.camera(0);
+        gs3d::util::log::info() << "[OK] CameraController initialized.\n"
+            << "pos=[" << cam0.position().x << "," << cam0.position().y << "," << cam0.position().z << "] "
+            << "target=[" << cam0.target().x << "," << cam0.target().y << "," << cam0.target().z << "] "
+            << "dist=" << cam0.distance() << '\n';
 
         /*
          * 瓦片流式状态（见 ViewerAppTileStreaming.hpp）；须声明在
@@ -355,14 +330,9 @@ int ViewerApp::run() {
         auto& tile_stream = tile_streaming.state();
 
         const auto resolve_hover_point_from_visible_tiles =
-            [&tile_stream](
-                std::size_t view_index,
-                std::uint32_t point_id,
-                float mouse_x,
-                float mouse_y
-            ) {
-                static_cast<void>(mouse_x);
-                static_cast<void>(mouse_y);
+            [&tile_stream](std::size_t view_index, std::uint32_t point_id,
+                           float mouse_x, float mouse_y) {
+                static_cast<void>(mouse_x); static_cast<void>(mouse_y);
                 const auto candidate_point_sets =
                     collect_visible_hover_tile_views(
                         tile_stream,
@@ -423,12 +393,7 @@ int ViewerApp::run() {
             height_exag
         );
 
-        ViewerLodFrameSystem lod_frame_system;
-        // The system retains the level rendered in frame N-1 so
-        // report_frame_time() can pair it with frame N-1's measured duration
-        // (delta_seconds, computed at the top of frame N) before selecting
-        // this frame's level.
-
+        ViewerLodFrameSystem lod_frame_system;  // retains N-1 level for report_frame_time
         ViewerFrameClock frame_clock;
 
         print_controls(config_.lod.enabled, config_.tile.enabled);
@@ -471,20 +436,16 @@ int ViewerApp::run() {
 
         app_state.logo_texture = render_runtime.logo_descriptor();
 
-        // ── analysis.toml persistence ──────────────────────────────────
+        // analysis.toml persistence
         app_state.bundle_dir = config_.input.bundle_dir;
-        auto& persisted_measurement =
-            app_state.measurements.empty()
-                ? app_state.measurement
-                : app_state.measurements.front();
-        load_analysis(app_state.bundle_dir, persisted_measurement);
-        app_state.measurement = persisted_measurement;
-        persisted_measurement.on_changed = [&app_state]() {
-            const auto& measurement =
-                app_state.measurements.empty()
-                    ? app_state.measurement
-                    : app_state.measurements.front();
-            save_analysis(app_state.bundle_dir, measurement);
+        auto& meas_ref = app_state.measurements.empty()
+            ? app_state.measurement : app_state.measurements.front();
+        load_analysis(app_state.bundle_dir, meas_ref);
+        app_state.measurement = meas_ref;
+        meas_ref.on_changed = [&app_state]() {
+            const auto& m = app_state.measurements.empty()
+                ? app_state.measurement : app_state.measurements.front();
+            save_analysis(app_state.bundle_dir, m);
         };
 
         const auto& nav_cloud = render_runtime.navigation_cloud();
@@ -502,9 +463,7 @@ int ViewerApp::run() {
         );
 
         std::vector<int> visible_viewports;
-        visible_viewports.reserve(
-            static_cast<std::size_t>(viewport_manager.viewport_count())
-        );
+        visible_viewports.reserve(viewport_manager.viewport_count());
         const ViewerFrameStateSynchronizer frame_state_synchronizer(
             dataset.origin_z(),
             config_.tile.gpu_cache_max_tiles,
