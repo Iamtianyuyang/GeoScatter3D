@@ -528,6 +528,23 @@ struct AppState {
     TilePreloadProgressState tile_preload;
     AnalysisRailUiState analysis_rail_ui;
     ScreenshotNoticeState screenshot_notice;
+
+    // TIA-111：控制面命令产生的动作队列。组件在 control_session.poll()
+    // 期间写入，ViewerApp 在同帧 poll() 之后、UI 绘制之前读取并处理，
+    // 处理后清空。保证「控制面命令 → 动作」在同一帧生效。
+    struct ControlActions {
+        bool open_requested = false;
+        bool open_bundle_requested = false;
+        bool show_welcome_requested = false;
+        bool screenshot_requested = false;
+        bool restore_default_workspace_requested = false;
+        bool theme_change_requested = false;
+        int theme_id = 0;  // gs3d::ui::ThemeId
+        int reset_camera_index = -1;
+        int camera_view_axis = -1;
+        bool toggle_fullscreen = false;
+        std::string open_project_path;
+    } control_actions;
 };
 
 inline int resolve_viewport_index(

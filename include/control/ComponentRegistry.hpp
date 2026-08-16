@@ -37,6 +37,7 @@ enum class ComponentType : int {
     kGizmo = 9,
     kStatus = 10,
     kOverlay = 11,
+    kCanvas = 12,
     kCount,
 };
 

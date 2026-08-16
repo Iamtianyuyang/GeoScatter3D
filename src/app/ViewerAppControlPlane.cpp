@@ -2,7 +2,9 @@
 
 #include "app/AppState.hpp"
 #include "app/ScreenshotService.hpp"
+#include "control/MenuComponents.hpp"
 #include "control/PanelComponents.hpp"
+#include "control/ToolbarComponents.hpp"
 #include "render/VulkanSwapchain.hpp"
 #include "util/Log.hpp"
 
@@ -113,14 +115,44 @@ ControlPlaneSession::ControlPlaneSession(
           }
       )
 {
-    // 面板组件与 UI 绘制共享同一份 AppState::panels；未注册的面板
+    // TIA-111：全量组件注册。
+    // 面板组件与 UI 绘制共享同一份 AppState::panels；未注册的组件
     // 在控制面上「构造上就不存在」—— 命令直接报错，不依赖白名单自觉。
+    // 新增面板不注册 → ComponentRegistryTests 的 1:1 映射测试立即失败。
+    
+    // 1. 面板组件（8 张面板，含 2 张调试面板）
+    gs3d::app::UiActions temp_actions;  // 菜单/工具栏组件不使用 UiActions
     for (auto& component : control::make_panel_components(app_state)) {
         registry_.register_component(std::move(component));
     }
+    // 2. 视口状态组件（只读）
     registry_.register_component(
         std::make_unique<ViewportStateComponent>(app_state)
     );
+    // 3. 菜单组件（9 个菜单项）
+    for (auto& component : control::make_menu_components(app_state, temp_actions)) {
+        registry_.register_component(std::move(component));
+    }
+    // 4. 工具栏组件（6 个按钮）
+    for (auto& component : control::make_toolbar_components(app_state, temp_actions)) {
+        registry_.register_component(std::move(component));
+    }
+    // 5. 状态栏组件（只读）
+    for (auto& component : control::make_status_components(app_state)) {
+        registry_.register_component(std::move(component));
+    }
+    // 6. Overlay 组件（2 个：快捷键总览、面板命令面板）
+    for (auto& component : control::make_overlay_components(app_state)) {
+        registry_.register_component(std::move(component));
+    }
+    // 7. Gizmo 组件（导航球）
+    for (auto& component : control::make_gizmo_components(app_state, temp_actions)) {
+        registry_.register_component(std::move(component));
+    }
+    // 8. Canvas 组件（视口画布）
+    for (auto& component : control::make_canvas_components(app_state, temp_actions)) {
+        registry_.register_component(std::move(component));
+    }
 
     if (!config.enabled) {
         return;

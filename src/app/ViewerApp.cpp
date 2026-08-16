@@ -32,6 +32,9 @@
 #include "app/UserPreferences.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/WorkspaceManager.hpp"
+#include "ui/Theme.hpp"
+#include "ui/AppChrome.hpp"
+#include "gui/UiFonts.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
@@ -75,6 +78,45 @@
 namespace gs3d::app {
 
 namespace {
+
+// TIA-111：处理控制面命令产生的动作，合并到 gui_cmds 并清空 control_actions。
+void apply_control_actions(
+    AppState& app_state,
+    UiActions& gui_cmds
+) {
+    auto& ca = app_state.control_actions;
+    if (ca.open_requested) { gui_cmds.open_requested = true; }
+    if (ca.open_bundle_requested) { gui_cmds.open_bundle_requested = true; }
+    if (ca.show_welcome_requested) { gui_cmds.show_welcome_requested = true; }
+    if (ca.screenshot_requested) { gui_cmds.screenshot_requested = true; }
+    if (ca.restore_default_workspace_requested) {
+        gui_cmds.restore_default_workspace_requested = true;
+    }
+    if (ca.theme_change_requested) {
+        apply_theme(
+            static_cast<gs3d::ui::ThemeId>(ca.theme_id),
+            gs3d::gui::ui_fonts().ui_scale
+        );
+        persist_ui_preferences(app_state, static_cast<gs3d::ui::ThemeId>(ca.theme_id));
+    }
+    if (ca.reset_camera_index >= 0) {
+        gui_cmds.reset_camera_index = ca.reset_camera_index;
+    }
+    if (ca.camera_view_axis == -2) {
+        // 特殊值：新建视图
+        if (gs3d::ui::has_hidden_view(app_state)) {
+            gs3d::ui::show_first_hidden_view(app_state);
+        }
+    } else if (ca.camera_view_axis == -3) {
+        // 特殊值：新建工作窗口
+        if (gs3d::ui::has_hidden_view(app_state)) {
+            gs3d::ui::create_workspace_window(app_state);
+        }
+    } else if (ca.camera_view_axis >= 0) {
+        gui_cmds.camera_view_axis = ca.camera_view_axis;
+    }
+    ca = AppState::ControlActions{};  // 清空
+}
 
 gs3d::data::Gs3dLodVoxelMode parse_lod_voxel_mode(
     const std::string& mode
@@ -597,6 +639,7 @@ int ViewerApp::run() {
             if (control_session.quit_requested()) window.request_close();
 
             auto gui_cmds = imgui_layer.new_frame(app_state);
+            apply_control_actions(app_state, gui_cmds);
             viewport_presentation.copy_newly_visible_views(
                 app_state,
                 default_view_source

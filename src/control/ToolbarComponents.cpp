@@ -1,0 +1,427 @@
+#include "control/ToolbarComponents.hpp"
+
+#include "ui/PanelRegistry.hpp"
+
+#include <stdexcept>
+#include <string>
+
+namespace gs3d::control {
+
+namespace {
+
+// ── 基类 ───────────────────────────────────────────────────────────
+
+class ToolbarComponentBase : public Component {
+public:
+    ToolbarComponentBase(
+        gs3d::app::AppState& app_state,
+        ComponentInfo info,
+        std::vector<CommandSpec> caps
+    )
+        : app_state_(app_state),
+          info_(std::move(info)),
+          capabilities_(std::move(caps)) {}
+
+    const ComponentInfo& info() const noexcept override { return info_; }
+    const std::vector<CommandSpec>& capabilities() const noexcept override { return capabilities_; }
+
+    nlohmann::json get_state() override {
+        return {
+            {"id", info_.id},
+            {"name", info_.name},
+            {"type", component_type_name(info_.type)},
+            {"debug", info_.debug}
+        };
+    }
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "get_state") return get_state();
+        if (command == "click") { do_click(params); return {{"id", info_.id}, {"clicked", true}}; }
+        throw ComponentError(-32601, "unknown command: " + command);
+    }
+
+protected:
+    virtual void do_click(const nlohmann::json&) = 0;
+    gs3d::app::AppState& app_state_;
+
+private:
+    ComponentInfo info_;
+    std::vector<CommandSpec> capabilities_;
+};
+
+// ── 只读组件基类（状态栏等） ─────────────────────────────────────
+
+class ReadOnlyComponentBase : public Component {
+public:
+    ReadOnlyComponentBase(
+        const gs3d::app::AppState& app_state,
+        ComponentInfo info,
+        std::vector<CommandSpec> caps
+    )
+        : app_state_(app_state),
+          info_(std::move(info)),
+          capabilities_(std::move(caps)) {}
+
+    const ComponentInfo& info() const noexcept override { return info_; }
+    const std::vector<CommandSpec>& capabilities() const noexcept override { return capabilities_; }
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "get_state") return get_state();
+        throw ComponentError(-32601, "unknown command: " + command);
+    }
+
+protected:
+    const gs3d::app::AppState& app_state_;
+
+private:
+    ComponentInfo info_;
+    std::vector<CommandSpec> capabilities_;
+};
+
+// ── 工具栏组件 ─────────────────────────────────────────────────────
+
+class ToolbarOpenComponent final : public ToolbarComponentBase {
+public:
+    ToolbarOpenComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.open", "打开文件", "打开数据文件",
+             ComponentType::kToolbar, false},
+            {{"click", "触发打开文件", false},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override { app_state_.control_actions.open_requested = true; }
+};
+
+class ToolbarScreenshotComponent final : public ToolbarComponentBase {
+public:
+    ToolbarScreenshotComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.screenshot", "截图", "保存视口截图",
+             ComponentType::kToolbar, false},
+            {{"click", "触发截图", false},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override { app_state_.control_actions.screenshot_requested = true; }
+};
+
+class ToolbarAddViewComponent final : public ToolbarComponentBase {
+public:
+    ToolbarAddViewComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.add_view", "新建视图", "创建新视口",
+             ComponentType::kToolbar, false},
+            {{"click", "新建视口", false},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        // 通过 control_actions 传递，由 ViewerApp 处理
+        app_state_.control_actions.camera_view_axis = -2;  // 特殊值：新建视图
+    }
+};
+
+class ToolbarMeasureComponent final : public ToolbarComponentBase {
+public:
+    ToolbarMeasureComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.measure", "测量", "切换测量模式",
+             ComponentType::kToolbar, false},
+            {{"click", "切换测量模式", false},
+             {"get_state", "获取当前测量状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        auto& meas = gs3d::app::measurement_for_view(
+            app_state_, app_state_.active_viewport_index);
+        meas.toggle_measure_mode();
+        if (!meas.measure_mode_active()) meas.clear_pending();
+    }
+
+    nlohmann::json get_state() override {
+        auto& meas = gs3d::app::measurement_for_view(
+            app_state_, app_state_.active_viewport_index);
+        return {
+            {"id", info().id},
+            {"measure_mode_active", meas.measure_mode_active()}
+        };
+    }
+};
+
+class ToolbarLinkCameraComponent final : public ToolbarComponentBase {
+public:
+    ToolbarLinkCameraComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.link_camera", "联动相机", "切换相机联动模式",
+             ComponentType::kToolbar, false},
+            {{"click", "切换相机联动", false},
+             {"get_state", "获取联动状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        bool any_linked = false;
+        for (auto& v : app_state_.render_views) {
+            if (v.camera_linked) { any_linked = true; break; }
+        }
+        const bool new_state = !any_linked;
+        for (auto& v : app_state_.render_views) v.camera_linked = new_state;
+    }
+
+    nlohmann::json get_state() override {
+        bool any_linked = false;
+        for (const auto& v : app_state_.render_views) {
+            if (v.camera_linked) { any_linked = true; break; }
+        }
+        return {{"id", info().id}, {"linked", any_linked}};
+    }
+};
+
+class ToolbarPanelPaletteComponent final : public ToolbarComponentBase {
+public:
+    ToolbarPanelPaletteComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"toolbar.panel_palette", "面板命令面板", "打开面板命令面板 (Ctrl+P)",
+             ComponentType::kToolbar, false},
+            {{"click", "打开面板命令面板", false},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        app_state_.ui_chrome.panel_palette_open = true;
+        app_state_.ui_chrome.panel_palette_query[0] = '\0';
+    }
+};
+
+// ── 状态栏组件（只读） ──────────────────────────────────────────
+
+class StatusBarComponent final : public ReadOnlyComponentBase {
+public:
+    StatusBarComponent(const gs3d::app::AppState& s)
+        : ReadOnlyComponentBase(s,
+            {"status.bar", "状态栏", "底部状态栏显示 FPS、点数、GPU 内存等",
+             ComponentType::kStatus, false},
+            {{"get_state", "获取状态栏完整状态", false}}) {}
+
+    nlohmann::json get_state() override {
+        return {
+            {"id", info().id},
+            {"fps", app_state_.status_bar.fps},
+            {"visible_points", app_state_.status_bar.visible_points},
+            {"loaded_tiles", app_state_.status_bar.loaded_tiles},
+            {"pending_tiles", app_state_.status_bar.pending_tiles},
+            {"gpu_memory_bytes", app_state_.status_bar.gpu_memory_bytes},
+            {"camera_position", app_state_.status_bar.camera_position},
+            {"crs", app_state_.status_bar.crs},
+            {"ready_state", app_state_.status_bar.ready_state}
+        };
+    }
+};
+
+// ── Overlay 组件 ──────────────────────────────────────────────────
+
+class ShortcutOverlayComponent final : public ToolbarComponentBase {
+public:
+    ShortcutOverlayComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"overlay.shortcut", "快捷键总览", "显示/隐藏快捷键总览 overlay",
+             ComponentType::kOverlay, false},
+            {{"toggle", "切换快捷键总览显示/隐藏", false},
+             {"set_visible", "设置快捷键总览可见性", true},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        app_state_.ui_chrome.shortcut_overlay_open =
+            !app_state_.ui_chrome.shortcut_overlay_open;
+    }
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "toggle") {
+            app_state_.ui_chrome.shortcut_overlay_open =
+                !app_state_.ui_chrome.shortcut_overlay_open;
+            return {{"id", info().id}, {"visible", app_state_.ui_chrome.shortcut_overlay_open}};
+        }
+        if (command == "set_visible") {
+            app_state_.ui_chrome.shortcut_overlay_open = params.value("visible", true);
+            return {{"id", info().id}, {"visible", app_state_.ui_chrome.shortcut_overlay_open}};
+        }
+        return ToolbarComponentBase::execute(command, params);
+    }
+
+    nlohmann::json get_state() override {
+        return {
+            {"id", info().id},
+            {"visible", app_state_.ui_chrome.shortcut_overlay_open}
+        };
+    }
+};
+
+class PanelPaletteOverlayComponent final : public ToolbarComponentBase {
+public:
+    PanelPaletteOverlayComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"overlay.panel_palette", "面板命令面板", "显示/隐藏面板命令面板 (Ctrl+P)",
+             ComponentType::kOverlay, false},
+            {{"toggle", "切换面板命令面板", false},
+             {"set_visible", "设置面板命令面板可见性", true},
+             {"get_state", "获取状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        app_state_.ui_chrome.panel_palette_open =
+            !app_state_.ui_chrome.panel_palette_open;
+        if (app_state_.ui_chrome.panel_palette_open)
+            app_state_.ui_chrome.panel_palette_query[0] = '\0';
+    }
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "toggle") {
+            app_state_.ui_chrome.panel_palette_open =
+                !app_state_.ui_chrome.panel_palette_open;
+            if (app_state_.ui_chrome.panel_palette_open)
+                app_state_.ui_chrome.panel_palette_query[0] = '\0';
+            return {{"id", info().id}, {"visible", app_state_.ui_chrome.panel_palette_open}};
+        }
+        if (command == "set_visible") {
+            app_state_.ui_chrome.panel_palette_open = params.value("visible", true);
+            if (app_state_.ui_chrome.panel_palette_open)
+                app_state_.ui_chrome.panel_palette_query[0] = '\0';
+            return {{"id", info().id}, {"visible", app_state_.ui_chrome.panel_palette_open}};
+        }
+        return ToolbarComponentBase::execute(command, params);
+    }
+
+    nlohmann::json get_state() override {
+        return {
+            {"id", info().id},
+            {"visible", app_state_.ui_chrome.panel_palette_open}
+        };
+    }
+};
+
+// ── Gizmo 组件 ───────────────────────────────────────────────────
+
+class NavigationGizmoComponent final : public ToolbarComponentBase {
+public:
+    NavigationGizmoComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"gizmo.navigation", "导航球", "三维导航球 gizmo",
+             ComponentType::kGizmo, false},
+            {{"click", "沿轴锁定视角", true},
+             {"get_state", "获取导航球状态", false}}) {}
+protected:
+    void do_click(const nlohmann::json& params) override {
+        const int axis = params.value("axis", -1);
+        if (axis >= 0 && axis <= 5) {
+            app_state_.control_actions.camera_view_axis = axis;
+        }
+    }
+
+    nlohmann::json get_state() override {
+        const auto& view = app_state_.render_views.empty()
+            ? gs3d::app::RenderViewState{}
+            : app_state_.render_views[
+                static_cast<std::size_t>(
+                    gs3d::app::resolve_viewport_index(
+                        app_state_, app_state_.active_viewport_index))];
+        return {
+            {"id", info().id},
+            {"gizmo_valid", view.gizmo_axes_valid},
+            {"x_dx", view.gizmo_x_axis.dx},
+            {"x_dy", view.gizmo_x_axis.dy},
+            {"y_dx", view.gizmo_y_axis.dx},
+            {"y_dy", view.gizmo_y_axis.dy},
+            {"z_dx", view.gizmo_z_axis.dx},
+            {"z_dy", view.gizmo_z_axis.dy}
+        };
+    }
+};
+
+// ── Canvas 组件 ──────────────────────────────────────────────────
+
+class ViewportCanvasComponent final : public ToolbarComponentBase {
+public:
+    ViewportCanvasComponent(gs3d::app::AppState& s)
+        : ToolbarComponentBase(s,
+            {"canvas.viewport", "视口画布", "三维视口渲染画布",
+             ComponentType::kCanvas, false},
+            {{"get_state", "获取画布状态", false},
+             {"focus_point", "聚焦到选中点", false},
+             {"reset_camera", "重置相机", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {}
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "focus_point") {
+            return {{"id", info().id}, {"focused", true}};
+        }
+        if (command == "reset_camera") {
+            app_state_.control_actions.reset_camera_index = app_state_.active_viewport_index;
+            return {{"id", info().id}, {"reset", true}};
+        }
+        return ToolbarComponentBase::execute(command, params);
+    }
+
+    nlohmann::json get_state() override {
+        const int active = gs3d::app::resolve_viewport_index(
+            app_state_, app_state_.active_viewport_index);
+        std::uint32_t width = 0, height = 0;
+        if (active >= 0 && active < static_cast<int>(app_state_.render_views.size())) {
+            width = app_state_.render_views[static_cast<std::size_t>(active)].image_width;
+            height = app_state_.render_views[static_cast<std::size_t>(active)].image_height;
+        }
+        return {
+            {"id", info().id},
+            {"active_viewport", active},
+            {"viewport_count", app_state_.render_views.size()},
+            {"width", width},
+            {"height", height}
+        };
+    }
+};
+
+} // namespace
+
+std::vector<std::unique_ptr<Component>> make_toolbar_components(
+    gs3d::app::AppState& app_state,
+    gs3d::app::UiActions& /*actions*/
+) {
+    std::vector<std::unique_ptr<Component>> result;
+    result.push_back(std::make_unique<ToolbarOpenComponent>(app_state));
+    result.push_back(std::make_unique<ToolbarScreenshotComponent>(app_state));
+    result.push_back(std::make_unique<ToolbarAddViewComponent>(app_state));
+    result.push_back(std::make_unique<ToolbarMeasureComponent>(app_state));
+    result.push_back(std::make_unique<ToolbarLinkCameraComponent>(app_state));
+    result.push_back(std::make_unique<ToolbarPanelPaletteComponent>(app_state));
+    return result;
+}
+
+std::vector<std::unique_ptr<Component>> make_status_components(
+    gs3d::app::AppState& app_state
+) {
+    std::vector<std::unique_ptr<Component>> result;
+    result.push_back(std::make_unique<StatusBarComponent>(app_state));
+    return result;
+}
+
+std::vector<std::unique_ptr<Component>> make_overlay_components(
+    gs3d::app::AppState& app_state
+) {
+    std::vector<std::unique_ptr<Component>> result;
+    result.push_back(std::make_unique<ShortcutOverlayComponent>(app_state));
+    result.push_back(std::make_unique<PanelPaletteOverlayComponent>(app_state));
+    return result;
+}
+
+std::vector<std::unique_ptr<Component>> make_gizmo_components(
+    gs3d::app::AppState& app_state,
+    gs3d::app::UiActions& /*actions*/
+) {
+    std::vector<std::unique_ptr<Component>> result;
+    result.push_back(std::make_unique<NavigationGizmoComponent>(app_state));
+    return result;
+}
+
+std::vector<std::unique_ptr<Component>> make_canvas_components(
+    gs3d::app::AppState& app_state,
+    gs3d::app::UiActions& /*actions*/
+) {
+    std::vector<std::unique_ptr<Component>> result;
+    result.push_back(std::make_unique<ViewportCanvasComponent>(app_state));
+    return result;
+}
+
+} // namespace gs3d::control
