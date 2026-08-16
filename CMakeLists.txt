@@ -200,12 +200,16 @@ target_link_libraries(gs3d_platform PUBLIC
 # 依赖面刻意压到最小：AppState 仅头文件使用，测试无需 Vulkan 运行时。
 add_library(gs3d_control STATIC
     src/control/ComponentRegistry.cpp
+    src/control/MenuComponents.cpp
     src/control/PanelComponents.cpp
+    src/control/ToolbarComponents.cpp
     src/control/JsonRpc.cpp
     src/control/Base64.cpp
     src/control/ControlPlane.cpp
     include/control/ComponentRegistry.hpp
+    include/control/MenuComponents.hpp
     include/control/PanelComponents.hpp
+    include/control/ToolbarComponents.hpp
     include/control/JsonRpc.hpp
     include/control/Base64.hpp
     include/control/CapturedImage.hpp

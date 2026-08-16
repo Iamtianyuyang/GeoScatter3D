@@ -20,6 +20,7 @@ std::string_view component_type_name(const ComponentType type) noexcept {
     case ComponentType::kGizmo:    return "gizmo";
     case ComponentType::kStatus:   return "status";
     case ComponentType::kOverlay:  return "overlay";
+    case ComponentType::kCanvas:   return "canvas";
     case ComponentType::kCount:    break;
     }
     return "unknown";
