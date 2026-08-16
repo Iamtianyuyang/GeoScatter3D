@@ -562,6 +562,228 @@ void draw_panel_section_label(const char* label)
     }
 }
 
+void UiRoot::draw_mode_tabs(gs3d::app::AppState& state, float ui_scale)
+{
+    // TIA-159 方向 B：左侧模式标签栏（48px 宽）
+    constexpr float kModeTabWidth = 48.0f * 1.25f; // 60px at 1.25 scale
+    constexpr float kModeTabHeight = 60.0f;
+
+    struct ModeInfo {
+        gs3d::app::UiMode id;
+        const char* label;
+        const char* icon;
+    };
+    static constexpr ModeInfo kModes[] = {
+        {gs3d::app::UiMode::kData,        "数据", "\xE2\x80\xA2"},  // bullet as placeholder
+        {gs3d::app::UiMode::kAppearance,  "外观", "\xE2\x9C\x88"},  // checkmark placeholder
+        {gs3d::app::UiMode::kPerformance, "性能", "\xE2\x96\xA0"},  // square placeholder
+        {gs3d::app::UiMode::kTools,       "工具", "\xE2\x9C\x8D"},  // pencil placeholder
+    };
+
+    ImGui::SetCursorScreenPos(ImGui::GetCursorScreenPos());
+    ImGui::BeginChild("##ModeTabs", ImVec2(kModeTabWidth, 0.0f), false,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground);
+
+    const float avail_w = ImGui::GetContentRegionAvail().x;
+    const float btn_size = avail_w - 4.0f * ui_scale;
+
+    for (const auto& m : kModes) {
+        const bool is_active = (state.ui_chrome.ui_mode == m.id);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f * ui_scale);
+        if (is_active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, to_u32(palette::kAccent, 30));
+            ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kAccent, 255));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32_DISABLE);
+            ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 200));
+        }
+
+        // 简单占位：用文字按钮代替图标
+        char label_buf[32];
+        std::snprintf(label_buf, sizeof(label_buf), "%s##mode_%d", m.label, static_cast<int>(m.id));
+        if (ImGui::Button(label_buf, ImVec2(btn_size, kModeTabHeight * ui_scale))) {
+            state.ui_chrome.ui_mode = m.id;
+            dock_layout_.initialized = false; // 触发布局重建
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+        ImGui::Spacing();
+    }
+
+    ImGui::EndChild();
+}
+
+void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiActions& actions, float ui_scale)
+{
+    // TIA-159 方向 B：根据当前模式渲染对应面板内容
+    switch (state.ui_chrome.ui_mode) {
+    case gs3d::app::UiMode::kData:
+        // 看数据：项目面板内容
+        draw_dataset_panel(state);
+        break;
+    case gs3d::app::UiMode::kAppearance:
+        // 调外观：主题色块 + 渲染设置
+        draw_theme_selector(state, ui_scale);
+        ImGui::Spacing();
+        {
+            const auto main_viewports = main_workspace_viewports(state);
+            const int main_active_view = active_view_for_indices(
+                state, main_viewports,
+                main_viewports.empty() ? 0 : main_viewports.front());
+            const std::vector<int> targets{main_active_view};
+            draw_render_settings(state, actions, nullptr, nullptr,
+                &gs3d::app::render_settings_for_view(state, main_active_view),
+                &targets);
+        }
+        break;
+    case gs3d::app::UiMode::kPerformance:
+        // TIA-159 方向 B：查性能模式 — 性能面板 + 瓦片详情 + LOD 设置
+        draw_performance_content(state, actions);
+        ImGui::Spacing();
+        draw_tile_detail_collapsible(state);
+        ImGui::Spacing();
+        draw_lod_settings_collapsible(state);
+        break;
+    case gs3d::app::UiMode::kTools:
+        // TIA-159 方向 B：用工具模式 — 测量 + 区域统计，上下排列
+        draw_measurement_panel(state);
+        ImGui::Spacing();
+        draw_region_stats_panel(state);
+        break;
+    case gs3d::app::UiMode::kCount:
+        break;
+    }
+}
+
+void UiRoot::draw_minimap_embedded(gs3d::app::AppState& state, float ui_scale)
+{
+    // TIA-159 方向 B：导航图嵌入视口右下角
+    // 用 GetWindowPos/GetWindowSize 算坐标，不硬编码像素
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    constexpr float kMinimapW = 130.0f;
+    constexpr float kMinimapH = 100.0f;
+    constexpr float kMargin = 12.0f;
+
+    const ImVec2 minimap_pos{
+        vp->Pos.x + vp->Size.x - kMinimapW - kMargin,
+        vp->Pos.y + vp->Size.y - kMinimapH - kMargin - 26.0f * ui_scale // 减去状态栏高度
+    };
+
+    ImGui::SetNextWindowPos(minimap_pos);
+    ImGui::SetNextWindowSize(ImVec2(kMinimapW, kMinimapH));
+    ImGui::SetNextWindowViewport(vp->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, to_u32(palette::kBorder, 150));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, to_u32(palette::kFrame, 255));
+
+    ImGui::Begin("##MinimapEmbedded", nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
+
+    auto& nm = gs3d::app::navigation_map_for_view(
+        state, state.active_viewport_index);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 img_min = ImGui::GetCursorScreenPos();
+    const ImVec2 img_max{img_min.x + kMinimapW, img_min.y + kMinimapH};
+
+    if (nm.valid && nm.texture_descriptor != VK_NULL_HANDLE) {
+        dl->AddImage(
+            static_cast<ImTextureID>(reinterpret_cast<ImU64>(nm.texture_descriptor)),
+            img_min, img_max);
+    } else {
+        dl->AddRectFilled(img_min, img_max, to_u32(palette::kFrame, 255));
+    }
+
+    // 视野框
+    if (nm.view_rect_valid) {
+        const float sx = kMinimapW / nm.tex_w;
+        const float sy = kMinimapH / nm.tex_h;
+        dl->AddRect(
+            {img_min.x + nm.view_rect_min_x * sx, img_min.y + nm.view_rect_min_y * sy},
+            {img_min.x + nm.view_rect_max_x * sx, img_min.y + nm.view_rect_max_y * sy},
+            to_u32(palette::kRed, 220), 0.0f, 0, 2.0f);
+    }
+
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
+}
+
+void UiRoot::draw_theme_selector(gs3d::app::AppState& state, float ui_scale)
+{
+    // TIA-159 方向 B：主题色块选择器（5 个色块横排）
+    // 用 InvisibleButton + AddRectFilled 自绘，当前主题用边框高亮
+    struct ThemePreview {
+        gs3d::ui::ThemeId id;
+        const char* label;
+        ImU32 bg_color;
+        bool dark;
+    };
+
+    // 从 ThemeTokens 获取每套主题的背景色
+    const ThemePreview themes[] = {
+        {gs3d::ui::ThemeId::kCarbonBlue,       "碳蓝·浅",  to_u32(gs3d::ui::theme_tokens(gs3d::ui::ThemeId::kCarbonBlue).bg, 255),       false},
+        {gs3d::ui::ThemeId::kCarbonBlueDark,   "碳蓝·深",  to_u32(gs3d::ui::theme_tokens(gs3d::ui::ThemeId::kCarbonBlueDark).bg, 255),   true},
+        {gs3d::ui::ThemeId::kDeepGraphite,     "石墨·深",  to_u32(gs3d::ui::theme_tokens(gs3d::ui::ThemeId::kDeepGraphite).bg, 255),     true},
+        {gs3d::ui::ThemeId::kInstrumentAmber,  "仪器·琥珀", to_u32(gs3d::ui::theme_tokens(gs3d::ui::ThemeId::kInstrumentAmber).bg, 255),  true},
+        {gs3d::ui::ThemeId::kHighContrastLight, "高对比·浅", to_u32(gs3d::ui::theme_tokens(gs3d::ui::ThemeId::kHighContrastLight).bg, 255), false},
+    };
+
+    draw_panel_section_label("主题");
+
+    const float avail_w = ImGui::GetContentRegionAvail().x;
+    const float block_size = (avail_w - 4.0f * 4.0f) / 5.0f; // 5 块，4 个间隙
+    const float block_h = 28.0f * ui_scale;
+
+    const gs3d::ui::ThemeId current = gs3d::ui::active_theme();
+
+    for (int i = 0; i < 5; ++i) {
+        if (i > 0) ImGui::SameLine(0.0f, 4.0f);
+
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 size(block_size, block_h);
+
+        // 色块背景
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(pos, {pos.x + size.x, pos.y + size.y}, themes[i].bg_color, 2.0f * ui_scale);
+
+        // 当前主题高亮边框
+        if (themes[i].id == current) {
+            dl->AddRect({pos.x - 1.0f, pos.y - 1.0f},
+                        {pos.x + size.x + 1.0f, pos.y + size.y + 1.0f},
+                        to_u32(palette::kAccent, 255), 2.0f * ui_scale, 0, 2.0f);
+        }
+
+        // Hover 效果
+        ImGui::InvisibleButton(themes[i].label, size);
+        if (ImGui::IsItemHovered()) {
+            dl->AddRect({pos.x - 1.0f, pos.y - 1.0f},
+                        {pos.x + size.x + 1.0f, pos.y + size.y + 1.0f},
+                        to_u32(palette::kTextDim, 120), 2.0f * ui_scale, 0, 1.0f);
+        }
+        if (ImGui::IsItemClicked()) {
+            gs3d::ui::apply_theme(themes[i].id, gs3d::gui::ui_fonts().ui_scale);
+        }
+
+        // 标签文字（色块下方）
+        const ImVec2 text_pos{pos.x, pos.y + size.y + 2.0f};
+        dl->AddText(gs3d::gui::ui_fonts().small, 10.0f * ui_scale,
+                    text_pos,
+                    to_u32(themes[i].dark ? palette::kTextDim : palette::kTextDim, 200),
+                    themes[i].label);
+    }
+
+    // 额外间距
+    ImGui::Dummy(ImVec2(0.0f, block_h + 14.0f * ui_scale));
+}
+
 void UiRoot::build_default_layout(const gs3d::app::AppState& state)
 {
     const std::uint32_t signature = visible_view_signature(state);
@@ -607,89 +829,49 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     );
     const float left_ratio = default_left_width / work_width;
 
-    // TIA-111 方向 B：可折叠侧边栏
-    const bool sidebar_visible = state.ui_chrome.sidebar_visible;
-    const bool has_left_panels = sidebar_visible &&
-        (state.panels.dataset ||
-        state.panels.tile_inspector ||
-        state.panels.lod_view ||
-        state.panels.navigation_map ||
-        state.panels.measurement ||
-        state.panels.region_stats);
-    const bool has_right_panels =
-        state.panels.render_settings ||
-        state.panels.performance;
-    const float right_split_width = std::max(
-        1.0f,
-        work_width - (has_left_panels ? default_left_width : 0.0f)
+    // TIA-159 方向 B：三栏布局 — 左侧模式标签(48px) + 右侧面板(300px) + 中间视口
+    constexpr float kModeTabsWidth = 48.0f * 1.25f; // 60px at 1.25 scale
+    constexpr float kRightPanelWidth = 300.0f * 1.25f; // 375px at 1.25 scale
+
+    const float mode_tabs_ratio = kModeTabsWidth / work_width;
+    const float remaining_after_tabs = std::max(1.0f, work_width - kModeTabsWidth);
+    const float right_panel_ratio = std::min(
+        kRightPanelWidth / remaining_after_tabs,
+        0.5f // 最多占剩余空间的一半
     );
-    const float right_ratio = default_right_width / right_split_width;
 
     ImGuiID center_id = dockspace_id;
-        ImGuiID left_id = 0;
 
-    ImGuiID right_id = 0;
-    if (has_left_panels) {
-        left_id = ImGui::DockBuilderSplitNode(
-            center_id,
-            ImGuiDir_Left,
-            left_ratio,
-            nullptr,
-            &center_id
-        );
-    }
-    if (has_right_panels) {
-        right_id = ImGui::DockBuilderSplitNode(
-            center_id,
-            ImGuiDir_Right,
-            right_ratio,
-            nullptr,
-            &center_id
-        );
+    // 左侧：模式标签栏（不 dock 窗口，只占位）
+    const ImGuiID mode_tabs_id = ImGui::DockBuilderSplitNode(
+        center_id,
+        ImGuiDir_Left,
+        mode_tabs_ratio,
+        nullptr,
+        &center_id
+    );
+    if (ImGuiDockNode* mode_tabs_node = ImGui::DockBuilderGetNode(mode_tabs_id)) {
+        mode_tabs_node->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar |
+            ImGuiDockNodeFlags_NoWindowMenuButton;
     }
 
-    // 左侧面板上下切分：上半放项目/瓦片/LOD，下半放导航图。
-    // 参照用户手动拖出的布局 (config/imgui_layout.ini)。
-    ImGuiID left_top_id = left_id;
-    ImGuiID left_bottom_id = 0;
-    if (left_id != 0) {
-        left_bottom_id = ImGui::DockBuilderSplitNode(
-            left_id,
-            ImGuiDir_Down,
-            0.18f,               // 方案 A：底部导航图约占工作区 18%
-            nullptr,
-            &left_top_id
-        );
+    // 右侧：面板内容区
+    const ImGuiID right_id = ImGui::DockBuilderSplitNode(
+        center_id,
+        ImGuiDir_Right,
+        right_panel_ratio,
+        nullptr,
+        &center_id
+    );
+    if (ImGuiDockNode* right_node = ImGui::DockBuilderGetNode(right_id)) {
+        right_node->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar |
+            ImGuiDockNodeFlags_NoWindowMenuButton;
+    }
 
-        if (state.panels.region_stats) {
-            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, left_top_id);
-        }
-        if (state.panels.measurement) {
-            ImGui::DockBuilderDockWindow(kMeasurementWindowName, left_top_id);
-        }
-        if (state.panels.lod_view) {
-            ImGui::DockBuilderDockWindow(kLodViewWindowName, left_top_id);
-        }
-        if (state.panels.tile_inspector) {
-            ImGui::DockBuilderDockWindow(kTileInspectorWindowName, left_top_id);
-        }
-        if (state.panels.dataset) {
-            ImGui::DockBuilderDockWindow(kDatasetWindowName, left_top_id);
-        }
-    }
-    if (left_bottom_id != 0) {
-        ImGui::DockBuilderDockWindow(kNavigationMapWindowName, left_bottom_id);
-    }
-    if (right_id != 0) {
-        // 属性 最后 dock：DockBuilder 把最后 dock 的窗口设为选中标签，
-        // 保证默认布局下右侧首先看到的是 属性 而不是 性能/日志。
-        if (state.panels.performance) {
-            ImGui::DockBuilderDockWindow(kPerformanceWindowName, right_id);
-        }
-        if (state.panels.render_settings) {
-            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
-        }
-    }
+    // 右侧面板 dock 到一个占位窗口
+    ImGui::DockBuilderDockWindow("##ModePanel", right_id);
 
     for (const auto& view : state.render_views) {
         if (view.visible &&
@@ -797,23 +979,53 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
 
     if (render_workspace) {
 
-        const auto main_viewports = main_workspace_viewports(state);
-        const int main_active_view = active_view_for_indices(
-            state,
-            main_viewports,
-            main_viewports.empty() ? 0 : main_viewports.front()
-        );
-        const std::vector<int> main_target_viewports{main_active_view};
-        draw_render_settings(
-            state,
-            actions,
-            nullptr,
-            nullptr,
-            &gs3d::app::render_settings_for_view(state, main_active_view),
-            &main_target_viewports
-        );
-        draw_navigation_map(state);
+        // TIA-159 方向 B：绘制模式标签栏（左侧边缘覆盖层）
+        {
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            const float mode_tabs_w = 48.0f * ui_scale;
+            ImGui::SetNextWindowPos(ImVec2(vp->Pos.x, vp->Pos.y + 40.0f * ui_scale));
+            ImGui::SetNextWindowSize(ImVec2(mode_tabs_w, vp->Size.y - 40.0f * ui_scale - 26.0f * ui_scale));
+            ImGui::SetNextWindowViewport(vp->ID);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2.0f * ui_scale, 4.0f * ui_scale));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, to_u32(palette::kMenuBg, 255));
+            ImGui::Begin("##ModeTabs", nullptr,
+                ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
+                ImGuiWindowFlags_NoBringToFrontOnFocus);
+            draw_mode_tabs(state, ui_scale);
+            ImGui::End();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar(3);
+        }
 
+        // TIA-159 方向 B：绘制右侧面板内容（覆盖层定位到右侧 dock 区域）
+        {
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            constexpr float kModeTabsW = 48.0f * 1.25f;
+            constexpr float kRightPanelW = 300.0f * 1.25f;
+            const float panel_x = vp->Pos.x + vp->Size.x - kRightPanelW;
+            ImGui::SetNextWindowPos(ImVec2(panel_x, vp->Pos.y + 40.0f * ui_scale));
+            ImGui::SetNextWindowSize(ImVec2(kRightPanelW, vp->Size.y - 40.0f * ui_scale - 26.0f * ui_scale));
+            ImGui::SetNextWindowViewport(vp->ID);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * ui_scale, 4.0f * ui_scale));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, to_u32(palette::kSurface, 255));
+            ImGui::Begin("##ModePanel", nullptr,
+                ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
+                ImGuiWindowFlags_NoBringToFrontOnFocus);
+            draw_mode_panel_content(state, actions, ui_scale);
+            ImGui::End();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar(3);
+        }
+
+        // 视口窗口（中间区域）
         for (auto& view : state.render_views) {
             if (view.visible &&
                 !view_is_owned_by_workspace(state, view.viewport_index)) {
@@ -836,12 +1048,16 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
         prune_workspace_windows(state);
 
-        draw_auxiliary_panels(state, actions);
+        // TIA-159 方向 B：面板内容已由 draw_mode_panel_content 绘制
+        // draw_auxiliary_panels 和 draw_dataset_panel 不再单独调用
         if (focus_workbench_dataset_) {
             ImGui::SetNextWindowFocus();
             focus_workbench_dataset_ = false;
         }
-        draw_dataset_panel(state);
+        // TIA-159 方向 B：看数据模式时嵌入导航图到视口右下角
+        if (state.ui_chrome.ui_mode == gs3d::app::UiMode::kData) {
+            draw_minimap_embedded(state, ui_scale);
+        }
         draw_screenshot_notice(state, ui_scale);
         draw_shortcut_overlay(state, ui_scale);
         draw_panel_command_palette(state, ui_scale);

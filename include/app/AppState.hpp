@@ -169,11 +169,23 @@ struct PanelVisibilityState {
     bool region_stats = true;
 };
 
+// TIA-159 方向 B：用户任务模式
+enum class UiMode : int {
+    kData = 0,       // 看数据（项目面板 + 导航图嵌入视口）
+    kAppearance = 1, // 调外观（渲染设置 + 主题切换）
+    kPerformance = 2,// 查性能（性能 + 瓦片 + 细节层级）
+    kTools = 3,      // 用工具（测量 + 区域统计）
+    kCount,
+};
+
+inline constexpr int kUiModeCount = static_cast<int>(UiMode::kCount);
+
 // TIA-92: 快捷键总览 overlay 与 Ctrl+P 面板命令面板的跨帧 UI 状态。
 struct UiChromeState {
     bool shortcut_overlay_open = false;
     bool panel_palette_open = false;
     bool sidebar_visible = true;  // TIA-111 方向 B：可折叠侧边栏
+    UiMode ui_mode = UiMode::kData;  // TIA-159 方向 B：当前任务模式
     std::array<char, 64> panel_palette_query{};
 };
 

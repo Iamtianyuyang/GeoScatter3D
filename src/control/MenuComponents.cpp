@@ -1,6 +1,8 @@
 #include "control/MenuComponents.hpp"
 
 #include "ui/PanelRegistry.hpp"
+// 主题总数与 ui/Theme.hpp::kThemeCount 保持同步
+constexpr int kThemeCount = 5;
 
 #include <stdexcept>
 #include <string>
@@ -130,21 +132,21 @@ public:
             {"menu.view.theme", "主题切换", "切换 UI 主题",
              ComponentType::kMenu, false},
             {{"click", "切换到下一个主题", false},
-             {"set_value", "设置主题 (value: 主题索引 0-3)", true},
+             {"set_value", "设置主题 (value: 主题索引 0-4)", true},
              {"get_state", "获取当前主题", false}}) {}
 protected:
     void do_click(const nlohmann::json&) override {
         // 循环切换：0→1→2→3→0
         app_state_.control_actions.theme_change_requested = true;
         app_state_.control_actions.theme_id =
-            (app_state_.control_actions.theme_id + 1) % 4;
+            (app_state_.control_actions.theme_id + 1) % kThemeCount;
     }
 
     nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
         if (command == "set_value") {
             const int theme_id = params.value("value", 0);
             app_state_.control_actions.theme_change_requested = true;
-            app_state_.control_actions.theme_id = theme_id % 4;
+            app_state_.control_actions.theme_id = theme_id % kThemeCount;
             return {{"id", info().id}, {"theme_id", app_state_.control_actions.theme_id}};
         }
         return MenuComponentBase::execute(command, params);

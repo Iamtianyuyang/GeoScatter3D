@@ -183,13 +183,41 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
     }
 
     ImGui::SameLine(0.0f, 18.0f*ui_scale);
+
+    // TIA-159 方向 B：工具栏按模式分组，当前模式组高亮
+    const gs3d::app::UiMode cur_mode = state.ui_chrome.ui_mode;
+    auto mode_group_bg = [&](gs3d::app::UiMode mode) {
+        if (cur_mode == mode) {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, to_u32(palette::kAccent, 18));
+            ImGui::BeginChild("##TbGroup", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        }
+    };
+    auto mode_group_end = [&](gs3d::app::UiMode mode) {
+        if (cur_mode == mode) {
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        }
+        ImGui::SameLine(0.0f, 6.0f * ui_scale);
+    };
+
+    // 数据组：打开、截图
+    mode_group_bg(gs3d::app::UiMode::kData);
     bool can_add = has_hidden_view(state);
     if (icon_button("##TO", icons::kFolderOpen, "打开 (Ctrl+O)")) actions.open_requested = true;
     ImGui::SameLine();
     if (icon_button("##TS", icons::kPhotoCamera, "截图")) actions.screenshot_requested = true;
-    ImGui::SameLine();
+    mode_group_end(gs3d::app::UiMode::kData);
+
+    // 视图组：新建视图、联动相机
+    mode_group_bg(gs3d::app::UiMode::kAppearance);
     if (icon_button("##TA", icons::kAdd, "新建视图 (Ctrl+N)", false, can_add)) show_first_hidden_view(state);
     ImGui::SameLine();
+    if (icon_button("##TL", icons::kLink, "联动相机", any_camera_linked(state)))
+        toggle_all_camera_link(state);
+    mode_group_end(gs3d::app::UiMode::kAppearance);
+
+    // 工具组：测量、面板、侧边栏
+    mode_group_bg(gs3d::app::UiMode::kTools);
     auto& meas = gs3d::app::measurement_for_view(state, state.active_viewport_index);
     bool measuring = meas.measure_mode_active();
     if (icon_button("##TM", icons::kStraighten, "测量 (M)", measuring)) {
@@ -197,18 +225,15 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
         if (!measuring) meas.clear_pending();
     }
     ImGui::SameLine();
-    if (icon_button("##TL", icons::kLink, "联动相机", any_camera_linked(state)))
-        toggle_all_camera_link(state);
-    ImGui::SameLine();
     if (icon_button("##TP", icons::kApps, "面板 (Ctrl+P)")) {
         state.ui_chrome.panel_palette_open = true;
         state.ui_chrome.panel_palette_query[0] = '\0';
     }
     ImGui::SameLine();
-    // TIA-111 方向 B：可折叠侧边栏切换按钮
     if (icon_button("##SB", icons::kMenu, "切换侧边栏", state.ui_chrome.sidebar_visible)) {
         state.ui_chrome.sidebar_visible = !state.ui_chrome.sidebar_visible;
     }
+    mode_group_end(gs3d::app::UiMode::kTools);
     pop_menu_style();
     if (medium_font()) ImGui::PopFont();
 
