@@ -53,7 +53,7 @@ void push_menu_style(float ui_scale) {
     ImGui::PushStyleColor(ImGuiCol_Separator, to_u32(palette::kBorder, 110));
     ImGui::PushStyleColor(ImGuiCol_CheckMark, to_u32(palette::kAccent, 255));
 }
-void pop_menu_style() { ImGui::PopStyleColor(10); ImGui::PopStyleVar(6); }
+void pop_menu_style() { ImGui::PopStyleColor(9); ImGui::PopStyleVar(6); }
 
 void menu_section(const char* label) {
     if (small_font()) ImGui::PushFont(small_font());

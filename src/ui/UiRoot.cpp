@@ -766,6 +766,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImVec2(menu_rect.Min.x, menu_rect.Max.y - 1.0f),
                 ImVec2(menu_rect.Max.x, menu_rect.Max.y - 1.0f),
                 to_u32(palette::kBorder, 110), 1.0f);
+            ImGui::EndMenuBar();
         }
         if (chrome_result.theme_change_requested) {
             requested_theme = chrome_result.requested_theme;
