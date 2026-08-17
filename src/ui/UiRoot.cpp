@@ -625,6 +625,8 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
         break;
     case gs3d::app::UiMode::kAppearance:
         // 调外观：主题色块 + 渲染设置
+        // 注意：draw_render_settings 会自己 Begin/End 一个窗口，
+        // 传 ##ModePanel 让它在右侧面板区域内绘制
         draw_theme_selector(state, ui_scale);
         ImGui::Spacing();
         {
@@ -633,7 +635,7 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
                 state, main_viewports,
                 main_viewports.empty() ? 0 : main_viewports.front());
             const std::vector<int> targets{main_active_view};
-            draw_render_settings(state, actions, nullptr, nullptr,
+            draw_render_settings(state, actions, "##ModePanel", nullptr,
                 &gs3d::app::render_settings_for_view(state, main_active_view),
                 &targets);
         }
@@ -993,8 +995,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::Begin("##ModeTabs", nullptr,
                 ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
-                ImGuiWindowFlags_NoBringToFrontOnFocus);
+                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus);
             draw_mode_tabs(state, ui_scale);
             ImGui::End();
             ImGui::PopStyleColor();
@@ -1017,8 +1018,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::Begin("##ModePanel", nullptr,
                 ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
-                ImGuiWindowFlags_NoBringToFrontOnFocus);
+                ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus);
             draw_mode_panel_content(state, actions, ui_scale);
             ImGui::End();
             ImGui::PopStyleColor();
