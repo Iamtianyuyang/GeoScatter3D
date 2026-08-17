@@ -231,9 +231,7 @@ void draw_viewport_window(
         ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse;
     // TIA-159 方向 B：方向 B 模式下隐藏视口标题栏和关闭按钮
-    if (state.ui_chrome.ui_mode != gs3d::app::UiMode::kData) {
-        flags |= ImGuiWindowFlags_NoTitleBar;
-    }
+    flags |= ImGuiWindowFlags_NoTitleBar;
 
     if (view.force_undock_next_frame) {
         const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
@@ -624,18 +622,77 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
         draw_dataset_content(state);
         break;
     case gs3d::app::UiMode::kAppearance:
-        // 调外观：主题色块 + 渲染设置
+        // 调外观：主题色块 + 完整渲染设置
         draw_theme_selector(state, ui_scale);
         ImGui::Spacing();
-        draw_panel_section_label("渲染设置");
         {
-            const auto& rs = gs3d::app::render_settings_for_view(
+            auto& rs = gs3d::app::render_settings_for_view(
                 state, state.active_viewport_index);
-            ImGui::Text("点大小  %.1f", rs.point_size);
-            ImGui::Text("不透明度  %.0f%%", rs.opacity * 100.0f);
-            ImGui::Text("色标索引  %d", rs.colormap_index);
+            draw_panel_section_label("着色");
+            // 颜色属性
+            ImGui::Text("颜色属性");
+            if (!rs.color_by_options.empty()) {
+                int ci = rs.color_attr_index;
+                if (ci < 0 || ci >= static_cast<int>(rs.color_by_options.size())) ci = 0;
+                if (ImGui::BeginCombo("##ColorBy", rs.color_by_options[ci].c_str())) {
+                    for (int i = 0; i < static_cast<int>(rs.color_by_options.size()); ++i) {
+                        bool selected = (i == ci);
+                        if (ImGui::Selectable(rs.color_by_options[i].c_str(), selected))
+                            rs.color_attr_index = i;
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            // 高度来源
+            ImGui::Text("高度来源");
+            if (!rs.height_by_options.empty()) {
+                int hi = rs.height_attr_index;
+                if (hi < 0 || hi >= static_cast<int>(rs.height_by_options.size())) hi = 0;
+                if (ImGui::BeginCombo("##HeightSource", rs.height_by_options[hi].c_str())) {
+                    for (int i = 0; i < static_cast<int>(rs.height_by_options.size()); ++i) {
+                        bool selected = (i == hi);
+                        if (ImGui::Selectable(rs.height_by_options[i].c_str(), selected))
+                            rs.height_attr_index = i;
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            // 点形状
+            ImGui::Text("点形状");
+            const char* shape_names[] = {"方形", "圆形", "菱形", "三角形"};
+            int si = rs.point_shape;
+            if (si < 0 || si > 3) si = 0;
+            if (ImGui::BeginCombo("##PointShape", shape_names[si])) {
+                for (int i = 0; i < 4; ++i) {
+                    bool selected = (i == si);
+                    if (ImGui::Selectable(shape_names[i], selected))
+                        rs.point_shape = i;
+                }
+                ImGui::EndCombo();
+            }
             ImGui::Spacing();
-            ImGui::TextDisabled("详细设置请通过菜单→窗口→属性打开");
+            draw_panel_section_label("大小与透明");
+            // 点大小
+            ImGui::Text("点大小");
+            ImGui::SliderFloat("##PointSize", &rs.point_size, 0.5f, 5.0f, "%.1f");
+            // 不透明度
+            ImGui::Text("不透明度");
+            ImGui::SliderFloat("##Opacity", &rs.opacity, 0.0f, 1.0f, "%.0f%%");
+            ImGui::Spacing();
+            draw_panel_section_label("色调映射");
+            // 色标
+            ImGui::Text("色标");
+            const char* cmap_names[] = {"Rainbow", "Viridis", "Plasma", "Inferno", "Magma", "Cividis", "Turbo", "Jet", "Rainbow256"};
+            int ci2 = rs.colormap_index;
+            if (ci2 < 0 || ci2 > 8) ci2 = 0;
+            if (ImGui::BeginCombo("##Colormap", cmap_names[ci2])) {
+                for (int i = 0; i < 9; ++i) {
+                    bool selected = (i == ci2);
+                    if (ImGui::Selectable(cmap_names[i], selected))
+                        rs.colormap_index = i;
+                }
+                ImGui::EndCombo();
+            }
         }
         break;
     case gs3d::app::UiMode::kPerformance:
@@ -1091,10 +1148,8 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::SetNextWindowFocus();
             focus_workbench_dataset_ = false;
         }
-        // TIA-159 方向 B：看数据模式时嵌入导航图到视口右下角
-        if (state.ui_chrome.ui_mode == gs3d::app::UiMode::kData) {
-            draw_minimap_embedded(state, ui_scale);
-        }
+        // TIA-159 方向 B：所有模式下嵌入导航图到视口右下角
+        draw_minimap_embedded(state, ui_scale);
         draw_screenshot_notice(state, ui_scale);
         draw_shortcut_overlay(state, ui_scale);
         draw_panel_command_palette(state, ui_scale);
