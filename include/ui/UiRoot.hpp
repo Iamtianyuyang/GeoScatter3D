@@ -185,6 +185,7 @@ private:
     void draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiActions& actions, float ui_scale);
     void draw_minimap_embedded(gs3d::app::AppState& state, float ui_scale);
     void draw_theme_selector(gs3d::app::AppState& state, float ui_scale);
+    void draw_dataset_content(gs3d::app::AppState& state);
 
     DockLayoutPersistState dock_layout_;
     // Last work size (px) used when building the default dock layout. A large

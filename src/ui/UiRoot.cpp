@@ -616,8 +616,8 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
     // TIA-159 方向 B：根据当前模式渲染对应面板内容
     switch (state.ui_chrome.ui_mode) {
     case gs3d::app::UiMode::kData:
-        // 看数据：项目面板内容
-        draw_dataset_panel(state);
+        // 看数据：直接绘制数据集信息（不依赖 dock 窗口）
+        draw_dataset_content(state);
         break;
     case gs3d::app::UiMode::kAppearance:
         // 调外观：主题色块 + 渲染设置
@@ -727,49 +727,71 @@ void UiRoot::draw_theme_selector(gs3d::app::AppState& state, float ui_scale)
     draw_panel_section_label("主题");
 
     const float avail_w = ImGui::GetContentRegionAvail().x;
-    const float block_size = (avail_w - 4.0f * 4.0f) / 5.0f; // 5 块，4 个间隙
-    const float block_h = 28.0f * ui_scale;
+    const float block_w = (avail_w - 8.0f) / 2.0f; // 2 列
+    const float block_h = 40.0f * ui_scale;
+    const float label_h = 14.0f * ui_scale;
 
     const gs3d::ui::ThemeId current = gs3d::ui::active_theme();
 
-    for (int i = 0; i < 5; ++i) {
-        if (i > 0) ImGui::SameLine(0.0f, 4.0f);
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 2; ++col) {
+            int i = row * 2 + col;
+            if (i >= 5) break;
+            if (col > 0) ImGui::SameLine(0.0f, 8.0f);
 
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const ImVec2 size(block_size, block_h);
+            const ImVec2 pos = ImGui::GetCursorScreenPos();
+            const ImVec2 size(block_w, block_h);
 
-        // 色块背景
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(pos, {pos.x + size.x, pos.y + size.y}, themes[i].bg_color, 2.0f * ui_scale);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            dl->AddRectFilled(pos, {pos.x + size.x, pos.y + size.y}, themes[i].bg_color, 3.0f * ui_scale);
 
-        // 当前主题高亮边框
-        if (themes[i].id == current) {
-            dl->AddRect({pos.x - 1.0f, pos.y - 1.0f},
-                        {pos.x + size.x + 1.0f, pos.y + size.y + 1.0f},
-                        to_u32(palette::kAccent, 255), 2.0f * ui_scale, 0, 2.0f);
+            if (themes[i].id == current) {
+                dl->AddRect({pos.x - 2.0f, pos.y - 2.0f},
+                            {pos.x + size.x + 2.0f, pos.y + size.y + 2.0f},
+                            to_u32(palette::kAccent, 255), 3.0f * ui_scale, 0, 2.0f);
+            }
+
+            ImGui::InvisibleButton(themes[i].label, size);
+            if (ImGui::IsItemHovered()) {
+                dl->AddRect({pos.x - 1.0f, pos.y - 1.0f},
+                            {pos.x + size.x + 1.0f, pos.y + size.y + 1.0f},
+                            to_u32(palette::kTextDim, 150), 3.0f * ui_scale, 0, 1.0f);
+            }
+            if (ImGui::IsItemClicked()) {
+                gs3d::ui::apply_theme(themes[i].id, gs3d::gui::ui_fonts().ui_scale);
+            }
+
+            // 标签在色块下方完整显示
+            const ImVec2 text_pos{pos.x, pos.y + size.y + 3.0f};
+            dl->AddText(gs3d::gui::ui_fonts().small, 11.0f * ui_scale,
+                        text_pos, to_u32(palette::kText, 220), themes[i].label);
         }
-
-        // Hover 效果
-        ImGui::InvisibleButton(themes[i].label, size);
-        if (ImGui::IsItemHovered()) {
-            dl->AddRect({pos.x - 1.0f, pos.y - 1.0f},
-                        {pos.x + size.x + 1.0f, pos.y + size.y + 1.0f},
-                        to_u32(palette::kTextDim, 120), 2.0f * ui_scale, 0, 1.0f);
-        }
-        if (ImGui::IsItemClicked()) {
-            gs3d::ui::apply_theme(themes[i].id, gs3d::gui::ui_fonts().ui_scale);
-        }
-
-        // 标签文字（色块下方）
-        const ImVec2 text_pos{pos.x, pos.y + size.y + 2.0f};
-        dl->AddText(gs3d::gui::ui_fonts().small, 10.0f * ui_scale,
-                    text_pos,
-                    to_u32(themes[i].dark ? palette::kTextDim : palette::kTextDim, 200),
-                    themes[i].label);
+        ImGui::Dummy(ImVec2(0.0f, block_h + label_h + 8.0f));
     }
+}
 
-    // 额外间距
-    ImGui::Dummy(ImVec2(0.0f, block_h + 14.0f * ui_scale));
+void UiRoot::draw_dataset_content(gs3d::app::AppState& state)
+{
+    // TIA-159 方向 B：数据模式下直接绘制数据集信息
+    const auto& ds = state.dataset;
+    draw_panel_section_label("数据集");
+    ImGui::Text("名称  %s", ds.active_dataset.c_str());
+    ImGui::Text("格式  %s", ds.format.c_str());
+    ImGui::Text("点数  %llu", static_cast<unsigned long long>(ds.point_count));
+    ImGui::Text("文件  %s", ds.file_size.c_str());
+    ImGui::Spacing();
+    draw_panel_section_label("空间范围");
+    ImGui::Text("X  %s", ds.bounding_box.c_str());
+    ImGui::Spacing();
+    draw_panel_section_label("属性列表");
+    for (const auto& attr : ds.dataset_tree) {
+        ImGui::Text("  %s", attr.c_str());
+    }
+    ImGui::Spacing();
+    draw_panel_section_label("快速操作");
+    if (widgets::Button("打开文件")) { /* 打开文件对话框 */ }
+    ImGui::SameLine();
+    if (widgets::Button("截图")) { /* 截图 */ }
 }
 
 void UiRoot::build_default_layout(const gs3d::app::AppState& state)
