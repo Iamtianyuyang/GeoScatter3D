@@ -256,7 +256,8 @@ void draw_viewport_window(
         );
     }
     const bool content_visible =
-        ImGui::Begin(window_name.c_str(), &view.visible, flags);
+        // TIA-159 方向 B：方向 B 模式下隐藏标题栏和关闭按钮
+        ImGui::Begin(window_name.c_str(), nullptr, flags);
     view.force_undock_next_frame = false;
     if (!content_visible) {
         ImGui::End();
@@ -1134,7 +1135,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::PushStyleColor(ImGuiCol_WindowBg, to_u32(palette::kSurface, 255));
             ImGui::Begin("##ModePanel", nullptr,
                 ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus);
             draw_mode_panel_content(state, actions, ui_scale);
             ImGui::End();
