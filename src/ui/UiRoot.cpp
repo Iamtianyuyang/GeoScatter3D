@@ -564,47 +564,43 @@ void draw_panel_section_label(const char* label)
 
 void UiRoot::draw_mode_tabs(gs3d::app::AppState& state, float ui_scale)
 {
-    // TIA-159 方向 B：左侧模式标签栏（48px 宽）
-    constexpr float kModeTabWidth = 48.0f * 1.25f; // 60px at 1.25 scale
-    constexpr float kModeTabHeight = 60.0f;
+    // TIA-159 方向 B：左侧模式标签栏
+    constexpr float kBtnH = 56.0f;
 
     struct ModeInfo {
         gs3d::app::UiMode id;
         const char* label;
-        const char* icon;
     };
     static constexpr ModeInfo kModes[] = {
-        {gs3d::app::UiMode::kData,        "数据", "\xE2\x80\xA2"},  // bullet as placeholder
-        {gs3d::app::UiMode::kAppearance,  "外观", "\xE2\x9C\x88"},  // checkmark placeholder
-        {gs3d::app::UiMode::kPerformance, "性能", "\xE2\x96\xA0"},  // square placeholder
-        {gs3d::app::UiMode::kTools,       "工具", "\xE2\x9C\x8D"},  // pencil placeholder
+        {gs3d::app::UiMode::kData,        "数据"},
+        {gs3d::app::UiMode::kAppearance,  "外观"},
+        {gs3d::app::UiMode::kPerformance, "性能"},
+        {gs3d::app::UiMode::kTools,       "工具"},
     };
 
     ImGui::SetCursorScreenPos(ImGui::GetCursorScreenPos());
-    ImGui::BeginChild("##ModeTabs", ImVec2(kModeTabWidth, 0.0f), false,
+    ImGui::BeginChild("##ModeTabs", ImVec2(0.0f, 0.0f), false,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
         ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground);
 
     const float avail_w = ImGui::GetContentRegionAvail().x;
-    const float btn_size = avail_w - 4.0f * ui_scale;
 
     for (const auto& m : kModes) {
         const bool is_active = (state.ui_chrome.ui_mode == m.id);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f * ui_scale);
         if (is_active) {
-            ImGui::PushStyleColor(ImGuiCol_Button, to_u32(palette::kAccent, 30));
+            ImGui::PushStyleColor(ImGuiCol_Button, to_u32(palette::kAccent, 40));
             ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kAccent, 255));
         } else {
             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32_DISABLE);
             ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 200));
         }
 
-        // 简单占位：用文字按钮代替图标
         char label_buf[32];
         std::snprintf(label_buf, sizeof(label_buf), "%s##mode_%d", m.label, static_cast<int>(m.id));
-        if (ImGui::Button(label_buf, ImVec2(btn_size, kModeTabHeight * ui_scale))) {
+        if (ImGui::Button(label_buf, ImVec2(avail_w, kBtnH * ui_scale))) {
             state.ui_chrome.ui_mode = m.id;
-            dock_layout_.initialized = false; // 触发布局重建
+            dock_layout_.initialized = false;
         }
 
         ImGui::PopStyleColor(2);
@@ -625,20 +621,10 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
         break;
     case gs3d::app::UiMode::kAppearance:
         // 调外观：主题色块 + 渲染设置
-        // 注意：draw_render_settings 会自己 Begin/End 一个窗口，
-        // 传 ##ModePanel 让它在右侧面板区域内绘制
+        // 注意：draw_render_settings 会创建自己的 docked 窗口，
+        // 在 Direction B 模式下我们只显示主题选择器，
+        // 渲染设置保留在旧 dock 窗口中（用户可通过菜单打开）
         draw_theme_selector(state, ui_scale);
-        ImGui::Spacing();
-        {
-            const auto main_viewports = main_workspace_viewports(state);
-            const int main_active_view = active_view_for_indices(
-                state, main_viewports,
-                main_viewports.empty() ? 0 : main_viewports.front());
-            const std::vector<int> targets{main_active_view};
-            draw_render_settings(state, actions, "##ModePanel", nullptr,
-                &gs3d::app::render_settings_for_view(state, main_active_view),
-                &targets);
-        }
         break;
     case gs3d::app::UiMode::kPerformance:
         // TIA-159 方向 B：查性能模式 — 性能面板 + 瓦片详情 + LOD 设置
@@ -1002,11 +988,36 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::PopStyleVar(3);
         }
 
-        // TIA-159 方向 B：绘制右侧面板内容（覆盖层定位到右侧 dock 区域）
+        // 视口窗口（中间区域）
+        for (auto& view : state.render_views) {
+            if (view.visible &&
+                !view_is_owned_by_workspace(state, view.viewport_index)) {
+                // TIA-159 方向 B：方向 B 模式下不显示旧的 workbench 工具栏
+                draw_viewport_window(state, view, actions, 0, false);
+            } else {
+                if (!view.visible) {
+                    view.detached = false;
+                }
+                if (!view.visible ||
+                    !view_is_owned_by_workspace(
+                        state,
+                        view.viewport_index
+                    )) {
+                    view.render_requested = false;
+                }
+            }
+        }
+        // TIA-159 方向 B：方向 B 模式下不绘制旧的 workspace 窗口
+        // （旧 workspace 工具栏/面板与新的模式标签栏/右侧面板重叠）
+        // for (auto& workspace : state.workspace_windows) {
+        //     draw_workspace_window(state, actions, workspace, ui_scale);
+        // }
+        // prune_workspace_windows(state);
+
+        // TIA-159 方向 B：绘制右侧面板覆盖层（在 viewport 之后，确保在最上层）
         {
             const ImGuiViewport* vp = ImGui::GetMainViewport();
-            constexpr float kModeTabsW = 48.0f * 1.25f;
-            constexpr float kRightPanelW = 300.0f * 1.25f;
+            constexpr float kRightPanelW = 375.0f;
             const float panel_x = vp->Pos.x + vp->Size.x - kRightPanelW;
             ImGui::SetNextWindowPos(ImVec2(panel_x, vp->Pos.y + 40.0f * ui_scale));
             ImGui::SetNextWindowSize(ImVec2(kRightPanelW, vp->Size.y - 40.0f * ui_scale - 26.0f * ui_scale));
@@ -1024,29 +1035,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             ImGui::PopStyleColor();
             ImGui::PopStyleVar(3);
         }
-
-        // 视口窗口（中间区域）
-        for (auto& view : state.render_views) {
-            if (view.visible &&
-                !view_is_owned_by_workspace(state, view.viewport_index)) {
-                draw_viewport_window(state, view, actions, 0, true);
-            } else {
-                if (!view.visible) {
-                    view.detached = false;
-                }
-                if (!view.visible ||
-                    !view_is_owned_by_workspace(
-                        state,
-                        view.viewport_index
-                    )) {
-                    view.render_requested = false;
-                }
-            }
-        }
-        for (auto& workspace : state.workspace_windows) {
-            draw_workspace_window(state, actions, workspace, ui_scale);
-        }
-        prune_workspace_windows(state);
 
         // TIA-159 方向 B：面板内容已由 draw_mode_panel_content 绘制
         // draw_auxiliary_panels 和 draw_dataset_panel 不再单独调用
