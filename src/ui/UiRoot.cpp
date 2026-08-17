@@ -227,9 +227,13 @@ void draw_viewport_window(
     view.render_requested = false;
     const auto window_name =
         render_view_window_name(view.viewport_index);
-    const ImGuiWindowFlags flags =
+    ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse;
+    // TIA-159 方向 B：方向 B 模式下隐藏视口标题栏和关闭按钮
+    if (state.ui_chrome.ui_mode != gs3d::app::UiMode::kData) {
+        flags |= ImGuiWindowFlags_NoTitleBar;
+    }
 
     if (view.force_undock_next_frame) {
         const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
@@ -621,10 +625,18 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
         break;
     case gs3d::app::UiMode::kAppearance:
         // 调外观：主题色块 + 渲染设置
-        // 注意：draw_render_settings 会创建自己的 docked 窗口，
-        // 在 Direction B 模式下我们只显示主题选择器，
-        // 渲染设置保留在旧 dock 窗口中（用户可通过菜单打开）
         draw_theme_selector(state, ui_scale);
+        ImGui::Spacing();
+        draw_panel_section_label("渲染设置");
+        {
+            const auto& rs = gs3d::app::render_settings_for_view(
+                state, state.active_viewport_index);
+            ImGui::Text("点大小  %.1f", rs.point_size);
+            ImGui::Text("不透明度  %.0f%%", rs.opacity * 100.0f);
+            ImGui::Text("色标索引  %d", rs.colormap_index);
+            ImGui::Spacing();
+            ImGui::TextDisabled("详细设置请通过菜单→窗口→属性打开");
+        }
         break;
     case gs3d::app::UiMode::kPerformance:
         // TIA-159 方向 B：查性能模式 — 性能面板 + 瓦片详情 + LOD 设置
@@ -635,10 +647,26 @@ void UiRoot::draw_mode_panel_content(gs3d::app::AppState& state, gs3d::app::UiAc
         draw_lod_settings_collapsible(state);
         break;
     case gs3d::app::UiMode::kTools:
-        // TIA-159 方向 B：用工具模式 — 测量 + 区域统计，上下排列
-        draw_measurement_panel(state);
+        // TIA-159 方向 B：用工具模式 — 测量 + 区域统计
+        // 注意：draw_measurement_panel 和 draw_region_stats_panel 会创建自己的 docked 窗口，
+        // 在 Direction B 模式下只显示简化的工具信息
+        draw_panel_section_label("测量");
+        ImGui::Text("在测量模式下 Shift+左键框选区域");
         ImGui::Spacing();
-        draw_region_stats_panel(state);
+        ImGui::Text("距离显示:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("三维", false)) {}
+        ImGui::SameLine();
+        if (ImGui::RadioButton("平面", true)) {}
+        ImGui::SameLine();
+        if (ImGui::RadioButton("都显示", false)) {}
+        ImGui::Spacing();
+        if (widgets::Button("全部删除（保留固定）")) {}
+        ImGui::Spacing();
+        ImGui::TextDisabled("暂无测量线");
+        ImGui::Spacing();
+        draw_panel_section_label("区域统计");
+        ImGui::TextDisabled("在测量模式下 Shift+左键框选区域");
         break;
     case gs3d::app::UiMode::kCount:
         break;
@@ -671,8 +699,7 @@ void UiRoot::draw_minimap_embedded(gs3d::app::AppState& state, float ui_scale)
     ImGui::Begin("##MinimapEmbedded", nullptr,
         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
-        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus);
 
     auto& nm = gs3d::app::navigation_map_for_view(
         state, state.active_viewport_index);
