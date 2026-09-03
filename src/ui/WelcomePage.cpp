@@ -1378,10 +1378,8 @@ void draw_brand(
     const float top_pad = 18.0f * scale;
     const ImVec2 logo_min{min.x + left_pad, min.y + top_pad};
     const ImVec2 logo_max{logo_min.x + icon_size, logo_min.y + icon_size};
-    if (model.logo_texture != VK_NULL_HANDLE) {
-        const ImTextureID texture = static_cast<ImTextureID>(
-            reinterpret_cast<ImU64>(model.logo_texture)
-        );
+    if (model.logo_texture != kNullTextureHandle) {
+        const auto texture = static_cast<ImTextureID>(model.logo_texture);
         draw_list->AddImage(
             texture,
             logo_min,

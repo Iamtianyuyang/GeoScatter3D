@@ -295,7 +295,8 @@ WelcomeWindowResult WelcomeWindow::run()
     );
 
     gs3d::ui::WelcomePageModel model;
-    model.logo_texture = logo.descriptor();
+    model.logo_texture =
+        reinterpret_cast<TextureHandle>(logo.descriptor());
     model.current_path = config_.current_path;
     model.recent_projects = config_.recent_projects;
     const auto logical_threads =

@@ -789,11 +789,9 @@ void draw_viewport_canvas(
     }
 
     if (view.show_live_image &&
-        view.descriptor != VK_NULL_HANDLE) {
+        view.descriptor != kNullTextureHandle) {
         ImGui::GetWindowDrawList()->AddImage(
-            static_cast<ImTextureID>(
-                reinterpret_cast<ImU64>(view.descriptor)
-            ),
+            static_cast<ImTextureID>(view.descriptor),
             plot_min,
             plot_max
         );

@@ -1,7 +1,6 @@
 #include "ui/AppChrome.hpp"
 #include "ui/UiRoot.hpp"
-#include "ui/AnalysisRailUi.hpp"
-#include "ui/FloatingDockUi.hpp"
+#include "ui/UiOverlays.hpp"
 #include "ui/ViewportCanvas.hpp"
 #include "ui/WorkbenchUi.hpp"
 #include "ui/WorkspaceManager.hpp"

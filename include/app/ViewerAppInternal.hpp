@@ -122,7 +122,7 @@ struct PickDebugDumpMetadata {
 
 struct PickDebugDumpFrame {
     PickDebugDumpMetadata metadata{};
-    VkFormat color_format = VK_FORMAT_UNDEFINED;
+    std::uint32_t color_format = 0;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::vector<std::uint8_t> color_pixels{};

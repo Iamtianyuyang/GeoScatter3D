@@ -418,7 +418,7 @@ public:
 
         PickDebugDumpFrame dump;
         dump.metadata = slot.metadata;
-        dump.color_format = slot.color_format;
+        dump.color_format = static_cast<std::uint32_t>(slot.color_format);
         dump.width = slot.width;
         dump.height = slot.height;
         dump.color_pixels.resize(static_cast<std::size_t>(color_bytes));

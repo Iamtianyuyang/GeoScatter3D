@@ -34,9 +34,9 @@ void ViewerApp::fill_render_views(
                 auto& view =
                     app_state.render_views[static_cast<std::size_t>(i)];
                 view.viewport_index = i;
-                view.descriptor =
-                    ctx.viewport_manager.framebuffer(i).imgui_descriptor();
-                view.show_live_image = view.descriptor != VK_NULL_HANDLE;
+                view.descriptor = reinterpret_cast<TextureHandle>(
+                    ctx.viewport_manager.framebuffer(i).imgui_descriptor());
+                view.show_live_image = view.descriptor != kNullTextureHandle;
                 view.image_width = camera.viewport_width();
                 view.image_height = camera.viewport_height();
                 view.points_visible = ctx.visible_points;

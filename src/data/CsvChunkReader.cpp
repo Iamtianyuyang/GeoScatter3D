@@ -1,7 +1,7 @@
 #include "data/CsvChunkReader.hpp"
 
 #include "data/Delimiter.hpp"
-#include "preprocess/StatisticsPass.hpp"
+#include "data/DataSchema.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -297,7 +297,7 @@ void update_chunk_bounds(
 
 Gs3dPoint make_gs3d_point(
     const CsvPointRecord& record,
-    const gs3d::preprocess::StatisticsResult& statistics
+    const StatisticsResult& statistics
 ) {
     Gs3dPoint point{};
     point.x = static_cast<float>(
@@ -463,7 +463,7 @@ CsvChunkPointResult CsvChunkReader::parse_chunk_for_points(
     const std::filesystem::path& path,
     const CsvSniffResult& sniff,
     const CsvByteChunk& chunk,
-    const gs3d::preprocess::StatisticsResult& statistics
+    const StatisticsResult& statistics
 ) const {
     CsvChunkPointResult result;
     result.chunk_id = chunk.chunk_id;
@@ -528,7 +528,7 @@ CsvChunkPointWriteResult CsvChunkReader::parse_chunk_into_points(
     const std::filesystem::path& path,
     const CsvSniffResult& sniff,
     const CsvByteChunk& chunk,
-    const gs3d::preprocess::StatisticsResult& statistics,
+    const StatisticsResult& statistics,
     std::span<Gs3dPoint> output_points
 ) const {
     CsvChunkPointWriteResult result;

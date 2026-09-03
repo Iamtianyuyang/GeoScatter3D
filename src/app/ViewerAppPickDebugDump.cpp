@@ -351,7 +351,7 @@ void write_pick_debug_dump(
         dump.color_pixels,
         dump.width,
         dump.height,
-        dump.color_format
+        static_cast<VkFormat>(dump.color_format)
     );
     auto pick_rgb = visualize_pick_ids_to_rgb(
         dump.pick_ids,

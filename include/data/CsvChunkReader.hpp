@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/CsvChunkPlanner.hpp"
+#include "data/DataSchema.hpp"
 #include "data/Gs3dFormat.hpp"
 
 #include <cstdint>
@@ -8,12 +9,6 @@
 #include <span>
 #include <string>
 #include <vector>
-
-namespace gs3d::preprocess {
-
-struct StatisticsResult;
-
-} // namespace gs3d::preprocess
 
 namespace gs3d::data {
 
@@ -123,7 +118,7 @@ public:
         const std::filesystem::path& path,
         const CsvSniffResult& sniff,
         const CsvByteChunk& chunk,
-        const gs3d::preprocess::StatisticsResult& statistics
+        const StatisticsResult& statistics
     ) const;
 
     [[nodiscard]]
@@ -131,7 +126,7 @@ public:
         const std::filesystem::path& path,
         const CsvSniffResult& sniff,
         const CsvByteChunk& chunk,
-        const gs3d::preprocess::StatisticsResult& statistics,
+        const StatisticsResult& statistics,
         std::span<Gs3dPoint> output_points
     ) const;
 

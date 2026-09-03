@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include "core/TextureHandle.hpp"
 
 #include <array>
 #include <algorithm>
@@ -44,55 +44,6 @@ inline UiLayoutMode ui_layout_from_string(
     }
     return fallback;
 }
-
-enum class AnalysisDrawer : int {
-    kNone = -1,
-    kData = 0,
-    kAppearance = 1,
-    kMeasure = 2,
-    kViews = 3,
-    kSystem = 4,
-};
-
-struct AnalysisRailUiState {
-    AnalysisDrawer open_drawer = AnalysisDrawer::kData;
-    float drawer_anim = 1.0f;
-    bool navigation_card_open = true;
-    bool color_card_open = true;
-    bool performance_card_open = true;
-    bool stats_card_open = true;
-};
-
-// 悬浮 Dock 的弹出卡片种类（Dock 项从左到右）。
-enum class DockCard : int {
-    kNone = -1,
-    kViews = 0,       // 视图：多视口切换
-    kMeasure = 1,     // 测量：工具箱 + 测量列表
-    kLayers = 2,      // 图层：数据集 + 测量线
-    kAppearance = 3,  // 属性：点云外观
-    kSettings = 4,    // 我的：设置
-    kData = 5,        // 文件 chip：数据集信息 + 打开入口
-    kPerformance = 6, // 性能 HUD：渲染与流式加载诊断
-    kCrosshairStyle = 7, // 视角 pill：准星配色
-};
-
-inline constexpr int kDockCardCount = 8;
-
-/*
- * 悬浮 Dock 布局的跨帧 UI 状态（方案 B）。
- * 动画约定：open_card 是目标状态（点击立即改写）；anim_card 记录当前
- * 正在绘制的卡片，card_anim 在 0..1 之间按 DeltaTime 缓动，收起动画
- * 播完后 anim_card 才复位。
- */
-struct DockUiState {
-    DockCard open_card = DockCard::kNone;
-    DockCard anim_card = DockCard::kNone;
-    float card_anim = 0.0f;
-    bool show_perf_hud = true;
-    bool navigation_map_floating = false;
-    // 首次进入布局时的引导气泡剩余秒数（“点击 Dock 图标…”）。
-    float hint_seconds_left = 6.0f;
-};
 
 /*
  * 瓦片全量预加载进度（加载门禁 UI 使用）。active 期间 UI 显示全屏
@@ -297,7 +248,7 @@ struct RenderViewState {
     bool force_undock_next_frame = false;
     bool camera_linked = false;
     bool render_requested = false;
-    VkDescriptorSet descriptor = VK_NULL_HANDLE;
+    TextureHandle descriptor = kNullTextureHandle;
     bool show_live_image = false;
     std::uint32_t image_width = 0;
     std::uint32_t image_height = 0;
@@ -442,7 +393,7 @@ struct RenderViewState {
 /*
  * 导航图（概览图）状态。
  *
- * 缩略图是一次性预渲染的（离屏正交俯视），存为 VkDescriptorSet 供 ImGui
+ * 缩略图是一次性预渲染的（离屏正交俯视），存为 TextureHandle 供 ImGui
  * 显示。坐标映射（bbox → 像素）只写在这里一处，缩略图渲染和视野框绘制
  * 共用同一个映射参数。
  */
@@ -450,8 +401,8 @@ struct NavigationMapState {
     bool valid = false;     // 缩略图已渲染，可显示
     bool dirty = true;      // 需要重新渲染（初次加载 / 着色属性变更）
 
-    // ImGui 显示用的纹理 descriptor
-    VkDescriptorSet texture_descriptor = VK_NULL_HANDLE;
+    // ImGui 显示用的纹理句柄
+    TextureHandle texture_descriptor = kNullTextureHandle;
 
     // 缩略图纹理实际尺寸（匹配 bbox 宽高比）
     float tex_w = 256.0f;
@@ -522,12 +473,10 @@ struct AppState {
     std::vector<MeasurementManager> measurements;
     std::vector<RegionStatsResult> region_stats_by_view;
     int active_viewport_index = 0;
-    VkDescriptorSet logo_texture = VK_NULL_HANDLE;
+    TextureHandle logo_texture = kNullTextureHandle;
     UiLayoutMode ui_layout_mode = UiLayoutMode::kWorkbench;
-    DockUiState dock_ui;
     UiChromeState ui_chrome;
     TilePreloadProgressState tile_preload;
-    AnalysisRailUiState analysis_rail_ui;
     ScreenshotNoticeState screenshot_notice;
 
     // TIA-111：控制面命令产生的动作队列。组件在 control_session.poll()

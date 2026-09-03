@@ -3,7 +3,7 @@
 #include "app/RecentProjects.hpp"
 #include "render/VulkanGpuInfo.hpp"
 
-#include <vulkan/vulkan.h>
+#include "core/TextureHandle.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -34,7 +34,7 @@ struct NewProjectDialogState {
 };
 
 struct WelcomePageModel {
-    VkDescriptorSet logo_texture = VK_NULL_HANDLE;
+    TextureHandle logo_texture = kNullTextureHandle;
     std::filesystem::path current_path;
     std::vector<gs3d::app::RecentProjectEntry> recent_projects;
     NewProjectDialogState new_project_dialog;

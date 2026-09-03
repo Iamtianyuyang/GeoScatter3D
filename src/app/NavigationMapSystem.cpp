@@ -152,7 +152,8 @@ void NavigationMapSystem::render_thumbnail(
         }
     );
 
-    state.texture_descriptor = framebuffer.imgui_descriptor();
+    state.texture_descriptor =
+        reinterpret_cast<TextureHandle>(framebuffer.imgui_descriptor());
     state.dirty = false;
 }
 

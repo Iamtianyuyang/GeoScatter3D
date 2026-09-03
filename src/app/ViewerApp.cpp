@@ -434,7 +434,7 @@ int ViewerApp::run() {
             gs3d::app::load_render_settings_preferences());
         viewport_presentation.initialize_visibility(app_state);
 
-        app_state.logo_texture = render_runtime.logo_descriptor();
+        app_state.logo_texture = (TextureHandle)render_runtime.logo_descriptor();
 
         // analysis.toml persistence
         app_state.bundle_dir = config_.input.bundle_dir;
