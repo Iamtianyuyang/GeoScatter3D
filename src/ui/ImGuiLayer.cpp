@@ -1,10 +1,9 @@
-#include "gui/ImGuiLayer.hpp"
-#include "gui/UiFonts.hpp"
+#include "ui/ImGuiLayer.hpp"
+#include "ui/UiFonts.hpp"
 
 #include "app/ResourcePath.hpp"
 #include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
-#include "ui/IconFont.hpp"
 #include "ui/IconFont.hpp"
 #include "ui/UiRoot.hpp"
 
@@ -22,7 +21,7 @@
 #include <system_error>
 #include <cmath>
 
-namespace gs3d::gui {
+namespace gs3d::ui {
 
 namespace {
 
@@ -701,4 +700,4 @@ void ImGuiLayer::render_platform_windows()
     }
 }
 
-} // namespace gs3d::gui
+} // namespace gs3d::ui

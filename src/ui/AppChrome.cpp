@@ -1,9 +1,11 @@
 #include "ui/AppChrome.hpp"
 
 #include "app/UserPreferences.hpp"
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "ui/IconFont.hpp"
+#include "ui/LayoutRegistry.hpp"
 #include "ui/PanelRegistry.hpp"
+#include "ui/ThemeRegistry.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"
 #include "ui/Widgets.hpp"
@@ -97,13 +99,39 @@ constexpr ShortcutEntry kShortcuts[] = {
 };
 constexpr int kShortcutCount = sizeof(kShortcuts)/sizeof(kShortcuts[0]);
 
-void draw_theme_menu(gs3d::app::AppState& s, AppChromeResult& r) {
-    if (!ImGui::BeginMenu("主题")) return;
-    for (int i = 0; i < kThemeCount; ++i) {
-        auto id = (ThemeId)i;
-        bool sel = active_theme() == id;
-        if (ImGui::MenuItem(theme_tokens(id).name, nullptr, sel) && !sel) {
-            r.requested_theme = id; r.theme_change_requested = true;
+void draw_layout_menu(gs3d::app::AppState&, AppChromeResult& r) {
+    if (!ImGui::BeginMenu("布局")) return;
+    const auto& reg = LayoutRegistry::instance();
+    const std::string_view active_id = reg.active_layout_id();
+    for (std::size_t i = 0; i < reg.layout_count(); ++i) {
+        const auto* l = reg.layout_at(i);
+        if (l == nullptr || !l->enabled) continue;
+        const bool sel = (l->id == active_id);
+        if (ImGui::MenuItem(l->name.c_str(), nullptr, sel) && !sel) {
+            r.layout_change_requested = true;
+            r.requested_layout_id = l->id;
+        }
+        if (ImGui::IsItemHovered() && !l->description.empty()) {
+            ImGui::SetTooltip("%s", l->description.c_str());
+        }
+    }
+    ImGui::EndMenu();
+}
+
+void draw_theme_menu(gs3d::app::AppState&, AppChromeResult& r) {
+    if (!ImGui::BeginMenu("主题颜色")) return;
+    const auto& reg = ThemeRegistry::instance();
+    const ThemeId active_id = active_theme();
+    const std::string_view active_name = theme_tokens(active_id).id;
+    for (std::size_t i = 0; i < reg.theme_count(); ++i) {
+        const auto* t = reg.theme_at(i);
+        if (t == nullptr) continue;
+        const bool sel = (t->id != nullptr && t->id == active_name);
+        if (ImGui::MenuItem(t->name != nullptr ? t->name : t->id, nullptr, sel) && !sel) {
+            r.requested_theme = (i < static_cast<std::size_t>(kThemeCount))
+                ? static_cast<ThemeId>(i)
+                : ThemeId::kCustom;
+            r.theme_change_requested = true;
         }
     }
     ImGui::EndMenu();
@@ -161,7 +189,9 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
         bool has = has_hidden_view(state);
         if (ImGui::MenuItem("新建视图", "Ctrl+N", false, has)) show_first_hidden_view(state);
         if (ImGui::MenuItem("恢复默认工作区")) result.restore_default_workspace_requested = true;
-        menu_section("外观");
+        menu_section("界面布局");
+        draw_layout_menu(state, result);
+        menu_section("色彩主题");
         draw_theme_menu(state, result);
         ImGui::EndMenu();
     }
@@ -351,11 +381,10 @@ void draw_panel_command_palette(gs3d::app::AppState& state, float ui_scale) {
     }
 }
 
-void persist_ui_preferences(const gs3d::app::AppState& state, ThemeId theme) {
+void persist_ui_preferences(const gs3d::app::AppState&, ThemeId theme) {
     gs3d::app::UiPreferences p;
     p.theme = theme_tokens(theme).id;
-    p.layout = state.ui_layout_mode == gs3d::app::UiLayoutMode::kWorkbench ? "workbench" :
-               state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock ? "floating-dock" : "analysis-rail";
+    p.layout = std::string(LayoutRegistry::instance().active_layout_id());
     gs3d::app::save_ui_preferences(p);
 }
 

@@ -117,12 +117,11 @@ TIA-92 决策）。日志面板已下线，不在注册表中。
 |---|---|---|
 | `src/app/` | 配置解析、AppState、主循环编排、数据集会话、tile 流、截图、控制面会话装配 | `AppConfig.cpp`（CLI/TOML）、`ViewerApp.cpp`（`run()` 主循环）、`ViewerAppControlPlane.cpp`（组件注册） |
 | `src/render/` | Vulkan 资源所有权与绘制 | `VulkanContext` / `VulkanSwapchain` / `VulkanRenderer`、`PointCloud{Gpu,LodGpu,TileGpu}`、`PointPipeline`、`OffscreenFramebuffer[N]`、`ViewportManager` |
-| `src/gui/` | ImGui 生命周期与字体 | `ImGuiLayer.cpp`（`new_frame`）、`UiFonts.hpp`（ui_scale，见红线 1） |
-| `src/ui/` | 全部界面绘制（读 AppState，产出 UiActions） | `UiRoot.cpp`（docking 编排/`draw`）、`AppChrome.cpp`（顶栏/状态栏/主题菜单/命令面板）、`WorkbenchUi.cpp`、`FloatingDockUi.cpp`（休眠）、`AnalysisRailUi.cpp`（休眠）、`WorkspaceManager.cpp`、`Theme.cpp`（5 套主题 + palette 全局色） |
+| `src/ui/` | 全部界面绘制与 ImGui 基础设施（读 AppState，产出 UiActions） | `UiRoot.cpp`（docking 编排/`draw`）、`ImGuiLayer.cpp`（ImGui 初始化与生命周期）、`AppChrome.cpp`（顶栏/状态栏/主题菜单/命令面板）、`styling/`（主题与布局注册表）、`panels/`（各业务面板）、`canvas/`（3D 视口画布） |
 | `src/control/` | 控制面：TCP + JSON-RPC 2.0 服务器线程、组件注册表 | `ControlPlane.cpp`（`poll()` 帧边界分发）、`ComponentRegistry.cpp`、`Panel/Menu/Toolbar/Status/Overlay/Gizmo/CanvasComponents.cpp` |
 | `src/camera/` | 相机数学与多视口同步 | `ViewerCameraFrameSystem.cpp` 等（app 侧封装） |
 
-**依赖方向**：`platform`(GLFW) → `gui`(ImGui 生命周期) → `ui`(绘制) →
+**依赖方向**：`platform`(GLFW) → `ui`(ImGui 生命周期与面板绘制) →
 `app`(状态/编排) → `render`(Vulkan) 与 `control`(协议)。UI 与控制面组件都只
 读写 `AppState`，不直接触碰渲染资源；渲染状态由 `ViewerFrameStateSynchronizer`
 每帧镜像进 `AppState`。
@@ -335,7 +334,7 @@ TIA-151 全程验证：每次运行均以 `quit` 退出，结束时
 
 | # | 红线 | 出处 |
 |---|---|---|
-| 1 | `ui_scale` 只能用于 ImGui 外观（字体/样式度量），**禁止流入 Vulkan 渲染尺寸链**：swapchain extent、offscreen framebuffer、viewport/scissor、鼠标拾取映射、`io.DisplayFramebufferScale` | `include/gui/UiFonts.hpp:17-21` |
+| 1 | `ui_scale` 只能用于 ImGui 外观（字体/样式度量），**禁止流入 Vulkan 渲染尺寸链**：swapchain extent、offscreen framebuffer、viewport/scissor、鼠标拾取映射、`io.DisplayFramebufferScale` | `include/ui/UiFonts.hpp:17-21` |
 | 2 | GPU pick 写出的 `point_id` 只保证**单次运行内稳定**，不是跨运行/跨文件的持久 ID，不得存盘或长期引用 | `ViewerPickSystem`（见 architecture.md「GPU Pick Contract」） |
 | 3 | LOD v1 sidecar 已被读取端**显式拒绝**（提示重新生成 v2）；tile 读取端按 stride 强校验，损坏/手工拼装文件显式拒绝，不得静默置零解码 | `docs/spec/gs3d-format.md`、architecture.md 风险 2 |
 | 4 | `tile.max_visible_tiles` 已废弃：任何值都不截断可见 tile（硬截断致块状伪影），极端视图预算由连续自适应 LOD 解决 | `docs/config-reference.md` [tile] |

@@ -12,7 +12,7 @@
 
 struct GLFWwindow;
 
-namespace gs3d::gui {
+namespace gs3d::ui {
 
 class ImGuiLayer {
 public:
@@ -66,4 +66,9 @@ private:
     VkFormat color_attachment_format_ = VK_FORMAT_UNDEFINED;
 };
 
+} // namespace gs3d::ui
+
+// 向后兼容命名空间别名
+namespace gs3d::gui {
+    using ImGuiLayer = gs3d::ui::ImGuiLayer;
 } // namespace gs3d::gui

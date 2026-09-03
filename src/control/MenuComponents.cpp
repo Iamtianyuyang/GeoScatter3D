@@ -1,5 +1,6 @@
 #include "control/MenuComponents.hpp"
 
+#include "ui/LayoutRegistry.hpp"
 #include "ui/PanelRegistry.hpp"
 
 #include <stdexcept>
@@ -151,6 +152,55 @@ protected:
     }
 };
 
+class ViewLayoutComponent final : public MenuComponentBase {
+public:
+    ViewLayoutComponent(gs3d::app::AppState& s)
+        : MenuComponentBase(s,
+            {"menu.view.layout", "布局切换", "切换 UI 布局模式",
+             ComponentType::kMenu, false},
+            {{"click", "切换到下一个布局", false},
+             {"set_value", "设置布局 (value: 布局 ID 或索引)", true},
+             {"get_state", "获取当前布局", false}}) {}
+protected:
+    void do_click(const nlohmann::json&) override {
+        auto& reg = ui::LayoutRegistry::instance();
+        const std::size_t count = reg.layout_count();
+        if (count == 0) return;
+        std::size_t cur_idx = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (reg.layout_at(i)->id == reg.active_layout_id()) {
+                cur_idx = i;
+                break;
+            }
+        }
+        const std::size_t next_idx = (cur_idx + 1) % count;
+        reg.set_active_layout_id(reg.layout_at(next_idx)->id);
+    }
+
+    nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        auto& reg = ui::LayoutRegistry::instance();
+        if (command == "set_value") {
+            if (params.contains("value") && params["value"].is_string()) {
+                reg.set_active_layout_id(params["value"].get<std::string>());
+            } else if (params.contains("value") && params["value"].is_number_integer()) {
+                const int idx = params["value"].get<int>();
+                if (idx >= 0 && static_cast<std::size_t>(idx) < reg.layout_count()) {
+                    reg.set_active_layout_id(reg.layout_at(static_cast<std::size_t>(idx))->id);
+                }
+            }
+            return {{"id", info().id}, {"layout_id", std::string(reg.active_layout_id())}};
+        }
+        if (command == "get_state") {
+            return {
+                {"id", info().id},
+                {"layout_id", std::string(reg.active_layout_id())},
+                {"layout_name", std::string(reg.active_layout_name())}
+            };
+        }
+        return MenuComponentBase::execute(command, params);
+    }
+};
+
 // ── 窗口菜单 ───────────────────────────────────────────────────────
 
 class WindowNewWorkspaceComponent final : public MenuComponentBase {
@@ -210,6 +260,7 @@ std::vector<std::unique_ptr<Component>> make_menu_components(
     result.push_back(std::make_unique<FileScreenshotComponent>(app_state));
     result.push_back(std::make_unique<ViewNewViewComponent>(app_state));
     result.push_back(std::make_unique<ViewRestoreWorkspaceComponent>(app_state));
+    result.push_back(std::make_unique<ViewLayoutComponent>(app_state));
     result.push_back(std::make_unique<ViewThemeComponent>(app_state));
     result.push_back(std::make_unique<WindowNewWorkspaceComponent>(app_state));
     result.push_back(std::make_unique<HelpWelcomeComponent>(app_state));

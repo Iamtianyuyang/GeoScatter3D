@@ -1,7 +1,7 @@
 #pragma once
 
 #include "camera/Camera.hpp"
-#include "gui/ImGuiLayer.hpp"
+#include "ui/ImGuiLayer.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanRenderer.hpp"
 #include "render/VulkanSwapchain.hpp"
@@ -69,7 +69,7 @@ public:
     [[nodiscard]] gs3d::render::VulkanContext& context() noexcept;
     [[nodiscard]] gs3d::render::VulkanSwapchain& swapchain() noexcept;
     [[nodiscard]] gs3d::render::VulkanRenderer& renderer() noexcept;
-    [[nodiscard]] gs3d::gui::ImGuiLayer& imgui_layer() noexcept;
+    [[nodiscard]] gs3d::ui::ImGuiLayer& imgui_layer() noexcept;
     [[nodiscard]] gs3d::render::ViewportManager& viewport_manager() noexcept;
     [[nodiscard]] gs3d::render::PointPipeline& point_pipeline() noexcept;
     [[nodiscard]] const gs3d::camera::CameraBounds& bounds() const noexcept;
@@ -84,7 +84,7 @@ private:
     gs3d::render::VulkanContext context_;
     gs3d::render::VulkanSwapchain swapchain_;
     gs3d::render::VulkanRenderer renderer_;
-    gs3d::gui::ImGuiLayer imgui_layer_;
+    gs3d::ui::ImGuiLayer imgui_layer_;
     std::unique_ptr<gs3d::ui::SvgLogoTexture> logo_texture_;
     std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud_;
     std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud_;

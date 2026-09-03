@@ -6,10 +6,9 @@
 #include "ui/ViewportAxisTicks.hpp"
 #include "ui/WorkspaceManager.hpp"
 
-#include "gui/UiFonts.hpp"
-#include "imgui.h"
-
+#include "ui/UiFonts.hpp"
 #include "render/AxisGrid.hpp"
+#include "imgui.h"
 
 #include <algorithm>
 #include <cfloat>

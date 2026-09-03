@@ -3,8 +3,8 @@
 #include "app/AppConfig.hpp"
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
-#include "gui/ImGuiLayer.hpp"
-#include "gui/UiFonts.hpp"
+#include "ui/ImGuiLayer.hpp"
+#include "ui/UiFonts.hpp"
 #include "platform/CpuInfo.hpp"
 #include "platform/Window.hpp"
 #include "render/VulkanContext.hpp"
@@ -264,7 +264,7 @@ WelcomeWindowResult WelcomeWindow::run()
     gs3d::render::VulkanSwapchain swapchain(context, window);
     gs3d::render::VulkanRenderer renderer(context, swapchain);
 
-    gs3d::gui::ImGuiLayer imgui;
+    gs3d::ui::ImGuiLayer imgui;
     imgui.init(
         window.native_handle(),
         context,

@@ -1,6 +1,6 @@
 #include "ui/RegionStatsPanel.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "ui/Widgets.hpp"
 
 #include "imgui.h"

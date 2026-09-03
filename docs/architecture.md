@@ -42,10 +42,11 @@ flowchart LR
     APP --> CAM
 ```
 
-组件分层: `platform` (GLFW 窗口) → `gui`/`ui` (ImGui 生命周期与面板) →
-`app` (配置/状态/编排) → `render` (Vulkan 资源与绘制) / `camera`
-(相机数学与同步) / `data`+`preprocess` (格式与转换)。
-UI 只产出命令 (`UiActions`), 状态由 `AppState` 持有, 主循环消费。
+架构分层（从底至顶单向依赖）：
+1. **基础层 (Foundation)**：`core`（通用领域数据契约）、`platform`（GLFW 窗口与硬件探测）、`util`（线程池、计时器与统一日志）。
+2. **引擎层 (Engine Backend)**：`render`（Vulkan 资源所有权、管线与渲染器）、`camera`（视口相机数学与同步）、`data`（GS3D v2/LOD/瓦片格式与流式读取）、`preprocess`（离线切片与统计预处理）。
+3. **表现层 (Presentation UI)**：`ui`（统一前端基础设施，含 `panels/` 面板组件、`styling/` 主题与布局、`canvas/` 3D 视口画布）。UI 纯只读投影或产出 `UiActions` 纯数据命令，严禁直接持有 Vulkan 句柄。
+4. **应用编排与控制 (App Shell & Control)**：`app`（顶层主循环与分域子系统，含 `systems/` 运行时系统、`session/` 数据会话、`config/` 配置与偏好、`state/` 状态适配）、`control`（JSON-RPC 自动化控制面）。
 
 ## 数据流
 
@@ -72,16 +73,52 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 
 ## 主要模块
 
-| Module | Interface | Implementation 与职责 |
+| Module | 层次定位 | 主要接口与职责 |
 |---|---|---|
-| `app` | `AppConfig`, `AppState`, `UiActions`, `ViewerApp` | 解析配置、保存 UI 状态、编排生命周期、resize 防抖和 tile LRU 缓存 |
-| `data` | CSV 与 GS3D/LOD/tile reader/format | 文件格式校验、索引查询、点数据读取 |
-| `preprocess` | converter/writer | 并行统计、CSV 转换、LOD 和 tile 生成 |
-| `render` | Vulkan context/buffer/pipeline/cloud/viewport | Vulkan 资源所有权与命令录制 |
-| `camera` | `Camera`, `CameraInput`, `CameraController`, `CameraHub` | 相机数学、视图局部输入映射和可选同步组传播 |
-| `gui`/`ui` | `ImGuiLayer`, `UiRoot` | ImGui 生命周期、Adobe 风格 docking 布局和 UI 命令生成 |
-| `control` | `ControlPlane`, `ComponentRegistry` | TCP + JSON-RPC 2.0 控制面（服务器线程 + 主线程帧边界 `poll()`）、29 个可驱动组件（面板/菜单/工具栏/状态栏/overlay/gizmo/canvas） |
-| `platform` | `Window` | GLFW 初始化、主窗口和键盘/事件处理 |
+| `core` | 基础契约层 | `DatasetDescriptor`, `PointData`, `TileData`, `SceneState`, `TextureHandle`：核心领域 POD 数据定义与不透明句柄 |
+| `platform` | 基础环境层 | `Window`, `CpuInfo`：GLFW 初始化、事件派发与 CPU 特征探测 |
+| `util` | 基础支撑层 | `ThreadPool`, `Log`, `Stopwatch`, `PercentileStats`：通用多线程工作池、性能统计与分级日志 |
+| `render` | 引擎图形层 | `VulkanContext`, `VulkanRenderer`, `PointPipeline`, `PointCloudGpu`, `ViewportManager`：Vulkan 显存资源管理、Shader 管线与离屏多视口绘制 |
+| `camera` | 引擎相机层 | `Camera`, `CameraController`, `CameraHub`, `BoxSelect`：3D 视口相机变换矩阵、局部事件映射、框选与多视口同步组 |
+| `data` | 引擎数据层 | `Gs3dDataset`, `Gs3dLodDataset`, `Gs3dTileDataset`, `CsvReader`：GS3D v2 格式强校验、点数据流式解算与内存映射 |
+| `preprocess` | 引擎工具层 | `Gs3dWriter`, `Gs3dLodWriter`, `Gs3dTileWriter`, `PointStats`：离线高并发 CSV 切片、统计直方图与瓦片树生成 |
+| `ui` | 前端表现层 | `UiRoot`, `ImGuiLayer`, `AppChrome`, `UiFonts`, `ThemeRegistry`, `LayoutRegistry`, `ViewportCanvas`：统一 UI 表现（含 `panels/`, `styling/`, `canvas/` 子领域） |
+| `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`） |
+| `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射 |
+
+## 代码物理分层与目录拓扑
+
+工程通过严格的领域分包（Domain-Driven Subdirectories）避免单目录文件平铺失衡，形成自底向上的四层单向依赖关系：
+
+```text
+include/ & src/
+├── [基础层 Foundation]
+│   ├── core/         # 基础数据契约 (PointData, TileData, DatasetDescriptor, SceneState, TextureHandle)
+│   ├── platform/     # 跨平台支撑 (Window, CpuInfo, NativeFileDialog)
+│   └── util/         # 通用工具箱 (ThreadPool, Log, Stopwatch, PercentileStats)
+│
+├── [引擎层 Engine]
+│   ├── render/       # Vulkan 渲染后端、管线与着色器 (VulkanContext, PointPipeline, ViewportManager...)
+│   ├── camera/       # 视口相机变换、输入响应与多视口同步 (Camera, CameraController, CameraHub...)
+│   ├── data/         # GS3D v2 数据格式校验、点云加载与瓦片索引
+│   └── preprocess/   # 离线数据切片预处理流水线 (Gs3dWriter, Gs3dLodWriter, Gs3dTileWriter...)
+│
+├── [前端表现层 UI]
+│   └── ui/           # 统一前端表现 (Dear ImGui 立即模式投影)
+│       ├── panels/   # 业务面板组件 (DatasetPanel, RenderSettingsPanel, MeasurementPanel...)
+│       ├── styling/  # 主题色彩与布局体系 (ThemeRegistry, LayoutRegistry, LayoutMetrics)
+│       ├── canvas/   # 3D 视口画布与坐标轴刻度 (ViewportCanvas, ViewportAxisTicks)
+│       └── (根目录)  # UI 框架外壳 (UiRoot, AppChrome, ImGuiLayer, Widgets, WelcomePage)
+│
+└── [应用编排与控制面 App Shell]
+    ├── app/          # 顶层主循环与领域编排系统
+    │   ├── systems/  # 运行时子系统 (CameraFrame, LodFrame, PickSystem, FrameRenderer...)
+    │   ├── session/  # 点云会话与缓存 (DatasetSession, TilePointCache, PreprocessedBundle...)
+    │   ├── config/   # 配置与偏好管理 (AppConfigValidation, UserPreferences, RecentProjects...)
+    │   ├── state/    # 交互与布局状态适配 (ViewportInteractionState, ViewerWorkbenchLayout...)
+    │   └── (根目录)  # 主入口与分部类 (ViewerApp.cpp, AppConfig.cpp, WelcomeWindow.cpp)
+    └── control/      # JSON-RPC 2.0 自动化控制面 (ControlPlane, ComponentRegistry, Handlers)
+```
 
 ## 启动流程
 
@@ -211,7 +248,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
    tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。`UiRoot.cpp` 仍有 856 行（视口画布绘制已拆分到
+   调度与错误边界。`UiRoot.cpp` 仍有 849 行（视口画布绘制已拆分到
    `ViewportCanvas.cpp`，TIA-92 把顶栏/状态栏/快捷键总览/命令面板拆到 AppChrome.cpp），剩余的 docking
    编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 856 / 763 行分别约束 `ViewerApp.cpp`、
    `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算

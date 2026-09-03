@@ -8,7 +8,7 @@
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "data/PointDataAdapters.hpp"
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "platform/Window.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
@@ -246,7 +246,7 @@ gs3d::render::VulkanRenderer& ViewerRenderRuntime::renderer() noexcept
     return renderer_;
 }
 
-gs3d::gui::ImGuiLayer& ViewerRenderRuntime::imgui_layer() noexcept
+gs3d::ui::ImGuiLayer& ViewerRenderRuntime::imgui_layer() noexcept
 {
     return imgui_layer_;
 }

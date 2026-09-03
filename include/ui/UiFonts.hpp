@@ -2,7 +2,7 @@
 
 #include "imgui.h"
 
-namespace gs3d::gui {
+namespace gs3d::ui {
 
 struct UiFonts {
     ImFont* regular = nullptr;
@@ -24,4 +24,12 @@ struct UiFonts {
 
 [[nodiscard]] const UiFonts& ui_fonts() noexcept;
 
+} // namespace gs3d::ui
+
+// 向后兼容命名空间别名
+namespace gs3d::gui {
+    using UiFonts = gs3d::ui::UiFonts;
+    [[nodiscard]] inline const UiFonts& ui_fonts() noexcept {
+        return gs3d::ui::ui_fonts();
+    }
 } // namespace gs3d::gui

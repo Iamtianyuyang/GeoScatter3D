@@ -4,6 +4,8 @@
 #include "ui/ViewportCanvas.hpp"
 #include "ui/WorkbenchUi.hpp"
 #include "ui/WorkspaceManager.hpp"
+#include "ui/LayoutMetrics.hpp"
+#include "ui/LayoutRegistry.hpp"
 #include "ui/Theme.hpp"
 #include "ui/Widgets.hpp"
 #include "ui/UiPalette.hpp"
@@ -14,7 +16,7 @@
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -88,21 +90,6 @@ std::string workspace_dockspace_id_name(int id)
 {
     return "GeoScatter3D.WorkspaceDockSpace." + std::to_string(id);
 }
-
-// ── 布局与样式常量（GIS / 地图软件风格）──────────────────────────────
-namespace LayoutMetrics {
-    constexpr float kDockLeftRatio  = 276.0f / 1360.0f;
-    constexpr float kDockLeftMinPx  = 240.0f;
-    constexpr float kDockLeftMaxPx  = 336.0f;
-    constexpr float kDockRightRatio = 280.0f / 1360.0f;
-    constexpr float kDockRightMinPx = 260.0f;
-    constexpr float kDockRightMaxPx = 336.0f;
-    constexpr float kToolsBarHeightBase = 52.0f;
-    constexpr float kStatusBarHeightBase  = 26.0f;
-    constexpr float kPanelHeaderGap = 8.0f;
-    constexpr float kPanelSectionGap = 8.0f;
-    constexpr float kPanelInsetX = 10.0f;
-    } // namespace LayoutMetrics
 
 } // namespace
 
@@ -766,6 +753,12 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
                 ImVec2(menu_rect.Max.x, menu_rect.Max.y - 1.0f),
                 to_u32(palette::kBorder, 110), 1.0f);
             ImGui::EndMenuBar();
+        }
+        if (chrome_result.layout_change_requested) {
+            LayoutRegistry::instance().set_active_layout_id(chrome_result.requested_layout_id);
+            restore_default_workspace(state);
+            dock_layout_.initialized = false;
+            persist_ui_preferences(state, requested_theme);
         }
         if (chrome_result.theme_change_requested) {
             requested_theme = chrome_result.requested_theme;

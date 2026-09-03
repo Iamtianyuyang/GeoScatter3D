@@ -34,7 +34,7 @@
 #include "ui/WorkspaceManager.hpp"
 #include "ui/Theme.hpp"
 #include "ui/AppChrome.hpp"
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
 
@@ -61,7 +61,7 @@
 
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "util/Stopwatch.hpp"
-#include "scene/SceneState.hpp"
+#include "core/SceneState.hpp"
 
 #include <vulkan/vulkan.h>
 

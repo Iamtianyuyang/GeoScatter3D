@@ -183,21 +183,35 @@ GS3D_LOG_LEVEL=warning GS3D_LOG_BENCHMARK=0 \
 - `tile.cpu_cache_max_bytes` 控制 CPU tile 缓存上限，超出后按 LRU 淘汰。
 - `tile.gpu_upload_budget_bytes` 控制每帧 tile GPU 上传预算，避免一次上传造成长时间停顿。
 
-## 目录
+## 目录与架构分层
 
 ```text
 include/ + src/
-  app/         配置、应用状态和主循环编排
-  camera/      相机、输入控制和多视口同步
-  core/        领域数据边界：PointData、TileData、DatasetDescriptor
-  data/        CSV/GS3D/LOD/tile 格式与读取
-  preprocess/  CSV 转换、统计、LOD 与 tile 写入
-  render/      Vulkan 资源、点管线、LOD/tile GPU 数据和离屏视口
-  scene/       SceneState（渲染/场景状态）
-  gui/ + ui/   ImGui 生命周期与界面绘制
-  platform/    GLFW 窗口
-  util/        线程池、计时与统一日志
+  [基础层 Foundation]
+    core/        核心领域数据契约：PointData、TileData、DatasetDescriptor、SceneState、TextureHandle
+    platform/    跨平台窗口与硬件探测 (GLFW、CpuInfo、NativeFileDialog)
+    util/        线程池、计时与分级日志 (ThreadPool、Log、Stopwatch)
+
+  [引擎层 Engine]
+    render/      Vulkan 资源所有权、点渲染管线、GPU 点云缓存与离屏视口
+    camera/      相机模型、视口交互变换、框选与多视口同步组 (CameraHub)
+    data/        GS3D v2、LOD 与瓦片数据集格式、索引与流式读取
+    preprocess/  离线切片工具链：CSV 转换、并行统计、LOD 与瓦片树生成
+
+  [前端表现层 UI]
+    ui/          Dear ImGui 立即模式统一表现层
+      panels/    业务面板组件 (DatasetPanel、RenderSettingsPanel、MeasurementPanel 等)
+      styling/   色彩主题与界面布局注册表 (ThemeRegistry、LayoutRegistry、LayoutMetrics)
+      canvas/    3D 视口画布绘制与自适应坐标刻度 (ViewportCanvas、ViewportAxisTicks)
+
+  [应用编排与控制面 App Shell]
+    app/         主程序启动、主循环事件调度与分领域子系统
+      systems/   运行时子系统 (CameraFrame、LodFrame、PickSystem、FrameRenderer 等)
+      session/   点云会话生命周期与分块缓存 (DatasetSession、TilePointCache)
+      config/    TOML 配置解析校验与用户首选项持久化 (AppConfig、UserPreferences)
+      state/     视口交互与布局状态适配 (ViewportInteractionState、WorkbenchLayout)
+    control/     TCP + JSON-RPC 2.0 自动化控制面与组件树反射
 ```
 
-更完整的启动流程、逐帧流程、资源所有权和主要缺陷见
+更完整的启动流程、逐帧流程、资源所有权和设计规范见
 [docs/architecture.md](docs/architecture.md)。

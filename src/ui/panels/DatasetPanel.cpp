@@ -3,7 +3,7 @@
 #include "ui/UiRoot.hpp"
 #include "ui/Widgets.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "imgui.h"
 
 namespace gs3d::ui {

@@ -18,8 +18,8 @@ namespace gs3d::render { class PointPipeline; }
 namespace gs3d::render { struct TileSelectionResult; }
 namespace gs3d::render { class ViewportManager; }
 namespace gs3d::render { struct PointPushConstants; }
-namespace gs3d::render { class VulkanSwapchain; }
-namespace gs3d::scene { struct SceneState; }
+namespace gs3d::core { struct SceneState; }
+namespace gs3d::scene { using SceneState = gs3d::core::SceneState; }
 
 namespace gs3d::app {
 

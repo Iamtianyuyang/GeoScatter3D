@@ -270,7 +270,7 @@ target_link_libraries(gs3d_render PUBLIC
 )
 
 add_library(gs3d_viewport_lod STATIC
-    src/app/ViewportLodController.cpp
+    src/app/systems/ViewportLodController.cpp
 )
 
 target_include_directories(gs3d_viewport_lod PUBLIC
@@ -283,23 +283,24 @@ target_link_libraries(gs3d_viewport_lod PUBLIC
 
 add_library(gs3d_app_support STATIC
     src/app/AppConfig.cpp
-    src/app/AppConfigValidation.cpp
-    src/app/AppConfigViewerToml.cpp
-    src/app/BenchmarkSession.cpp
-    src/app/PreprocessedBundle.cpp
-    src/app/RecentProjects.cpp
-    src/app/ResourcePath.cpp
-    src/app/UserPreferences.cpp
-    src/app/TileLoadCommit.cpp
-    src/app/TilePointCache.cpp
-    src/app/ViewportResizeScheduler.cpp
-    src/app/ViewportInteractionState.cpp
-    src/app/ViewportPresentationState.cpp
-    src/app/ViewerFrameClock.cpp
-    src/app/ViewerWorkbenchLayout.cpp
-    src/app/MeasurementManager.cpp
+    src/app/config/AppConfigValidation.cpp
+    src/app/config/AppConfigViewerToml.cpp
+    src/app/session/BenchmarkSession.cpp
+    src/app/session/PreprocessedBundle.cpp
+    src/app/config/RecentProjects.cpp
+    src/app/config/ResourcePath.cpp
+    src/app/config/UserPreferences.cpp
+    src/app/session/TileLoadCommit.cpp
+    src/app/session/TilePointCache.cpp
+    src/app/systems/ViewportResizeScheduler.cpp
+    src/app/state/ViewportInteractionState.cpp
+    src/app/state/ViewportPresentationState.cpp
+    src/app/systems/ViewerFrameClock.cpp
+    src/app/state/ViewerWorkbenchLayout.cpp
+    src/app/systems/MeasurementManager.cpp
     src/ui/AnalysisRailLayout.cpp
     src/ui/FloatingDockLayout.cpp
+    src/ui/styling/LayoutRegistry.cpp
     src/ui/WorkspaceManager.cpp
 )
 
@@ -316,7 +317,7 @@ target_link_libraries(gs3d_app_support PUBLIC
 )
 
 add_library(gs3d_viewport_camera STATIC
-    src/app/ViewportCameraSystem.cpp
+    src/app/systems/ViewportCameraSystem.cpp
     include/app/ViewportCameraSystem.hpp
 )
 
@@ -332,54 +333,57 @@ target_link_libraries(gs3d_viewport_camera PUBLIC
 # Viewer-specific orchestration and UI. The executable and benchmark both
 # link this target, so these sources compile once per build.
 add_library(gs3d_app STATIC
-    src/gui/ImGuiLayer.cpp
+    src/ui/ImGuiLayer.cpp
     src/ui/AppChrome.cpp
-    src/ui/Theme.cpp
+    src/ui/styling/Theme.cpp
     src/ui/Widgets.cpp
     src/ui/UiRoot.cpp
-    src/ui/ViewportAxisTicks.cpp
-    src/ui/RegionStatsPanel.cpp
-    src/ui/DatasetPanel.cpp
-    src/ui/NavigationMapPanel.cpp
-    src/ui/MeasurementPanel.cpp
-    src/ui/AuxiliaryPanels.cpp
-    src/ui/RenderSettingsPanel.cpp
+    src/ui/canvas/ViewportAxisTicks.cpp
+    src/ui/panels/RegionStatsPanel.cpp
+    src/ui/panels/DatasetPanel.cpp
+    src/ui/panels/NavigationMapPanel.cpp
+    src/ui/panels/MeasurementPanel.cpp
+    src/ui/panels/AuxiliaryPanels.cpp
+    src/ui/panels/RenderSettingsPanel.cpp
+    src/ui/styling/LayoutMetrics.cpp
+    src/ui/styling/ThemeRegistry.cpp
     src/ui/UiOverlays.cpp
-    src/ui/ViewportCanvas.cpp
+    src/ui/canvas/ViewportCanvas.cpp
     src/ui/WorkbenchUi.cpp
     src/ui/SvgLogoTexture.cpp
 
     src/app/ViewerApp.cpp
-    src/app/ViewerDatasetSession.cpp
-    src/app/ViewerDatasetDescriptor.cpp
-    src/app/ViewerBenchmarkController.cpp
-    src/app/ViewerKeyboardShortcutSystem.cpp
-    src/app/ViewerCameraFrameSystem.cpp
-    src/app/ViewerRenderSettingsSystem.cpp
-    src/app/ViewerAttributeMapping.cpp
-    src/app/ViewerFrameMetricsCollector.cpp
-    src/app/ViewerLodFrameSystem.cpp
-    src/app/ViewerRuntimeConfiguration.cpp
-    src/app/ViewerRenderRuntime.cpp
-    src/app/ViewerFrameRenderer.cpp
-    src/app/ViewerFrameStateSynchronizer.cpp
+    src/app/session/ViewerDatasetSession.cpp
+    src/app/session/ViewerDatasetDescriptor.cpp
+    src/app/session/ViewerBenchmarkController.cpp
+    src/app/systems/ViewerKeyboardShortcutSystem.cpp
+    src/app/systems/ViewerCameraFrameSystem.cpp
+    src/app/systems/ViewerRenderSettingsSystem.cpp
+    src/app/state/ViewerAttributeMapping.cpp
+    src/app/systems/ViewerFrameMetricsCollector.cpp
+    src/app/systems/ViewerLodFrameSystem.cpp
+    src/app/config/ViewerRuntimeConfiguration.cpp
+    src/app/systems/ViewerRenderRuntime.cpp
+    src/app/systems/ViewerFrameRenderer.cpp
+    src/app/systems/ViewerFrameStateSynchronizer.cpp
     src/app/ViewerAppStateInitialization.cpp
     src/app/ViewerAppViewport.cpp
-    src/app/ViewerPickSystem.cpp
+    src/app/systems/ViewerPickSystem.cpp
     src/app/ViewerAppRenderView.cpp
     src/app/ViewerAppGuiCommands.cpp
     src/app/ViewerAppCameraCommands.cpp
     src/app/ViewerAppScreenshot.cpp
     src/app/ViewerAppRegionStats.cpp
     src/app/ViewerAppBenchmark.cpp
-    src/app/NavigationMapSystem.cpp
+    src/app/systems/NavigationMapSystem.cpp
     src/app/ViewerAppPickDebugDump.cpp
     src/app/ViewerAppPointIds.cpp
     src/app/ViewerAppTileStreaming.cpp
-    src/app/ViewerViewportRenderSystem.cpp
+    src/app/systems/ViewerViewportRenderSystem.cpp
     src/app/ViewerAppControlPlane.cpp
 
-    include/gui/ImGuiLayer.hpp
+    include/ui/ImGuiLayer.hpp
+    include/ui/UiFonts.hpp
     include/ui/Theme.hpp
     include/ui/Widgets.hpp
     include/ui/UiRoot.hpp
@@ -392,6 +396,9 @@ add_library(gs3d_app STATIC
     include/ui/RenderSettingsPanel.hpp
     include/ui/AnalysisRailLayout.hpp
     include/ui/FloatingDockLayout.hpp
+    include/ui/LayoutMetrics.hpp
+    include/ui/LayoutRegistry.hpp
+    include/ui/ThemeRegistry.hpp
     include/ui/UiOverlays.hpp
     include/ui/ColormapPreview.hpp
     include/ui/ViewportCanvas.hpp
@@ -496,7 +503,7 @@ add_library(gs3d_app STATIC
     include/core/DatasetDescriptor.hpp
     include/core/PointData.hpp
     include/core/TileData.hpp
-    include/scene/SceneState.hpp
+    include/core/SceneState.hpp
 
     include/util/ThreadPool.hpp
     include/util/Log.hpp
@@ -563,8 +570,8 @@ copy_runtime_assets(GeoScatter3D)
 set(GEOSCATTER3D_PREPROCESS_SOURCES
     src/preprocess_main.cpp
     src/app/AppConfig.cpp
-    src/app/PreprocessedBundle.cpp
-    src/app/ResourcePath.cpp
+    src/app/session/PreprocessedBundle.cpp
+    src/app/config/ResourcePath.cpp
 )
 
 add_executable(GeoScatter3DPreprocess
@@ -850,6 +857,32 @@ if(BUILD_TESTING)
         Catch2::Catch2WithMain
     )
     add_test(NAME GeoScatter3D.UiPanelRegistry COMMAND GeoScatter3DUiPanelRegistryTests)
+
+    add_executable(GeoScatter3DLayoutRegistryTests
+        tests/LayoutRegistryTests.cpp
+    )
+    target_include_directories(GeoScatter3DLayoutRegistryTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(GeoScatter3DLayoutRegistryTests PRIVATE
+        gs3d_app_support
+        Catch2::Catch2WithMain
+    )
+    add_test(NAME GeoScatter3D.LayoutRegistry COMMAND GeoScatter3DLayoutRegistryTests)
+
+    add_executable(GeoScatter3DThemeRegistryTests
+        tests/ThemeRegistryTests.cpp
+    )
+    target_include_directories(GeoScatter3DThemeRegistryTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+    )
+    target_link_libraries(GeoScatter3DThemeRegistryTests PRIVATE
+        gs3d_app
+        gs3d_imgui
+        Catch2::Catch2WithMain
+    )
+    add_test(NAME GeoScatter3D.ThemeRegistry COMMAND GeoScatter3DThemeRegistryTests)
 
     add_executable(GeoScatter3DUserPreferencesTests
         tests/UserPreferencesTests.cpp

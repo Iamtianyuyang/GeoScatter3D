@@ -1,6 +1,6 @@
 #include "ui/Widgets.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "ui/IconFont.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiRoot.hpp"

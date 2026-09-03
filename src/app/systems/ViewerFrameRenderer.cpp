@@ -8,7 +8,7 @@
 #include "app/ViewerBenchmarkController.hpp"
 #include "app/ViewerPickSystem.hpp"
 #include "app/ViewerViewportRenderSystem.hpp"
-#include "gui/ImGuiLayer.hpp"
+#include "ui/ImGuiLayer.hpp"
 #include "platform/Window.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
@@ -27,7 +27,7 @@ ViewerFrameRenderer::ViewerFrameRenderer(
     gs3d::render::VulkanContext& context,
     gs3d::render::VulkanSwapchain& swapchain,
     gs3d::render::VulkanRenderer& renderer,
-    gs3d::gui::ImGuiLayer& imgui_layer,
+    gs3d::ui::ImGuiLayer& imgui_layer,
     NavigationMapSystem& navigation_maps,
     gs3d::render::PointPipeline& point_pipeline,
     const gs3d::render::PointCloudGpu& navigation_cloud,

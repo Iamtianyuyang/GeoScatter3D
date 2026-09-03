@@ -1,6 +1,6 @@
 #include "ui/WelcomePage.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "platform/NativeFileDialog.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/Widgets.hpp"

@@ -1,6 +1,6 @@
 #include "ui/UiOverlays.hpp"
 
-#include "gui/UiFonts.hpp"
+#include "ui/UiFonts.hpp"
 #include "ui/Theme.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/Widgets.hpp"

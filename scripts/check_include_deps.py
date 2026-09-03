@@ -12,7 +12,6 @@ INCLUDE_RE = re.compile(r'^\s*#include\s+"([A-Za-z0-9_]+)/([^"]+)"')
 
 MODULE_ORDER = {
     "app": 0,
-    "scene": 1,
     "render": 2,
     "camera": 2,
     "data": 2,

@@ -9,6 +9,8 @@ namespace gs3d::ui {
 struct AppChromeResult {
     bool theme_change_requested = false;
     ThemeId requested_theme = ThemeId::kCarbonBlue;
+    bool layout_change_requested = false;
+    std::string requested_layout_id;
     bool restore_default_workspace_requested = false;
 };
 

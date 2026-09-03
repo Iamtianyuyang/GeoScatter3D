@@ -14,7 +14,7 @@
 #include "render/LodSelector.hpp"
 #include "render/NearestPointQuery.hpp"
 #include "render/TileSelection.hpp"
-#include "scene/SceneState.hpp"
+#include "core/SceneState.hpp"
 #include "ui/UiRoot.hpp"
 
 #include <catch2/catch_test_macros.hpp>

@@ -5,7 +5,7 @@
 #include "app/ViewerAppInternal.hpp"
 #include "data/Gs3dDataset.hpp"
 #include "render/PointPipeline.hpp"
-#include "scene/SceneState.hpp"
+#include "core/SceneState.hpp"
 
 #include <vector>
 

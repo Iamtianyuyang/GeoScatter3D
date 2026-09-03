@@ -1,5 +1,7 @@
 #include "ui/Theme.hpp"
 
+#include "ui/LayoutMetrics.hpp"
+#include "ui/ThemeRegistry.hpp"
 #include "ui/UiPalette.hpp"
 
 namespace gs3d::ui {
@@ -72,14 +74,6 @@ constexpr ThemeTokens kCarbonBlue{
 
     .button_alpha = 0.50f,
     .button_hover_alpha = 0.85f,
-
-    .window_rounding = 8.0f,
-    .child_rounding = 4.0f,
-    .frame_rounding = 4.0f,
-    .popup_rounding = 6.0f,
-    .scrollbar_rounding = 6.0f,
-    .grab_rounding = 4.0f,
-    .tab_rounding = 6.0f,
 };
 
 // ── 方案 A2：碳蓝 2.0 · 深色测绘（高对比度 + 紧凑间距）──────────────
@@ -124,14 +118,6 @@ constexpr ThemeTokens kCarbonBlueDark{
 
     .button_alpha = 0.30f,
     .button_hover_alpha = 0.55f,
-
-    .window_rounding = 6.0f,
-    .child_rounding = 3.0f,
-    .frame_rounding = 3.0f,
-    .popup_rounding = 5.0f,
-    .scrollbar_rounding = 5.0f,
-    .grab_rounding = 3.0f,
-    .tab_rounding = 4.0f,
 };
 
 // ── 方案 B：石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）──────────────────
@@ -176,14 +162,6 @@ constexpr ThemeTokens kDeepGraphite{
 
     .button_alpha = 0.26f,
     .button_hover_alpha = 0.48f,
-
-    .window_rounding = 6.0f,
-    .child_rounding = 3.0f,
-    .frame_rounding = 3.0f,
-    .popup_rounding = 5.0f,
-    .scrollbar_rounding = 5.0f,
-    .grab_rounding = 3.0f,
-    .tab_rounding = 4.0f,
 };
 
 // ── 方案 C：仪器 · 琥珀测绘（中性深灰 + 低饱和琥珀）──────────────────
@@ -228,14 +206,6 @@ constexpr ThemeTokens kInstrumentAmber{
 
     .button_alpha = 0.28f,
     .button_hover_alpha = 0.48f,
-
-    .window_rounding = 2.0f,
-    .child_rounding = 1.0f,
-    .frame_rounding = 1.0f,
-    .popup_rounding = 2.0f,
-    .scrollbar_rounding = 2.0f,
-    .grab_rounding = 1.0f,
-    .tab_rounding = 2.0f,
 };
 
 // ── 高对比 · 浅色测绘（TIA-92）────────────────────
@@ -274,13 +244,6 @@ constexpr ThemeTokens kHighContrastLight{
     .tab_dimmed = rgb(0xE4E9F0),
     .button_alpha = 0.55f,
     .button_hover_alpha = 0.90f,
-    .window_rounding = 4.0f,
-    .child_rounding = 2.0f,
-    .frame_rounding = 2.0f,
-    .popup_rounding = 3.0f,
-    .scrollbar_rounding = 3.0f,
-    .grab_rounding = 2.0f,
-    .tab_rounding = 2.0f,
 };
 
 constexpr const ThemeTokens* kThemes[kThemeCount] = {
@@ -298,10 +261,14 @@ ThemeId g_active_theme = ThemeId::kCarbonBlueDark;
 const ThemeTokens& theme_tokens(ThemeId id)
 {
     const int index = static_cast<int>(id);
-    if (index < 0 || index >= kThemeCount) {
-        return kCarbonBlue;
+    if (index >= 0 && index < kThemeCount) {
+        return *kThemes[index];
     }
-    return *kThemes[index];
+    const auto* t = ThemeRegistry::instance().find_theme(id);
+    if (t != nullptr) {
+        return *t;
+    }
+    return kCarbonBlue;
 }
 
 ThemeId active_theme()
@@ -315,6 +282,10 @@ ThemeId theme_from_string(std::string_view name, ThemeId fallback)
         if (name == kThemes[i]->id) {
             return static_cast<ThemeId>(i);
         }
+    }
+    const auto* t = ThemeRegistry::instance().find_theme(name);
+    if (t != nullptr) {
+        return ThemeId::kCustom;
     }
     return fallback;
 }
@@ -357,15 +328,9 @@ void apply_theme(ThemeId id, float ui_scale)
     palette::kViewportBg = to_linear(t.viewport_bg);
     palette::kViewportBorder = to_linear(t.viewport_border);
 
-    // ── ImGuiStyle：圆角按主题基准 × ui_scale ───────────────────────
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = t.window_rounding * ui_scale;
-    style.ChildRounding = t.child_rounding * ui_scale;
-    style.FrameRounding = t.frame_rounding * ui_scale;
-    style.PopupRounding = t.popup_rounding * ui_scale;
-    style.ScrollbarRounding = t.scrollbar_rounding * ui_scale;
-    style.GrabRounding = t.grab_rounding * ui_scale;
-    style.TabRounding = t.tab_rounding * ui_scale;
+    // ── 几何度量收敛至布局系统（见 LayoutMetrics.hpp），与纯颜色主题解耦 ──
+    apply_layout_geometry(default_layout_geometry(), ui_scale);
 
     // 以内置 Light/Dark 为底：apply 没显式覆盖的冷门条目（TextLink、
     // TreeLines 等）也能拿到一套协调的默认值。
@@ -498,6 +463,15 @@ void apply_theme(ThemeId id, float ui_scale)
     // 保留统一入口，供将来切换颜色管线时集中处理。
     for (int i = 0; i < ImGuiCol_COUNT; ++i) {
         colors[i] = to_linear(colors[i]);
+    }
+}
+
+void apply_theme(std::string_view id, float ui_scale)
+{
+    const auto* t = ThemeRegistry::instance().find_theme(id);
+    if (t != nullptr) {
+        ThemeId tid = theme_from_string(id, ThemeId::kCustom);
+        apply_theme(tid, ui_scale);
     }
 }
 

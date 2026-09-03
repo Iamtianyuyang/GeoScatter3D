@@ -2,7 +2,7 @@
 
 #include "app/AppState.hpp"
 #include "render/PointPipeline.hpp"
-#include "scene/SceneState.hpp"
+#include "core/SceneState.hpp"
 
 #include <cstddef>
 #include <vector>
