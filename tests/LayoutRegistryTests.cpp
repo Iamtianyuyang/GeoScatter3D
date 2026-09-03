@@ -3,15 +3,25 @@
 
 using namespace gs3d::ui;
 
-TEST_CASE("LayoutRegistry has default workbench layout", "[layout_registry]") {
+TEST_CASE("LayoutRegistry has 3 builtin layouts", "[layout_registry]") {
     auto& reg = LayoutRegistry::instance();
-    CHECK(reg.layout_count() >= 1);
+    CHECK(reg.layout_count() >= 3);
 
     const auto* wb = reg.find_layout("workbench");
     REQUIRE(wb != nullptr);
     CHECK(wb->id == "workbench");
     CHECK(wb->name == "标准工作台");
     CHECK(wb->enabled);
+
+    const auto* fd = reg.find_layout("floating-dock");
+    REQUIRE(fd != nullptr);
+    CHECK(fd->id == "floating-dock");
+    CHECK(fd->name == "悬浮胶囊 Dock");
+
+    const auto* ar = reg.find_layout("analysis-rail");
+    REQUIRE(ar != nullptr);
+    CHECK(ar->id == "analysis-rail");
+    CHECK(ar->name == "暗色分析舱");
 }
 
 TEST_CASE("LayoutRegistry can register custom layout dynamically", "[layout_registry]") {
@@ -40,4 +50,20 @@ TEST_CASE("LayoutRegistry can register custom layout dynamically", "[layout_regi
     // Reset back to workbench
     reg.set_active_layout_id("workbench");
     CHECK(reg.active_layout_id() == "workbench");
+}
+
+TEST_CASE("LayoutRegistry can switch between 3 builtin layouts", "[layout_registry]") {
+    auto& reg = LayoutRegistry::instance();
+
+    reg.set_active_layout_id("floating-dock");
+    CHECK(reg.active_layout_id() == "floating-dock");
+    CHECK(reg.active_layout_name() == "悬浮胶囊 Dock");
+
+    reg.set_active_layout_id("analysis-rail");
+    CHECK(reg.active_layout_id() == "analysis-rail");
+    CHECK(reg.active_layout_name() == "暗色分析舱");
+
+    reg.set_active_layout_id("workbench");
+    CHECK(reg.active_layout_id() == "workbench");
+    CHECK(reg.active_layout_name() == "标准工作台");
 }

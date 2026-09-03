@@ -15,6 +15,8 @@
 #include "ui/MeasurementPanel.hpp"
 #include "ui/AuxiliaryPanels.hpp"
 #include "ui/RenderSettingsPanel.hpp"
+#include "ui/FloatingDockUi.hpp"
+#include "ui/AnalysisRailUi.hpp"
 
 #include "ui/UiFonts.hpp"
 #include "imgui.h"
@@ -108,12 +110,6 @@ ImFont* status_font()
 {
     return gs3d::gui::ui_fonts().status;
 }
-
-
-
-
-
-
 
 void draw_tools_window(
     gs3d::app::AppState& state,
@@ -593,8 +589,12 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     );
     const float left_ratio = default_left_width / work_width;
 
-    // TIA-111 方向 B：可折叠侧边栏
-    const bool sidebar_visible = state.ui_chrome.sidebar_visible;
+    const auto active_layout = LayoutRegistry::instance().active_layout_id();
+    const bool is_floating = (active_layout == "floating-dock" || state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock);
+    const bool is_rail = (active_layout == "analysis-rail" || state.ui_layout_mode == gs3d::app::UiLayoutMode::kAnalysisRail);
+
+    // 工作台模式支持侧边栏停靠，悬浮与导轨模式面板为浮动/抽屉
+    const bool sidebar_visible = state.ui_chrome.sidebar_visible && !is_floating && !is_rail;
     const bool has_left_panels = sidebar_visible &&
         (state.panels.dataset ||
         state.panels.tile_inspector ||
@@ -602,9 +602,9 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         state.panels.navigation_map ||
         state.panels.measurement ||
         state.panels.region_stats);
-    const bool has_right_panels =
-        state.panels.render_settings ||
-        state.panels.performance;
+    const bool has_right_panels = !is_floating &&
+        (state.panels.render_settings ||
+        state.panels.performance);
     const float right_split_width = std::max(
         1.0f,
         work_width - (has_left_panels ? default_left_width : 0.0f)
@@ -756,6 +756,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         }
         if (chrome_result.layout_change_requested) {
             LayoutRegistry::instance().set_active_layout_id(chrome_result.requested_layout_id);
+            state.ui_layout_mode = gs3d::app::ui_layout_from_string(chrome_result.requested_layout_id);
             restore_default_workspace(state);
             dock_layout_.initialized = false;
             persist_ui_preferences(state, requested_theme);
@@ -834,6 +835,8 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             focus_workbench_dataset_ = false;
         }
         draw_dataset_panel(state);
+        draw_floating_dock_overlay(state, actions, ui_scale);
+        draw_analysis_rail_overlay(state, actions, ui_scale);
         draw_screenshot_notice(state, ui_scale);
         draw_shortcut_overlay(state, ui_scale);
         draw_panel_command_palette(state, ui_scale);

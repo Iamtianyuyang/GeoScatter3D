@@ -32,10 +32,11 @@ ImVec4 to_linear(const ImVec4& c)
     return c;
 }
 
-// ── 方案 A：碳蓝 · 浅色测绘（冷白表面 + 克制蓝）────────────────────
+// ── 方案 A：极地冷白 (Arctic Light) · 浅色（冷白表面 + 克制蓝）────────────────────
 constexpr ThemeTokens kCarbonBlue{
     .id = "carbon-blue",
-    .name = "碳蓝 · 浅色测绘",
+    .alias_id = "arctic-light",
+    .name = "极地冷白 (Arctic Light)",
     .dark = false,
 
     .bg = rgb(0xF5F7FA),
@@ -76,10 +77,11 @@ constexpr ThemeTokens kCarbonBlue{
     .button_hover_alpha = 0.85f,
 };
 
-// ── 方案 A2：碳蓝 2.0 · 深色测绘（高对比度 + 紧凑间距）──────────────
+// ── 方案 A2：深空暗夜 (Midnight Dark) · 深色（高对比度暗夜基底）──────────────
 constexpr ThemeTokens kCarbonBlueDark{
     .id = "carbon-blue-dark",
-    .name = "碳蓝 2.0 · 深色测绘",
+    .alias_id = "midnight-dark",
+    .name = "深空暗夜 (Midnight Dark)",
     .dark = true,
 
     .bg = rgb(0x0D1117),
@@ -120,10 +122,11 @@ constexpr ThemeTokens kCarbonBlueDark{
     .button_hover_alpha = 0.55f,
 };
 
-// ── 方案 B：石墨 · 深色测绘（蓝灰工作台 + 清晰蓝）──────────────────
+// ── 方案 B：蓝灰石墨 (Slate Graphite) · 深色（蓝灰工作台 + 清晰蓝）──────────────────
 constexpr ThemeTokens kDeepGraphite{
     .id = "deep-graphite",
-    .name = "石墨 · 深色测绘",
+    .alias_id = "slate-graphite",
+    .name = "蓝灰石墨 (Slate Graphite)",
     .dark = true,
 
     .bg = rgb(0x10151C),
@@ -164,10 +167,11 @@ constexpr ThemeTokens kDeepGraphite{
     .button_hover_alpha = 0.48f,
 };
 
-// ── 方案 C：仪器 · 琥珀测绘（中性深灰 + 低饱和琥珀）──────────────────
+// ── 方案 C：雷达琥珀 (Radar Amber) · 深色（中性深灰 + 航电琥珀）──────────────────
 constexpr ThemeTokens kInstrumentAmber{
     .id = "instrument-amber",
-    .name = "仪器 · 琥珀测绘",
+    .alias_id = "radar-amber",
+    .name = "雷达琥珀 (Radar Amber)",
     .dark = true,
 
     .bg = rgb(0x151914),
@@ -208,10 +212,11 @@ constexpr ThemeTokens kInstrumentAmber{
     .button_hover_alpha = 0.48f,
 };
 
-// ── 高对比 · 浅色测绘（TIA-92）────────────────────
+// ── 强光对比 (High Contrast) · 浅色（高对比无障碍与强光）────────────────────
 constexpr ThemeTokens kHighContrastLight{
     .id = "high-contrast",
-    .name = "高对比 · 浅色测绘",
+    .alias_id = "contrast-light",
+    .name = "强光对比 (High Contrast)",
     .dark = false,
     .bg = rgb(0xFFFFFF),
     .text = rgb(0x0A0F14),
@@ -279,10 +284,17 @@ ThemeId active_theme()
 ThemeId theme_from_string(std::string_view name, ThemeId fallback)
 {
     for (int i = 0; i < kThemeCount; ++i) {
-        if (name == kThemes[i]->id) {
+        if (name == kThemes[i]->id ||
+            (kThemes[i]->alias_id != nullptr && name == kThemes[i]->alias_id)) {
             return static_cast<ThemeId>(i);
         }
     }
+    if (name == "light") return ThemeId::kArcticLight;
+    if (name == "dark") return ThemeId::kMidnightDark;
+    if (name == "graphite") return ThemeId::kSlateGraphite;
+    if (name == "amber") return ThemeId::kRadarAmber;
+    if (name == "contrast") return ThemeId::kHighContrast;
+
     const auto* t = ThemeRegistry::instance().find_theme(name);
     if (t != nullptr) {
         return ThemeId::kCustom;

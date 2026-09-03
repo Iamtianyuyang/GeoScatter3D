@@ -263,11 +263,12 @@ def main() -> int:
 
         absolute_path_candidate = (
             path in PORTABILITY_PATHS or
-            path.parts[:1] in {("config",), ("include",), ("src",)}
+            path.parts[:1] in {("cmake",), ("config",), ("include",), ("src",), ("tests",)}
         )
-        if absolute_path_candidate and path.suffix in {
-            ".cmake", ".cpp", ".hpp", ".toml", ""
-        }:
+        if absolute_path_candidate and (
+            path.suffix in {".cmake", ".cpp", ".hpp", ".toml", ""} or
+            path.name == "CMakeLists.txt"
+        ):
             content = (root / path).read_text(encoding="utf-8")
             if ABSOLUTE_MACHINE_PATH.search(content):
                 violations.append(f"machine-specific absolute path: {path_string}")

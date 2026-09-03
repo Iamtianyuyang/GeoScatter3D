@@ -245,10 +245,10 @@ include/ & src/
 ## 重大风险
 
 1. `ViewerApp.cpp` 当前有 911 行，其中 `ViewerApp::run()` 独占 689 行。运行时资源、
-   tile 流、相机、pick 和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
+   tile 流、相机、pick和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。`UiRoot.cpp` 仍有 849 行（视口画布绘制已拆分到
+   调度与错误边界。`UiRoot.cpp` 仍有 852 行（视口画布绘制已拆分到
    `ViewportCanvas.cpp`，TIA-92 把顶栏/状态栏/快捷键总览/命令面板拆到 AppChrome.cpp），剩余的 docking
    编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 856 / 763 行分别约束 `ViewerApp.cpp`、
    `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算

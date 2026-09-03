@@ -14,7 +14,7 @@ LayoutRegistry::LayoutRegistry() {
 }
 
 void LayoutRegistry::init_builtin_layouts() {
-    // 默认内置标准工作台布局
+    // 方案 A：标准工作台布局（默认激活）
     register_layout({
         .id = "workbench",
         .name = "标准工作台",
@@ -22,11 +22,19 @@ void LayoutRegistry::init_builtin_layouts() {
         .enabled = true
     });
 
-    // 预注册未来扩展插槽布局示例（可根据需要启用）
+    // 方案 B：悬浮胶囊 Dock 布局
     register_layout({
-        .id = "fullscreen_viewport",
-        .name = "沉浸视口",
-        .description = "全屏视口沉浸工作模式",
+        .id = "floating-dock",
+        .name = "悬浮胶囊 Dock",
+        .description = "全沉浸视口 + 底部悬浮胶囊工具栏",
+        .enabled = true
+    });
+
+    // 方案 C：暗色分析舱布局
+    register_layout({
+        .id = "analysis-rail",
+        .name = "暗色分析舱",
+        .description = "左侧工具图标轨 + 互斥抽屉 + 侧边分析栏",
         .enabled = true
     });
 }

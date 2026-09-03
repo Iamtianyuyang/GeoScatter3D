@@ -48,7 +48,8 @@ const ThemeTokens* ThemeRegistry::theme_at(std::size_t index) const noexcept {
 
 const ThemeTokens* ThemeRegistry::find_theme(std::string_view id) const noexcept {
     for (const auto& t : themes_) {
-        if (t.id != nullptr && std::string_view(t.id) == id) {
+        if ((t.id != nullptr && std::string_view(t.id) == id) ||
+            (t.alias_id != nullptr && std::string_view(t.alias_id) == id)) {
             return &t;
         }
     }
@@ -96,7 +97,8 @@ void ThemeRegistry::set_active_theme(ThemeId id) {
 
 void ThemeRegistry::set_active_theme(std::string_view id) {
     for (std::size_t i = 0; i < themes_.size(); ++i) {
-        if (themes_[i].id != nullptr && std::string_view(themes_[i].id) == id) {
+        if ((themes_[i].id != nullptr && std::string_view(themes_[i].id) == id) ||
+            (themes_[i].alias_id != nullptr && std::string_view(themes_[i].alias_id) == id)) {
             active_theme_index_ = i;
             return;
         }

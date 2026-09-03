@@ -23,6 +23,27 @@ TEST_CASE("ThemeRegistry contains 5 builtin themes", "[theme_registry]") {
 
     const auto* hc = reg.find_theme("high-contrast");
     REQUIRE(hc != nullptr);
+
+    // 验证全新别名与显示名称
+    const auto* arctic = reg.find_theme("arctic-light");
+    REQUIRE(arctic != nullptr);
+    CHECK(std::string_view(arctic->name) == "极地冷白 (Arctic Light)");
+
+    const auto* midnight = reg.find_theme("midnight-dark");
+    REQUIRE(midnight != nullptr);
+    CHECK(std::string_view(midnight->name) == "深空暗夜 (Midnight Dark)");
+
+    const auto* slate = reg.find_theme("slate-graphite");
+    REQUIRE(slate != nullptr);
+    CHECK(std::string_view(slate->name) == "蓝灰石墨 (Slate Graphite)");
+
+    const auto* radar = reg.find_theme("radar-amber");
+    REQUIRE(radar != nullptr);
+    CHECK(std::string_view(radar->name) == "雷达琥珀 (Radar Amber)");
+
+    const auto* contrast = reg.find_theme("contrast-light");
+    REQUIRE(contrast != nullptr);
+    CHECK(std::string_view(contrast->name) == "强光对比 (High Contrast)");
 }
 
 TEST_CASE("ThemeRegistry can register new color theme dynamically", "[theme_registry]") {

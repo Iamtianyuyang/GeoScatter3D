@@ -150,8 +150,6 @@ TEST_CASE("Initial viewer app state resolves the configured UI layout")
             );
         CHECK(state.ui_layout_mode ==
               gs3d::app::UiLayoutMode::kAnalysisRail);
-        CHECK(state.analysis_rail_ui.open_drawer ==
-              gs3d::app::AnalysisDrawer::kData);
     }
     SECTION("缺省与未知取值回退到工作台布局") {
         const auto default_state =

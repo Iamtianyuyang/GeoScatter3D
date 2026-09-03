@@ -19,6 +19,13 @@ enum class ThemeId : int {
     kInstrumentAmber = 3,
     kHighContrastLight = 4,
     kCustom = 100,
+
+    // 现代命名别名
+    kArcticLight = 0,
+    kMidnightDark = 1,
+    kSlateGraphite = 2,
+    kRadarAmber = 3,
+    kHighContrast = 4,
 };
 
 inline constexpr int kThemeCount = 5;
@@ -28,9 +35,10 @@ inline constexpr int kThemeCount = 5;
  * 仅包含颜色、对比度与透明度阶梯，圆角等几何参数收敛至 LayoutMetrics。
  */
 struct ThemeTokens {
-    const char* id = "";   // 配置文件里的标识，如 "carbon-blue"
-    const char* name = ""; // 菜单显示名，如 "碳蓝 · 浅色测绘"
-    bool dark = false;     // 以 StyleColorsDark 还是 StyleColorsLight 为底
+    const char* id = "";         // 基础标识，如 "carbon-blue"
+    const char* alias_id = "";   // 现代别名，如 "arctic-light"
+    const char* name = "";       // 菜单显示名，如 "极地冷白 (Arctic Light)"
+    bool dark = false;           // 以 StyleColorsDark 还是 StyleColorsLight 为底
 
     // ── 基础表面 / 文字（sRGB）────────────────────────────────
     ImVec4 bg{};            // 窗口背景
