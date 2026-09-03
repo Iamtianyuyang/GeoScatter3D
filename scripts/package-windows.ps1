@@ -11,7 +11,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$BuildDir = "build-win",
+    [string]$BuildDir = "tmp/build-win",
+    [string]$DistDir = "tmp/dist",
     [switch]$SkipTests
 )
 
@@ -101,9 +102,9 @@ if (-not $SkipTests) {
 }
 
 # --- Install + package ------------------------------------------------------
-Write-Host "==> Installing to dist/"
-if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-Exec { cmake --install $BuildDir --config Release --prefix dist }
+Write-Host "==> Installing to $DistDir/"
+if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
+Exec { cmake --install $BuildDir --config Release --prefix $DistDir }
 
 Write-Host "==> Creating package"
 Push-Location $BuildDir
@@ -117,5 +118,5 @@ $Package = Get-ChildItem "$BuildDir\GeoScatter3D-*.zip" |
     Sort-Object LastWriteTime | Select-Object -Last 1
 Write-Host ""
 Write-Host "Done."
-Write-Host "  Folder:  $RepoRoot\dist\"
+Write-Host "  Folder:  $RepoRoot\$DistDir\"
 Write-Host "  Archive: $($Package.FullName)"

@@ -60,7 +60,7 @@ A user explicitly asking for a local service to stay available after the turn is
 3. **质量门禁验证**：
    - 静态检查：`python scripts/check_include_deps.py` 必须 OK；
    - 工程护栏：`python scripts/check_engineering_guardrails.py` 必须在预算内；
-   - 单元测试：`ctest --test-dir build-win -C Release --output-on-failure` 必须全部通过。
+   - 单元测试：`ctest --test-dir tmp/build-win -C Release --output-on-failure` 必须全部通过。
 
 ## Available Commands
 

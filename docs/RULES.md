@@ -140,7 +140,7 @@ flowchart TD
    - 包含依赖检查：`python scripts/check_include_deps.py`（无新增非法包含）。
    - 工程护栏检查：`python scripts/check_engineering_guardrails.py`（行数预算零超标）。
 2. **单元测试门禁**：
-   - `ctest --test-dir build-win -C Release --output-on-failure`（37 个测试集、数百个 assertion 100% 通过）。
+   - `ctest --test-dir tmp/build-win -C Release --output-on-failure`（37 个测试集、数百个 assertion 100% 通过）。
 3. **进程安全门禁**：
    - 执行 `Get-Process -Name GeoScatter3D`，确认无后台残余进程。
 4. **交付说明格式**：

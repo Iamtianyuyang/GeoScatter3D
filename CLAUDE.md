@@ -61,7 +61,7 @@
 ### 2. 自动化测试与质量门禁
 ```powershell
 # 1. 运行全部 CTest 单元测试（Release 配置）
-ctest --test-dir build-win -C Release --output-on-failure
+ctest --test-dir tmp/build-win -C Release --output-on-failure
 
 # 2. 依赖合规性检查（检查模块间包含关系）
 C:/Users/tianyy/miniconda3/python.exe scripts/check_include_deps.py
