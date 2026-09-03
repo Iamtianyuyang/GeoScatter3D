@@ -2691,18 +2691,10 @@ void test_rotation_supports_nearly_full_pitch_range()
 
 void test_rotation_after_pan_keeps_scene_pivot_on_screen()
 {
-    // Contract: with no explicit orbit pivot, rotation pivots around the
-    // camera target (= the implicit pivot). After a pan, the target has
-    // moved, so the rotation pivot moves with it. The visible invariant
-    // is that the camera's look-at point (= pivot) stays anchored at the
-    // same screen pixel while the user tumbles. The world-space distance
-    // from camera to target is also preserved (rigid rotation).
-    //
-    // Note: under the OLD (pre-fix) policy, the rotation pivot was the
-    // scene bounds centre, which is why this test used to assert that the
-    // bounds centre stayed on screen. That policy was rejected because
-    // it produced a fixed world-axis rotation that ignored the user's
-    // panned composition (see project memory [[rotation-direction]]).
+    // Contract: with no explicit orbit pivot, rotation uses the geometric
+    // centre of the data bounds. Pan changes composition but must not move
+    // that world-space pivot. The visible invariant is that the data centre
+    // remains at the same screen pixel while the user tumbles.
 
     gs3d::camera::Camera camera;
     camera.set_viewport(800, 600);
@@ -2730,10 +2722,9 @@ void test_rotation_after_pan_keeps_scene_pivot_on_screen()
     }
 
     const gs3d::camera::Viewport viewport{800, 600};
-    // The new pivot is the camera target (no explicit pivot set).
-    const gs3d::camera::Vec3 target_pivot = camera.target();
+    const gs3d::camera::Vec3 scene_pivot{0.0f, 0.0f, 0.0f};
     const auto screen_before = gs3d::camera::MouseRay::to_screen(
-        target_pivot, viewport, camera);
+        scene_pivot, viewport, camera);
     const float distance_before = camera.distance();
 
     {
@@ -2748,21 +2739,21 @@ void test_rotation_after_pan_keeps_scene_pivot_on_screen()
     }
 
     const auto screen_after = gs3d::camera::MouseRay::to_screen(
-        target_pivot, viewport, camera);
+        scene_pivot, viewport, camera);
     expect(
         screen_before.has_value() && screen_after.has_value(),
-        "panned target (= pivot) remains projectable across rotation"
+        "data-bounds centre remains projectable across panned rotation"
     );
     if (screen_before && screen_after) {
         expect(
             std::abs(screen_after->x - screen_before->x) < 0.1f &&
             std::abs(screen_after->y - screen_before->y) < 0.1f,
-            "panned camera target (= pivot) must stay at the same screen pixel"
+            "panned data-bounds centre must stay at the same screen pixel"
         );
     }
     expect(
         std::abs(camera.distance() - distance_before) < 0.01f,
-        "rigid pivot rotation preserves camera look distance"
+        "rigid data-centre rotation preserves camera look distance"
     );
 }
 
@@ -3469,8 +3460,8 @@ void test_hover_cleared_when_no_hit()
 //       if it ever regresses: "rotation geometry broke" vs
 //       "pixel-to-world conversion broke").
 //
-// Invariant under the new policy:
-//   pivot = orbit_pivot_.value_or(camera.target())
+// Pivot policy:
+//   explicit selection > data-bounds centre > camera.target() fallback
 //   pan  : pos += D, tgt += D, explicit orbit_pivot_ remains world-locked
 //   rotate: rigid (pos - pivot, tgt - pivot) preserved
 // =====================================================================
@@ -3838,8 +3829,8 @@ void test_orbit_is_invariant_under_uniform_world_translation()
 //   6. reset 后旋转
 //   7. 多视口同步后旋转
 //
-// Each scenario asserts: after the operation, rotation pivots around
-// the *current* camera target (= implicit pivot) and keeps it on screen.
+// Each scenario asserts that rotation uses the selected point when one
+// exists and otherwise uses the geometric centre of the data bounds.
 // =====================================================================
 
 namespace scenarios {
@@ -3890,42 +3881,43 @@ void pan(
     static_cast<void>(ctl.update(cam, in));
 }
 
-void assert_target_stays_on_screen(
+void assert_pivot_stays_on_screen(
     const char* scenario,
-    gs3d::camera::Camera& cam,
-    const gs3d::camera::Vec3& target_before,
-    const gs3d::camera::Vec3& pivot_before
+    const gs3d::camera::Camera& camera_before,
+    const gs3d::camera::Camera& camera_after,
+    const gs3d::camera::Vec3& pivot
 ) {
     const gs3d::camera::Viewport viewport{800, 600};
-    const auto sb = gs3d::camera::MouseRay::to_screen(
-        target_before, viewport, cam);
-    expect(sb.has_value(),
-           std::string(scenario) + ": target is projectable");
-    if (!sb) return;
-    const auto sa = gs3d::camera::MouseRay::to_screen(
-        target_before, viewport, cam);
-    expect(sa.has_value(),
-           std::string(scenario) + ": target is projectable after");
-    if (!sa) return;
+    const auto screen_before = gs3d::camera::MouseRay::to_screen(
+        pivot, viewport, camera_before);
+    const auto screen_after = gs3d::camera::MouseRay::to_screen(
+        pivot, viewport, camera_after);
     expect(
-        std::abs(sa->x - sb->x) < 0.5f &&
-        std::abs(sa->y - sb->y) < 0.5f,
-        std::string(scenario) +
-            ": target (= pivot) stays on screen after rotation"
+        screen_before.has_value() && screen_after.has_value(),
+        std::string(scenario) + ": pivot remains projectable");
+    if (!screen_before || !screen_after) return;
+    expect(
+        std::abs(screen_after->x - screen_before->x) < 0.5f &&
+        std::abs(screen_after->y - screen_before->y) < 0.5f,
+        std::string(scenario) + ": pivot stays fixed on screen"
     );
-    // Also assert the geometric invariant: |pos - pivot| preserved.
-    const auto pos_off_now = gs3d::camera::Vec3{
-        cam.position().x - pivot_before.x,
-        cam.position().y - pivot_before.y,
-        cam.position().z - pivot_before.z};
-    const float r = std::sqrt(
-        pos_off_now.x * pos_off_now.x +
-        pos_off_now.y * pos_off_now.y +
-        pos_off_now.z * pos_off_now.z);
+
+    const auto distance_to_pivot = [&](const gs3d::camera::Camera& camera) {
+        const auto offset = gs3d::camera::Vec3{
+            camera.position().x - pivot.x,
+            camera.position().y - pivot.y,
+            camera.position().z - pivot.z};
+        return std::sqrt(
+            offset.x * offset.x +
+            offset.y * offset.y +
+            offset.z * offset.z);
+    };
     expect(
-        r > 0.0f,
-        std::string(scenario) +
-            ": camera is still offset from pivot (not collapsed)"
+        std::abs(
+            distance_to_pivot(camera_after) -
+            distance_to_pivot(camera_before)
+        ) < 0.01f,
+        std::string(scenario) + ": orbit radius is preserved"
     );
 }
 
@@ -3945,9 +3937,11 @@ void test_scenario_initial_rotation()
 
     const auto tgt = cam.target();
     const auto piv = tgt;  // implicit pivot = target
+    const auto camera_before_rotation = cam;
     rotate(cam, ctl, 80.0f, 30.0f);
 
-    assert_target_stays_on_screen("1. initial rotation", cam, tgt, piv);
+    assert_pivot_stays_on_screen(
+        "1. initial rotation", camera_before_rotation, cam, piv);
 }
 
 // 2) 大距离 pan 后旋转 — large pan, then rotate.
@@ -3962,16 +3956,20 @@ void test_scenario_long_pan_then_rotation()
     // Long pan (1.5x screen width)
     pan(cam, ctl, 1200.0f, -400.0f);
 
-    // The implicit pivot (= target) must have moved with the pan.
+    // Pan moves camera.target(), but the automatic pivot stays at the
+    // geometric centre of the configured data bounds.
     expect(cam.target().x != 0.0f || cam.target().y != 0.0f,
            "long pan moves camera target");
 
-    const auto tgt = cam.target();
-    const auto piv = tgt;
+    const gs3d::camera::Vec3 data_center{0.0f, 0.0f, 0.0f};
+    const auto camera_before_rotation = cam;
     rotate(cam, ctl, 60.0f, 25.0f);
 
-    assert_target_stays_on_screen(
-        "2. long pan + rotation", cam, tgt, piv);
+    assert_pivot_stays_on_screen(
+        "2. long pan + rotation",
+        camera_before_rotation,
+        cam,
+        data_center);
 }
 
 // 3) focus 后旋转 — explicit pivot is set; rotation pivots around it.
@@ -4084,8 +4082,8 @@ void test_scenario_focus_then_pan_then_rotation()
     }
 }
 
-// 5) box select 后旋转 — box select clears orbit_pivot, then animate_to
-// moves the target. Rotation pivots around the new target.
+// 5) box select 后旋转 — box select clears the explicit point. Although
+// animate_to moves camera.target(), rotation falls back to data centre.
 void test_scenario_box_select_then_rotation()
 {
     using namespace scenarios;
@@ -4111,21 +4109,15 @@ void test_scenario_box_select_then_rotation()
            "5. box select: target == new_target after anim"
     );
 
-    const auto piv = cam.target();
+    const gs3d::camera::Vec3 data_center{0.0f, 0.0f, 0.0f};
+    const auto camera_before_rotation = cam;
     rotate(cam, ctl, 40.0f, 20.0f);
 
-    const gs3d::camera::Viewport viewport{800, 600};
-    const auto sb = gs3d::camera::MouseRay::to_screen(
-        new_target, viewport, cam);
-    expect(sb.has_value(),
-           "5. box select + rotation: new target still projectable");
-    if (sb) {
-        expect(
-            std::abs(sb->x - 400.0f) < 5.0f &&
-            std::abs(sb->y - 300.0f) < 5.0f,
-           "5. box select + rotation: new target stays near screen centre"
-        );
-    }
+    assert_pivot_stays_on_screen(
+        "5. box select + rotation",
+        camera_before_rotation,
+        cam,
+        data_center);
 }
 
 // 6) reset 后旋转 — reset clears pivot, resets camera to bounds-centre
@@ -4150,9 +4142,11 @@ void test_scenario_reset_then_rotation()
 
     const auto tgt = cam.target();
     const auto piv = tgt;
+    const auto camera_before_rotation = cam;
     rotate(cam, ctl, 50.0f, 20.0f);
 
-    assert_target_stays_on_screen("6. reset + rotation", cam, tgt, piv);
+    assert_pivot_stays_on_screen(
+        "6. reset + rotation", camera_before_rotation, cam, piv);
 }
 
 // 7) 多视口同步后旋转 — two linked viewports; after propagation, both

@@ -74,7 +74,7 @@ public:
 
     // Mirror the orbit pivot state from another controller. Used by
     // CameraHub propagate callbacks so linked viewports share the same
-    // focus point (or both fall back to camera.target() together).
+    // focus point (or both use their data-bounds centre when available).
     void copy_pivot_from(const CameraController& src) noexcept;
 
     [[nodiscard]]

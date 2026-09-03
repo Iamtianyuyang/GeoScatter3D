@@ -201,13 +201,10 @@ bool CameraController::update(
         static_cast<float>(input.viewport_height);
 
     // --- Rotation: incremental rigid orbit around the orbit pivot ---
-    // The pivot is either an explicit world-space focus point (set via
-    // focus_on / set_orbit_pivot) or, by default, the camera's current
-    // target. Pan moves position and target. Therefore the implicit pivot
-    // follows a pan, while an explicitly selected point remains locked to
-    // the same world coordinate.
-    // The bounds centre is NOT used here; it is reserved for fit_bounds
-    // and reset_view, which is the only time we want to recentre.
+    // An explicitly selected world-space focus point wins. Otherwise use
+    // the geometric centre of the data bounds so panning changes only the
+    // composition, not the object's rotation centre. camera.target() is a
+    // fallback only for controllers that have not been given data bounds.
 
     bool rotated_this_frame = false;
 
@@ -226,11 +223,14 @@ bool CameraController::update(
         if (config_.invert_rotate_x) angle_h = -angle_h;
         if (config_.invert_rotate_y) angle_v = -angle_v;
 
-        // New policy: explicit pivot wins, otherwise pivot = camera target.
-        // bounds centre is reserved for fit_bounds / reset_view only — using
-        // it here would make rotation pivot around the original scene
-        // centre even after a pan, breaking translation invariance.
-        const Vec3 pivot = orbit_pivot_.value_or(camera.target());
+        const Vec3 default_pivot = has_bounds_
+            ? Vec3{
+                  0.5f * (bounds_.min.x + bounds_.max.x),
+                  0.5f * (bounds_.min.y + bounds_.max.y),
+                  0.5f * (bounds_.min.z + bounds_.max.z)
+              }
+            : camera.target();
+        const Vec3 pivot = orbit_pivot_.value_or(default_pivot);
 
         Vec3 position_offset = sub(camera.position(), pivot);
         Vec3 target_offset = sub(camera.target(), pivot);
