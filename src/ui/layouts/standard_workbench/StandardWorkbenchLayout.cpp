@@ -23,10 +23,7 @@ namespace gs3d::ui {
  * 界面区域纵览 (从上至下、从左至右)：
  *
  * +---------------------------------------------------------------------------------------+
- * | 【区域 1】顶部上下文快捷栏 (draw_context_bar)                                         |
- * | 显示当前数据集名称、截屏快捷入口、测量模式开启/关闭切换                               |
- * +---------------------------+-------------------------------+---------------------------+
- * | 【区域 2】左侧场景栏      | 【区域 3】中央主视口栏        | 【区域 4】右侧检查器栏    |
+ * | 【区域 1】左侧场景栏      | 【区域 2】中央主视口栏        | 【区域 3】右侧检查器栏    |
  * | (draw_scene_column)       | (draw_viewport_column)        | (draw_inspector_column)   |
  * |                           |                               |                           |
  * | 1. 项目数据源列表         | 1. 视口标头与视角快速控制栏   | 1. 检查器标头             |
@@ -35,7 +32,7 @@ namespace gs3d::ui {
  * |    (NavigationMapPanel)   |    (ViewportCanvas)           |    - 点云大小/颜色映射    |
  * |                           |                               |    - 色带LUT/高度夸张     |
  * +---------------------------+-------------------------------+---------------------------+
- * | 【区域 5】底部状态栏 (draw_status_bar)                                                |
+ * | 【区域 4】底部状态栏 (draw_status_bar)                                                |
  * | 全局渲染状态、内存/点数统计、提示消息                                                  |
  * +---------------------------------------------------------------------------------------+
  *
@@ -47,57 +44,11 @@ namespace gs3d::ui {
 
 namespace {
 
-// 顶部快捷上下文栏与底部状态栏基础高度（实际高度会乘以 ui_scale）
-constexpr float kContextBarHeight = 32.0f;
+// 底部状态栏基础高度（实际高度会乘以 ui_scale）
 constexpr float kStatusBarHeight = 26.0f;
 
 // -----------------------------------------------------------------------------------------
-// 【区域 1】顶部上下文快捷栏：显示当前数据集名称、截屏触发按钮、测量模式开启/关闭
-// -----------------------------------------------------------------------------------------
-void draw_context_bar(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
-    int active_view,
-    float scale
-)
-{
-    ImGui::SetCursorPosX(12.0f * scale);
-    ImGui::TextDisabled("工作区");
-    ImGui::SameLine(0.0f, 10.0f * scale);
-    ImGui::TextUnformatted(
-        state.dataset.active_dataset.empty()
-            ? "未加载数据"
-            : state.dataset.active_dataset.c_str()
-    );
-
-    const float actions_width = 154.0f * scale;
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(
-        ImGui::GetCursorPosX(),
-        ImGui::GetWindowContentRegionMax().x - actions_width
-    ));
-    if (ImGui::SmallButton("截图")) {
-        actions.screenshot_requested = true;
-    }
-    ImGui::SameLine();
-    auto& measurement = gs3d::app::measurement_for_view(state, active_view);
-    const bool active = measurement.measure_mode_active();
-    if (active) {
-        ImGui::PushStyleColor(ImGuiCol_Button, to_u32(palette::kAccent, 145));
-    }
-    if (ImGui::SmallButton(active ? "结束测量" : "测量")) {
-        measurement.toggle_measure_mode();
-        if (!measurement.measure_mode_active()) {
-            measurement.clear_pending();
-        }
-    }
-    if (active) {
-        ImGui::PopStyleColor();
-    }
-}
-
-// -----------------------------------------------------------------------------------------
-// 【区域 2】左侧场景栏：包含项目数据源列表（上半部）和鸟瞰空间导航图（下半部）
+// 【区域 1】左侧场景栏：包含项目数据源列表（上半部）和鸟瞰空间导航图（下半部）
 // -----------------------------------------------------------------------------------------
 void draw_scene_column(
     gs3d::app::AppState& state,
@@ -140,7 +91,7 @@ void draw_scene_column(
 }
 
 // -----------------------------------------------------------------------------------------
-// 【区域 3】中央主视口栏：视口标头、快速视角控制栏 (复位/坐标轴/十字线) 与 3D 点云画布
+// 【区域 2】中央主视口栏：视口标头、快速视角控制栏 (复位/坐标轴/十字线) 与 3D 点云画布
 // -----------------------------------------------------------------------------------------
 void draw_viewport_column(
     gs3d::app::AppState& state,
@@ -160,11 +111,11 @@ void draw_viewport_column(
     ImGui::SameLine();
     ImGui::TextDisabled("实时点云");
     ImGui::SameLine();
-    // 3.1 视口快捷操作栏 (复位视角、地图轴、十字线、更多选项)
+    // 2.1 视口快捷操作栏 (复位视角、地图轴、十字线、更多选项)
     draw_workbench_view_controls(state, view, actions, scale);
     ImGui::Separator();
 
-    // 3.2 3D 点云主视口画布（接收鼠标交互、相机变换与拾取）
+    // 2.2 3D 点云主视口画布（接收鼠标交互、相机变换与拾取）
     ViewportCanvasOptions options;
     options.workspace_id = 0;
     options.show_info_badge = true;
@@ -173,7 +124,7 @@ void draw_viewport_column(
 }
 
 // -----------------------------------------------------------------------------------------
-// 【区域 4】右侧检查器栏：属性配置面板 (着色模式、点大小、色带映射、高度夸张等)
+// 【区域 3】右侧检查器栏：属性配置面板 (着色模式、点大小、色带映射、高度夸张等)
 // -----------------------------------------------------------------------------------------
 void draw_inspector_column(
     gs3d::app::AppState& state,
@@ -213,20 +164,6 @@ void draw_standard_workbench_layout(
     );
     const ImVec2 available = ImGui::GetContentRegionAvail();
     const float status_height = std::min(kStatusBarHeight * scale, available.y);
-    const float context_height = std::min(
-        kContextBarHeight * scale,
-        std::max(0.0f, available.y - status_height)
-    );
-
-    if (ImGui::BeginChild(
-            "##StandardWorkbenchContext",
-            ImVec2(0.0f, context_height),
-            false,
-            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
-        )) {
-        draw_context_bar(state, actions, active_view, scale);
-        ImGui::EndChild();
-    }
 
     // -------------------------------------------------------------------------------------
     // 栏目几何度量与自适应计算（后续优化布局尺寸重点调整此处）：
@@ -280,6 +217,9 @@ void draw_standard_workbench_layout(
     }
     ImGui::PopStyleVar();
 
+    // -------------------------------------------------------------------------------------
+    // 【区域 4】底部状态栏：显示性能帧率、点数、显存占用与状态提示
+    // -------------------------------------------------------------------------------------
     if (ImGui::BeginChild(
             "##StandardWorkbenchStatus",
             ImVec2(0.0f, status_height),
