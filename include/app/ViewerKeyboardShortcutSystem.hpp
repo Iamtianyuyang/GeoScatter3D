@@ -20,7 +20,7 @@ namespace gs3d::app {
 
 struct ViewerKeyboardShortcutContext {
     gs3d::platform::Window& window;
-    bool imgui_wants_keyboard = false;
+    bool ui_wants_keyboard = false;
     bool keyboard_shortcuts_allowed = false;
     const ViewerCameraConfig& camera_config;
     AppState& app_state;

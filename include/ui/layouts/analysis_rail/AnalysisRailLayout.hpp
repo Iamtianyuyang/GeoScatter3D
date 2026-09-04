@@ -30,22 +30,6 @@ AnalysisRailLayout compute_analysis_rail_layout(
     float drawer_fraction
 ) noexcept;
 
-// draw_analysis_rail_layout 的帧结果
-struct AnalysisRailFrameResult {
-    bool theme_change_requested = false;
-    ThemeId requested_theme = ThemeId::kDeepGraphite;
-};
-
-/*
- * 方案 C · 侧轨抽屉分析舱布局 (Analysis Rail)
- * 左侧 54px 垂直图标导轨 + 点击展开互斥抽屉 + 右侧快捷分析卡片
- */
-[[nodiscard]]
-AnalysisRailFrameResult draw_analysis_rail_layout(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
-    float ui_scale
-);
 
 void draw_analysis_rail_overlay(
     gs3d::app::AppState& state,

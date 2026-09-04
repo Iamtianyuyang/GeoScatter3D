@@ -1,10 +1,26 @@
 #pragma once
 
-#include "imgui.h"
-
 #include <string_view>
 
 namespace gs3d::ui {
+
+/*
+ * 纯颜色四元组（RGBA 0.0f ~ 1.0f 浮点表示）。
+ * 完全独立于任何 GUI 框架，提供纯粹数据语义。
+ */
+struct Color4 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 1.0f;
+
+    constexpr Color4() noexcept = default;
+    constexpr Color4(float r, float g, float b, float a = 1.0f) noexcept
+        : x(r), y(g), z(b), w(a) {}
+};
+
+// 保持别名兼容已有单测及调用语法
+using ImVec4 = Color4;
 
 /*
  * 可切换 UI 颜色主题（Theme / Color）。
@@ -94,10 +110,10 @@ struct ThemeTokens {
     ThemeId fallback = ThemeId::kCarbonBlue
 );
 
-// 仅记录启动主题，不触碰 ImGui（可在 CreateContext 之前调用）。
+// 仅记录启动主题。
 void set_startup_theme(ThemeId id);
 
-// 应用主题：重写 palette:: 全局色 + ImGuiStyle 纯颜色。需要 ImGui 上下文。
+// 应用主题：重写 palette:: 全局色。
 void apply_theme(ThemeId id, float ui_scale);
 void apply_theme(std::string_view id, float ui_scale);
 

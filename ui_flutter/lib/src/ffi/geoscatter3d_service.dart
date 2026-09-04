@@ -7,6 +7,34 @@ import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import 'geoscatter3d_bindings.dart';
 
+enum WorkbenchLayoutMode {
+  standard,
+  floatingDock,
+  analysisRail;
+
+  String get id {
+    switch (this) {
+      case WorkbenchLayoutMode.standard:
+        return 'workbench';
+      case WorkbenchLayoutMode.floatingDock:
+        return 'floating-dock';
+      case WorkbenchLayoutMode.analysisRail:
+        return 'analysis-rail';
+    }
+  }
+
+  String get displayName {
+    switch (this) {
+      case WorkbenchLayoutMode.standard:
+        return '标准工作台';
+      case WorkbenchLayoutMode.floatingDock:
+        return '悬浮胶囊 Dock';
+      case WorkbenchLayoutMode.analysisRail:
+        return '暗色分析舱';
+    }
+  }
+}
+
 class GeoScatter3dService extends ChangeNotifier {
   static final GeoScatter3dService _instance = GeoScatter3dService._internal();
   factory GeoScatter3dService() => _instance;
@@ -19,6 +47,7 @@ class GeoScatter3dService extends ChangeNotifier {
   List<GpuDeviceInfo> _gpus = [];
   int _activeGpuIndex = 0;
   bool _isWorkbenchActive = false;
+  WorkbenchLayoutMode _layoutMode = WorkbenchLayoutMode.standard;
 
   List<Point3D> _points = [];
   double _pointSize = 1.5;
@@ -32,12 +61,20 @@ class GeoScatter3dService extends ChangeNotifier {
   List<GpuDeviceInfo> get gpus => _gpus;
   int get activeGpuIndex => _activeGpuIndex;
   bool get isWorkbenchActive => _isWorkbenchActive;
+  WorkbenchLayoutMode get layoutMode => _layoutMode;
 
   List<Point3D> get points => _points;
   double get pointSize => _pointSize;
   String get colormap => _colormap;
   double get scalarMin => _scalarMin;
   double get scalarMax => _scalarMax;
+
+  void setLayoutMode(WorkbenchLayoutMode mode) {
+    if (_layoutMode != mode) {
+      _layoutMode = mode;
+      notifyListeners();
+    }
+  }
 
   void openWorkbench() {
     _isWorkbenchActive = true;

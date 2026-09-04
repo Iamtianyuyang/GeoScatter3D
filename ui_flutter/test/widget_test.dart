@@ -68,4 +68,43 @@ void main() {
     expect(find.text('快速体验示例'), findsOneWidget);
     expect(find.text('新建工程'), findsOneWidget);
   });
+
+  testWidgets('Workbench Layout switcher test (Standard, FloatingDock, AnalysisRail)', (WidgetTester tester) async {
+    final service = GeoScatter3dService();
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    service.openWorkbench();
+    await tester.pumpWidget(GeoScatter3dApp(service: service));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 1. 验证默认是标准工作台
+    expect(service.layoutMode, WorkbenchLayoutMode.standard);
+    expect(find.byKey(const ValueKey('layout_standard')), findsOneWidget);
+
+    // 2. 切换到悬浮胶囊 Dock 布局
+    service.setLayoutMode(WorkbenchLayoutMode.floatingDock);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('layout_floating_dock')), findsOneWidget);
+
+    // 点击悬浮胶囊 Dock 的“工区数据集”图标呼出浮动卡片
+    await tester.tap(find.byTooltip('工区数据集'));
+    await tester.pumpAndSettle();
+    expect(find.text('工区名称'), findsOneWidget);
+
+    // 3. 切换到暗色分析舱布局
+    service.setLayoutMode(WorkbenchLayoutMode.analysisRail);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('layout_analysis_rail')), findsOneWidget);
+
+    // 4. 切回标准工作台
+    service.setLayoutMode(WorkbenchLayoutMode.standard);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('layout_standard')), findsOneWidget);
+  });
 }
+

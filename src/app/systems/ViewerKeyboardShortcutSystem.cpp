@@ -10,7 +10,6 @@
 #include "util/Log.hpp"
 
 #include <GLFW/glfw3.h>
-#include <imgui.h>
 
 #include <algorithm>
 
@@ -49,12 +48,12 @@ void synchronize_camera_link_groups(
 void ViewerKeyboardShortcutSystem::process(
     ViewerKeyboardShortcutContext& context
 ) {
-    if (!context.imgui_wants_keyboard &&
+    if (!context.ui_wants_keyboard &&
         context.window.key_pressed(GLFW_KEY_ESCAPE)) {
         context.window.request_close();
     }
 
-    if (!context.imgui_wants_keyboard) {
+    if (!context.ui_wants_keyboard) {
         auto& push = context.viewport_pushes[active_render_index(context)];
         if (context.window.key_pressed(GLFW_KEY_EQUAL) ||
             context.window.key_pressed(GLFW_KEY_KP_ADD)) {
@@ -68,8 +67,7 @@ void ViewerKeyboardShortcutSystem::process(
 
     const bool r_pressed =
         context.keyboard_shortcuts_allowed &&
-        (context.window.key_pressed(GLFW_KEY_R) ||
-         ImGui::IsKeyPressed(ImGuiKey_R, false));
+        context.window.key_pressed(GLFW_KEY_R);
     if (r_pressed && !r_was_pressed_) {
         context.viewport_cameras
             .controller(context.streaming_viewport_index)
@@ -92,8 +90,7 @@ void ViewerKeyboardShortcutSystem::process(
 
     const bool f_pressed =
         context.keyboard_shortcuts_allowed &&
-        (context.window.key_pressed(GLFW_KEY_F) ||
-         ImGui::IsKeyPressed(ImGuiKey_F, false));
+        context.window.key_pressed(GLFW_KEY_F);
     if (f_pressed && !f_was_pressed_) {
         const auto focus_index =
             static_cast<std::size_t>(context.streaming_viewport_index);
@@ -127,7 +124,7 @@ void ViewerKeyboardShortcutSystem::process(
     f_was_pressed_ = f_pressed;
 
     const bool tab_held =
-        !context.imgui_wants_keyboard &&
+        !context.ui_wants_keyboard &&
         context.window.key_pressed(GLFW_KEY_TAB);
     const bool shift_held =
         context.window.key_pressed(GLFW_KEY_LEFT_SHIFT) ||

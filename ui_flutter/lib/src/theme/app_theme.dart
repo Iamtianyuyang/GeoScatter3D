@@ -15,6 +15,8 @@ class AppTheme {
   static const Color primaryBlueLight = Color(0xFF3B82F6); // Blue-500
   static const Color primaryBlueHover = Color(0xFF1D4ED8); // Blue-700
   static const Color primaryBlueBg = Color(0xFFEFF6FF); // Blue-50
+  static const Color accentBlue = Color(0xFF3B82F6); // Accent blue
+  static const Color statusGreen = Color(0xFF10B981); // Emerald-500
 
   static const double cardRadius = 8.0;
   static const double controlRadius = 6.0;

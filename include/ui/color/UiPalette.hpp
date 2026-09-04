@@ -1,16 +1,21 @@
 #pragma once
 
-#include "imgui.h"
+#include "ui/color/Theme.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace gs3d::ui {
+
+using ColorU32 = std::uint32_t;
+using ImU32 = ColorU32;
 
 /*
  * 统一语义色板（默认初始化为「碳蓝 · Modern SaaS」主题）。
  *
  * 所有颜色以设计稿的 sRGB 十六进制值书写，直接作为 sRGB 值使用。
- * 交换链使用 UNORM 格式——硬件不做 sRGB EOTF，shader/ImGui 输出的
+ * 交换链使用 UNORM 格式——硬件不做 sRGB EOTF，shader 输出的
  * 值即是屏幕显示值。不再需要 sRGB→linear 预转换。
  *
  * palette:: 里的值不是常量：ui::apply_theme()（见 Theme.hpp）会在主题
@@ -20,7 +25,7 @@ namespace gs3d::ui {
 
 // sRGB 分量 (0-255) → ImVec4（直接归一化，不做颜色空间转换）。
 [[nodiscard]]
-inline ImVec4 srgb_vec4(int r, int g, int b, float alpha = 1.0f) {
+inline ImVec4 srgb_vec4(int r, int g, int b, float alpha = 1.0f) noexcept {
     return ImVec4(
         static_cast<float>(r) / 255.0f,
         static_cast<float>(g) / 255.0f,
@@ -29,12 +34,14 @@ inline ImVec4 srgb_vec4(int r, int g, int b, float alpha = 1.0f) {
     );
 }
 
-// sRGB 分量 (0-255) → ImU32（draw list 用，直接归一化）。
+// sRGB 分量 (0-255) → ColorU32（小端序 0xAABBGGRR 打包）。
 [[nodiscard]]
-inline ImU32 srgb_color(int r, int g, int b, int alpha = 255) {
-    return ImGui::ColorConvertFloat4ToU32(
-        srgb_vec4(r, g, b, static_cast<float>(alpha) / 255.0f)
-    );
+inline ColorU32 srgb_color(int r, int g, int b, int alpha = 255) noexcept {
+    const auto u_r = static_cast<std::uint32_t>(std::clamp(r, 0, 255));
+    const auto u_g = static_cast<std::uint32_t>(std::clamp(g, 0, 255));
+    const auto u_b = static_cast<std::uint32_t>(std::clamp(b, 0, 255));
+    const auto u_a = static_cast<std::uint32_t>(std::clamp(alpha, 0, 255));
+    return (u_a << 24) | (u_b << 16) | (u_g << 8) | u_r;
 }
 
 namespace palette {
@@ -75,19 +82,17 @@ inline ImVec4 kViewportBorder = srgb_vec4(0x2A, 0x30, 0x38); // 视口边框
 
 } // namespace palette
 
-// 语义色的 ImU32 便捷取值（draw list 场景），可覆盖 alpha。
+// 语义色的 ImU32 便捷取值（小端序 RGBA 打包），可覆盖 alpha。
 [[nodiscard]]
-inline ImU32 to_u32(const ImVec4& color, int alpha = 255) {
-    ImVec4 c = color;
-    c.w = static_cast<float>(alpha) / 255.0f;
-    return ImGui::ColorConvertFloat4ToU32(c);
+inline ImU32 to_u32(const ImVec4& color, int alpha = 255) noexcept {
+    const auto r = static_cast<int>(std::clamp(color.x * 255.0f, 0.0f, 255.0f));
+    const auto g = static_cast<int>(std::clamp(color.y * 255.0f, 0.0f, 255.0f));
+    const auto b = static_cast<int>(std::clamp(color.z * 255.0f, 0.0f, 255.0f));
+    return srgb_color(r, g, b, alpha);
 }
 
-// 用户自选颜色（如测量线/十字准线）按 sRGB ImU32 存储，交换链是 UNORM
-// 格式——直接使用无需转换。保留此函数作为标识（identity），避免调用处
-// 改动过大。
 [[nodiscard]]
-inline ImU32 srgb_u32_to_linear(ImU32 srgb) {
+inline ImU32 srgb_u32_to_linear(ImU32 srgb) noexcept {
     return srgb;
 }
 

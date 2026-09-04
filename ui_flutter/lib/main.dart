@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'src/ffi/geoscatter3d_service.dart';
+import 'src/layouts/analysis_rail_layout.dart';
+import 'src/layouts/floating_dock_layout.dart';
+import 'src/layouts/standard_workbench_layout.dart';
 import 'src/panels/bottom_status_bar.dart';
-import 'src/panels/center_viewport.dart';
-import 'src/panels/left_dock_panel.dart';
-import 'src/panels/right_dock_panel.dart';
 import 'src/panels/top_menu_bar.dart';
 import 'src/theme/app_theme.dart';
 import 'src/welcome/welcome_page.dart';
@@ -62,24 +62,16 @@ class GeoScatter3dWorkbench extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          // 1. 顶部菜单栏
+          // 1. 顶部菜单栏 (含布局切换器、工区状态、返回欢迎页)
           TopMenuBar(service: service),
 
-          // 2. 主工作区：左停靠面板 + 中心 3D 视口 + 右属性面板
+          // 2. 动态主工作区布局：标准三栏 / 悬浮胶囊 Dock / 暗色分析舱
           Expanded(
-            child: Row(
-              children: [
-                // 【区域 2】左侧卡片流停靠区 (完全对齐 media_1788518817411.png)
-                LeftDockPanel(service: service),
-
-                // 【区域 3】中央 3D 渲染视口与快捷工具条
-                Expanded(
-                  child: CenterViewport(service: service),
-                ),
-
-                // 【区域 4】右侧属性与渲染设置停靠区
-                RightDockPanel(service: service),
-              ],
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _buildActiveLayout(),
             ),
           ),
 
@@ -88,5 +80,25 @@ class GeoScatter3dWorkbench extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildActiveLayout() {
+    switch (service.layoutMode) {
+      case WorkbenchLayoutMode.standard:
+        return StandardWorkbenchLayout(
+          key: const ValueKey('layout_standard'),
+          service: service,
+        );
+      case WorkbenchLayoutMode.floatingDock:
+        return FloatingDockLayout(
+          key: const ValueKey('layout_floating_dock'),
+          service: service,
+        );
+      case WorkbenchLayoutMode.analysisRail:
+        return AnalysisRailLayout(
+          key: const ValueKey('layout_analysis_rail'),
+          service: service,
+        );
+    }
   }
 }

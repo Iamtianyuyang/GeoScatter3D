@@ -1,24 +1,18 @@
 #pragma once
 
-#include "imgui.h"
-
 namespace gs3d::ui {
 
 struct UiFonts {
-    ImFont* regular = nullptr;
-    ImFont* medium = nullptr;
-    ImFont* bold = nullptr;
-    ImFont* small = nullptr;
-    ImFont* panel_title = nullptr;
-    ImFont* axis = nullptr;
-    ImFont* status = nullptr;
-    ImFont* icons = nullptr;
-    ImFont* mono = nullptr;
-    // UI-only scale derived from the monitor's resolution (NOT from
-    // glfwGetWindowContentScale). 1080p => 1.0, clamped to [1.0, kMaxUiScale].
-    // Used solely for ImGui appearance (font sizes + style metrics). It must
-    // never feed the Vulkan render-size chain (swapchain extent, offscreen
-    // framebuffer, viewport/scissor, mouse-pick mapping, io.DisplayFramebufferScale).
+    void* regular = nullptr;
+    void* medium = nullptr;
+    void* bold = nullptr;
+    void* small = nullptr;
+    void* panel_title = nullptr;
+    void* axis = nullptr;
+    void* status = nullptr;
+    void* icons = nullptr;
+    void* mono = nullptr;
+    // 基于屏幕 PPI 计算的 UI 缩放因子。1080p => 1.0。
     float ui_scale = 1.0f;
 };
 

@@ -510,7 +510,7 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     }
     fonts.mono = fonts.regular;
 
-    io.FontDefault = fonts.regular;
+    io.FontDefault = static_cast<ImFont*>(fonts.regular);
     io.FontGlobalScale = 1.0f;
     return fonts;
 }

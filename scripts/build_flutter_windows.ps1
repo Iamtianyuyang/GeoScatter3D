@@ -25,8 +25,10 @@ $FlutterDir = Join-Path $RepoRoot "ui_flutter"
 $FlutterDll = Join-Path $FlutterDir "gs3d_ffi.dll"
 Copy-Item $SourceDll $FlutterDll -Force
 
-Write-Host "==> [3/4] Building Flutter Desktop application..." -ForegroundColor Cyan
 $env:NO_PROXY = "localhost,127.0.0.1"
+$env:HTTP_PROXY = ""
+$env:HTTPS_PROXY = ""
+$env:ALL_PROXY = ""
 Push-Location $FlutterDir
 try {
     flutter build windows

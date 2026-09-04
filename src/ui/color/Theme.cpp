@@ -26,7 +26,7 @@ constexpr ImVec4 with_alpha(ImVec4 c, float alpha)
 }
 
 // 交换链已切换为 UNORM，不再需要 sRGB→linear 预转换。保留此函数
-// 作为标识，避免 palette:: 赋值与 ImGuiStyle 覆盖的调用处改动过大。
+// 作为标识，避免 palette:: 赋值的调用处改动过大。
 ImVec4 to_linear(const ImVec4& c)
 {
     return c;
@@ -340,142 +340,7 @@ void apply_theme(ThemeId id, float ui_scale)
     palette::kViewportBg = to_linear(t.viewport_bg);
     palette::kViewportBorder = to_linear(t.viewport_border);
 
-    ImGuiStyle& style = ImGui::GetStyle();
-    // ── 几何度量收敛至布局系统（见 LayoutMetrics.hpp），与纯颜色主题解耦 ──
     apply_layout_geometry(default_layout_geometry(), ui_scale);
-
-    // 以内置 Light/Dark 为底：apply 没显式覆盖的冷门条目（TextLink、
-    // TreeLines 等）也能拿到一套协调的默认值。
-    if (t.dark) {
-        ImGui::StyleColorsDark(&style);
-    } else {
-        ImGui::StyleColorsLight(&style);
-    }
-
-    // A compact desktop-tool rhythm with enough target area for repeated
-    // property editing. Keep these metrics theme-independent so switching
-    // palettes never makes the workspace jump or controls change size.
-    style.Alpha = 1.0f;
-    // 标题、标签和只读值在项目树与属性面板中大量使用 TextDisabled。
-    // 过低的 alpha 会在深色底上看似“消失”，因此保留足够的阅读对比。
-    style.DisabledAlpha = 0.70f;
-    style.WindowPadding = ImVec2(10.0f * ui_scale, 9.0f * ui_scale);
-    style.FramePadding = ImVec2(8.0f * ui_scale, 4.5f * ui_scale);
-    style.ItemSpacing = ImVec2(8.0f * ui_scale, 7.0f * ui_scale);
-    style.ItemInnerSpacing = ImVec2(6.0f * ui_scale, 4.0f * ui_scale);
-    style.CellPadding = ImVec2(6.0f * ui_scale, 5.0f * ui_scale);
-    style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
-    style.IndentSpacing = 18.0f * ui_scale;
-    style.ColumnsMinSpacing = 6.0f * ui_scale;
-    style.ScrollbarSize = 11.0f * ui_scale;
-    style.GrabMinSize = 18.0f * ui_scale;
-    style.WindowBorderSize = 1.0f;
-    style.ChildBorderSize = 0.0f;
-    style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
-    style.TabBorderSize = 0.0f;
-    style.TabBarBorderSize = 1.0f;
-    style.TabBarOverlineSize = 2.0f * ui_scale;
-    style.SeparatorTextBorderSize = 1.0f;
-    style.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
-    style.SeparatorTextPadding = ImVec2(
-        7.0f * ui_scale,
-        4.0f * ui_scale
-    );
-    style.DockingSeparatorSize = 2.0f * ui_scale;
-    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
-    style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
-    auto& colors = style.Colors;
-
-    colors[ImGuiCol_Text] = t.text;
-    colors[ImGuiCol_TextDisabled] = t.text_dim;
-    colors[ImGuiCol_WindowBg] = t.bg;
-    colors[ImGuiCol_ChildBg] = t.surface;
-    colors[ImGuiCol_PopupBg] = t.surface;
-    colors[ImGuiCol_Border] = with_alpha(t.border, t.dark ? 0.72f : 0.62f);
-    colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // 输入框/下拉底色保持中性，交互态才引入 accent
-    colors[ImGuiCol_FrameBg] = with_alpha(t.frame, 0.96f);
-    colors[ImGuiCol_FrameBgHovered] = t.frame_hover;
-    colors[ImGuiCol_FrameBgActive] = with_alpha(t.accent, 0.20f);
-
-    colors[ImGuiCol_TitleBg] = t.bg;
-    colors[ImGuiCol_TitleBgActive] = t.surface;
-    colors[ImGuiCol_TitleBgCollapsed] = with_alpha(t.bg, 0.51f);
-
-    colors[ImGuiCol_MenuBarBg] = t.raised;
-
-    // Low-contrast track + clearly stepped thumb states. The narrower track
-    // saves panel width while GrabMinSize keeps short documents usable.
-    colors[ImGuiCol_ScrollbarBg] = with_alpha(t.border, 0.18f);
-    colors[ImGuiCol_ScrollbarGrab] = t.scrollbar_grab;
-    colors[ImGuiCol_ScrollbarGrabHovered] = t.scrollbar_grab_hovered;
-    colors[ImGuiCol_ScrollbarGrabActive] = t.scrollbar_grab_active;
-
-    colors[ImGuiCol_CheckMark] = t.accent;
-    colors[ImGuiCol_SliderGrab] = with_alpha(t.accent, 0.92f);
-    colors[ImGuiCol_SliderGrabActive] = t.accent_active;
-
-    colors[ImGuiCol_Button] = with_alpha(t.accent, t.button_alpha);
-    colors[ImGuiCol_ButtonHovered] = with_alpha(t.accent, t.button_hover_alpha);
-    // 半透明而非实心 accent_active：原生按钮的文字用 ImGuiCol_Text
-    // （正文色），实心深蓝/亮琥珀底会和正文色撞色（碳蓝下黑字压深蓝、
-    // 琥珀下白字压亮橙）。半透明与底色混合后正文色在三套主题都可读。
-    colors[ImGuiCol_ButtonActive] = with_alpha(t.accent, 0.55f);
-
-    colors[ImGuiCol_Header] = with_alpha(t.accent, 0.12f);
-    colors[ImGuiCol_HeaderHovered] = with_alpha(t.accent, 0.25f);
-    colors[ImGuiCol_HeaderActive] = with_alpha(t.accent, 0.40f);
-
-    colors[ImGuiCol_Separator] = with_alpha(t.border, 0.50f);
-    colors[ImGuiCol_SeparatorHovered] = with_alpha(t.accent, 0.78f);
-    colors[ImGuiCol_SeparatorActive] = t.accent;
-
-    colors[ImGuiCol_ResizeGrip] = with_alpha(t.accent, 0.20f);
-    colors[ImGuiCol_ResizeGripHovered] = with_alpha(t.accent, 0.67f);
-    colors[ImGuiCol_ResizeGripActive] = with_alpha(t.accent, 0.95f);
-
-    colors[ImGuiCol_Tab] = t.bg;
-    colors[ImGuiCol_TabHovered] = with_alpha(t.accent, 0.15f);
-    colors[ImGuiCol_TabSelected] = t.frame;
-    colors[ImGuiCol_TabSelectedOverline] = t.accent;
-    colors[ImGuiCol_TabDimmed] = t.tab_dimmed;
-    colors[ImGuiCol_TabDimmedSelected] = t.surface;
-
-    colors[ImGuiCol_DockingPreview] = with_alpha(t.accent, 0.30f);
-    colors[ImGuiCol_DockingEmptyBg] = t.bg;
-
-    colors[ImGuiCol_PlotLines] = t.accent;
-    colors[ImGuiCol_PlotLinesHovered] = t.red;
-    colors[ImGuiCol_PlotHistogram] = with_alpha(t.accent, 0.70f);
-    colors[ImGuiCol_PlotHistogramHovered] = with_alpha(t.red, 0.70f);
-
-    colors[ImGuiCol_TableHeaderBg] = t.surface;
-    colors[ImGuiCol_TableBorderStrong] = with_alpha(t.border, 0.60f);
-    colors[ImGuiCol_TableBorderLight] = with_alpha(t.border, 0.30f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_TableRowBgAlt] = t.dark
-        ? ImVec4(1.0f, 1.0f, 1.0f, 0.03f)
-        : ImVec4(0.0f, 0.0f, 0.0f, 0.03f);
-
-    colors[ImGuiCol_TextSelectedBg] = with_alpha(t.accent, 0.20f);
-    colors[ImGuiCol_NavHighlight] = with_alpha(t.accent, 0.40f);
-    colors[ImGuiCol_DragDropTarget] = with_alpha(t.accent, 0.30f);
-    colors[ImGuiCol_NavWindowingHighlight] = with_alpha(t.text, 0.70f);
-    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.15f);
-    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.25f);
-
-    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
-
-    // 交换链使用 UNORM，ThemeTokens 的十六进制色值即为最终显示色；
-    // 保留统一入口，供将来切换颜色管线时集中处理。
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        colors[i] = to_linear(colors[i]);
-    }
 }
 
 void apply_theme(std::string_view id, float ui_scale)

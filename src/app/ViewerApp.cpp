@@ -35,7 +35,6 @@
 #include "ui/Theme.hpp"
 #include "ui/UiFonts.hpp"
 #include "render/ViewportManager.hpp"
-#include "imgui.h"
 
 #include "camera/BoxSelect.hpp"
 #include "camera/Camera.hpp"
@@ -632,10 +631,8 @@ int ViewerApp::run() {
             observe_viewport_resize_requests(
                 gui_cmds, viewport_resize_scheduler, now_seconds);
 
-            const bool imgui_wants_keyboard =
-                ImGui::GetIO().WantCaptureKeyboard;
-            const bool keyboard_shortcuts_allowed =
-                !ImGui::GetIO().WantTextInput;
+            const bool ui_wants_keyboard = false;
+            const bool keyboard_shortcuts_allowed = true;
             gs3d::util::Stopwatch benchmark_camera_timer;
             ViewerAppCameraCommandContext cam_ctx{
                 .n_viewports = n_viewports,
@@ -677,7 +674,7 @@ int ViewerApp::run() {
 
             ViewerKeyboardShortcutContext shortcut_context{
                 .window = window,
-                .imgui_wants_keyboard = imgui_wants_keyboard,
+                .ui_wants_keyboard = ui_wants_keyboard,
                 .keyboard_shortcuts_allowed = keyboard_shortcuts_allowed,
                 .camera_config = config_.camera,
                 .app_state = app_state,

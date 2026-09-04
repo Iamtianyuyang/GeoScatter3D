@@ -55,22 +55,6 @@ compute_floating_dock_top_overlay_layout(
     float texture_height
 ) noexcept;
 
-// draw_floating_dock_layout 的帧结果
-struct FloatingDockFrameResult {
-    bool theme_change_requested = false;
-    ThemeId requested_theme = ThemeId::kCarbonBlue;
-};
-
-/*
- * 方案 B · 悬浮胶囊 Dock 布局 (Floating Dock)
- * 全屏沉浸视口 + 底部居中悬浮胶囊工具栏 + 浮动卡片面板
- */
-[[nodiscard]]
-FloatingDockFrameResult draw_floating_dock_layout(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
-    float ui_scale
-);
 
 void draw_floating_dock_overlay(
     gs3d::app::AppState& state,

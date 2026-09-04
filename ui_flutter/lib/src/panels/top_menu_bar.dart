@@ -98,6 +98,67 @@ class TopMenuBar extends StatelessWidget {
           ),
           const SizedBox(width: 6),
 
+          // 布局切换选择器
+          PopupMenuButton<WorkbenchLayoutMode>(
+            tooltip: '切换工作区布局模式',
+            initialValue: service.layoutMode,
+            onSelected: (mode) => service.setLayoutMode(mode),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: WorkbenchLayoutMode.standard,
+                child: Row(
+                  children: [
+                    Icon(Icons.dashboard_customize_outlined, size: 16, color: AppTheme.primaryBlue),
+                    SizedBox(width: 8),
+                    Text('标准工作台 (Workbench)'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: WorkbenchLayoutMode.floatingDock,
+                child: Row(
+                  children: [
+                    Icon(Icons.layers_outlined, size: 16, color: AppTheme.accentBlue),
+                    SizedBox(width: 8),
+                    Text('悬浮胶囊 Dock (Floating Dock)'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: WorkbenchLayoutMode.analysisRail,
+                child: Row(
+                  children: [
+                    Icon(Icons.view_sidebar_outlined, size: 16, color: AppTheme.statusGreen),
+                    SizedBox(width: 8),
+                    Text('暗色分析舱 (Analysis Rail)'),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.border),
+                borderRadius: BorderRadius.circular(6),
+                color: Colors.white,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.view_quilt_outlined, size: 14, color: AppTheme.primaryBlue),
+                  const SizedBox(width: 5),
+                  Text(
+                    service.layoutMode.displayName,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textTitle),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_drop_down_rounded, size: 16, color: AppTheme.textDim),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+
           // 快速打开数据按钮
           TextButton.icon(
             style: TextButton.styleFrom(

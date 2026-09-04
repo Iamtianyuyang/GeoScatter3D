@@ -1,7 +1,5 @@
 #pragma once
 
-#include "imgui.h"
-
 namespace gs3d::ui {
 
 /*
@@ -24,7 +22,7 @@ struct LayoutGeometry {
     float tab_border_size = 0.0f;
 };
 
-// 应用几何度量到 ImGuiStyle（纯几何，不涉及任何颜色）
+// 应用几何度量（纯几何，不涉及任何颜色）
 void apply_layout_geometry(const LayoutGeometry& geom, float ui_scale);
 
 // 默认桌面端测绘软件几何规范

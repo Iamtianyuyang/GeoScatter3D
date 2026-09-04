@@ -292,7 +292,7 @@ struct RenderViewState {
 
     /*
      * 三维世界坐标轴（QGIS 包围盒 + 角柱），由 compute_axis_overlay() 填充
-     * 几何数据，UiRoot 用 ImGui DrawList 绘制。
+     * 几何数据，UiRoot 用 UI 绘制通道绘制。
      */
     bool show_world_axis = false;
 
@@ -324,7 +324,7 @@ struct RenderViewState {
 
     // 十字准线 / 拾取准星自定义颜色。按 sRGB 存储（颜色选择器所见即
     // 所存，同测量线），UiRoot 绘制前线性化。默认亮黄 #F1C21B。
-    std::uint32_t crosshair_color = 0xFF1BC2F1;  // IM_COL32(0xF1,0xC2,0x1B,0xFF)
+    std::uint32_t crosshair_color = 0xFF1BC2F1;  // 0xF1,0xC2,0x1B,0xFF
     std::uint32_t reticle_color   = 0xFF1BC2F1;
 
     // 当前视口中可见的 X/Y 坐标范围（世界坐标，已去除 origin 偏移的内
@@ -356,7 +356,7 @@ struct RenderViewState {
     GizmoAxisEnd gizmo_z_axis{};
     bool gizmo_axes_valid = false;
 
-    // Screenshot: canvas rect in ImGui screen coordinates (absolute, not window-relative).
+    // Screenshot: canvas rect in UI screen coordinates (absolute, not window-relative).
     // Populated by UiRoot::draw_viewport_window each frame.
     float canvas_rect_min_x = 0.0f;
     float canvas_rect_min_y = 0.0f;
@@ -364,7 +364,7 @@ struct RenderViewState {
     float canvas_rect_max_y = 0.0f;
 
     // Measurement line overlays: pre-projected by ViewerApp each frame,
-    // drawn by UiRoot as ImGui overlay lines on the viewport canvas.
+    // drawn by UiRoot as overlay lines on the viewport canvas.
     struct MeasurementLineOverlay {
         float a_screen_x = 0.0f;
         float a_screen_y = 0.0f;
@@ -394,7 +394,7 @@ struct RenderViewState {
 /*
  * 导航图（概览图）状态。
  *
- * 缩略图是一次性预渲染的（离屏正交俯视），存为 TextureHandle 供 ImGui
+ * 缩略图是一次性预渲染的（离屏正交俯视），存为 TextureHandle 供前端 UI
  * 显示。坐标映射（bbox → 像素）只写在这里一处，缩略图渲染和视野框绘制
  * 共用同一个映射参数。
  */
@@ -402,7 +402,7 @@ struct NavigationMapState {
     bool valid = false;     // 缩略图已渲染，可显示
     bool dirty = true;      // 需要重新渲染（初次加载 / 着色属性变更）
 
-    // ImGui 显示用的纹理句柄
+    // 前端 UI 显示用的纹理句柄
     TextureHandle texture_descriptor = kNullTextureHandle;
 
     // 缩略图纹理实际尺寸（匹配 bbox 宽高比）
