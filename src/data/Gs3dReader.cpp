@@ -1,8 +1,13 @@
 #include "data/Gs3dReader.hpp"
+#include "platform/MemoryMappedFile.hpp"
 
+#include <bit>
+#include <cstring>
 #include <fstream>
+#include <future>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 
 namespace gs3d::data {
 
@@ -86,6 +91,45 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
         );
     }
 
+    result.points.resize(static_cast<std::size_t>(result.header.point_count));
+    const auto count = result.points.size();
+
+    auto mmap = platform::MemoryMappedFile::open_read(path);
+    if (mmap && mmap->is_open() &&
+        result.header.point_data_offset + count * sizeof(Gs3dPoint) <= mmap->size()) {
+        if constexpr (std::endian::native == std::endian::little) {
+            const auto* src = reinterpret_cast<const Gs3dPoint*>(
+                mmap->data() + result.header.point_data_offset
+            );
+            const auto hw = std::thread::hardware_concurrency();
+            if (count >= 500'000 && hw > 1) {
+                const unsigned int num_threads = std::min<unsigned int>(hw, 32);
+                const std::size_t chunk = (count + num_threads - 1) / num_threads;
+                std::vector<std::future<void>> futures;
+                futures.reserve(num_threads);
+                for (unsigned int t = 0; t < num_threads; ++t) {
+                    const std::size_t begin = t * chunk;
+                    const std::size_t end = std::min(count, begin + chunk);
+                    if (begin < end) {
+                        futures.push_back(std::async(std::launch::async, [&result, src, begin, end]() {
+                            std::memcpy(
+                                result.points.data() + begin,
+                                src + begin,
+                                (end - begin) * sizeof(Gs3dPoint)
+                            );
+                        }));
+                    }
+                }
+                for (auto& f : futures) {
+                    f.get();
+                }
+            } else {
+                std::memcpy(result.points.data(), src, count * sizeof(Gs3dPoint));
+            }
+            return result;
+        }
+    }
+
     in.seekg(
         static_cast<std::streamoff>(result.header.point_data_offset),
         std::ios::beg
@@ -94,8 +138,6 @@ Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
     if (!in.good()) {
         throw std::runtime_error("Gs3dReader: failed to seek point data");
     }
-
-    result.points.resize(static_cast<std::size_t>(result.header.point_count));
 
     if (!Gs3dFormat::read_points(in, result.header, result.points)) {
         throw std::runtime_error("Gs3dReader: failed to read GS3D point data");

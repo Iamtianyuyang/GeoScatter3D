@@ -26,5 +26,6 @@ target_include_directories(gs3d_data PUBLIC
 )
 
 target_link_libraries(gs3d_data PUBLIC
+    gs3d_platform
     Threads::Threads
 )

@@ -43,6 +43,83 @@ void copy_points_to_staging(
     const gs3d::core::PointDataView& points
 ) {
     auto* output = static_cast<PointVertex*>(destination);
+    const auto count = points.point_count;
+
+    // Fast path: standard 16-byte interleaved points (x, y, z, value)
+    if (points.layout == gs3d::core::PointDataLayout::Interleaved &&
+        points.interleaved_points != nullptr &&
+        points.interleaved_stride == sizeof(float) * 4 &&
+        points.x_offset == 0 &&
+        points.y_offset == sizeof(float) &&
+        points.z_offset == sizeof(float) * 2 &&
+        points.value_offset == sizeof(float) * 3) {
+
+        struct InterleavedPoint {
+            float x;
+            float y;
+            float z;
+            float value;
+        };
+
+        const auto* src =
+            static_cast<const InterleavedPoint*>(points.interleaved_points);
+        const auto* pids = points.point_id;
+
+        if (pids != nullptr) {
+            for (std::uint64_t i = 0; i < count; ++i) {
+                output[i] = {
+                    src[i].x,
+                    src[i].y,
+                    src[i].z,
+                    src[i].value,
+                    pids[i]
+                };
+            }
+        } else {
+            for (std::uint64_t i = 0; i < count; ++i) {
+                output[i] = {
+                    src[i].x,
+                    src[i].y,
+                    src[i].z,
+                    src[i].value,
+                    0
+                };
+            }
+        }
+        return;
+    }
+
+    // Fast path: separate arrays (x, y, z, value, optional point_id)
+    if (points.layout == gs3d::core::PointDataLayout::SeparateArrays &&
+        points.x != nullptr && points.y != nullptr &&
+        points.z != nullptr && points.value != nullptr) {
+
+        const auto* pids = points.point_id;
+        if (pids != nullptr) {
+            for (std::uint64_t i = 0; i < count; ++i) {
+                output[i] = {
+                    points.x[i],
+                    points.y[i],
+                    points.z[i],
+                    points.value[i],
+                    pids[i]
+                };
+            }
+        } else {
+            for (std::uint64_t i = 0; i < count; ++i) {
+                output[i] = {
+                    points.x[i],
+                    points.y[i],
+                    points.z[i],
+                    points.value[i],
+                    0
+                };
+            }
+        }
+        return;
+    }
+
+    // Generic fallback path
     for (std::uint64_t i = 0; i < points.point_count; ++i) {
         const auto point = points.point_at(i);
         output[i] = {

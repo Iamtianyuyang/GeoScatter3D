@@ -1,6 +1,8 @@
 #include "data/Gs3dTileReader.hpp"
+#include "platform/MemoryMappedFile.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -326,6 +328,8 @@ Gs3dTileReader Gs3dTileReader::open(
     reader.index_header_ = index_header;
     reader.data_header_ = data_header;
     reader.records_ = std::move(records);
+    reader.mmap_data_ =
+        gs3d::platform::MemoryMappedFile::open_read(data_path);
     reader.build_grid_map();
 
     return reader;
@@ -398,6 +402,8 @@ Gs3dTileReader Gs3dTileReader::open_without_source_validation(
     reader.index_header_ = index_header;
     reader.data_header_ = data_header;
     reader.records_ = std::move(records);
+    reader.mmap_data_ =
+        gs3d::platform::MemoryMappedFile::open_read(data_path);
     reader.build_grid_map();
 
     return reader;
@@ -477,6 +483,16 @@ std::vector<Gs3dPoint> Gs3dTileReader::read_tile_points(
     const auto count =
         static_cast<std::size_t>(tile_record.point_count);
 
+    if (mmap_data_ && mmap_data_->is_open() &&
+        tile_record.point_data_offset + tile_record.point_data_bytes <= mmap_data_->size()) {
+        if constexpr (std::endian::native == std::endian::little) {
+            const auto* raw = reinterpret_cast<const Gs3dPoint*>(
+                mmap_data_->data() + tile_record.point_data_offset
+            );
+            return std::vector<Gs3dPoint>(raw, raw + count);
+        }
+    }
+
     std::ifstream data_file(
         data_path_,
         std::ios::binary
@@ -542,6 +558,37 @@ Gs3dTilePointBlock Gs3dTileReader::read_tile_points_with_ids(
     Gs3dTilePointBlock result;
     result.points.reserve(count);
     result.point_ids.reserve(count);
+
+    if (mmap_data_ && mmap_data_->is_open() &&
+        tile_record.point_data_offset + tile_record.point_data_bytes <= mmap_data_->size()) {
+        const auto* base =
+            mmap_data_->data() + tile_record.point_data_offset;
+        if (has_embedded_point_ids()) {
+            if constexpr (std::endian::native == std::endian::little) {
+                const auto* raw =
+                    reinterpret_cast<const Gs3dPointWithId*>(base);
+                result.points.resize(count);
+                result.point_ids.resize(count);
+                for (std::size_t i = 0; i < count; ++i) {
+                    result.points[i] = {
+                        raw[i].x,
+                        raw[i].y,
+                        raw[i].z,
+                        raw[i].value
+                    };
+                    result.point_ids[i] = raw[i].point_id;
+                }
+                return result;
+            }
+        } else {
+            if constexpr (std::endian::native == std::endian::little) {
+                const auto* raw =
+                    reinterpret_cast<const Gs3dPoint*>(base);
+                result.points.assign(raw, raw + count);
+                return result;
+            }
+        }
+    }
 
     std::ifstream data_file(
         data_path_,

@@ -427,32 +427,49 @@ bool Gs3dFormat::write_points(
     std::ostream& out,
     std::span<const Gs3dPoint> points
 ) {
-    std::array<
-        std::byte,
-        GS3D_POINT_SIZE * kPointSerializationBatchSize
-    > bytes{};
-
-    for (std::size_t begin = 0; begin < points.size();) {
-        const auto count = std::min(
-            kPointSerializationBatchSize,
-            points.size() - begin
-        );
-        for (std::size_t i = 0; i < count; ++i) {
-            std::array<std::byte, GS3D_POINT_SIZE> point_bytes{};
-            encode_point(points[begin + i], point_bytes);
-            std::copy(
-                point_bytes.begin(),
-                point_bytes.end(),
-                bytes.begin() + i * GS3D_POINT_SIZE
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(sizeof(Gs3dPoint) == GS3D_POINT_SIZE);
+        constexpr std::size_t kBlockPoints = 1024 * 1024;
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(kBlockPoints, points.size() - begin);
+            out.write(
+                reinterpret_cast<const char*>(points.data() + begin),
+                static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
             );
+            if (!out) {
+                return false;
+            }
+            begin += count;
         }
-        if (!write_bytes(out, bytes.data(), count * GS3D_POINT_SIZE)) {
-            return false;
-        }
-        begin += count;
-    }
+        return true;
+    } else {
+        std::array<
+            std::byte,
+            GS3D_POINT_SIZE * kPointSerializationBatchSize
+        > bytes{};
 
-    return true;
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(
+                kPointSerializationBatchSize,
+                points.size() - begin
+            );
+            for (std::size_t i = 0; i < count; ++i) {
+                std::array<std::byte, GS3D_POINT_SIZE> point_bytes{};
+                encode_point(points[begin + i], point_bytes);
+                std::copy(
+                    point_bytes.begin(),
+                    point_bytes.end(),
+                    bytes.begin() + i * GS3D_POINT_SIZE
+                );
+            }
+            if (!write_bytes(out, bytes.data(), count * GS3D_POINT_SIZE)) {
+                return false;
+            }
+            begin += count;
+        }
+
+        return true;
+    }
 }
 
 bool Gs3dFormat::read_points(
@@ -482,31 +499,48 @@ bool Gs3dFormat::read_points(
         return false;
     }
 
-    std::array<
-        std::byte,
-        GS3D_POINT_SIZE * kPointSerializationBatchSize
-    > bytes{};
-    for (std::size_t begin = 0; begin < points.size();) {
-        const auto count = std::min(
-            kPointSerializationBatchSize,
-            points.size() - begin
-        );
-        if (!read_bytes(in, bytes.data(), count * GS3D_POINT_SIZE)) {
-            return false;
-        }
-        for (std::size_t i = 0; i < count; ++i) {
-            std::array<std::byte, GS3D_POINT_SIZE> point_bytes{};
-            std::copy_n(
-                bytes.begin() + i * GS3D_POINT_SIZE,
-                GS3D_POINT_SIZE,
-                point_bytes.begin()
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(sizeof(Gs3dPoint) == GS3D_POINT_SIZE);
+        constexpr std::size_t kBlockPoints = 1024 * 1024;
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(kBlockPoints, points.size() - begin);
+            in.read(
+                reinterpret_cast<char*>(points.data() + begin),
+                static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
             );
-            points[begin + i] = decode_point(point_bytes);
+            if (!in) {
+                return false;
+            }
+            begin += count;
         }
-        begin += count;
-    }
+        return true;
+    } else {
+        std::array<
+            std::byte,
+            GS3D_POINT_SIZE * kPointSerializationBatchSize
+        > bytes{};
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(
+                kPointSerializationBatchSize,
+                points.size() - begin
+            );
+            if (!read_bytes(in, bytes.data(), count * GS3D_POINT_SIZE)) {
+                return false;
+            }
+            for (std::size_t i = 0; i < count; ++i) {
+                std::array<std::byte, GS3D_POINT_SIZE> point_bytes{};
+                std::copy_n(
+                    bytes.begin() + i * GS3D_POINT_SIZE,
+                    GS3D_POINT_SIZE,
+                    point_bytes.begin()
+                );
+                points[begin + i] = decode_point(point_bytes);
+            }
+            begin += count;
+        }
 
-    return true;
+        return true;
+    }
 }
 
 } // namespace gs3d::data

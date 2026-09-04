@@ -149,11 +149,7 @@ std::uint32_t resolve_thread_count(
     }
 
     const auto hw = std::thread::hardware_concurrency();
-    if (hw <= 1) {
-        return 1;
-    }
-
-    return std::min<std::uint32_t>(hw, 8);
+    return std::max<std::uint32_t>(1u, hw);
 }
 
 [[nodiscard]]

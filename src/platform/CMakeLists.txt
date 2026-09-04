@@ -6,6 +6,7 @@ add_library(gs3d_platform STATIC
     CpuInfo.cpp
     Window.cpp
     NativeFileDialog.cpp
+    MemoryMappedFile.cpp
 )
 
 if(APPLE)

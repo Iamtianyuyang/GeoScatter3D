@@ -79,7 +79,7 @@ std::uint32_t resolve_lod_build_threads(
 
     return std::min<std::uint32_t>(
         static_cast<std::uint32_t>(level_task_count),
-        std::min<std::uint32_t>(hw, 8)
+        hw
     );
 }
 

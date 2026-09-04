@@ -63,7 +63,7 @@ std::uint32_t resolve_thread_count(
 
     return std::min<std::uint32_t>(
         static_cast<std::uint32_t>(chunk_count),
-        std::min<std::uint32_t>(hw, 8)
+        hw
     );
 }
 

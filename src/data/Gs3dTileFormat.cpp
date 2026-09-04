@@ -211,32 +211,53 @@ void write_points_with_stride(
     const Gs3dPointWithId* points,
     std::size_t point_count
 ) {
-    std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
-
-    for (std::size_t begin = 0; begin < point_count;) {
-        const auto count = std::min(
-            kTilePointBatchSize,
-            point_count - begin
-        );
-
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < count; ++i) {
-            const auto& point = points[begin + i];
-            write_float_le(bytes, offset, point.x);
-            write_float_le(bytes, offset, point.y);
-            write_float_le(bytes, offset, point.z);
-            write_float_le(bytes, offset, point.value);
-            write_u32_le(bytes, offset, point.point_id);
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(sizeof(Gs3dPointWithId) == 20);
+        constexpr std::size_t kBlockPoints = 1024 * 1024;
+        for (std::size_t begin = 0; begin < point_count;) {
+            const auto count = std::min(
+                kBlockPoints,
+                point_count - begin
+            );
+            out.write(
+                reinterpret_cast<const char*>(points + begin),
+                static_cast<std::streamsize>(
+                    count * sizeof(Gs3dPointWithId)
+                )
+            );
+            if (!out) {
+                throw std::runtime_error("Gs3dTileFormat: failed to write points with stride");
+            }
+            begin += count;
         }
+    } else {
+        std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
 
-        out.write(
-            reinterpret_cast<const char*>(bytes.data()),
-            static_cast<std::streamsize>(
-                count * sizeof(Gs3dPointWithId)
-            )
-        );
+        for (std::size_t begin = 0; begin < point_count;) {
+            const auto count = std::min(
+                kTilePointBatchSize,
+                point_count - begin
+            );
 
-        begin += count;
+            std::size_t offset = 0;
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto& point = points[begin + i];
+                write_float_le(bytes, offset, point.x);
+                write_float_le(bytes, offset, point.y);
+                write_float_le(bytes, offset, point.z);
+                write_float_le(bytes, offset, point.value);
+                write_u32_le(bytes, offset, point.point_id);
+            }
+
+            out.write(
+                reinterpret_cast<const char*>(bytes.data()),
+                static_cast<std::streamsize>(
+                    count * sizeof(Gs3dPointWithId)
+                )
+            );
+
+            begin += count;
+        }
     }
 }
 
@@ -246,36 +267,60 @@ void read_points_with_stride(
     std::size_t point_count,
     const char* error_message
 ) {
-    std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(sizeof(Gs3dPointWithId) == 20);
+        constexpr std::size_t kBlockPoints = 1024 * 1024;
+        for (std::size_t begin = 0; begin < point_count;) {
+            const auto count = std::min(
+                kBlockPoints,
+                point_count - begin
+            );
 
-    for (std::size_t begin = 0; begin < point_count;) {
-        const auto count = std::min(
-            kTilePointBatchSize,
-            point_count - begin
-        );
+            in.read(
+                reinterpret_cast<char*>(points + begin),
+                static_cast<std::streamsize>(
+                    count * sizeof(Gs3dPointWithId)
+                )
+            );
 
-        in.read(
-            reinterpret_cast<char*>(bytes.data()),
-            static_cast<std::streamsize>(
-                count * sizeof(Gs3dPointWithId)
-            )
-        );
+            if (!in) {
+                throw std::runtime_error(error_message);
+            }
 
-        if (!in) {
-            throw std::runtime_error(error_message);
+            begin += count;
         }
+    } else {
+        std::array<std::byte, sizeof(Gs3dPointWithId) * kTilePointBatchSize> bytes{};
 
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < count; ++i) {
-            auto& point = points[begin + i];
-            point.x = read_float_le(bytes, offset);
-            point.y = read_float_le(bytes, offset);
-            point.z = read_float_le(bytes, offset);
-            point.value = read_float_le(bytes, offset);
-            point.point_id = read_u32_le(bytes, offset);
+        for (std::size_t begin = 0; begin < point_count;) {
+            const auto count = std::min(
+                kTilePointBatchSize,
+                point_count - begin
+            );
+
+            in.read(
+                reinterpret_cast<char*>(bytes.data()),
+                static_cast<std::streamsize>(
+                    count * sizeof(Gs3dPointWithId)
+                )
+            );
+
+            if (!in) {
+                throw std::runtime_error(error_message);
+            }
+
+            std::size_t offset = 0;
+            for (std::size_t i = 0; i < count; ++i) {
+                auto& point = points[begin + i];
+                point.x = read_float_le(bytes, offset);
+                point.y = read_float_le(bytes, offset);
+                point.z = read_float_le(bytes, offset);
+                point.value = read_float_le(bytes, offset);
+                point.point_id = read_u32_le(bytes, offset);
+            }
+
+            begin += count;
         }
-
-        begin += count;
     }
 }
 
@@ -575,33 +620,55 @@ void Gs3dTileFormat::read_points(
     std::vector<Gs3dPoint>& points,
     const char* error_message
 ) {
-    std::array<std::byte, sizeof(Gs3dPoint) * kTilePointBatchSize> bytes{};
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(sizeof(Gs3dPoint) == 16);
+        constexpr std::size_t kBlockPoints = 1024 * 1024;
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(
+                kBlockPoints,
+                points.size() - begin
+            );
 
-    for (std::size_t begin = 0; begin < points.size();) {
-        const auto count = std::min(
-            kTilePointBatchSize,
-            points.size() - begin
-        );
+            in.read(
+                reinterpret_cast<char*>(points.data() + begin),
+                static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
+            );
 
-        in.read(
-            reinterpret_cast<char*>(bytes.data()),
-            static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
-        );
+            if (!in) {
+                throw std::runtime_error(error_message);
+            }
 
-        if (!in) {
-            throw std::runtime_error(error_message);
+            begin += count;
         }
+    } else {
+        std::array<std::byte, sizeof(Gs3dPoint) * kTilePointBatchSize> bytes{};
 
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < count; ++i) {
-            auto& point = points[begin + i];
-            point.x = read_float_le(bytes, offset);
-            point.y = read_float_le(bytes, offset);
-            point.z = read_float_le(bytes, offset);
-            point.value = read_float_le(bytes, offset);
+        for (std::size_t begin = 0; begin < points.size();) {
+            const auto count = std::min(
+                kTilePointBatchSize,
+                points.size() - begin
+            );
+
+            in.read(
+                reinterpret_cast<char*>(bytes.data()),
+                static_cast<std::streamsize>(count * sizeof(Gs3dPoint))
+            );
+
+            if (!in) {
+                throw std::runtime_error(error_message);
+            }
+
+            std::size_t offset = 0;
+            for (std::size_t i = 0; i < count; ++i) {
+                auto& point = points[begin + i];
+                point.x = read_float_le(bytes, offset);
+                point.y = read_float_le(bytes, offset);
+                point.z = read_float_le(bytes, offset);
+                point.value = read_float_le(bytes, offset);
+            }
+
+            begin += count;
         }
-
-        begin += count;
     }
 }
 

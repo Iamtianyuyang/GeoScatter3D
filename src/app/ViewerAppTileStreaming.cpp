@@ -352,42 +352,67 @@ void TileStreamingSystem::update(
                  &read_tiles = tiles.preload_read_tiles,
                  &context = ctx.context]()
                     -> std::vector<PreloadedTile> {
-                    std::vector<PreloadedTile> all;
-                    all.reserve(reader.records().size());
-                    for (const auto& rec : reader.records()) {
-                        // Use find() (shared lock) for the check to
-                        // avoid serializing against main-thread
-                        // find()/stats() calls. Only put() (exclusive)
-                        // on cache miss.
-                        SharedTilePoints pts =
-                            cache.find(rec.tile_id);
-                        if (!pts) {
-                            auto loaded =
-                                load_tile_points_with_ids(
-                                    reader,
-                                    ids_by_tile,
-                                    rec.tile_id
-                                );
-                            cache.put(rec.tile_id, loaded);
-                            pts = loaded;
+                    const auto& records = reader.records();
+                    const auto total_records = records.size();
+
+                    // 阶段 1：多线程并行从内存映射中读取与解码瓦片点集并写入缓存
+                    std::vector<SharedTilePoints> points_by_index(total_records);
+                    const auto hw = std::thread::hardware_concurrency();
+                    const unsigned int num_threads = std::max(1u, hw > 0 ? hw : 4u);
+                    const std::size_t chunk_size =
+                        (total_records + num_threads - 1) / num_threads;
+
+                    std::vector<std::future<void>> futures;
+                    futures.reserve(num_threads);
+                    for (unsigned int t = 0; t < num_threads; ++t) {
+                        const std::size_t begin = t * chunk_size;
+                        const std::size_t end =
+                            std::min(total_records, begin + chunk_size);
+                        if (begin < end) {
+                            futures.push_back(std::async(
+                                std::launch::async,
+                                [&, begin, end]() {
+                                    for (std::size_t i = begin; i < end; ++i) {
+                                        const auto& rec = records[i];
+                                        SharedTilePoints pts = cache.find(rec.tile_id);
+                                        if (!pts) {
+                                            pts = load_tile_points_with_ids(
+                                                reader,
+                                                ids_by_tile,
+                                                rec.tile_id
+                                            );
+                                            cache.put(rec.tile_id, pts);
+                                        }
+                                        points_by_index[i] = pts;
+                                        read_tiles.fetch_add(
+                                            1,
+                                            std::memory_order_relaxed
+                                        );
+                                    }
+                                }
+                            ));
                         }
+                    }
+                    for (auto& f : futures) {
+                        f.get();
+                    }
+
+                    // 阶段 2：在预加载线程中批量完成 GPU Device Arena 显存绑定
+                    // （遵循 TileDeviceArena 单线程 allocate 规范）
+                    std::vector<PreloadedTile> all;
+                    all.reserve(total_records);
+                    for (std::size_t i = 0; i < total_records; ++i) {
+                        const auto& rec = records[i];
+                        auto& pts = points_by_index[i];
                         PreloadedTile tile;
                         tile.tile_id = rec.tile_id;
-                        tile.points = pts;
-                        // 后台就把 device-local vertex buffer 建好
-                        // （vkCreateBuffer/vkAllocateMemory 对同一
-                        // device 并发合法且不触碰 queue），且经 arena
-                        // 大块子绑定——逐瓦片独立 vkAllocateMemory 是
-                        // ~111µs 的驱动内核调用，3 万瓦片即 ~3.4s。
-                        // 主线程每帧只剩 staging 拷贝 + 单次提交。
                         tile.gpu_cloud.prepare_device_buffer(
                             context,
                             pts->points.size(),
                             &arena
                         );
+                        tile.points = std::move(pts);
                         all.push_back(std::move(tile));
-                        read_tiles.fetch_add(
-                            1, std::memory_order_relaxed);
                     }
                     return all;
                 });
@@ -905,16 +930,57 @@ void TileStreamingSystem::update(
                     loaded.request_revision =
                         request_revision;
 
-                    loaded.loaded_tiles.reserve(
-                        batch_ids.size());
-                    for (const auto tile_id : batch_ids) {
-                        auto pts =
-                            load_tile_points_with_ids(
+                    loaded.loaded_tiles.resize(batch_ids.size());
+                    const auto hw = std::thread::hardware_concurrency();
+                    const unsigned int num_threads = std::min<unsigned int>(
+                        static_cast<unsigned int>(batch_ids.size()),
+                        std::max(1u, hw > 0 ? hw : 4u)
+                    );
+                    if (num_threads > 1 && batch_ids.size() > 4) {
+                        const std::size_t chunk_size =
+                            (batch_ids.size() + num_threads - 1) / num_threads;
+                        std::vector<std::future<void>> futures;
+                        futures.reserve(num_threads);
+                        for (unsigned int t = 0; t < num_threads; ++t) {
+                            const std::size_t begin = t * chunk_size;
+                            const std::size_t end =
+                                std::min(batch_ids.size(), begin + chunk_size);
+                            if (begin < end) {
+                                futures.push_back(std::async(
+                                    std::launch::async,
+                                    [&, begin, end]() {
+                                        for (std::size_t i = begin; i < end; ++i) {
+                                            const auto tile_id = batch_ids[i];
+                                            auto pts = load_tile_points_with_ids(
+                                                reader,
+                                                ids_by_tile,
+                                                tile_id
+                                            );
+                                            loaded.loaded_tiles[i] = {
+                                                tile_id,
+                                                std::move(pts)
+                                            };
+                                        }
+                                    }
+                                ));
+                            }
+                        }
+                        for (auto& f : futures) {
+                            f.get();
+                        }
+                    } else {
+                        for (std::size_t i = 0; i < batch_ids.size(); ++i) {
+                            const auto tile_id = batch_ids[i];
+                            auto pts = load_tile_points_with_ids(
                                 reader,
                                 ids_by_tile,
-                                tile_id);
-                        loaded.loaded_tiles.push_back(
-                            {tile_id, std::move(pts)});
+                                tile_id
+                            );
+                            loaded.loaded_tiles[i] = {
+                                tile_id,
+                                std::move(pts)
+                            };
+                        }
                     }
                     loaded.read_seconds =
                         read_timer.elapsed_seconds();

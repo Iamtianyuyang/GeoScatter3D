@@ -5,8 +5,13 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <unordered_map>
 #include <vector>
+
+namespace gs3d::platform {
+class MemoryMappedFile;
+}
 
 namespace gs3d::data {
 
@@ -158,6 +163,8 @@ private:
      * Built at open() time for O(1) EPT-style grid-address lookup.
      */
     std::unordered_map<std::uint64_t, std::uint64_t> grid_to_tile_id_;
+
+    std::shared_ptr<platform::MemoryMappedFile> mmap_data_;
 
 private:
     static void validate_query_box(
