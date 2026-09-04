@@ -204,6 +204,14 @@ void restore_default_workspace(gs3d::app::AppState& state)
         view.force_undock_next_frame = false;
     }
     state.workspace_windows.clear();
+    state.panels.dataset = true;
+    state.panels.render_settings = true;
+    state.panels.navigation_map = true;
+    state.panels.measurement = true;
+    state.panels.performance = true;
+    state.panels.region_stats = true;
+    state.panels.tile_inspector = true;
+    state.panels.lod_view = true;
 }
 
 void prune_workspace_windows(gs3d::app::AppState& state)

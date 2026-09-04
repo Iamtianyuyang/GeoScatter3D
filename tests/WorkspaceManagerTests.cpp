@@ -52,6 +52,8 @@ TEST_CASE("Closed workspace returns its views to the hidden pool", "[workspace]"
 TEST_CASE("Restoring the default workspace rejoins every view", "[workspace]")
 {
     auto state = make_state();
+    state.panels.dataset = false;
+    state.panels.tile_inspector = false;
     REQUIRE(gs3d::ui::create_workspace_window(state));
     state.render_views[0].detached = true;
     state.render_views[0].force_undock_next_frame = true;
@@ -63,6 +65,11 @@ TEST_CASE("Restoring the default workspace rejoins every view", "[workspace]")
         CHECK_FALSE(view.detached);
         CHECK_FALSE(view.force_undock_next_frame);
     }
+    CHECK(state.panels.dataset);
+    CHECK(state.panels.tile_inspector);
+    CHECK(state.panels.render_settings);
+    CHECK(state.panels.navigation_map);
+    CHECK(state.panels.performance);
 }
 
 TEST_CASE("Popping out the immersive view keeps a main view available", "[workspace]")

@@ -326,9 +326,18 @@ void build_workspace_layout(
     const ImGuiID left_bottom_id = ImGui::DockBuilderSplitNode(
         left_id,
         ImGuiDir_Down,
-        0.34f,
+        0.35f,
         nullptr,
         &left_top_id
+    );
+
+    ImGuiID right_top_id = right_id;
+    const ImGuiID right_bottom_id = ImGui::DockBuilderSplitNode(
+        right_id,
+        ImGuiDir_Down,
+        0.40f,
+        nullptr,
+        &right_top_id
     );
 
     ImGuiID view_area_id = center_id;
@@ -360,16 +369,16 @@ void build_workspace_layout(
         left_top_id
     );
     ImGui::DockBuilderDockWindow(
-        workspace_measurement_window_name(workspace.id).c_str(),
-        left_top_id
-    );
-    ImGui::DockBuilderDockWindow(
         workspace_navigation_window_name(workspace.id).c_str(),
         left_bottom_id
     );
     ImGui::DockBuilderDockWindow(
         workspace_render_settings_window_name(workspace.id).c_str(),
-        right_id
+        right_top_id
+    );
+    ImGui::DockBuilderDockWindow(
+        workspace_measurement_window_name(workspace.id).c_str(),
+        right_bottom_id
     );
     for (const int view_index : workspace.viewport_indices) {
         if (view_index < 0 ||
@@ -592,29 +601,45 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     const auto active_layout = LayoutRegistry::instance().active_layout_id();
     const bool is_floating = (active_layout == "floating-dock" || state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock);
     const bool is_rail = (active_layout == "analysis-rail" || state.ui_layout_mode == gs3d::app::UiLayoutMode::kAnalysisRail);
+    const bool is_workbench = (!is_floating && !is_rail);
 
-    // 工作台模式支持侧边栏停靠，悬浮与导轨模式面板为浮动/抽屉
-    const bool sidebar_visible = state.ui_chrome.sidebar_visible && !is_floating && !is_rail;
+    // 工作台模式支持侧边栏与底部停靠，悬浮与导轨模式面板为浮动/抽屉
+    const bool sidebar_visible = state.ui_chrome.sidebar_visible && is_workbench;
     const bool has_left_panels = sidebar_visible &&
         (state.panels.dataset ||
         state.panels.tile_inspector ||
         state.panels.lod_view ||
-        state.panels.navigation_map ||
-        state.panels.measurement ||
-        state.panels.region_stats);
-    const bool has_right_panels = !is_floating &&
+        state.panels.navigation_map);
+    const bool has_right_panels = is_workbench &&
         (state.panels.render_settings ||
-        state.panels.performance);
+        state.panels.region_stats ||
+        state.panels.measurement);
+    const bool has_bottom_panels = is_workbench && state.panels.performance;
+
+    ImGuiID center_id = dockspace_id;
+    ImGuiID bottom_id = 0;
+    ImGuiID left_id = 0;
+    ImGuiID right_id = 0;
+
+    // 1. 底部时序监控槽位（横向宽幅展示性能曲线与统计指标）
+    if (has_bottom_panels) {
+        constexpr float kBottomRatio = 0.20f;
+        bottom_id = ImGui::DockBuilderSplitNode(
+            center_id,
+            ImGuiDir_Down,
+            kBottomRatio,
+            nullptr,
+            &center_id
+        );
+    }
+
     const float right_split_width = std::max(
         1.0f,
         work_width - (has_left_panels ? default_left_width : 0.0f)
     );
     const float right_ratio = default_right_width / right_split_width;
 
-    ImGuiID center_id = dockspace_id;
-        ImGuiID left_id = 0;
-
-    ImGuiID right_id = 0;
+    // 2. 切出左侧数据与资源中心
     if (has_left_panels) {
         left_id = ImGui::DockBuilderSplitNode(
             center_id,
@@ -624,6 +649,8 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
             &center_id
         );
     }
+
+    // 3. 切出右侧控制与分析中心
     if (has_right_panels) {
         right_id = ImGui::DockBuilderSplitNode(
             center_id,
@@ -634,25 +661,20 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
         );
     }
 
-    // 左侧面板上下切分：上半放项目/瓦片/LOD，下半放导航图。
-    // 参照用户手动拖出的布局 (config/imgui_layout.ini)。
+    // 4. 左侧面板上下黄金分割（约 65% / 35%）：
+    //    上半部：项目数据源拓扑（LOD -> 瓦片 -> 项目），项目默认激活
+    //    下半部：空间鸟瞰导航图（拥有宽敞画布，视锥体与地形一目了然）
     ImGuiID left_top_id = left_id;
     ImGuiID left_bottom_id = 0;
     if (left_id != 0) {
         left_bottom_id = ImGui::DockBuilderSplitNode(
             left_id,
             ImGuiDir_Down,
-            0.18f,               // 方案 A：底部导航图约占工作区 18%
+            0.35f,
             nullptr,
             &left_top_id
         );
 
-        if (state.panels.region_stats) {
-            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, left_top_id);
-        }
-        if (state.panels.measurement) {
-            ImGui::DockBuilderDockWindow(kMeasurementWindowName, left_top_id);
-        }
         if (state.panels.lod_view) {
             ImGui::DockBuilderDockWindow(kLodViewWindowName, left_top_id);
         }
@@ -666,14 +688,38 @@ void UiRoot::build_default_layout(const gs3d::app::AppState& state)
     if (left_bottom_id != 0) {
         ImGui::DockBuilderDockWindow(kNavigationMapWindowName, left_bottom_id);
     }
+
+    // 5. 右侧面板上下分割（约 60% / 40%）：
+    //    上半部：渲染外观与数据分布（统计 -> 属性），属性默认激活
+    //    下半部：空间工程量测（测量工具独立常驻，互不干扰）
+    ImGuiID right_top_id = right_id;
+    ImGuiID right_bottom_id = 0;
     if (right_id != 0) {
-        // 属性 最后 dock：DockBuilder 把最后 dock 的窗口设为选中标签，
-        // 保证默认布局下右侧首先看到的是 属性 而不是 性能/日志。
-        if (state.panels.performance) {
-            ImGui::DockBuilderDockWindow(kPerformanceWindowName, right_id);
+        right_bottom_id = ImGui::DockBuilderSplitNode(
+            right_id,
+            ImGuiDir_Down,
+            0.40f,
+            nullptr,
+            &right_top_id
+        );
+
+        if (state.panels.region_stats) {
+            ImGui::DockBuilderDockWindow(kRegionStatsWindowName, right_top_id);
         }
         if (state.panels.render_settings) {
-            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_id);
+            ImGui::DockBuilderDockWindow(kRenderSettingsWindowName, right_top_id);
+        }
+    }
+    if (right_bottom_id != 0) {
+        if (state.panels.measurement) {
+            ImGui::DockBuilderDockWindow(kMeasurementWindowName, right_bottom_id);
+        }
+    }
+
+    // 6. 底部监控槽停靠性能面板
+    if (bottom_id != 0) {
+        if (state.panels.performance) {
+            ImGui::DockBuilderDockWindow(kPerformanceWindowName, bottom_id);
         }
     }
 
@@ -759,6 +805,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
             state.ui_layout_mode = gs3d::app::ui_layout_from_string(chrome_result.requested_layout_id);
             restore_default_workspace(state);
             dock_layout_.initialized = false;
+            ImGui::DockBuilderRemoveNode(ImGui::GetID("GeoScatter3D.DockSpace"));
             persist_ui_preferences(state, requested_theme);
         }
         if (chrome_result.theme_change_requested) {
@@ -768,6 +815,7 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
         if (chrome_result.restore_default_workspace_requested) {
             restore_default_workspace(state);
             dock_layout_.initialized = false;
+            ImGui::DockBuilderRemoveNode(ImGui::GetID("GeoScatter3D.DockSpace"));
         }
         {
             const float content_avail_y = ImGui::GetContentRegionAvail().y;

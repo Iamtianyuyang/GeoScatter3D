@@ -115,6 +115,10 @@ void draw_layout_menu(gs3d::app::AppState&, AppChromeResult& r) {
             ImGui::SetTooltip("%s", l->description.c_str());
         }
     }
+    ImGui::Separator();
+    if (ImGui::MenuItem("重置为默认工作台布局")) {
+        r.restore_default_workspace_requested = true;
+    }
     ImGui::EndMenu();
 }
 
@@ -188,7 +192,7 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
         menu_section("工作区");
         bool has = has_hidden_view(state);
         if (ImGui::MenuItem("新建视图", "Ctrl+N", false, has)) show_first_hidden_view(state);
-        if (ImGui::MenuItem("恢复默认工作区")) result.restore_default_workspace_requested = true;
+        if (ImGui::MenuItem("重置为默认工作台布局")) result.restore_default_workspace_requested = true;
         menu_section("界面布局");
         draw_layout_menu(state, result);
         menu_section("色彩主题");
