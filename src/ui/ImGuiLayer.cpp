@@ -356,6 +356,44 @@ std::filesystem::path resolve_font_weight(
     return {};
 }
 
+std::filesystem::path resolve_bundled_icon_font_path(
+    const std::filesystem::path& ini_path)
+{
+    gs3d::app::ResourcePathContext context;
+    context.config_path = ini_path;
+    context.executable_path =
+        gs3d::app::ResourcePath::current_executable_path();
+
+    return gs3d::app::ResourcePath::resolve_optional_file(
+        "assets/fonts/MaterialIcons-Regular.ttf",
+        context
+    );
+}
+
+void merge_icon_font(
+    ImGuiIO& io,
+    const std::filesystem::path& icon_font_path,
+    float font_size
+) {
+    if (icon_font_path.empty() || !file_exists(icon_font_path)) {
+        return;
+    }
+    static const ImWchar icon_ranges[] = {
+        0xE000, 0xF8FF, // Unicode Private Use Area (Material Icons)
+        0
+    };
+    ImFontConfig cfg = make_font_config(font_size);
+    cfg.MergeMode = true;
+    cfg.PixelSnapH = true;
+    cfg.GlyphMinAdvanceX = font_size; // Keep square advance for icons
+    io.Fonts->AddFontFromFileTTF(
+        icon_font_path.string().c_str(),
+        font_size,
+        &cfg,
+        icon_ranges
+    );
+}
+
 UiFonts load_ui_fonts(ImGuiIO& io,
                         const std::filesystem::path& ini_path,
                         float ui_scale)
@@ -363,7 +401,21 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     UiFonts fonts{};
     fonts.ui_scale = ui_scale;
     io.Fonts->Clear();
-    const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesChineseSimplifiedCommon();
+
+    static ImVector<ImWchar> full_glyph_ranges;
+    if (full_glyph_ranges.empty()) {
+        ImFontGlyphRangesBuilder builder;
+        builder.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+        static const ImWchar extra_ranges[] = {
+            0x2000, 0x206F, // General Punctuation (•, –, —, etc.)
+            0x2190, 0x21FF, // Arrows (←, ↑, →, ↓, etc.)
+            0x2500, 0x25FF, // Geometric Shapes (▾, ▲, ▼, ◆, ■, etc.)
+            0
+        };
+        builder.AddRanges(extra_ranges);
+        builder.BuildRanges(&full_glyph_ranges);
+    }
+    const ImWchar* glyph_ranges = full_glyph_ranges.Data;
 
     const auto bundled_font_path = resolve_bundled_font_path(ini_path);
     const auto system_font_path = bundled_font_path.empty()
@@ -371,10 +423,13 @@ UiFonts load_ui_fonts(ImGuiIO& io,
         : std::filesystem::path{};
     const auto selected_font_path =
         !bundled_font_path.empty() ? bundled_font_path : system_font_path;
+    const auto icon_font_path = resolve_bundled_icon_font_path(ini_path);
 
     if (!selected_font_path.empty()) {
         const std::string font_path = selected_font_path.string();
         fonts.regular = load_font(io, font_path.c_str(), kRegularFontSize * ui_scale, glyph_ranges);
+        merge_icon_font(io, icon_font_path, kRegularFontSize * ui_scale);
+
         const auto bold_path = resolve_font_weight(
             selected_font_path,
             {
@@ -389,9 +444,12 @@ UiFonts load_ui_fonts(ImGuiIO& io,
                 kRegularFontSize * ui_scale,
                 glyph_ranges
             );
+            merge_icon_font(io, icon_font_path, kRegularFontSize * ui_scale);
             fonts.bold = fonts.medium;
         }
         fonts.small = load_font(io, font_path.c_str(), kSmallFontSize * ui_scale, glyph_ranges);
+        merge_icon_font(io, icon_font_path, kSmallFontSize * ui_scale);
+
         // The bundled set intentionally contains only regular and bold.
         if (!bold_path.empty()) {
             fonts.panel_title = load_font(
@@ -402,8 +460,11 @@ UiFonts load_ui_fonts(ImGuiIO& io,
                 io, font_path.c_str(),
                 kPanelTitleFontSize * ui_scale, glyph_ranges);
         }
+        merge_icon_font(io, icon_font_path, kPanelTitleFontSize * ui_scale);
+
         fonts.axis = load_font(io, font_path.c_str(), kAxisFontSize * ui_scale, glyph_ranges);
         fonts.status = load_font(io, font_path.c_str(), kStatusFontSize * ui_scale, glyph_ranges);
+        merge_icon_font(io, icon_font_path, kStatusFontSize * ui_scale);
     }
 
     if (fonts.regular == nullptr) {
@@ -434,6 +495,20 @@ UiFonts load_ui_fonts(ImGuiIO& io,
     if (fonts.status == nullptr) {
         fonts.status = fonts.axis != nullptr ? fonts.axis : fonts.regular;
     }
+
+    if (!icon_font_path.empty() && file_exists(icon_font_path)) {
+        static const ImWchar icon_ranges[] = { 0xE000, 0xF8FF, 0 };
+        fonts.icons = load_font(
+            io,
+            icon_font_path.string().c_str(),
+            kRegularFontSize * ui_scale,
+            icon_ranges
+        );
+    }
+    if (fonts.icons == nullptr) {
+        fonts.icons = fonts.regular;
+    }
+    fonts.mono = fonts.regular;
 
     io.FontDefault = fonts.regular;
     io.FontGlobalScale = 1.0f;

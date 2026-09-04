@@ -229,16 +229,15 @@ void draw_hover_property_tooltip(
     );
 
     const bool dark = theme_tokens(active_theme()).dark;
-    ImVec4 glass_bg = palette::kSurface;
-    glass_bg.w = dark ? 0.96f : 0.95f;
+    ImVec4 glass_bg = dark ? ImVec4(0.065f, 0.075f, 0.095f, 0.96f) : palette::kSurface;
     const ImVec4 glass_border = dark
-        ? ImVec4(1.0f, 1.0f, 1.0f, 0.13f)
-        : ImVec4(1.0f, 1.0f, 1.0f, 0.65f);
+        ? ImVec4(1.0f, 1.0f, 1.0f, 0.12f)
+        : ImVec4(0.0f, 0.0f, 0.0f, 0.16f);
     ImVec4 separator = palette::kBorder;
-    separator.w = dark ? 0.42f : 0.58f;
+    separator.w = dark ? 0.35f : 0.50f;
 
-    const float card_width = 268.0f * ui_scale;
-    const float card_height_estimate = 190.0f * ui_scale;
+    const float card_width = 290.0f * ui_scale;
+    const float card_height_estimate = 200.0f * ui_scale;
     const float cursor_gap = 14.0f * ui_scale;
     const ImGuiViewport* viewport = ImGui::GetWindowViewport();
     const ImVec2 mouse_pos = ImGui::GetIO().MousePos;
@@ -263,20 +262,20 @@ void draw_hover_property_tooltip(
     ImGui::SetNextWindowPos(tooltip_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSizeConstraints(
         ImVec2(card_width, 0.0f),
-        ImVec2(card_width, 300.0f * ui_scale)
+        ImVec2(card_width, 320.0f * ui_scale)
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_WindowPadding,
-        ImVec2(12.0f * ui_scale, 10.0f * ui_scale)
+        ImVec2(14.0f * ui_scale, 12.0f * ui_scale)
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_WindowRounding,
-        12.0f * ui_scale
+        8.0f * ui_scale
     );
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(
         ImGuiStyleVar_ItemSpacing,
-        ImVec2(7.0f * ui_scale, 5.0f * ui_scale)
+        ImVec2(7.0f * ui_scale, 6.0f * ui_scale)
     );
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, glass_bg);
@@ -383,7 +382,7 @@ void draw_hover_property_tooltip(
             ImGui::TableSetupColumn(
                 "##HoverPropertyLabel",
                 ImGuiTableColumnFlags_WidthFixed,
-                78.0f * ui_scale
+                96.0f * ui_scale
             );
             ImGui::TableSetupColumn(
                 "##HoverPropertyValue",

@@ -31,12 +31,12 @@ void apply_layout_geometry(const LayoutGeometry& geom, float ui_scale);
 [[nodiscard]] const LayoutGeometry& default_layout_geometry() noexcept;
 
 namespace LayoutMetrics {
-    constexpr float kDockLeftRatio  = 276.0f / 1360.0f;
-    constexpr float kDockLeftMinPx  = 240.0f;
-    constexpr float kDockLeftMaxPx  = 336.0f;
+    constexpr float kDockLeftRatio  = 280.0f / 1360.0f;
+    constexpr float kDockLeftMinPx  = 260.0f;
+    constexpr float kDockLeftMaxPx  = 420.0f;
     constexpr float kDockRightRatio = 280.0f / 1360.0f;
     constexpr float kDockRightMinPx = 260.0f;
-    constexpr float kDockRightMaxPx = 336.0f;
+    constexpr float kDockRightMaxPx = 380.0f;
     constexpr float kToolsBarHeightBase = 52.0f;
     constexpr float kStatusBarHeightBase  = 26.0f;
     constexpr float kPanelHeaderGap = 8.0f;

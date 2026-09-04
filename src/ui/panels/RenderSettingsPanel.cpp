@@ -297,9 +297,10 @@ void draw_render_settings(
 
             // 色标预览条 — 根据当前选中的色标切换颜色（色值定义见
             // ColormapPreview.hpp，与悬浮 Dock 属性卡片共用）。
+            ImGui::Spacing();
             const ImVec2 start = ImGui::GetCursorScreenPos();
             const float bar_width = ImGui::GetContentRegionAvail().x;
-            const float bar_height = 14.0f * scale;
+            const float bar_height = 16.0f * scale;
             ImGui::InvisibleButton("##ColorMapPreview",
                 ImVec2(bar_width, bar_height));
             draw_colormap_preview_bar(
@@ -308,6 +309,7 @@ void draw_render_settings(
                 ImVec2(start.x + bar_width, start.y + bar_height),
                 settings.colormap_index
             );
+            ImGui::Spacing();
         }
 
         // ── 数据范围显示 ──

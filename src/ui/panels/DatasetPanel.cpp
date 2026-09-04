@@ -94,28 +94,36 @@ void draw_dataset_panel(
                         ImGuiTreeNodeFlags_DefaultOpen |
                             ImGuiTreeNodeFlags_SpanAvailWidth
                     )) {
-                    ImGui::TextDisabled("名称");
-                    ImGui::SameLine();
-                    ImGui::TextWrapped(
-                        "%s",
-                        dataset_state.active_dataset.c_str()
-                    );
-                    ImGui::TextDisabled("点数");
-                    ImGui::SameLine();
-                    ImGui::Text(
-                        "%llu",
-                        static_cast<unsigned long long>(
-                            dataset_state.point_count
-                        )
-                    );
-                    ImGui::TextDisabled("格式");
-                    ImGui::SameLine();
-                    ImGui::TextUnformatted(dataset_state.format.c_str());
-                    ImGui::TextDisabled("路径");
-                    ImGui::TextWrapped(
-                        "%s",
-                        dataset_state.path.c_str()
-                    );
+                    if (ImGui::BeginTable("##DatasetOverviewTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX)) {
+                        ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed, 55.0f * scale);
+                        ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextDisabled("名称");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextUnformatted(dataset_state.active_dataset.c_str());
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextDisabled("点数");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%llu", static_cast<unsigned long long>(dataset_state.point_count));
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextDisabled("格式");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextUnformatted(dataset_state.format.c_str());
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextDisabled("路径");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextWrapped("%s", dataset_state.path.c_str());
+
+                        ImGui::EndTable();
+                    }
                     ImGui::TreePop();
                 }
                 if (ImGui::TreeNodeEx(
@@ -126,13 +134,38 @@ void draw_dataset_panel(
                     if (dataset_state.tile_details.empty()) {
                         ImGui::TextDisabled("当前数据集未启用瓦片流式加载");
                     } else {
-                        ImGui::Text(
-                            "当前：%u 已加载 / %u 等待",
-                            state.performance.loaded_tiles,
-                            state.performance.pending_tiles
-                        );
-                        for (const auto& detail : dataset_state.tile_details) {
-                            ImGui::TextWrapped("%s", detail.c_str());
+                        if (ImGui::BeginTable("##DatasetTileTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX)) {
+                            ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed, 80.0f * scale);
+                            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
+
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(0);
+                            ImGui::TextDisabled("流式状态");
+                            ImGui::TableSetColumnIndex(1);
+                            ImGui::Text("%u 已加载 / %u 等待", state.performance.loaded_tiles, state.performance.pending_tiles);
+
+                            for (const auto& detail : dataset_state.tile_details) {
+                                const auto sep = detail.find("：");
+                                std::string k, v;
+                                if (sep != std::string::npos) {
+                                    k = detail.substr(0, sep);
+                                    v = detail.substr(sep + 3);
+                                } else {
+                                    const auto ascii_sep = detail.find(':');
+                                    if (ascii_sep != std::string::npos) {
+                                        k = detail.substr(0, ascii_sep);
+                                        v = detail.substr(ascii_sep + 1);
+                                    } else {
+                                        k = detail;
+                                    }
+                                }
+                                ImGui::TableNextRow();
+                                ImGui::TableSetColumnIndex(0);
+                                ImGui::TextDisabled("%s", k.c_str());
+                                ImGui::TableSetColumnIndex(1);
+                                ImGui::TextUnformatted(v.c_str());
+                            }
+                            ImGui::EndTable();
                         }
                     }
                     ImGui::TreePop();

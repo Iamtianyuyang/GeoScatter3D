@@ -95,6 +95,7 @@ inline void draw_colormap_preview_bar(
             cc.colors[i]
         );
     }
+    dl->AddRect(min, max, IM_COL32(255, 255, 255, 45), 3.0f, 0, 1.0f);
 }
 
 } // namespace gs3d::ui

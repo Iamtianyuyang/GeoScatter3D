@@ -65,6 +65,78 @@ void draw_reticle_popup(gs3d::app::RenderViewState& view)
     ImGui::EndPopup();
 }
 
+bool toolbar_button(
+    const char* id,
+    const icons::Glyph* glyph,
+    const char* text,
+    bool active,
+    float scale,
+    const char* tooltip = nullptr
+) {
+    char icon_buf[5] = {0};
+    if (glyph) {
+        (void)icons::utf8(glyph->codepoint, icon_buf);
+    }
+
+    ImFont* ifont = icon_font();
+    const float icon_w = (glyph && ifont) ? ifont->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, icon_buf).x : 0.0f;
+    const ImVec2 text_sz = text && text[0] != '\0' ? ImGui::CalcTextSize(text, nullptr, true) : ImVec2(0.0f, 0.0f);
+    const float gap = (glyph && text && text[0] != '\0') ? 5.0f * scale : 0.0f;
+    const float pad_x = (text && text[0] != '\0') ? 10.0f * scale : 8.0f * scale;
+    const ImVec2 sz{
+        icon_w + gap + text_sz.x + pad_x * 2.0f,
+        26.0f * scale
+    };
+
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::InvisibleButton(id, sz);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool held = ImGui::IsItemActive();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 max{pos.x + sz.x, pos.y + sz.y};
+    const float r = 4.0f * scale;
+
+    if (active) {
+        ImVec4 bg = palette::kAccent;
+        bg.w = held ? 0.30f : (hovered ? 0.22f : 0.15f);
+        dl->AddRectFilled(pos, max, ImGui::ColorConvertFloat4ToU32(bg), r);
+        dl->AddRect(pos, max, to_u32(palette::kAccent, 200), r, 0, 1.0f * scale);
+    } else {
+        if (held) {
+            dl->AddRectFilled(pos, max, to_u32(palette::kFrameHover, 160), r);
+            dl->AddRect(pos, max, to_u32(palette::kBorder, 120), r, 0, 1.0f * scale);
+        } else if (hovered) {
+            dl->AddRectFilled(pos, max, to_u32(palette::kSurfaceHover, 140), r);
+            dl->AddRect(pos, max, to_u32(palette::kBorder, 90), r, 0, 1.0f * scale);
+        } else {
+            dl->AddRect(pos, max, to_u32(palette::kBorder, 35), r, 0, 1.0f * scale);
+        }
+    }
+
+    const ImU32 text_col = active
+        ? to_u32(palette::kAccent, 255)
+        : to_u32(hovered ? palette::kText : palette::kTextDim, 255);
+
+    float draw_x = pos.x + pad_x;
+    const float draw_y = pos.y + (sz.y - text_sz.y) * 0.5f;
+
+    if (glyph && ifont) {
+        ImGui::PushFont(ifont);
+        dl->AddText({draw_x, pos.y + (sz.y - ImGui::GetFontSize()) * 0.5f}, text_col, icon_buf);
+        ImGui::PopFont();
+        draw_x += icon_w + gap;
+    }
+    if (text && text[0] != '\0') {
+        dl->AddText({draw_x, draw_y}, text_col, text);
+    }
+
+    if (tooltip && hovered) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return pressed;
+}
+
 } // namespace
 
 void draw_workbench_view_controls(
@@ -77,44 +149,44 @@ void draw_workbench_view_controls(
     ImGui::PushID(view.viewport_index);
     ImGui::PushStyleVar(
         ImGuiStyleVar_WindowPadding,
-        ImVec2(10.0f * scale, 5.0f * scale)
+        ImVec2(10.0f * scale, 4.0f * scale)
     );
     ImGui::PushStyleVar(
         ImGuiStyleVar_ItemSpacing,
-        ImVec2(7.0f * scale, 4.0f * scale)
+        ImVec2(6.0f * scale, 4.0f * scale)
     );
     ImGui::PushStyleColor(
         ImGuiCol_ChildBg,
-        to_u32(palette::kSurface, 255)
+        to_u32(palette::kRaised, 240)
     );
     ImGui::BeginChild(
         "##WorkbenchViewControls",
-        ImVec2(0.0f, 38.0f * scale),
+        ImVec2(0.0f, 34.0f * scale),
         false,
         ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoScrollWithMouse
     );
-    if (widgets::Chip("复位视角  R")) {
+    if (toolbar_button("##VCR", &icons::kRefresh, "复位视角 R", false, scale, "复位相机视角到全景 (快捷键 R)")) {
         actions.reset_camera_index = view.viewport_index;
     }
     ImGui::SameLine();
-    if (widgets::Chip("联动相机", view.camera_linked)) {
+    if (toolbar_button("##VCL", &icons::kLink, "联动相机", view.camera_linked, scale, "与其他视口同步相机平移与旋转")) {
         view.camera_linked = !view.camera_linked;
     }
     ImGui::SameLine();
-    if (widgets::Chip("地图轴", view.show_map_axis)) {
+    if (toolbar_button("##VCM", &icons::kExplore, "地图轴", view.show_map_axis, scale, "显示二维地理投影坐标轴与刻度")) {
         toggle_map_axis(view);
     }
     ImGui::SameLine();
-    if (widgets::Chip("世界轴", view.show_world_axis)) {
+    if (toolbar_button("##VCW", &icons::kPublic, "世界轴", view.show_world_axis, scale, "显示三维空间世界坐标轴")) {
         toggle_world_axis(view);
     }
     ImGui::SameLine();
-    if (widgets::Chip("十字准线", view.show_crosshair)) {
+    if (toolbar_button("##VCX", &icons::kSelectAll, "十字准线", view.show_crosshair, scale, "显示视口中心十字准线")) {
         toggle_crosshair(view);
     }
     ImGui::SameLine();
-    if (widgets::Chip("准星样式 ▾")) {
+    if (toolbar_button("##VCS", &icons::kTune, "准星样式 ▾", false, scale, "配置十字准线与拾取光标颜色")) {
         ImGui::OpenPopup("##WorkbenchReticleStyle");
     }
     draw_reticle_popup(view);
@@ -122,13 +194,10 @@ void draw_workbench_view_controls(
     ImGui::SameLine();
     bool can_add = gs3d::ui::has_hidden_view(state);
     ImGui::BeginDisabled(!can_add);
-    char ibuf[5]; icons::utf8(icons::kAdd.codepoint, ibuf);
-    if (icon_font()) ImGui::PushFont(icon_font());
-    bool clicked = ImGui::SmallButton(ibuf);
-    if (icon_font()) ImGui::PopFont();
+    if (toolbar_button("##VCA", &icons::kAdd, "新建视图", false, scale, "新建多视口分屏 (Ctrl+N)")) {
+        if (can_add) gs3d::ui::show_first_hidden_view(state);
+    }
     ImGui::EndDisabled();
-    if (clicked && can_add) gs3d::ui::show_first_hidden_view(state);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("新建视图 (Ctrl+N)");
 
     const ImVec2 min = ImGui::GetWindowPos();
     const ImVec2 max{
@@ -138,7 +207,7 @@ void draw_workbench_view_controls(
     ImGui::GetWindowDrawList()->AddLine(
         ImVec2(min.x, max.y - 1.0f),
         ImVec2(max.x, max.y - 1.0f),
-        to_u32(palette::kBorder, 110)
+        to_u32(palette::kBorder, 60)
     );
     ImGui::EndChild();
     ImGui::PopStyleColor();
