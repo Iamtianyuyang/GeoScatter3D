@@ -2,6 +2,7 @@
 
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
+#include "ui/layouts/standard_workbench/DockLayoutBuilder.hpp"
 
 struct ImFont;
 
@@ -125,44 +126,6 @@ inline ScreenPoint framebuffer_to_plot_screen(
         fb_x * plot_w / static_cast<float>(framebuffer_width),
         fb_y * plot_h / static_cast<float>(framebuffer_height)
     };
-}
-
-// Dock 布局持久化状态与首帧决策（纯逻辑，无 ImGui 依赖，便于单测）：
-// 本会话首次构建时若 ini 已恢复出持久化 DockSpace 节点，应采纳用户布局而
-// 不重建（TIA-90）。built_once 只记录"首次构建已发生"：运行期"恢复默认
-// 工作区"清空 initialized 后不会重新采纳旧布局，而是照常重建默认布局。
-struct DockLayoutPersistState {
-    // 工作台布局当前是否已生效（恢复默认工作区会清空以触发重建）。
-    bool initialized = false;
-    bool built_once = false;
-    std::uint32_t signature = 0;
-};
-
-// 返回 true 表示保留当前布局（含首帧采纳 ini 恢复的持久化布局），
-// 本次无需重建默认布局；返回 false 表示调用方应重建。
-[[nodiscard]]
-inline bool keep_current_dock_layout(
-    DockLayoutPersistState& state,
-    bool signature_matches,
-    bool size_changed_significantly,
-    bool persisted_node_available,
-    std::uint32_t signature
-) noexcept
-{
-    if (state.initialized && signature_matches &&
-        !size_changed_significantly) {
-        return true;
-    }
-    if (!state.built_once) {
-        state.built_once = true;
-        if (!state.initialized && persisted_node_available) {
-            // 首帧采纳 ini 恢复的持久化布局，不再整树重建。
-            state.initialized = true;
-            state.signature = signature;
-            return true;
-        }
-    }
-    return false;
 }
 
 // Font helpers used by panel drawing functions.

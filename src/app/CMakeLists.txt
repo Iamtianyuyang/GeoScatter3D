@@ -20,9 +20,7 @@ add_library(gs3d_app_support STATIC
     systems/ViewerFrameClock.cpp
     state/ViewerWorkbenchLayout.cpp
     systems/MeasurementManager.cpp
-    ${PROJECT_SOURCE_DIR}/src/ui/AnalysisRailLayout.cpp
-    ${PROJECT_SOURCE_DIR}/src/ui/FloatingDockLayout.cpp
-    ${PROJECT_SOURCE_DIR}/src/ui/styling/LayoutRegistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/layouts/LayoutRegistry.cpp
     ${PROJECT_SOURCE_DIR}/src/ui/WorkspaceManager.cpp
 )
 

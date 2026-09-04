@@ -1,4 +1,4 @@
-#include "ui/LayoutRegistry.hpp"
+#include "ui/layouts/LayoutRegistry.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace gs3d::ui;

@@ -9,30 +9,11 @@ namespace {
 constexpr const char* kNavigationMapWindowName = "导航图###NavigationMap";
 } // namespace
 
-void draw_navigation_map(
+void draw_navigation_map_content(
     gs3d::app::AppState& state,
-    const char* window_name,
-    bool* open,
     gs3d::app::NavigationMapState* navigation_map
 )
 {
-    const bool use_default_window = window_name == nullptr;
-    if (use_default_window && !state.panels.navigation_map) {
-        return;
-    }
-    if (window_name == nullptr) {
-        window_name = kNavigationMapWindowName;
-    }
-    if (open == nullptr && use_default_window) {
-        open = &state.panels.navigation_map;
-    }
-
-    ImGui::SetNextWindowSize(ImVec2(240.0f, 260.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(window_name, open)) {
-        ImGui::End();
-        return;
-    }
-
     auto& nm = navigation_map != nullptr
         ? *navigation_map
         : gs3d::app::navigation_map_for_view(
@@ -46,7 +27,6 @@ void draw_navigation_map(
     const float pad = 6.0f;
     const float size = std::max(16.0f, std::min(avail_w - pad * 2.0f, avail_h - pad * 2.0f));
     if (size < 16.0f) {
-        ImGui::End();
         return;
     }
 
@@ -118,6 +98,30 @@ void draw_navigation_map(
 
     ImGui::Dummy(ImVec2(avail_w, avail_h));
 
+}
+
+void draw_navigation_map(
+    gs3d::app::AppState& state,
+    const char* window_name,
+    bool* open,
+    gs3d::app::NavigationMapState* navigation_map
+)
+{
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.navigation_map) {
+        return;
+    }
+    if (window_name == nullptr) {
+        window_name = kNavigationMapWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.navigation_map;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(240.0f, 260.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(window_name, open)) {
+        draw_navigation_map_content(state, navigation_map);
+    }
     ImGui::End();
 }
 

@@ -1,4 +1,4 @@
-#include "ui/AnalysisRailLayout.hpp"
+#include "ui/layouts/analysis_rail/AnalysisRailLayout.hpp"
 
 #include <algorithm>
 
@@ -53,6 +53,14 @@ AnalysisRailLayout compute_analysis_rail_layout(
         .cards_x = width - cards,
         .status_y = height - status,
     };
+}
+
+void draw_analysis_rail_overlay(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    float ui_scale
+) {
+    (void)draw_analysis_rail_layout(state, actions, ui_scale);
 }
 
 } // namespace gs3d::ui

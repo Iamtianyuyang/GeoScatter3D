@@ -1,4 +1,4 @@
-#include "ui/LayoutRegistry.hpp"
+#include "ui/layouts/LayoutRegistry.hpp"
 
 #include <algorithm>
 
@@ -18,7 +18,7 @@ void LayoutRegistry::init_builtin_layouts() {
     register_layout({
         .id = "workbench",
         .name = "标准工作台",
-        .description = "多面板停靠工作区 + 状态栏 + 顶栏",
+        .description = "三栏点云工作台：场景、主视口、检查器",
         .enabled = true
     });
 

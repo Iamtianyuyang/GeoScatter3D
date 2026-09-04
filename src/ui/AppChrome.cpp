@@ -190,20 +190,53 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
     }
     if (ImGui::BeginMenu("视图")) {
         menu_section("工作区");
-        bool has = has_hidden_view(state);
-        if (ImGui::MenuItem("新建视图", "Ctrl+N", false, has)) show_first_hidden_view(state);
-        if (ImGui::MenuItem("重置为默认工作台布局")) result.restore_default_workspace_requested = true;
-        menu_section("界面布局");
-        draw_layout_menu(state, result);
-        menu_section("色彩主题");
+        const bool has_hidden = has_hidden_view(state);
+        if (ImGui::MenuItem("新建视图", "Ctrl+N", false, has_hidden)) {
+            show_first_hidden_view(state);
+        }
+        if (ImGui::MenuItem("恢复默认工作区")) {
+            restore_default_workspace(state);
+            result.restore_default_workspace_requested = true;
+        }
+        menu_section("布局");
+        const bool is_workbench = (state.ui_layout_mode == gs3d::app::UiLayoutMode::kWorkbench);
+        const bool is_dock = (state.ui_layout_mode == gs3d::app::UiLayoutMode::kFloatingDock);
+        const bool is_rail = (state.ui_layout_mode == gs3d::app::UiLayoutMode::kAnalysisRail);
+
+        if (ImGui::MenuItem("方案 A · 专业工作台", nullptr, is_workbench) && !is_workbench) {
+            result.layout_change_requested = true;
+            result.requested_layout_id = "workbench";
+        }
+        if (ImGui::MenuItem("方案 B · 悬浮 Dock", nullptr, is_dock) && !is_dock) {
+            result.layout_change_requested = true;
+            result.requested_layout_id = "floating-dock";
+        }
+        if (ImGui::MenuItem("方案 C · 暗色分析舱", nullptr, is_rail) && !is_rail) {
+            result.layout_change_requested = true;
+            result.requested_layout_id = "analysis-rail";
+            result.theme_change_requested = true;
+            result.requested_theme = ThemeId::kDeepGraphite;
+        }
+        menu_section("外观");
         draw_theme_menu(state, result);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("窗口")) {
         menu_section("工作窗口");
-        bool can = has_hidden_view(state);
-        if (ImGui::MenuItem("新建工作窗口", nullptr, false, can)) create_workspace_window(state);
-        draw_panel_menu(state.panels);
+        const bool can_create = has_hidden_view(state);
+        if (ImGui::MenuItem("新建工作窗口", nullptr, false, can_create)) {
+            create_workspace_window(state);
+        }
+        menu_section("面板显示");
+        ImGui::MenuItem("工具", nullptr, &state.panels.tools);
+        ImGui::MenuItem("项目", nullptr, &state.panels.dataset);
+        ImGui::MenuItem("属性", nullptr, &state.panels.render_settings);
+        ImGui::MenuItem("性能", nullptr, &state.panels.performance);
+        ImGui::MenuItem("瓦片", nullptr, &state.panels.tile_inspector);
+        ImGui::MenuItem("细节层级", nullptr, &state.panels.lod_view);
+        ImGui::MenuItem("导航图", nullptr, &state.panels.navigation_map);
+        ImGui::MenuItem("测量", nullptr, &state.panels.measurement);
+        ImGui::MenuItem("区域统计", nullptr, &state.panels.region_stats);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("帮助")) {
@@ -216,33 +249,6 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
         ImGui::EndMenu();
     }
 
-    ImGui::SameLine(0.0f, 18.0f*ui_scale);
-    bool can_add = has_hidden_view(state);
-    if (icon_button("##TO", icons::kFolderOpen, "打开 (Ctrl+O)")) actions.open_requested = true;
-    ImGui::SameLine();
-    if (icon_button("##TS", icons::kPhotoCamera, "截图")) actions.screenshot_requested = true;
-    ImGui::SameLine();
-    if (icon_button("##TA", icons::kAdd, "新建视图 (Ctrl+N)", false, can_add)) show_first_hidden_view(state);
-    ImGui::SameLine();
-    auto& meas = gs3d::app::measurement_for_view(state, state.active_viewport_index);
-    bool measuring = meas.measure_mode_active();
-    if (icon_button("##TM", icons::kStraighten, "测量 (M)", measuring)) {
-        meas.toggle_measure_mode();
-        if (!measuring) meas.clear_pending();
-    }
-    ImGui::SameLine();
-    if (icon_button("##TL", icons::kLink, "联动相机", any_camera_linked(state)))
-        toggle_all_camera_link(state);
-    ImGui::SameLine();
-    if (icon_button("##TP", icons::kApps, "面板 (Ctrl+P)")) {
-        state.ui_chrome.panel_palette_open = true;
-        state.ui_chrome.panel_palette_query[0] = '\0';
-    }
-    ImGui::SameLine();
-    // TIA-111 方向 B：可折叠侧边栏切换按钮
-    if (icon_button("##SB", icons::kMenu, "切换侧边栏", state.ui_chrome.sidebar_visible)) {
-        state.ui_chrome.sidebar_visible = !state.ui_chrome.sidebar_visible;
-    }
     pop_menu_style();
     if (medium_font()) ImGui::PopFont();
 

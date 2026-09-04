@@ -1,6 +1,6 @@
 #include "control/MenuComponents.hpp"
 
-#include "ui/LayoutRegistry.hpp"
+#include "ui/layouts/LayoutRegistry.hpp"
 #include "ui/PanelRegistry.hpp"
 
 #include <stdexcept>

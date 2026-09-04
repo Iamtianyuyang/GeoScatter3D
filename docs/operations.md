@@ -25,8 +25,8 @@
 | 枚举值 | 配置字符串 | 设计意图（源码注释） | 入口文件 | 当前完成度 |
 |---|---|---|---|---|
 | `kWorkbench` (0) | `workbench` | 方案 A：菜单栏 + 左右停靠面板 + 状态栏 | `src/ui/UiRoot.cpp`（docking 编排）、`src/ui/AppChrome.cpp`（顶栏/状态栏/菜单） | **唯一实际渲染的布局** |
-| `kFloatingDock` (1) | `floating-dock` | 方案 B：视口全沉浸 + 底部悬浮胶囊 Dock + 弹出卡片（Telegram 风），所有面板功能收进 Dock 弹出卡片 | `include/ui/FloatingDockUi.hpp` + `src/ui/FloatingDockUi.cpp`（`draw_floating_dock_layout`） | **休眠**：无调用点，运行期不可达 |
-| `kAnalysisRail` (2) | `analysis-rail` / `rail` | 方案 C：暗色图标轨 + 互斥抽屉 + 右侧分析卡片 | `include/ui/AnalysisRailUi.hpp` + `src/ui/AnalysisRailUi.cpp`（`draw_analysis_rail_layout`） | **休眠**：无调用点，运行期不可达 |
+| `kFloatingDock` (1) | `floating-dock` | 方案 B：视口全沉浸 + 底部悬浮胶囊 Dock + 弹出卡片（Telegram 风），所有面板功能收进 Dock 弹出卡片 | `include/ui/layouts/floating_dock/FloatingDockLayout.hpp` + `src/ui/layouts/floating_dock/FloatingDockLayout.cpp`（`draw_floating_dock_overlay`） | 已由布局注册表分发 |
+| `kAnalysisRail` (2) | `analysis-rail` / `rail` | 方案 C：暗色图标轨 + 互斥抽屉 + 右侧分析卡片 | `include/ui/layouts/analysis_rail/AnalysisRailLayout.hpp` + `src/ui/layouts/analysis_rail/AnalysisRailLayout.cpp`（`draw_analysis_rail_overlay`） | 已由布局注册表分发 |
 
 **完成度结论（TIA-151 实测）**：TIA-111（commit 4a6fa80）已移除
 `UiRoot::draw()` 的三布局分发，当前代码里 `ui_layout_mode` 只有两处读取：

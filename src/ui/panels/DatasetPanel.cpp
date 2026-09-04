@@ -16,6 +16,178 @@ namespace LayoutMetrics {
 constexpr float kPanelInsetX = 10.0f;
 } // namespace LayoutMetrics
 
+void draw_dataset_panel_content(
+    gs3d::app::AppState& state,
+    gs3d::app::DatasetSummaryState* dataset
+)
+{
+    auto& dataset_state = dataset != nullptr ? *dataset : state.dataset;
+
+    const float scale = ImGui::GetFontSize() / 13.0f;
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(6.0f * scale, 3.0f * scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(6.0f * scale, 5.0f * scale)
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(
+            LayoutMetrics::kPanelInsetX * scale,
+            8.0f * scale
+        )
+    );
+    if (auto* font = gs3d::gui::ui_fonts().panel_title) {
+        ImGui::PushFont(font);
+    }
+    ImGui::TextWrapped("%s", dataset_state.active_dataset.c_str());
+    if (auto* font = gs3d::gui::ui_fonts().panel_title) {
+        ImGui::PopFont();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 190));
+    ImGui::Text("%llu 点", static_cast<unsigned long long>(dataset_state.point_count));
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    ImGui::TextUnformatted(dataset_state.file_size.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    ImGui::SetNextItemWidth(-1.0f);
+    widgets::InputTextWithHint(
+        "##DatasetSearch",
+        "筛选项目",
+        dataset_state.search_text.data(),
+        dataset_state.search_text.size()
+    );
+    ImGui::Spacing();
+
+    draw_panel_section_label("场景");
+    ImGui::BeginChild("##DatasetSceneList", ImVec2(0.0f, 0.0f), false);
+    {
+        if (ImGui::TreeNodeEx("当前数据集",
+                              ImGuiTreeNodeFlags_DefaultOpen |
+                                  ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (ImGui::TreeNodeEx(
+                    "数据概览",
+                    ImGuiTreeNodeFlags_DefaultOpen |
+                        ImGuiTreeNodeFlags_SpanAvailWidth
+                )) {
+                ImGui::TextDisabled("名称");
+                ImGui::SameLine();
+                ImGui::TextWrapped(
+                    "%s",
+                    dataset_state.active_dataset.c_str()
+                );
+                ImGui::TextDisabled("点数");
+                ImGui::SameLine();
+                ImGui::Text(
+                    "%llu",
+                    static_cast<unsigned long long>(
+                        dataset_state.point_count
+                    )
+                );
+                ImGui::TextDisabled("格式");
+                ImGui::SameLine();
+                ImGui::TextUnformatted(dataset_state.format.c_str());
+                ImGui::TextDisabled("路径");
+                ImGui::TextWrapped(
+                    "%s",
+                    dataset_state.path.c_str()
+                );
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx(
+                    "瓦片",
+                    ImGuiTreeNodeFlags_DefaultOpen |
+                        ImGuiTreeNodeFlags_SpanAvailWidth
+                )) {
+                if (dataset_state.tile_details.empty()) {
+                    ImGui::TextDisabled("当前数据集未启用瓦片流式加载");
+                } else {
+                    ImGui::Text(
+                        "当前：%u 已加载 / %u 等待",
+                        state.performance.loaded_tiles,
+                        state.performance.pending_tiles
+                    );
+                    for (const auto& detail : dataset_state.tile_details) {
+                        ImGui::TextWrapped("%s", detail.c_str());
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNodeEx(
+                    "细节层级",
+                    ImGuiTreeNodeFlags_DefaultOpen |
+                        ImGuiTreeNodeFlags_SpanAvailWidth
+                )) {
+                if (dataset_state.lod_details.empty()) {
+                    ImGui::TextDisabled("当前数据集未启用细节层级");
+                } else {
+                    ImGui::TextUnformatted(state.performance.lod_mode.c_str());
+                    for (const auto& detail : dataset_state.lod_details) {
+                        ImGui::TextWrapped("%s", detail.c_str());
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNodeEx(
+                    "属性",
+                    ImGuiTreeNodeFlags_DefaultOpen |
+                        ImGuiTreeNodeFlags_SpanAvailWidth
+                )) {
+                ImGui::Text(
+                    "共 %zu 个属性",
+                    dataset_state.attributes.size()
+                );
+                for (const auto& attribute : dataset_state.attributes) {
+                    ImGui::Bullet();
+                    ImGui::SameLine(0.0f, 6.0f * scale);
+                    ImGui::TextWrapped("%s", attribute.c_str());
+                }
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+        ImGui::Spacing();
+        draw_panel_section_label("文件信息");
+        if (ImGui::BeginTable(
+                "##DatasetFileInfo",
+                2,
+                ImGuiTableFlags_SizingStretchProp |
+                    ImGuiTableFlags_NoPadOuterX
+            )) {
+            ImGui::TableSetupColumn(
+                "label",
+                ImGuiTableColumnFlags_WidthFixed,
+                4.0f * ImGui::GetFontSize()
+            );
+            ImGui::TableSetupColumn(
+                "value",
+                ImGuiTableColumnFlags_WidthStretch
+            );
+            const auto info_row = [](const char* label,
+                                     const std::string& value) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextDisabled("%s", label);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextWrapped("%s", value.c_str());
+            };
+            info_row("路径", dataset_state.path);
+            info_row("格式", dataset_state.format);
+            info_row("包围盒", dataset_state.bounding_box);
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar(3);
+}
+
 void draw_dataset_panel(
     gs3d::app::AppState& state,
     const char* window_name,
@@ -33,7 +205,6 @@ void draw_dataset_panel(
     if (open == nullptr && use_default_window) {
         open = &state.panels.dataset;
     }
-    auto& dataset_state = dataset != nullptr ? *dataset : state.dataset;
 
     const float scale = ImGui::GetFontSize() / 13.0f;
     ImGui::SetNextWindowSize(
@@ -45,199 +216,7 @@ void draw_dataset_panel(
         ImVec2(100000.0f, 100000.0f)
     );
     if (ImGui::Begin(window_name, open)) {
-        ImGui::PushStyleVar(
-            ImGuiStyleVar_FramePadding,
-            ImVec2(6.0f * scale, 3.0f * scale)
-        );
-        ImGui::PushStyleVar(
-            ImGuiStyleVar_ItemSpacing,
-            ImVec2(6.0f * scale, 5.0f * scale)
-        );
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2(
-                                LayoutMetrics::kPanelInsetX * scale,
-                                8.0f * scale
-                            ));
-        if (auto* font = gs3d::gui::ui_fonts().panel_title) {
-            ImGui::PushFont(font);
-        }
-        ImGui::TextWrapped("%s", dataset_state.active_dataset.c_str());
-        if (auto* font = gs3d::gui::ui_fonts().panel_title) {
-            ImGui::PopFont();
-        }
-        ImGui::PushStyleColor(ImGuiCol_Text, to_u32(palette::kTextDim, 190));
-        ImGui::Text("%llu 点", static_cast<unsigned long long>(dataset_state.point_count));
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        ImGui::TextUnformatted(dataset_state.file_size.c_str());
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
-
-        ImGui::SetNextItemWidth(-1.0f);
-        widgets::InputTextWithHint(
-            "##DatasetSearch",
-            "筛选项目",
-            dataset_state.search_text.data(),
-            dataset_state.search_text.size()
-        );
-        ImGui::Spacing();
-
-        draw_panel_section_label("场景");
-        ImGui::BeginChild("##DatasetSceneList", ImVec2(0.0f, 0.0f), false);
-        {
-            if (ImGui::TreeNodeEx("当前数据集",
-                                  ImGuiTreeNodeFlags_DefaultOpen |
-                                      ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                if (ImGui::TreeNodeEx(
-                        "数据概览",
-                        ImGuiTreeNodeFlags_DefaultOpen |
-                            ImGuiTreeNodeFlags_SpanAvailWidth
-                    )) {
-                    if (ImGui::BeginTable("##DatasetOverviewTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX)) {
-                        ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed, 55.0f * scale);
-                        ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
-
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::TextDisabled("名称");
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextUnformatted(dataset_state.active_dataset.c_str());
-
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::TextDisabled("点数");
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::Text("%llu", static_cast<unsigned long long>(dataset_state.point_count));
-
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::TextDisabled("格式");
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextUnformatted(dataset_state.format.c_str());
-
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::TextDisabled("路径");
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextWrapped("%s", dataset_state.path.c_str());
-
-                        ImGui::EndTable();
-                    }
-                    ImGui::TreePop();
-                }
-                if (ImGui::TreeNodeEx(
-                        "瓦片",
-                        ImGuiTreeNodeFlags_DefaultOpen |
-                            ImGuiTreeNodeFlags_SpanAvailWidth
-                    )) {
-                    if (dataset_state.tile_details.empty()) {
-                        ImGui::TextDisabled("当前数据集未启用瓦片流式加载");
-                    } else {
-                        if (ImGui::BeginTable("##DatasetTileTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX)) {
-                            ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed, 80.0f * scale);
-                            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
-
-                            ImGui::TableNextRow();
-                            ImGui::TableSetColumnIndex(0);
-                            ImGui::TextDisabled("流式状态");
-                            ImGui::TableSetColumnIndex(1);
-                            ImGui::Text("%u 已加载 / %u 等待", state.performance.loaded_tiles, state.performance.pending_tiles);
-
-                            for (const auto& detail : dataset_state.tile_details) {
-                                const auto sep = detail.find("：");
-                                std::string k, v;
-                                if (sep != std::string::npos) {
-                                    k = detail.substr(0, sep);
-                                    v = detail.substr(sep + 3);
-                                } else {
-                                    const auto ascii_sep = detail.find(':');
-                                    if (ascii_sep != std::string::npos) {
-                                        k = detail.substr(0, ascii_sep);
-                                        v = detail.substr(ascii_sep + 1);
-                                    } else {
-                                        k = detail;
-                                    }
-                                }
-                                ImGui::TableNextRow();
-                                ImGui::TableSetColumnIndex(0);
-                                ImGui::TextDisabled("%s", k.c_str());
-                                ImGui::TableSetColumnIndex(1);
-                                ImGui::TextUnformatted(v.c_str());
-                            }
-                            ImGui::EndTable();
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                if (ImGui::TreeNodeEx(
-                        "细节层级",
-                        ImGuiTreeNodeFlags_DefaultOpen |
-                            ImGuiTreeNodeFlags_SpanAvailWidth
-                    )) {
-                    if (dataset_state.lod_details.empty()) {
-                        ImGui::TextDisabled("当前数据集未启用细节层级");
-                    } else {
-                        ImGui::TextUnformatted(state.performance.lod_mode.c_str());
-                        for (const auto& detail : dataset_state.lod_details) {
-                            ImGui::TextWrapped("%s", detail.c_str());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                if (ImGui::TreeNodeEx(
-                        "属性",
-                        ImGuiTreeNodeFlags_DefaultOpen |
-                            ImGuiTreeNodeFlags_SpanAvailWidth
-                    )) {
-                    ImGui::Text(
-                        "共 %zu 个属性",
-                        dataset_state.attributes.size()
-                    );
-                    for (const auto& attribute : dataset_state.attributes) {
-                        ImGui::Bullet();
-                        ImGui::SameLine(0.0f, 6.0f * scale);
-                        ImGui::TextWrapped("%s", attribute.c_str());
-                    }
-                    ImGui::TreePop();
-                }
-                ImGui::TreePop();
-            }
-            ImGui::Spacing();
-            draw_panel_section_label("文件信息");
-            if (ImGui::BeginTable(
-                    "##DatasetFileInfo",
-                    2,
-                    ImGuiTableFlags_SizingStretchProp |
-                        ImGuiTableFlags_NoPadOuterX
-                )) {
-                ImGui::TableSetupColumn(
-                    "label",
-                    ImGuiTableColumnFlags_WidthFixed,
-                    4.0f * ImGui::GetFontSize()
-                );
-                ImGui::TableSetupColumn(
-                    "value",
-                    ImGuiTableColumnFlags_WidthStretch
-                );
-                const auto info_row = [](const char* label,
-                                         const std::string& value) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::TextDisabled("%s", label);
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::TextWrapped("%s", value.c_str());
-                };
-                info_row("路径", dataset_state.path);
-                info_row("格式", dataset_state.format);
-                info_row("包围盒", dataset_state.bounding_box);
-                ImGui::EndTable();
-            }
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleVar(3);
+        draw_dataset_panel_content(state, dataset);
     }
     ImGui::End();
 }

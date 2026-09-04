@@ -1,8 +1,8 @@
-#include "ui/Theme.hpp"
+#include "ui/color/Theme.hpp"
 
-#include "ui/LayoutMetrics.hpp"
-#include "ui/ThemeRegistry.hpp"
-#include "ui/UiPalette.hpp"
+#include "ui/layouts/LayoutMetrics.hpp"
+#include "ui/color/ThemeRegistry.hpp"
+#include "ui/color/UiPalette.hpp"
 
 namespace gs3d::ui {
 

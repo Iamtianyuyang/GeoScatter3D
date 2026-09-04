@@ -1,6 +1,6 @@
 #include "app/ViewerWorkbenchLayout.hpp"
-#include "ui/AnalysisRailLayout.hpp"
-#include "ui/FloatingDockLayout.hpp"
+#include "ui/layouts/analysis_rail/AnalysisRailLayout.hpp"
+#include "ui/layouts/floating_dock/FloatingDockLayout.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

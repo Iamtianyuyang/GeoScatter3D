@@ -130,24 +130,12 @@ void persist_render_settings_if_edited(
 
 } // namespace
 
-void draw_render_settings(
+void draw_render_settings_content(
     gs3d::app::AppState& state,
     gs3d::app::UiActions& actions,
-    const char* window_name,
-    bool* open,
     gs3d::app::RenderSettingsState* render_settings,
     const std::vector<int>* target_viewports
 ) {
-    const bool use_default_window = window_name == nullptr;
-    if (use_default_window && !state.panels.render_settings) {
-        return;
-    }
-    if (window_name == nullptr) {
-        window_name = kRenderSettingsWindowName;
-    }
-    if (open == nullptr && use_default_window) {
-        open = &state.panels.render_settings;
-    }
     auto& settings =
         render_settings != nullptr ? *render_settings : state.render_settings;
 
@@ -156,9 +144,7 @@ void draw_render_settings(
     const std::size_t command_count_before =
         actions.render_settings_commands.size();
 
-    ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(window_name, open)) {
-        const float scale = ImGui::GetFontSize() / 13.0f;
+    const float scale = ImGui::GetFontSize() / 13.0f;
         ImGui::PushStyleVar(
             ImGuiStyleVar_FramePadding,
             ImVec2(8.0f * scale, 4.5f * scale)
@@ -382,15 +368,44 @@ void draw_render_settings(
             }
         }
 
-        ImGui::PopStyleVar(3);
-    }
-    ImGui::End();
+    ImGui::PopStyleVar(3);
 
     // 本窗口发生了设置修改 → 持久化到用户偏好（重启恢复）。
     persist_render_settings_if_edited(
         settings,
         actions.render_settings_commands.size() > command_count_before
     );
+}
+
+void draw_render_settings(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    const char* window_name,
+    bool* open,
+    gs3d::app::RenderSettingsState* render_settings,
+    const std::vector<int>* target_viewports
+) {
+    const bool use_default_window = window_name == nullptr;
+    if (use_default_window && !state.panels.render_settings) {
+        return;
+    }
+    if (window_name == nullptr) {
+        window_name = kRenderSettingsWindowName;
+    }
+    if (open == nullptr && use_default_window) {
+        open = &state.panels.render_settings;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(window_name, open)) {
+        draw_render_settings_content(
+            state,
+            actions,
+            render_settings,
+            target_viewports
+        );
+    }
+    ImGui::End();
 }
 
 } // namespace gs3d::ui

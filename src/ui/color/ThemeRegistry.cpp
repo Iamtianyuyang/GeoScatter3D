@@ -1,4 +1,4 @@
-#include "ui/ThemeRegistry.hpp"
+#include "ui/color/ThemeRegistry.hpp"
 
 #include <algorithm>
 

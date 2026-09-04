@@ -1,5 +1,4 @@
-#include "ui/FloatingDockLayout.hpp"
-
+#include "ui/layouts/floating_dock/FloatingDockLayout.hpp"
 #include "ui/UiRoot.hpp"
 
 #include <algorithm>
@@ -78,13 +77,23 @@ NavigationPreviewLayout compute_navigation_preview_layout(
     const float texture_aspect = texture_width / texture_height;
     const float container_aspect = width / height;
     if (texture_aspect >= container_aspect) {
-        layout.image.height = width / texture_aspect;
-        layout.image.y += (height - layout.image.height) * 0.5f;
+        const float image_height = width / texture_aspect;
+        layout.image.height = image_height;
+        layout.image.y = y + (height - image_height) * 0.5f;
     } else {
-        layout.image.width = height * texture_aspect;
-        layout.image.x += (width - layout.image.width) * 0.5f;
+        const float image_width = height * texture_aspect;
+        layout.image.width = image_width;
+        layout.image.x = x + (width - image_width) * 0.5f;
     }
     return layout;
+}
+
+void draw_floating_dock_overlay(
+    gs3d::app::AppState& state,
+    gs3d::app::UiActions& actions,
+    float ui_scale
+) {
+    (void)draw_floating_dock_layout(state, actions, ui_scale);
 }
 
 } // namespace gs3d::ui

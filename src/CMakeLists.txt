@@ -37,6 +37,12 @@ target_link_libraries(GeoScatter3D PRIVATE
 
 copy_runtime_assets(GeoScatter3D)
 
+add_custom_command(TARGET GeoScatter3D POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:GeoScatter3D>
+            ${PROJECT_BINARY_DIR}/$<CONFIG>/$<TARGET_FILE_NAME:GeoScatter3D>
+)
+
 # Standalone Preprocessor Executable
 add_executable(GeoScatter3DPreprocess
     preprocess_main.cpp
@@ -53,6 +59,12 @@ target_link_libraries(GeoScatter3DPreprocess PRIVATE
 )
 
 copy_runtime_assets(GeoScatter3DPreprocess)
+
+add_custom_command(TARGET GeoScatter3DPreprocess POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:GeoScatter3DPreprocess>
+            ${PROJECT_BINARY_DIR}/$<CONFIG>/$<TARGET_FILE_NAME:GeoScatter3DPreprocess>
+)
 
 # Ground-truth validator utility
 add_executable(gs3d_groundtruth

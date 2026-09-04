@@ -401,6 +401,7 @@ target_include_directories(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
 )
 target_link_libraries(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
     gs3d_app_support
+    gs3d_ui
     Catch2::Catch2WithMain
 )
 add_test(
