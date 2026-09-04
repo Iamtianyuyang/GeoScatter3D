@@ -110,7 +110,7 @@ struct AttrDescriptor {
  * 日志面板已下线，不再出现在注册表中；tools 已移至顶栏。
  */
 struct PanelVisibilityState {
-    bool tools = true;
+    bool tools = false;
     bool dataset = true;
     bool render_settings = true;
     bool tile_inspector = false;

@@ -583,7 +583,6 @@ gs3d::app::UiActions UiRoot::draw(gs3d::app::AppState& state)
     }
 
     if (render_workspace) {
-        draw_tools_window(state, actions, ui_scale);
         const auto main_viewports = main_workspace_viewports(state);
         const int main_active_view = active_view_for_indices(
             state,

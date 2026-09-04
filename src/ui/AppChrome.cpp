@@ -228,7 +228,6 @@ void draw_top_bar(gs3d::app::AppState& state, gs3d::app::UiActions& actions, flo
             create_workspace_window(state);
         }
         menu_section("面板显示");
-        ImGui::MenuItem("工具", nullptr, &state.panels.tools);
         ImGui::MenuItem("项目", nullptr, &state.panels.dataset);
         ImGui::MenuItem("属性", nullptr, &state.panels.render_settings);
         ImGui::MenuItem("性能", nullptr, &state.panels.performance);

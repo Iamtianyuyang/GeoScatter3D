@@ -254,24 +254,6 @@ void build_main_dock_layout(
     const float right_ratio = default_right_width / right_split_width;
 
     ImGuiID center_id = dockspace_id;
-    if (state.panels.tools) {
-        const float tools_ratio = std::clamp(
-            LayoutMetrics::kToolsBarHeightBase /
-                std::max(1.0f, work_size.y),
-            0.045f,
-            0.12f
-        );
-        ImGuiID body_id = center_id;
-        const ImGuiID tools_id = ImGui::DockBuilderSplitNode(
-            center_id, ImGuiDir_Up, tools_ratio, nullptr, &body_id
-        );
-        center_id = body_id;
-        if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(tools_id)) {
-            node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar |
-                ImGuiDockNodeFlags_NoWindowMenuButton;
-        }
-        ImGui::DockBuilderDockWindow(kToolsWindowName, tools_id);
-    }
     ImGuiID left_id = 0;
     ImGuiID right_id = 0;
     if (has_left_panels) {
