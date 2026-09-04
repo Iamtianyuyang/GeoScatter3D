@@ -43,7 +43,13 @@ class AppTheme {
         surface: surface,
         surfaceContainerLow: surfaceMuted,
       ),
-      fontFamily: 'Segoe UI',
+      fontFamily: 'NotoSansCJKsc',
+      fontFamilyFallback: const [
+        'Segoe UI',
+        'Microsoft YaHei',
+        'PingFang SC',
+        'sans-serif',
+      ],
     );
   }
 }

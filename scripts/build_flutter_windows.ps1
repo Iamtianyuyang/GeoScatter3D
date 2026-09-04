@@ -25,6 +25,12 @@ $FlutterDir = Join-Path $RepoRoot "ui_flutter"
 $FlutterDll = Join-Path $FlutterDir "gs3d_ffi.dll"
 Copy-Item $SourceDll $FlutterDll -Force
 
+$FlutterFontsDir = Join-Path $FlutterDir "assets/fonts"
+if (-not (Test-Path $FlutterFontsDir)) {
+    New-Item -ItemType Directory -Force -Path $FlutterFontsDir | Out-Null
+}
+Copy-Item (Join-Path $RepoRoot "assets/fonts/*") $FlutterFontsDir -Force
+
 $env:NO_PROXY = "localhost,127.0.0.1"
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
