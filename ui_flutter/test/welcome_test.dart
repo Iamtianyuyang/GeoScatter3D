@@ -21,15 +21,16 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all 11 registered welcome actions', () {
+    test('getAvailableActions returns all 12 registered welcome actions', () {
       final actions = service.getAvailableActions();
-      expect(actions.length, equals(11));
+      expect(actions.length, equals(12));
       final ids = actions.map((a) => a.id).toSet();
       expect(ids, containsAll([
         'welcome.quick_demo',
         'welcome.open_project',
         'welcome.new_project',
         'welcome.browse_file',
+        'welcome.browse_folder',
         'welcome.recent.open',
         'welcome.recent.clear',
         'welcome.gpu.set_preferred',
@@ -42,6 +43,14 @@ void main() {
 
     test('executeAction welcome.browse_file returns selection result structure', () {
       final res = service.executeAction('welcome.browse_file', {'type': 'point_cloud'});
+      expect(res, isMap);
+      expect(res.containsKey('success'), isTrue);
+      expect(res.containsKey('message'), isTrue);
+      expect(res.containsKey('data'), isTrue);
+    });
+
+    test('executeAction welcome.browse_folder returns selection result structure', () {
+      final res = service.executeAction('welcome.browse_folder');
       expect(res, isMap);
       expect(res.containsKey('success'), isTrue);
       expect(res.containsKey('message'), isTrue);
@@ -143,7 +152,7 @@ void main() {
       });
       final listRes = jsonDecode(service.executeJsonRpc(listRpc));
       expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(11));
+      expect((listRes['result'] as List).length, equals(12));
 
       final actionRpc = jsonEncode({
         'jsonrpc': '2.0',
@@ -207,7 +216,7 @@ void main() {
       expect(service.summary.isLoaded, isTrue);
     });
 
-    testWidgets('OpenProjectDialog binds all keys and sample chip fills path', (WidgetTester tester) async {
+    testWidgets('OpenProjectDialog binds all keys, supports file/folder browse, and sample chip fills path', (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: OpenProjectDialog(service: service)),
@@ -217,15 +226,34 @@ void main() {
 
       expect(find.byKey(WelcomeUiKeys.openProjectDialogCloseButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.openProjectDialogPathInput), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.openProjectDialogSampleChip), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.openProjectDialogCancelButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.openProjectDialogSubmitButton), findsOneWidget);
+
+      // 测试选择文件回调
+      service.filePickerOverride = (filter) => 'examples/picked_test.gs3d';
+      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton));
+      await tester.pump();
+      var textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
+      expect(textField.controller?.text, equals('examples/picked_test.gs3d'));
+
+      // 测试选择文件夹回调
+      service.folderPickerOverride = () => 'data/picked_bundle.gs3d.bundle';
+      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton));
+      await tester.pump();
+      textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
+      expect(textField.controller?.text, equals('data/picked_bundle.gs3d.bundle'));
+
+      service.filePickerOverride = null;
+      service.folderPickerOverride = null;
 
       // 点击快捷填充示例 Chip
       await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogSampleChip));
       await tester.pump();
 
-      final textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
+      textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
       expect(textField.controller?.text, equals('data/sample-points.gs3d.bundle'));
 
       // 提交并载入

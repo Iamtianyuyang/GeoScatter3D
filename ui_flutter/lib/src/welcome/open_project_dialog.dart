@@ -25,6 +25,26 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
     super.dispose();
   }
 
+  void _browseFile() {
+    final picked = widget.service.pickFile('open_project');
+    if (picked != null && picked.isNotEmpty) {
+      setState(() {
+        _pathController.text = picked;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  void _browseFolder() {
+    final picked = widget.service.pickFolder();
+    if (picked != null && picked.isNotEmpty) {
+      setState(() {
+        _pathController.text = picked;
+        _errorMessage = null;
+      });
+    }
+  }
+
   void _submit() {
     final path = _pathController.text.trim();
     if (path.isEmpty) {
@@ -47,7 +67,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
       backgroundColor: AppTheme.surface,
       surfaceTintColor: Colors.transparent,
       child: Container(
-        width: 500,
+        width: 520,
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -95,7 +115,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               decoration: InputDecoration(
                 labelText: '数据集路径 (文件或 Bundle 文件夹)',
                 labelStyle: const TextStyle(fontSize: 13, color: AppTheme.textDim),
-                hintText: '例如: data/sample-points.gs3d.bundle',
+                hintText: '例如: data/sample-points.gs3d.bundle 或 sample.gs3d',
                 prefixIcon: const Icon(Icons.description_outlined, size: 18, color: AppTheme.textDim),
                 filled: true,
                 fillColor: AppTheme.surfaceMuted,
@@ -114,7 +134,39 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               ),
               style: const TextStyle(fontSize: 13, fontFamily: 'Consolas'),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+
+            // 浏览选择文件与文件夹操作按钮
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: WelcomeUiKeys.openProjectDialogBrowseFileButton,
+                    icon: const Icon(Icons.file_open_outlined, size: 15, color: AppTheme.primaryBlue),
+                    label: const Text('选择文件 (.gs3d)', style: TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      side: const BorderSide(color: AppTheme.border),
+                    ),
+                    onPressed: _browseFile,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: WelcomeUiKeys.openProjectDialogBrowseFolderButton,
+                    icon: const Icon(Icons.folder_open_rounded, size: 15, color: AppTheme.primaryBlue),
+                    label: const Text('选择工区包 (.gs3d.bundle)', style: TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      side: const BorderSide(color: AppTheme.border),
+                    ),
+                    onPressed: _browseFolder,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
 
             // 快捷填充 Chip
             Row(
@@ -129,6 +181,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                   side: const BorderSide(color: AppTheme.border),
                   onPressed: () {
                     _pathController.text = 'data/sample-points.gs3d.bundle';
+                    setState(() => _errorMessage = null);
                   },
                 ),
               ],

@@ -231,6 +231,9 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 可注入的文件选择回调（用于自动化测试或无头运行环境模拟选择）
   String? Function(String filterType)? filePickerOverride;
 
+  /// 可注入的目录选择回调（用于自动化测试或无头运行环境模拟选择）
+  String? Function()? folderPickerOverride;
+
   /// 原生调用系统文件选择对话框（支持 Windows 原生 Explorer 文件选择）
   String? pickFile([String filterType = 'point_cloud']) {
     if (filePickerOverride != null) {
@@ -252,6 +255,29 @@ class GeoScatter3dService extends ChangeNotifier {
         debugPrint('[FFI pickFile error]: $e');
       } finally {
         calloc.free(filterPtr);
+      }
+    }
+    return null;
+  }
+
+  /// 原生调用系统目录/文件夹选择对话框（支持 Windows 原生 Explorer 文件夹选择）
+  String? pickFolder() {
+    if (folderPickerOverride != null) {
+      final res = folderPickerOverride!();
+      return res?.replaceAll('\\', '/');
+    }
+    if (!_initialized || _bindings == null) {
+      if (!initialize()) return null;
+    }
+    if (_bindings != null) {
+      try {
+        final resPtr = _bindings!.pick_folder();
+        final res = resPtr.toDartString();
+        if (res.isNotEmpty) {
+          return res.replaceAll('\\', '/');
+        }
+      } catch (e) {
+        debugPrint('[FFI pickFolder error]: $e');
       }
     }
     return null;
@@ -593,9 +619,15 @@ class GeoScatter3dService extends ChangeNotifier {
         parameterSchema: {
           'type': 'object',
           'properties': {
-            'type': {'type': 'string', 'description': '过滤类型: point_cloud 或 csv'},
+            'type': {'type': 'string', 'description': '过滤类型: point_cloud, csv 或 open_project'},
           },
         },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.browse_folder',
+        name: '浏览选择本地工区目录/文件夹',
+        description: '呼出原生系统文件夹选择对话框，选择 .gs3d.bundle 金字塔多分辨率工区目录',
+        category: 'welcome',
       ),
     ];
   }
@@ -625,6 +657,14 @@ class GeoScatter3dService extends ChangeNotifier {
         return {
           'success': picked != null && picked.isNotEmpty,
           'message': (picked != null && picked.isNotEmpty) ? '已选择文件: $picked' : '已取消或未选择文件',
+          'data': {'path': picked},
+        };
+
+      case 'welcome.browse_folder':
+        final picked = pickFolder();
+        return {
+          'success': picked != null && picked.isNotEmpty,
+          'message': (picked != null && picked.isNotEmpty) ? '已选择目录: $picked' : '已取消或未选择目录',
           'data': {'path': picked},
         };
 

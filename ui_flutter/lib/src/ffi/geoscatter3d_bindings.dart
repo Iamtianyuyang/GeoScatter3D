@@ -114,6 +114,9 @@ typedef _dart_get_scalar_range = void Function(ffi.Pointer<ffi.Float> out_min, f
 typedef _c_pick_file = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> filter_type);
 typedef _dart_pick_file = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> filter_type);
 
+typedef _c_pick_folder = ffi.Pointer<Utf8> Function();
+typedef _dart_pick_folder = ffi.Pointer<Utf8> Function();
+
 /// 底层 C-ABI 动态链接库直接绑定
 class GeoScatter3dBindings {
   final ffi.DynamicLibrary dylib;
@@ -156,6 +159,7 @@ class GeoScatter3dBindings {
   late final _dart_set_scalar_range set_scalar_range;
   late final _dart_get_scalar_range get_scalar_range;
   late final _dart_pick_file pick_file;
+  late final _dart_pick_folder pick_folder;
 
   GeoScatter3dBindings(this.dylib) {
     init = dylib.lookupFunction<_c_init, _dart_init>('gs3d_ffi_init');
@@ -196,6 +200,7 @@ class GeoScatter3dBindings {
     set_scalar_range = dylib.lookupFunction<_c_set_scalar_range, _dart_set_scalar_range>('gs3d_ffi_set_scalar_range');
     get_scalar_range = dylib.lookupFunction<_c_get_scalar_range, _dart_get_scalar_range>('gs3d_ffi_get_scalar_range');
     pick_file = dylib.lookupFunction<_c_pick_file, _dart_pick_file>('gs3d_ffi_pick_file');
+    pick_folder = dylib.lookupFunction<_c_pick_folder, _dart_pick_folder>('gs3d_ffi_pick_folder');
   }
 
   /// 自动探测并加载动态库

@@ -20,6 +20,8 @@ class WelcomeUiKeys {
 
   // 3. 打开工程对话框
   static const openProjectDialogPathInput = ValueKey('welcome.dialog.open_project.path_input');
+  static const openProjectDialogBrowseFileButton = ValueKey('welcome.dialog.open_project.browse_file_button');
+  static const openProjectDialogBrowseFolderButton = ValueKey('welcome.dialog.open_project.browse_folder_button');
   static const openProjectDialogSampleChip = ValueKey('welcome.dialog.open_project.sample_chip');
   static const openProjectDialogSubmitButton = ValueKey('welcome.dialog.open_project.submit_button');
   static const openProjectDialogCancelButton = ValueKey('welcome.dialog.open_project.cancel_button');

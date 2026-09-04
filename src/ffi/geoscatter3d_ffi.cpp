@@ -9,6 +9,7 @@
 #endif
 #include <windows.h>
 #include <commdlg.h>
+#include <shobjidl.h>
 #endif
 
 #include "app/PreprocessedBundle.hpp"
@@ -496,6 +497,8 @@ const char* gs3d_ffi_pick_file(const char* filter_type)
 
     if (filter_type != nullptr && std::strcmp(filter_type, "csv") == 0) {
         ofn.lpstrFilter = L"CSV 散点数据 (*.csv)\0*.csv\0所有文件 (*.*)\0*.*\0";
+    } else if (filter_type != nullptr && std::strcmp(filter_type, "open_project") == 0) {
+        ofn.lpstrFilter = L"GS3D 工程文件 (*.gs3d)\0*.gs3d\0点云与工程文件 (*.gs3d;*.csv;*.dat)\0*.gs3d;*.csv;*.dat\0所有文件 (*.*)\0*.*\0";
     } else {
         ofn.lpstrFilter = L"点云与工程文件 (*.csv;*.dat;*.gs3d)\0*.csv;*.dat;*.gs3d\0CSV 散点 (*.csv)\0*.csv\0DAT 散点 (*.dat)\0*.dat\0GS3D 格式 (*.gs3d)\0*.gs3d\0所有文件 (*.*)\0*.*\0";
     }
@@ -515,6 +518,55 @@ const char* gs3d_ffi_pick_file(const char* filter_type)
             return utf8_result.c_str();
         }
     }
+#endif
+    return "";
+}
+
+const char* gs3d_ffi_pick_folder(void)
+{
+#if defined(_WIN32)
+    // 无头运行或测试环境直接返回空串，严禁弹出阻塞式系统模态对话框
+    if (std::getenv("GS3D_HEADLESS") != nullptr || std::getenv("FLUTTER_TEST") != nullptr) {
+        return "";
+    }
+
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool need_uninit = SUCCEEDED(hr);
+
+    if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+        IFileOpenDialog* pFileOpen = nullptr;
+        hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+        if (SUCCEEDED(hr) && pFileOpen != nullptr) {
+            DWORD dwOptions = 0;
+            if (SUCCEEDED(pFileOpen->GetOptions(&dwOptions))) {
+                pFileOpen->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
+            }
+            if (SUCCEEDED(pFileOpen->Show(GetActiveWindow()))) {
+                IShellItem* pItem = nullptr;
+                if (SUCCEEDED(pFileOpen->GetResult(&pItem)) && pItem != nullptr) {
+                    PWSTR pszFilePath = nullptr;
+                    if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath)) && pszFilePath != nullptr) {
+                        static thread_local std::string utf8_result;
+                        int size_needed = WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, NULL, 0, NULL, NULL);
+                        if (size_needed > 1) {
+                            utf8_result.resize(size_needed - 1);
+                            WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, &utf8_result[0], size_needed, NULL, NULL);
+                            std::replace(utf8_result.begin(), utf8_result.end(), '\\', '/');
+                            CoTaskMemFree(pszFilePath);
+                            pItem->Release();
+                            pFileOpen->Release();
+                            if (need_uninit) CoUninitialize();
+                            return utf8_result.c_str();
+                        }
+                        CoTaskMemFree(pszFilePath);
+                    }
+                    pItem->Release();
+                }
+            }
+            pFileOpen->Release();
+        }
+    }
+    if (need_uninit) CoUninitialize();
 #endif
     return "";
 }

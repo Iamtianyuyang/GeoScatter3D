@@ -19,7 +19,7 @@ target_link_libraries(gs3d_ffi PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(gs3d_ffi PRIVATE comdlg32)
+    target_link_libraries(gs3d_ffi PRIVATE comdlg32 ole32 shell32)
 endif()
 
 target_compile_definitions(gs3d_ffi PRIVATE GS3D_FFI_EXPORTS)
