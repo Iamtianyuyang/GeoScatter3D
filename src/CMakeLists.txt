@@ -19,8 +19,6 @@ add_subdirectory(ffi)
 # Main Interactive Viewer Executable
 add_executable(GeoScatter3D
     main.cpp
-    app/WelcomeWindow.cpp
-    ui/WelcomePage.cpp
 )
 
 target_include_directories(GeoScatter3D PRIVATE

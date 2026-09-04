@@ -4,7 +4,6 @@
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
 #include "app/ViewerApp.hpp"
-#include "app/WelcomeWindow.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
@@ -12,16 +11,39 @@
 #include "ui/Theme.hpp"
 #include "util/Stopwatch.hpp"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
+
+namespace gs3d::app {
+struct ProjectPreprocessProgress {
+    float fraction = 0.0f;
+    std::uint32_t stage_index = 0;
+    std::string stage;
+    std::string detail;
+};
+
+using ProjectPreprocessProgressCallback =
+    std::function<void(const ProjectPreprocessProgress&)>;
+}
 
 namespace {
 
@@ -527,100 +549,41 @@ int main(int argc, char** argv) {
 
         bool show_welcome_window =
             !app_config.viewer.benchmark.enabled && !no_welcome;
-        for (;;) {
-            if (show_welcome_window) {
-                const auto recent_projects =
-                    gs3d::app::load_recent_projects();
-
-                // "当前会话" reflects the most recently opened project
-                // (the first entry in recent-projects.txt), NOT the
-                // static bundle_dir from config/viewer.toml — the toml
-                // is never auto-updated and would stay stale forever.
-                std::filesystem::path current_path;
-                if (!recent_projects.empty()) {
-                    current_path = recent_projects.front().path;
-                } else if (!app_config.bundle_dir.empty()) {
-                    current_path = app_config.bundle_dir;
-                } else if (!app_config.csv_input_path.empty()) {
-                    current_path = app_config.csv_input_path;
-                } else {
-                    current_path = app_config.viewer.input.gs3d_path;
-                }
-
-                gs3d::app::WelcomeWindow welcome({
-                    .enable_validation_layers =
-                        app_config.viewer.graphics.enable_validation_layers,
-                    .ui_scale_multiplier =
-                        app_config.viewer.window.ui_scale_multiplier,
-                    .current_path = std::move(current_path),
-                    .recent_projects = recent_projects,
-                    .preferred_gpu =
-                        app_config.viewer.graphics.preferred_gpu,
-                    .preprocess_new_project =
-                        [&app_config](
-                            const std::filesystem::path&
-                                source_path,
-                            const std::string& project_name,
-                            std::uint32_t thread_count,
-                            const gs3d::app::
-                                ProjectPreprocessProgressCallback&
-                                    report_progress
-                        ) {
-                            auto project_config = app_config;
-                            configure_new_project_input(
-                                project_config,
-                                source_path,
-                                project_name,
-                                thread_count
-                            );
-                            preprocess_csv_input(
-                                project_config,
-                                report_progress
-                            );
-                            project_config.input_mode = "bundle";
-                            app_config =
-                                std::move(project_config);
-                        }
-                });
-                const auto welcome_result = welcome.run();
-                if (welcome_result.kind ==
-                    gs3d::app::WelcomeWindowResultKind::Cancelled) {
-                    return 0;
-                }
-                // 继续编辑 = 打开卡片上显示的项目路径（通常来自最近
-                // 项目的绝对路径）。不能落回 viewer.toml 的 bundle_dir：
-                // 它可能是相对路径或已过期，和界面显示不一致。路径不是
-                // .gs3d.bundle 时（如 csv 输入）保持原有配置驱动流程。
-                const bool continue_as_project =
-                    welcome_result.kind ==
-                        gs3d::app::WelcomeWindowResultKind::ContinueCurrent &&
-                    welcome_result.path.extension() == ".bundle";
-                if (welcome_result.kind ==
-                        gs3d::app::WelcomeWindowResultKind::OpenProject ||
-                    continue_as_project) {
-                    apply_open_request(
-                        app_config,
-                        {
-                            .kind =
-                                gs3d::app::ViewerOpenRequestKind::Project,
-                            .path = welcome_result.path
-                        }
-                    );
-                } else if (
-                    welcome_result.kind ==
-                    gs3d::app::WelcomeWindowResultKind::NewProject
-                ) {
-                    if (!welcome_result.preprocessed) {
-                        configure_new_project_input(
-                            app_config,
-                            welcome_result.path,
-                            welcome_result.project_name,
-                            welcome_result.thread_count
-                        );
+        if (show_welcome_window) {
+            // 现代化前端迁移：优先拉起已迁移的 Flutter 跨平台前端
+            const std::vector<std::filesystem::path> candidates = {
+                "ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe",
+                "../ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe",
+                "build/windows/x64/runner/Release/ui_flutter.exe",
+                "ui_flutter.exe",
+                "Release/ui_flutter.exe",
+            };
+            for (const auto& candidate : candidates) {
+                if (std::filesystem::exists(candidate)) {
+                    gs3d::util::log::info()
+                        << "[Flutter] 启动现代化 Flutter 前端: "
+                        << candidate.string() << '\n';
+#if defined(_WIN32)
+                    STARTUPINFOA si{};
+                    PROCESS_INFORMATION pi{};
+                    si.cb = sizeof(si);
+                    std::string cmd = candidate.string();
+                    if (CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                        return 0;
                     }
+#else
+                    std::string cmd = candidate.string() + " &";
+                    if (std::system(cmd.c_str()) == 0) return 0;
+#endif
                 }
-                show_welcome_window = false;
             }
+            gs3d::util::log::warning()
+                << "[Flutter] 未检测到 ui_flutter.exe，回退至命令行/无头数据模式。\n";
+        }
+
+        for (;;) {
 
             preprocess_csv_input(app_config);
             load_bundle_input(app_config);
