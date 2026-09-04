@@ -200,7 +200,9 @@ class GeoScatter3dBindings {
     }
 
     if (Platform.isWindows) {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
       final candidates = [
+        '$exeDir/gs3d_ffi.dll',
         'gs3d_ffi.dll',
         '../tmp/build-win/src/ffi/Release/gs3d_ffi.dll',
         'tmp/build-win/src/ffi/Release/gs3d_ffi.dll',
