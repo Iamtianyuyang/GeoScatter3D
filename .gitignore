@@ -8,6 +8,9 @@
 *.pdb
 *.ilk
 *.bak
+*.dll
+*.lib
+*.exp
 /data/
 /bench/
 /tools/__pycache__/

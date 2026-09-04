@@ -10,6 +10,7 @@ add_subdirectory(app)
 add_subdirectory(camera)
 add_subdirectory(control)
 add_subdirectory(ui)
+add_subdirectory(ffi)
 
 # ---------------------------------------------------------------------------
 # Executables

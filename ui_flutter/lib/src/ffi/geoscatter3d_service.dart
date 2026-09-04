@@ -1,0 +1,122 @@
+import 'dart:ffi' as ffi;
+import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
+import '../models/dataset_model.dart';
+import 'geoscatter3d_bindings.dart';
+
+class GeoScatter3dService extends ChangeNotifier {
+  static final GeoScatter3dService _instance = GeoScatter3dService._internal();
+  factory GeoScatter3dService() => _instance;
+  GeoScatter3dService._internal();
+
+  GeoScatter3dBindings? _bindings;
+  bool _initialized = false;
+  DatasetSummary _summary = const DatasetSummary();
+
+  bool get isInitialized => _initialized;
+  DatasetSummary get summary => _summary;
+
+  /// 初始化底层 C++ 引擎
+  bool initialize([String? customDylibPath]) {
+    if (_initialized) return true;
+    try {
+      _bindings = GeoScatter3dBindings.openLibrary(customDylibPath);
+      final res = _bindings!.init();
+      _initialized = (res == 0);
+      notifyListeners();
+      return _initialized;
+    } catch (e) {
+      debugPrint('[GeoScatter3D FFI] Failed to initialize: $e');
+      return false;
+    }
+  }
+
+  /// 加载数据集文件（.gs3d、.gs3d.bundle 等）
+  bool loadDataset(String path) {
+    if (!_initialized || _bindings == null) {
+      if (!initialize()) return false;
+    }
+
+    final nativePath = path.toNativeUtf8();
+    try {
+      final code = _bindings!.load_dataset(nativePath);
+      if (code == 0) {
+        _updateSummary();
+        return true;
+      }
+      return false;
+    } finally {
+      calloc.free(nativePath);
+    }
+  }
+
+  void _updateSummary() {
+    if (_bindings == null) return;
+
+    final isLoaded = _bindings!.is_dataset_loaded() == 1;
+    final name = _bindings!.get_dataset_name().toDartString();
+    final pointCount = _bindings!.get_point_count();
+    final fileSize = _bindings!.get_file_size_string().toDartString();
+
+    final lodEnabled = _bindings!.get_lod_enabled() == 1;
+    final lodCount = _bindings!.get_lod_level_count();
+    final lodDetails = <String>[];
+    for (int i = 0; i < lodCount; i++) {
+      lodDetails.add(_bindings!.get_lod_level_detail(i).toDartString());
+    }
+
+    final attrCount = _bindings!.get_attribute_count();
+    final attributes = <String>[];
+    for (int i = 0; i < attrCount; i++) {
+      attributes.add(_bindings!.get_attribute_name(i).toDartString());
+    }
+
+    final bboxMinPtr = calloc<ffi.Float>(3);
+    final bboxMaxPtr = calloc<ffi.Float>(3);
+    final valRangePtr = calloc<ffi.Float>(2);
+    try {
+      _bindings!.get_bounding_box(bboxMinPtr, bboxMaxPtr);
+      _bindings!.get_value_range(valRangePtr, valRangePtr + 1);
+
+      _summary = DatasetSummary(
+        isLoaded: isLoaded,
+        name: name,
+        pointCount: pointCount,
+        fileSize: fileSize,
+        lodEnabled: lodEnabled,
+        lodDetails: lodDetails,
+        attributes: attributes,
+        bboxMin: [bboxMinPtr[0], bboxMinPtr[1], bboxMinPtr[2]],
+        bboxMax: [bboxMaxPtr[0], bboxMaxPtr[1], bboxMaxPtr[2]],
+        valueRange: [valRangePtr[0], valRangePtr[1]],
+      );
+    } finally {
+      calloc.free(bboxMinPtr);
+      calloc.free(bboxMaxPtr);
+      calloc.free(valRangePtr);
+    }
+
+    notifyListeners();
+  }
+
+  /// 执行通用 JSON-RPC 指令
+  String executeJsonRpc(String requestJson) {
+    if (_bindings == null) return '{}';
+    final nativeReq = requestJson.toNativeUtf8();
+    try {
+      final resPtr = _bindings!.execute_command(nativeReq);
+      return resPtr.toDartString();
+    } finally {
+      calloc.free(nativeReq);
+    }
+  }
+
+  void shutdown() {
+    if (_bindings != null) {
+      _bindings!.shutdown();
+      _initialized = false;
+      _summary = const DatasetSummary();
+      notifyListeners();
+    }
+  }
+}
