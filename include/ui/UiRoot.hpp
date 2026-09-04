@@ -2,7 +2,8 @@
 
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
-#include "ui/layouts/standard_workbench/DockLayoutBuilder.hpp"
+
+#include <string>
 
 struct ImFont;
 
@@ -135,26 +136,23 @@ inline ScreenPoint framebuffer_to_plot_screen(
 void draw_panel_section_label(const char* label);
 [[nodiscard]] float bytes_to_mb(std::uint64_t bytes);
 
+[[nodiscard]] std::string render_view_window_name(int index);
+
+// 视口窗口绘制工具（支持嵌入控制栏或独立相机气泡）
+void draw_viewport_window(
+    gs3d::app::AppState& state,
+    gs3d::app::RenderViewState& view,
+    gs3d::app::UiActions& actions,
+    int workspace_id = 0,
+    bool show_workbench_controls = false
+);
+
 class UiRoot {
 public:
     UiRoot() = default;
 
     [[nodiscard]]
     gs3d::app::UiActions draw(gs3d::app::AppState& state);
-
-private:
-    void build_default_layout(const gs3d::app::AppState& state);
-
-    DockLayoutPersistState dock_layout_;
-    // Last work size (px) used when building the default dock layout. A large
-    // relative change (e.g. maximize/restore) forces a rebuild so the side
-    // bars re-apply their ratio-based widths; small resizes leave any
-    // user-dragged splitters untouched. Stored as plain floats (not ImVec2)
-    // so this header stays free of the imgui.h dependency — several test
-    // targets include it without linking ImGui.
-    float last_layout_work_w_ = -1.0f;
-    float last_layout_work_h_ = -1.0f;
-    bool focus_workbench_dataset_ = true;
 };
 
 } // namespace gs3d::ui

@@ -16,6 +16,7 @@
 #include "render/TileSelection.hpp"
 #include "core/SceneState.hpp"
 #include "ui/UiRoot.hpp"
+#include "ui/layouts/standard_workbench/DockLayoutBuilder.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
