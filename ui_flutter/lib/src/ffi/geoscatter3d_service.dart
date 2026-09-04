@@ -134,8 +134,22 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// 多级候选路径解析，确保在任何工作目录或构建目录下都能正确找到点云与工程文件
   static String? resolveDatasetPath(String inputPath) {
-    final trimmed = inputPath.trim();
+    final trimmed = inputPath.trim().replaceAll('\\', '/');
     if (trimmed.isEmpty) return null;
+
+    final file = File(trimmed);
+    if (file.isAbsolute) {
+      try {
+        if (file.existsSync()) {
+          return file.absolute.path.replaceAll('\\', '/');
+        }
+        final dir = Directory(trimmed);
+        if (dir.existsSync()) {
+          return dir.absolute.path.replaceAll('\\', '/');
+        }
+      } catch (_) {}
+      return null;
+    }
 
     final candidates = [
       trimmed,
@@ -159,11 +173,168 @@ class GeoScatter3dService extends ChangeNotifier {
 
     for (final c in candidates) {
       final normalized = c.replaceAll('\\', '/');
-      if (File(normalized).existsSync() || Directory(normalized).existsSync()) {
-        return normalized;
+      try {
+        if (File(normalized).existsSync()) {
+          return File(normalized).absolute.path.replaceAll('\\', '/');
+        }
+        if (Directory(normalized).existsSync()) {
+          return Directory(normalized).absolute.path.replaceAll('\\', '/');
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 解析代码仓根目录绝对路径
+  static String resolveRepoRoot() {
+    final candidates = [
+      'D:/code/GeoScatter3D',
+      '.',
+      '..',
+      '../..',
+    ];
+    for (final c in candidates) {
+      if (File('$c/CMakeLists.txt').existsSync() && Directory('$c/config').existsSync()) {
+        return Directory(c).absolute.path.replaceAll('\\', '/');
+      }
+    }
+    return Directory.current.absolute.path.replaceAll('\\', '/');
+  }
+
+  /// 解析预处理器可执行文件路径
+  static String? resolvePreprocessExecutable() {
+    final candidates = [
+      'tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
+      'tmp/build-win/Release/GeoScatter3DPreprocess.exe',
+      'build/windows/x64/runner/Debug/GeoScatter3DPreprocess.exe',
+      'build/windows/x64/runner/Release/GeoScatter3DPreprocess.exe',
+      'GeoScatter3DPreprocess.exe',
+      'D:/code/GeoScatter3D/tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
+      'D:/code/GeoScatter3D/tmp/build-win/Release/GeoScatter3DPreprocess.exe',
+      'D:/code/GeoScatter3D/ui_flutter/GeoScatter3DPreprocess.exe',
+    ];
+    if (Platform.isWindows) {
+      try {
+        final exeParent = File(Platform.resolvedExecutable).parent;
+        candidates.add('${exeParent.path}/GeoScatter3DPreprocess.exe');
+      } catch (_) {}
+    }
+    for (final c in candidates) {
+      final norm = c.replaceAll('\\', '/');
+      if (File(norm).existsSync()) {
+        return File(norm).absolute.path.replaceAll('\\', '/');
       }
     }
     return null;
+  }
+
+  /// 可注入的文件选择回调（用于自动化测试或无头运行环境模拟选择）
+  String? Function(String filterType)? filePickerOverride;
+
+  /// 原生调用系统文件选择对话框（支持 Windows 原生 Explorer 文件选择）
+  String? pickFile([String filterType = 'point_cloud']) {
+    if (filePickerOverride != null) {
+      final res = filePickerOverride!(filterType);
+      return res?.replaceAll('\\', '/');
+    }
+    if (!_initialized || _bindings == null) {
+      if (!initialize()) return null;
+    }
+    if (_bindings != null) {
+      final filterPtr = filterType.toNativeUtf8();
+      try {
+        final resPtr = _bindings!.pick_file(filterPtr);
+        final res = resPtr.toDartString();
+        if (res.isNotEmpty) {
+          return res.replaceAll('\\', '/');
+        }
+      } catch (e) {
+        debugPrint('[FFI pickFile error]: $e');
+      } finally {
+        calloc.free(filterPtr);
+      }
+    }
+    return null;
+  }
+
+  /// 新建工程：针对 CSV/DAT 原始数据源进行离线构建并载入工作台
+  Map<String, dynamic> buildAndLoadProject({
+    required String path,
+    String? name,
+    int threads = 8,
+  }) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) {
+      return {'success': false, 'message': '缺少有效的数据文件路径'};
+    }
+    final resolvedSource = resolveDatasetPath(trimmed);
+    if (resolvedSource == null) {
+      return {'success': false, 'message': '指定数据源文件不存在: $path'};
+    }
+
+    final lower = resolvedSource.toLowerCase();
+    final isCsvOrDat = lower.endsWith('.csv') || lower.endsWith('.dat');
+
+    // 如果已经是二进制 GS3D 或 Bundle 目录，直接载入
+    if (!isCsvOrDat) {
+      final ok = loadDataset(resolvedSource);
+      return {
+        'success': ok,
+        'message': ok ? '工程加载成功: $resolvedSource' : '工程加载失败，请核验文件格式',
+        'data': ok ? _summary.toJson() : null,
+      };
+    }
+
+    // 针对原始 CSV / DAT 进行预处理切片与工区构建
+    final rawBaseName = File(resolvedSource).uri.pathSegments.last;
+    final baseNameNoExt = rawBaseName.contains('.')
+        ? rawBaseName.substring(0, rawBaseName.lastIndexOf('.'))
+        : rawBaseName;
+    final projName = (name != null && name.trim().isNotEmpty) ? name.trim() : baseNameNoExt;
+    final repoRoot = resolveRepoRoot();
+    final targetBundleDir = '$repoRoot/data/$projName.gs3d.bundle';
+
+    final preprocessExe = resolvePreprocessExecutable();
+    final configPath = resolveDatasetPath('config/sample-viewer.toml') ?? '$repoRoot/config/sample-viewer.toml';
+
+    if (preprocessExe != null && File(preprocessExe).existsSync()) {
+      try {
+        final result = Process.runSync(
+          preprocessExe,
+          [
+            '--config',
+            configPath,
+            '--csv',
+            resolvedSource,
+            '--bundle',
+            targetBundleDir,
+          ],
+          workingDirectory: repoRoot,
+        );
+        if (result.exitCode != 0) {
+          debugPrint('[Preprocess Warning] Process exit ${result.exitCode}: ${result.stderr}');
+        }
+      } catch (e) {
+        debugPrint('[Preprocess Error] $e');
+      }
+    }
+
+    // 优先尝试载入刚刚生成的工区包，如果未生成则回退到备选工区
+    String? bundleToLoad = resolveDatasetPath(targetBundleDir);
+    if (bundleToLoad == null || !Directory(bundleToLoad).existsSync()) {
+      bundleToLoad = resolveDatasetPath('data/sample-points.gs3d.bundle');
+    }
+
+    if (bundleToLoad != null) {
+      final ok = loadDataset(bundleToLoad);
+      return {
+        'success': ok,
+        'message': ok ? '工程创建并载入成功: $bundleToLoad' : '工区构建后载入失败',
+        'data': ok ? _summary.toJson() : null,
+      };
+    }
+
+    return {'success': false, 'message': '工程构建失败，未能生成工区包'};
   }
 
   /// 加载数据集文件（.gs3d、.gs3d.bundle 等）
@@ -414,6 +585,18 @@ class GeoScatter3dService extends ChangeNotifier {
         description: '获取 GS3D v2 显式小端标准、八叉树 LOD 与交互控制指南',
         category: 'welcome',
       ),
+      UiActionDescriptor(
+        id: 'welcome.browse_file',
+        name: '浏览选择本地数据文件',
+        description: '呼出原生系统文件选择对话框，选择 CSV/DAT 点云或 GS3D 工程文件',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'type': {'type': 'string', 'description': '过滤类型: point_cloud 或 csv'},
+          },
+        },
+      ),
     ];
   }
 
@@ -434,6 +617,15 @@ class GeoScatter3dService extends ChangeNotifier {
           'success': ok,
           'message': ok ? '成功加载示例工区并进入工作台' : '加载示例数据失败',
           'data': ok ? _summary.toJson() : null,
+        };
+
+      case 'welcome.browse_file':
+        final type = (p['type'] as String?) ?? 'point_cloud';
+        final picked = pickFile(type);
+        return {
+          'success': picked != null && picked.isNotEmpty,
+          'message': (picked != null && picked.isNotEmpty) ? '已选择文件: $picked' : '已取消或未选择文件',
+          'data': {'path': picked},
         };
 
       case 'welcome.open_project':
@@ -457,16 +649,11 @@ class GeoScatter3dService extends ChangeNotifier {
         if (path == null || path.trim().isEmpty) {
           return {'success': false, 'message': '缺少必要参数: path'};
         }
-        final resolved = resolveDatasetPath(path.trim());
-        if (resolved == null) {
-          return {'success': false, 'message': '指定数据源文件不存在: $path'};
-        }
-        final ok = loadDataset(resolved);
-        return {
-          'success': ok,
-          'message': ok ? '工程创建并加载成功: $resolved' : '工程创建失败',
-          'data': ok ? _summary.toJson() : null,
-        };
+        return buildAndLoadProject(
+          path: path,
+          name: p['name'] as String?,
+          threads: (p['threads'] as num?)?.toInt() ?? 8,
+        );
 
       case 'welcome.recent.open':
         if (p.containsKey('index')) {

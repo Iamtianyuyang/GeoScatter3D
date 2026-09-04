@@ -18,6 +18,10 @@ target_link_libraries(gs3d_ffi PRIVATE
     gs3d_control
 )
 
+if(WIN32)
+    target_link_libraries(gs3d_ffi PRIVATE comdlg32)
+endif()
+
 target_compile_definitions(gs3d_ffi PRIVATE GS3D_FFI_EXPORTS)
 
 # Copy dll to root build output directory

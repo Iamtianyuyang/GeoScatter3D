@@ -10,6 +10,7 @@ class WelcomeUiKeys {
 
   // 2. 新建工程对话框
   static const newProjectDialogPathInput = ValueKey('welcome.dialog.new_project.path_input');
+  static const newProjectDialogSampleChip = ValueKey('welcome.dialog.new_project.sample_chip');
   static const newProjectDialogNameInput = ValueKey('welcome.dialog.new_project.name_input');
   static const newProjectDialogThreadsSlider = ValueKey('welcome.dialog.new_project.threads_slider');
   static const newProjectDialogBrowseButton = ValueKey('welcome.dialog.new_project.browse_button');

@@ -16,9 +16,10 @@ class NewProjectDialog extends StatefulWidget {
 }
 
 class _NewProjectDialogState extends State<NewProjectDialog> {
-  final _pathController = TextEditingController(text: 'data/sample-points.gs3d.bundle');
-  final _nameController = TextEditingController(text: 'sample-project');
+  final _pathController = TextEditingController(text: 'examples/sample-points.csv');
+  final _nameController = TextEditingController(text: 'sample-points');
   double _threads = 16;
+  bool _isBuilding = false;
   String? _errorMessage;
 
   @override
@@ -44,22 +45,45 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     }
   }
 
-  void _submit() {
+  void _onBrowse() {
+    if (_isBuilding) return;
+    final selected = widget.service.pickFile('point_cloud');
+    if (selected != null && selected.isNotEmpty) {
+      setState(() {
+        _pathController.text = selected;
+        _onPathChanged(selected);
+      });
+    }
+  }
+
+  Future<void> _submit() async {
     final path = _pathController.text.trim();
     if (path.isEmpty) {
       setState(() => _errorMessage = '请输入或选择有效的数据文件路径');
       return;
     }
 
+    setState(() {
+      _isBuilding = true;
+      _errorMessage = null;
+    });
+
+    // 让出事件循环以便渲染 Loading 动画与进度反馈
+    await Future.delayed(const Duration(milliseconds: 50));
+
     final res = widget.service.executeAction('welcome.new_project', {
       'path': path,
       'name': _nameController.text.trim(),
       'threads': _threads.toInt(),
     });
-    if (res['success'] == true) {
-      Navigator.of(context).pop(true);
-    } else {
-      setState(() => _errorMessage = res['message'] as String? ?? '加载或转换数据失败，请检查文件格式是否有效');
+
+    if (mounted) {
+      setState(() => _isBuilding = false);
+      if (res['success'] == true) {
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() => _errorMessage = res['message'] as String? ?? '加载或转换数据失败，请检查文件格式是否有效');
+      }
     }
   }
 
@@ -100,7 +124,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 IconButton(
                   key: WelcomeUiKeys.newProjectDialogCloseButton,
                   icon: const Icon(Icons.close, size: 18, color: AppTheme.textDim),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _isBuilding ? null : () => Navigator.of(context).pop(),
                 ),
               ],
             ),
@@ -117,9 +141,10 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     key: WelcomeUiKeys.newProjectDialogPathInput,
                     controller: _pathController,
                     onChanged: _onPathChanged,
+                    enabled: !_isBuilding,
                     style: const TextStyle(fontSize: 13, fontFamily: 'Consolas'),
                     decoration: InputDecoration(
-                      hintText: '例如: D:/data/survey.csv 或 bundle 路径',
+                      hintText: '例如: examples/sample-points.csv',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
                       isDense: true,
@@ -135,15 +160,33 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   ),
                   icon: const Icon(Icons.folder_open, size: 16),
                   label: const Text('浏览'),
-                  onPressed: () {
-                    // 可填入默认测试路径
-                    _pathController.text = 'data/sample-points.gs3d.bundle';
-                    _onPathChanged(_pathController.text);
-                  },
+                  onPressed: _isBuilding ? null : _onBrowse,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+
+            // 快捷填充 Chip
+            Row(
+              children: [
+                const Text('快捷示例:', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                const SizedBox(width: 8),
+                ActionChip(
+                  key: WelcomeUiKeys.newProjectDialogSampleChip,
+                  avatar: const Icon(Icons.auto_awesome, size: 14, color: AppTheme.primaryBlue),
+                  label: const Text('sample-points.csv', style: TextStyle(fontSize: 12)),
+                  backgroundColor: AppTheme.surfaceMuted,
+                  side: const BorderSide(color: AppTheme.border),
+                  onPressed: _isBuilding
+                      ? null
+                      : () {
+                          _pathController.text = 'examples/sample-points.csv';
+                          _onPathChanged(_pathController.text);
+                        },
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
 
             // 工程名称
             const Text('工程名称',
@@ -152,6 +195,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
             TextField(
               key: WelcomeUiKeys.newProjectDialogNameInput,
               controller: _nameController,
+              enabled: !_isBuilding,
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -178,7 +222,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               max: 32,
               divisions: 31,
               activeColor: AppTheme.primaryBlue,
-              onChanged: (v) => setState(() => _threads = v),
+              onChanged: _isBuilding ? null : (v) => setState(() => _threads = v),
             ),
             const SizedBox(height: 6),
 
@@ -206,7 +250,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               children: [
                 TextButton(
                   key: WelcomeUiKeys.newProjectDialogCancelButton,
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _isBuilding ? null : () => Navigator.of(context).pop(),
                   child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
                 ),
                 const SizedBox(width: 10),
@@ -218,9 +262,18 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
-                  icon: const Icon(Icons.rocket_launch_rounded, size: 16),
-                  label: const Text('构建并载入工作台'),
-                  onPressed: _submit,
+                  icon: _isBuilding
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.rocket_launch_rounded, size: 16),
+                  label: Text(_isBuilding ? '正在构建工区包...' : '构建并载入工作台'),
+                  onPressed: _isBuilding ? null : _submit,
                 ),
               ],
             ),

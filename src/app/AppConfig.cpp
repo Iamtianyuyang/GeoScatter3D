@@ -491,14 +491,12 @@ void AppConfigLoader::apply_command_line_overrides(
 
         if (arg == "--bundle") {
             if (i + 1 >= argc) {
-                throw std::runtime_error(
-                    "AppConfig: --bundle requires a directory path"
-                );
+                throw std::runtime_error("AppConfig: --bundle requires a directory path");
             }
-
-            config.input_mode = "bundle";
-            config.bundle_dir =
-                argument_at(argc, argv, i + 1);
+            if (config.input_mode != "csv" && config.input_mode != "dat") {
+                config.input_mode = "bundle";
+            }
+            config.bundle_dir = argument_at(argc, argv, i + 1);
         }
     }
 }

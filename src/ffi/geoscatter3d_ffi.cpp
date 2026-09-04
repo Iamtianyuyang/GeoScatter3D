@@ -1,5 +1,16 @@
 #include "ffi/geoscatter3d_ffi.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <commdlg.h>
+#endif
+
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
 #include "control/JsonRpc.hpp"
@@ -463,6 +474,49 @@ void gs3d_ffi_get_scalar_range(float* out_min, float* out_max)
     std::lock_guard<std::mutex> lock(g_state.mutex);
     if (out_min) *out_min = g_state.scalar_clip[0];
     if (out_max) *out_max = g_state.scalar_clip[1];
+}
+
+const char* gs3d_ffi_pick_file(const char* filter_type)
+{
+#if defined(_WIN32)
+    // 无头运行或测试环境直接返回空串，严禁弹出阻塞式系统模态对话框
+    if (std::getenv("GS3D_HEADLESS") != nullptr || std::getenv("FLUTTER_TEST") != nullptr) {
+        return "";
+    }
+
+    static thread_local wchar_t szFile[2048] = {0};
+    szFile[0] = L'\0';
+
+    OPENFILENAMEW ofn;
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
+
+    if (filter_type != nullptr && std::strcmp(filter_type, "csv") == 0) {
+        ofn.lpstrFilter = L"CSV 散点数据 (*.csv)\0*.csv\0所有文件 (*.*)\0*.*\0";
+    } else {
+        ofn.lpstrFilter = L"点云与工程文件 (*.csv;*.dat;*.gs3d)\0*.csv;*.dat;*.gs3d\0CSV 散点 (*.csv)\0*.csv\0DAT 散点 (*.dat)\0*.dat\0GS3D 格式 (*.gs3d)\0*.gs3d\0所有文件 (*.*)\0*.*\0";
+    }
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = NULL;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = NULL;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (GetOpenFileNameW(&ofn) == TRUE) {
+        static thread_local std::string utf8_result;
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, szFile, -1, NULL, 0, NULL, NULL);
+        if (size_needed > 1) {
+            utf8_result.resize(size_needed - 1);
+            WideCharToMultiByte(CP_UTF8, 0, szFile, -1, &utf8_result[0], size_needed, NULL, NULL);
+            std::replace(utf8_result.begin(), utf8_result.end(), '\\', '/');
+            return utf8_result.c_str();
+        }
+    }
+#endif
+    return "";
 }
 
 } // extern "C"

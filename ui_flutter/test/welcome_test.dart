@@ -21,14 +21,15 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all 10 registered welcome actions', () {
+    test('getAvailableActions returns all 11 registered welcome actions', () {
       final actions = service.getAvailableActions();
-      expect(actions.length, equals(10));
+      expect(actions.length, equals(11));
       final ids = actions.map((a) => a.id).toSet();
       expect(ids, containsAll([
         'welcome.quick_demo',
         'welcome.open_project',
         'welcome.new_project',
+        'welcome.browse_file',
         'welcome.recent.open',
         'welcome.recent.clear',
         'welcome.gpu.set_preferred',
@@ -37,6 +38,14 @@ void main() {
         'welcome.about.get_info',
         'welcome.docs.get_info',
       ]));
+    });
+
+    test('executeAction welcome.browse_file returns selection result structure', () {
+      final res = service.executeAction('welcome.browse_file', {'type': 'point_cloud'});
+      expect(res, isMap);
+      expect(res.containsKey('success'), isTrue);
+      expect(res.containsKey('message'), isTrue);
+      expect(res.containsKey('data'), isTrue);
     });
 
     test('executeAction welcome.get_state returns full system snapshot', () {
@@ -89,7 +98,7 @@ void main() {
       expect(service.isWorkbenchActive, isTrue);
     });
 
-    test('executeAction welcome.new_project handles paths', () {
+    test('executeAction welcome.new_project handles paths and builds from csv', () {
       final invalidRes = service.executeAction('welcome.new_project', {'path': ''});
       expect(invalidRes['success'], isFalse);
 
@@ -99,6 +108,16 @@ void main() {
         'threads': 8,
       });
       expect(validRes['success'], isTrue);
+
+      final csvRes = service.executeAction('welcome.new_project', {
+        'path': 'examples/sample-points.csv',
+        'name': 'sample_csv_build',
+        'threads': 4,
+      });
+      expect(csvRes['success'], isTrue);
+      expect(service.isWorkbenchActive, isTrue);
+      expect(service.summary.isLoaded, isTrue);
+      expect(service.summary.pointCount, equals(25));
     });
 
     test('executeAction welcome.recent.clear and welcome.recent.open', () {
@@ -124,7 +143,7 @@ void main() {
       });
       final listRes = jsonDecode(service.executeJsonRpc(listRpc));
       expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(10));
+      expect((listRes['result'] as List).length, equals(11));
 
       final actionRpc = jsonEncode({
         'jsonrpc': '2.0',
@@ -227,10 +246,18 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.newProjectDialogCloseButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogPathInput), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogBrowseButton), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogSampleChip), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogNameInput), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogThreadsSlider), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogCancelButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogSubmitButton), findsOneWidget);
+
+      // 点击快捷填充示例 Chip
+      await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogSampleChip));
+      await tester.pump();
+
+      final pathField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.newProjectDialogPathInput));
+      expect(pathField.controller?.text, equals('examples/sample-points.csv'));
 
       // 点击提交创建工程
       await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogSubmitButton));

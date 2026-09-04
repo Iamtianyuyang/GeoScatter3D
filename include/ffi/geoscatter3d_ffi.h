@@ -110,6 +110,12 @@ GS3D_FFI_API const char* gs3d_ffi_get_colormap(void);
 GS3D_FFI_API void gs3d_ffi_set_scalar_range(float min_val, float max_val);
 GS3D_FFI_API void gs3d_ffi_get_scalar_range(float* out_min, float* out_max);
 
+// ============================================================================
+// 11. 原生操作系统文件选择对话框 (Native File Dialog)
+// ============================================================================
+
+GS3D_FFI_API const char* gs3d_ffi_pick_file(const char* filter_type);
+
 #ifdef __cplusplus
 }
 #endif
