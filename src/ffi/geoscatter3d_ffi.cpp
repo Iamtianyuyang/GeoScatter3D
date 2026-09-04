@@ -1,6 +1,7 @@
 #include "ffi/geoscatter3d_ffi.h"
 
 #include "app/PreprocessedBundle.hpp"
+#include "app/RecentProjects.hpp"
 #include "control/JsonRpc.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dLodReader.hpp"
@@ -38,6 +39,13 @@ struct EngineState {
     std::vector<std::string> lod_details;
     std::vector<std::string> attributes;
 
+    std::vector<gs3d::app::RecentProjectEntry> recent_projects;
+    std::vector<std::pair<std::string, std::string>> gpus = {
+        {"NVIDIA GeForce RTX 5060 Laptop GPU", "独立显卡 (7.7 GB 显存)"},
+        {"Intel(R) Graphics", "集成显卡 (共享内存)"}
+    };
+    int32_t active_gpu = 0;
+
     std::string last_json_response;
 };
 
@@ -69,6 +77,9 @@ int32_t gs3d_ffi_init(void)
 {
     std::lock_guard<std::mutex> lock(g_state.mutex);
     g_state.initialized = true;
+    try {
+        g_state.recent_projects = gs3d::app::load_recent_projects(8);
+    } catch (...) {}
     return 0;
 }
 
@@ -165,6 +176,10 @@ int32_t gs3d_ffi_load_dataset(const char* path)
         g_state.attributes.push_back("elevation");
 
         g_state.dataset_loaded = true;
+        try {
+            gs3d::app::remember_recent_project(path, 8);
+            g_state.recent_projects = gs3d::app::load_recent_projects(8);
+        } catch (...) {}
         return 0;
     } catch (...) {
         return -3;
@@ -296,6 +311,89 @@ void gs3d_ffi_free_string(char* ptr)
 {
     if (ptr != nullptr) {
         std::free(ptr);
+    }
+}
+
+int32_t gs3d_ffi_get_recent_project_count(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    return static_cast<int32_t>(g_state.recent_projects.size());
+}
+
+const char* gs3d_ffi_get_recent_project_path(int32_t index)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (index < 0 || static_cast<size_t>(index) >= g_state.recent_projects.size()) {
+        return "";
+    }
+    static thread_local std::string s_path;
+    s_path = g_state.recent_projects[index].path.string();
+    return s_path.c_str();
+}
+
+int64_t gs3d_ffi_get_recent_project_timestamp(int32_t index)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (index < 0 || static_cast<size_t>(index) >= g_state.recent_projects.size()) {
+        return 0;
+    }
+    return g_state.recent_projects[index].last_opened_unix;
+}
+
+void gs3d_ffi_remember_recent_project(const char* path)
+{
+    if (path == nullptr || path[0] == '\0') return;
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    try {
+        gs3d::app::remember_recent_project(path, 8);
+        g_state.recent_projects = gs3d::app::load_recent_projects(8);
+    } catch (...) {}
+}
+
+void gs3d_ffi_clear_recent_projects(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    try {
+        gs3d::app::clear_recent_projects();
+    } catch (...) {}
+    g_state.recent_projects.clear();
+}
+
+int32_t gs3d_ffi_get_gpu_count(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    return static_cast<int32_t>(g_state.gpus.size());
+}
+
+const char* gs3d_ffi_get_gpu_name(int32_t index)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (index < 0 || static_cast<size_t>(index) >= g_state.gpus.size()) {
+        return "";
+    }
+    return g_state.gpus[index].first.c_str();
+}
+
+const char* gs3d_ffi_get_gpu_type(int32_t index)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (index < 0 || static_cast<size_t>(index) >= g_state.gpus.size()) {
+        return "";
+    }
+    return g_state.gpus[index].second.c_str();
+}
+
+int32_t gs3d_ffi_get_active_gpu_index(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    return g_state.active_gpu;
+}
+
+void gs3d_ffi_set_preferred_gpu(int32_t index)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (index >= 0 && static_cast<size_t>(index) < g_state.gpus.size()) {
+        g_state.active_gpu = index;
     }
 }
 

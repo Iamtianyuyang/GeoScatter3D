@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'src/ffi/geoscatter3d_service.dart';
 import 'src/panels/bottom_status_bar.dart';
@@ -7,6 +6,7 @@ import 'src/panels/left_dock_panel.dart';
 import 'src/panels/right_dock_panel.dart';
 import 'src/panels/top_menu_bar.dart';
 import 'src/theme/app_theme.dart';
+import 'src/welcome/welcome_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,19 +14,6 @@ void main() {
   // 初始化 C++ FFI 引擎
   final service = GeoScatter3dService();
   service.initialize();
-
-  // 尝试自动载入测试数据
-  const candidateBundles = [
-    '../data/sample-points.gs3d.bundle',
-    'data/sample-points.gs3d.bundle',
-    'D:/code/GeoScatter3D/data/sample-points.gs3d.bundle',
-  ];
-  for (final b in candidateBundles) {
-    if (Directory(b).existsSync()) {
-      service.loadDataset(b);
-      break;
-    }
-  }
 
   runApp(GeoScatter3dApp(service: service));
 }
@@ -42,10 +29,22 @@ class GeoScatter3dApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GeoScatter3D 三维散点查看器 (Flutter)',
+      title: 'GeoScatter3D 三维散点系统 (Flutter)',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(),
-      home: GeoScatter3dWorkbench(service: service),
+      home: ListenableBuilder(
+        listenable: service,
+        builder: (context, _) {
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: service.isWorkbenchActive
+                ? GeoScatter3dWorkbench(key: const ValueKey('workbench'), service: service)
+                : WelcomePage(key: const ValueKey('welcome'), service: service),
+          );
+        },
+      ),
     );
   }
 }

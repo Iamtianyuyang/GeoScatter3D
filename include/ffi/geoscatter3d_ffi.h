@@ -68,6 +68,26 @@ GS3D_FFI_API const char* gs3d_ffi_execute_command(const char* json_request);
 
 GS3D_FFI_API void gs3d_ffi_free_string(char* ptr);
 
+// ============================================================================
+// 7. 最近项目记录 (Recent Projects)
+// ============================================================================
+
+GS3D_FFI_API int32_t gs3d_ffi_get_recent_project_count(void);
+GS3D_FFI_API const char* gs3d_ffi_get_recent_project_path(int32_t index);
+GS3D_FFI_API int64_t gs3d_ffi_get_recent_project_timestamp(int32_t index);
+GS3D_FFI_API void gs3d_ffi_remember_recent_project(const char* path);
+GS3D_FFI_API void gs3d_ffi_clear_recent_projects(void);
+
+// ============================================================================
+// 8. 图形硬件设备信息 (GPU Info)
+// ============================================================================
+
+GS3D_FFI_API int32_t gs3d_ffi_get_gpu_count(void);
+GS3D_FFI_API const char* gs3d_ffi_get_gpu_name(int32_t index);
+GS3D_FFI_API const char* gs3d_ffi_get_gpu_type(int32_t index);
+GS3D_FFI_API int32_t gs3d_ffi_get_active_gpu_index(void);
+GS3D_FFI_API void gs3d_ffi_set_preferred_gpu(int32_t index);
+
 #ifdef __cplusplus
 }
 #endif

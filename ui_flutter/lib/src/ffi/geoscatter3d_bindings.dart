@@ -60,6 +60,36 @@ typedef _dart_execute_command = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> jso
 typedef _c_free_string = ffi.Void Function(ffi.Pointer<Utf8> ptr);
 typedef _dart_free_string = void Function(ffi.Pointer<Utf8> ptr);
 
+typedef _c_get_recent_project_count = ffi.Int32 Function();
+typedef _dart_get_recent_project_count = int Function();
+
+typedef _c_get_recent_project_path = ffi.Pointer<Utf8> Function(ffi.Int32 index);
+typedef _dart_get_recent_project_path = ffi.Pointer<Utf8> Function(int index);
+
+typedef _c_get_recent_project_timestamp = ffi.Int64 Function(ffi.Int32 index);
+typedef _dart_get_recent_project_timestamp = int Function(int index);
+
+typedef _c_remember_recent_project = ffi.Void Function(ffi.Pointer<Utf8> path);
+typedef _dart_remember_recent_project = void Function(ffi.Pointer<Utf8> path);
+
+typedef _c_clear_recent_projects = ffi.Void Function();
+typedef _dart_clear_recent_projects = void Function();
+
+typedef _c_get_gpu_count = ffi.Int32 Function();
+typedef _dart_get_gpu_count = int Function();
+
+typedef _c_get_gpu_name = ffi.Pointer<Utf8> Function(ffi.Int32 index);
+typedef _dart_get_gpu_name = ffi.Pointer<Utf8> Function(int index);
+
+typedef _c_get_gpu_type = ffi.Pointer<Utf8> Function(ffi.Int32 index);
+typedef _dart_get_gpu_type = ffi.Pointer<Utf8> Function(int index);
+
+typedef _c_get_active_gpu_index = ffi.Int32 Function();
+typedef _dart_get_active_gpu_index = int Function();
+
+typedef _c_set_preferred_gpu = ffi.Void Function(ffi.Int32 index);
+typedef _dart_set_preferred_gpu = void Function(int index);
+
 /// 底层 C-ABI 动态链接库直接绑定
 class GeoScatter3dBindings {
   final ffi.DynamicLibrary dylib;
@@ -82,6 +112,18 @@ class GeoScatter3dBindings {
   late final _dart_execute_command execute_command;
   late final _dart_free_string free_string;
 
+  late final _dart_get_recent_project_count get_recent_project_count;
+  late final _dart_get_recent_project_path get_recent_project_path;
+  late final _dart_get_recent_project_timestamp get_recent_project_timestamp;
+  late final _dart_remember_recent_project remember_recent_project;
+  late final _dart_clear_recent_projects clear_recent_projects;
+
+  late final _dart_get_gpu_count get_gpu_count;
+  late final _dart_get_gpu_name get_gpu_name;
+  late final _dart_get_gpu_type get_gpu_type;
+  late final _dart_get_active_gpu_index get_active_gpu_index;
+  late final _dart_set_preferred_gpu set_preferred_gpu;
+
   GeoScatter3dBindings(this.dylib) {
     init = dylib.lookupFunction<_c_init, _dart_init>('gs3d_ffi_init');
     shutdown = dylib.lookupFunction<_c_shutdown, _dart_shutdown>('gs3d_ffi_shutdown');
@@ -100,6 +142,18 @@ class GeoScatter3dBindings {
     get_attribute_name = dylib.lookupFunction<_c_get_attribute_name, _dart_get_attribute_name>('gs3d_ffi_get_attribute_name');
     execute_command = dylib.lookupFunction<_c_execute_command, _dart_execute_command>('gs3d_ffi_execute_command');
     free_string = dylib.lookupFunction<_c_free_string, _dart_free_string>('gs3d_ffi_free_string');
+
+    get_recent_project_count = dylib.lookupFunction<_c_get_recent_project_count, _dart_get_recent_project_count>('gs3d_ffi_get_recent_project_count');
+    get_recent_project_path = dylib.lookupFunction<_c_get_recent_project_path, _dart_get_recent_project_path>('gs3d_ffi_get_recent_project_path');
+    get_recent_project_timestamp = dylib.lookupFunction<_c_get_recent_project_timestamp, _dart_get_recent_project_timestamp>('gs3d_ffi_get_recent_project_timestamp');
+    remember_recent_project = dylib.lookupFunction<_c_remember_recent_project, _dart_remember_recent_project>('gs3d_ffi_remember_recent_project');
+    clear_recent_projects = dylib.lookupFunction<_c_clear_recent_projects, _dart_clear_recent_projects>('gs3d_ffi_clear_recent_projects');
+
+    get_gpu_count = dylib.lookupFunction<_c_get_gpu_count, _dart_get_gpu_count>('gs3d_ffi_get_gpu_count');
+    get_gpu_name = dylib.lookupFunction<_c_get_gpu_name, _dart_get_gpu_name>('gs3d_ffi_get_gpu_name');
+    get_gpu_type = dylib.lookupFunction<_c_get_gpu_type, _dart_get_gpu_type>('gs3d_ffi_get_gpu_type');
+    get_active_gpu_index = dylib.lookupFunction<_c_get_active_gpu_index, _dart_get_active_gpu_index>('gs3d_ffi_get_active_gpu_index');
+    set_preferred_gpu = dylib.lookupFunction<_c_set_preferred_gpu, _dart_set_preferred_gpu>('gs3d_ffi_set_preferred_gpu');
   }
 
   /// 自动探测并加载动态库

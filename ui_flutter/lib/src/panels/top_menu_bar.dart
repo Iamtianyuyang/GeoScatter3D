@@ -23,30 +23,43 @@ class TopMenuBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Logo
-          RichText(
-            text: const TextSpan(
-              children: [
-                TextSpan(
-                  text: 'GeoScatter ',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textTitle,
+          // Logo & 返回欢迎页
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => service.closeWorkbench(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.home_outlined, size: 17, color: AppTheme.primaryBlue),
+                  const SizedBox(width: 6),
+                  RichText(
+                    text: const TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'GeoScatter ',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textTitle,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '3D',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primaryBlue,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                TextSpan(
-                  text: '3D',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primaryBlue,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 14),
 
           // 菜单项
           _buildMenuItem('文件'),
@@ -61,7 +74,7 @@ class TopMenuBar extends StatelessWidget {
             listenable: service,
             builder: (context, _) {
               return Text(
-                service.summary.name,
+                service.summary.name.isEmpty ? '未载入工程' : service.summary.name,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -73,6 +86,18 @@ class TopMenuBar extends StatelessWidget {
 
           const Spacer(),
 
+          // 返回欢迎页按钮
+          TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.textDim,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            icon: const Icon(Icons.arrow_back_rounded, size: 15),
+            label: const Text('欢迎页', style: TextStyle(fontSize: 12.5)),
+            onPressed: () => service.closeWorkbench(),
+          ),
+          const SizedBox(width: 6),
+
           // 快速打开数据按钮
           TextButton.icon(
             style: TextButton.styleFrom(
@@ -82,7 +107,7 @@ class TopMenuBar extends StatelessWidget {
             icon: const Icon(Icons.folder_open_rounded, size: 16),
             label: const Text('载入示例', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
             onPressed: () {
-              service.loadDataset('../data/sample-points.gs3d.bundle');
+              service.loadDataset('data/sample-points.gs3d.bundle');
             },
           ),
         ],

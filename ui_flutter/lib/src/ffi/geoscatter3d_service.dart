@@ -2,6 +2,8 @@ import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import '../models/dataset_model.dart';
+import '../models/gpu_info_model.dart';
+import '../models/recent_project_model.dart';
 import 'geoscatter3d_bindings.dart';
 
 class GeoScatter3dService extends ChangeNotifier {
@@ -12,9 +14,27 @@ class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
   DatasetSummary _summary = const DatasetSummary();
+  List<RecentProjectItem> _recentProjects = [];
+  List<GpuDeviceInfo> _gpus = [];
+  int _activeGpuIndex = 0;
+  bool _isWorkbenchActive = false;
 
   bool get isInitialized => _initialized;
   DatasetSummary get summary => _summary;
+  List<RecentProjectItem> get recentProjects => _recentProjects;
+  List<GpuDeviceInfo> get gpus => _gpus;
+  int get activeGpuIndex => _activeGpuIndex;
+  bool get isWorkbenchActive => _isWorkbenchActive;
+
+  void openWorkbench() {
+    _isWorkbenchActive = true;
+    notifyListeners();
+  }
+
+  void closeWorkbench() {
+    _isWorkbenchActive = false;
+    notifyListeners();
+  }
 
   /// 初始化底层 C++ 引擎
   bool initialize([String? customDylibPath]) {
@@ -23,6 +43,10 @@ class GeoScatter3dService extends ChangeNotifier {
       _bindings = GeoScatter3dBindings.openLibrary(customDylibPath);
       final res = _bindings!.init();
       _initialized = (res == 0);
+      if (_initialized) {
+        _refreshRecentProjects();
+        _refreshGpus();
+      }
       notifyListeners();
       return _initialized;
     } catch (e) {
@@ -42,6 +66,9 @@ class GeoScatter3dService extends ChangeNotifier {
       final code = _bindings!.load_dataset(nativePath);
       if (code == 0) {
         _updateSummary();
+        _refreshRecentProjects();
+        _isWorkbenchActive = true;
+        notifyListeners();
         return true;
       }
       return false;
@@ -95,7 +122,49 @@ class GeoScatter3dService extends ChangeNotifier {
       calloc.free(bboxMaxPtr);
       calloc.free(valRangePtr);
     }
+  }
 
+  void _refreshRecentProjects() {
+    if (_bindings == null) return;
+    final count = _bindings!.get_recent_project_count();
+    final list = <RecentProjectItem>[];
+    for (int i = 0; i < count; i++) {
+      final p = _bindings!.get_recent_project_path(i).toDartString();
+      final ts = _bindings!.get_recent_project_timestamp(i);
+      list.add(RecentProjectItem(path: p, timestampUnix: ts));
+    }
+    _recentProjects = list;
+  }
+
+  void _refreshGpus() {
+    if (_bindings == null) return;
+    final count = _bindings!.get_gpu_count();
+    final list = <GpuDeviceInfo>[];
+    for (int i = 0; i < count; i++) {
+      final name = _bindings!.get_gpu_name(i).toDartString();
+      final type = _bindings!.get_gpu_type(i).toDartString();
+      list.add(GpuDeviceInfo(
+        index: i,
+        name: name,
+        typeDescription: type,
+        isDiscrete: type.contains('独立'),
+      ));
+    }
+    _gpus = list;
+    _activeGpuIndex = _bindings!.get_active_gpu_index();
+  }
+
+  void setPreferredGpu(int index) {
+    if (_bindings == null) return;
+    _bindings!.set_preferred_gpu(index);
+    _activeGpuIndex = index;
+    notifyListeners();
+  }
+
+  void clearRecentProjects() {
+    if (_bindings == null) return;
+    _bindings!.clear_recent_projects();
+    _recentProjects.clear();
     notifyListeners();
   }
 
@@ -116,6 +185,7 @@ class GeoScatter3dService extends ChangeNotifier {
       _bindings!.shutdown();
       _initialized = false;
       _summary = const DatasetSummary();
+      _recentProjects.clear();
       notifyListeners();
     }
   }
