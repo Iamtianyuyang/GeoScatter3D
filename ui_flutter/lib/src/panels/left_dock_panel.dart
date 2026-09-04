@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/dataset_model.dart';
@@ -317,6 +318,16 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
   }
 
   Widget _buildMeasurementTab() {
+    final summary = widget.service.summary;
+    final bmin = summary.bboxMin;
+    final bmax = summary.bboxMax;
+
+    final dx = bmax.isNotEmpty && bmin.isNotEmpty ? (bmax[0] - bmin[0]).abs() : 0.0;
+    final dy = bmax.length > 1 && bmin.length > 1 ? (bmax[1] - bmin[1]).abs() : 0.0;
+    final dz = bmax.length > 2 && bmin.length > 2 ? (bmax[2] - bmin[2]).abs() : 0.0;
+    final dist3d = math.sqrt(dx * dx + dy * dy + dz * dz);
+    final area2d = dx * dy;
+
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -325,7 +336,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '三维测量工具箱',
+                '三维空间测距',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -333,13 +344,64 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 10),
-              _buildToolButton(Icons.straighten_rounded, '空间测距 (Point-to-Point)'),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceMuted,
+                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                ),
+                child: Column(
+                  children: [
+                    _buildCoordRow('起点 A', bmin.isNotEmpty ? '(${bmin[0].toStringAsFixed(1)}, ${bmin[1].toStringAsFixed(1)}, ${bmin[2].toStringAsFixed(1)})' : '--'),
+                    const SizedBox(height: 6),
+                    _buildCoordRow('终点 B', bmax.isNotEmpty ? '(${bmax[0].toStringAsFixed(1)}, ${bmax[1].toStringAsFixed(1)}, ${bmax[2].toStringAsFixed(1)})' : '--'),
+                    const Divider(height: 16),
+                    _buildCoordRow('空间对角距', '${dist3d.toStringAsFixed(2)} m', isBold: true),
+                    _buildCoordRow('水平投影距', '${dx.toStringAsFixed(2)} m'),
+                    _buildCoordRow('绝对高差 ΔZ', '${dz.toStringAsFixed(2)} m'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildToolButton(Icons.straighten_rounded, '重新拾取测量两点'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        ModernCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '几何与投影面积',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textTitle,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceMuted,
+                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                ),
+                child: Column(
+                  children: [
+                    _buildCoordRow('X 跨度', '${dx.toStringAsFixed(2)} m'),
+                    _buildCoordRow('Y 跨度', '${dy.toStringAsFixed(2)} m'),
+                    _buildCoordRow('Z 跨度', '${dz.toStringAsFixed(2)} m'),
+                    const Divider(height: 16),
+                    _buildCoordRow('底面投影面积', '${area2d.toStringAsFixed(2)} m²', isBold: true),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildToolButton(Icons.square_foot_rounded, '绘制多边形测面'),
               const SizedBox(height: 6),
-              _buildToolButton(Icons.square_foot_rounded, '投影多边形面积测量'),
-              const SizedBox(height: 6),
-              _buildToolButton(Icons.location_pin, '精准坐标拾取 (Pick Point)'),
-              const SizedBox(height: 6),
-              _buildToolButton(Icons.rotate_90_degrees_cw, '地层倾角与倾向分析'),
+              _buildToolButton(Icons.rotate_90_degrees_cw, '地层产状分析 (走向/倾向/倾角)'),
             ],
           ),
         ),
@@ -347,7 +409,44 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     );
   }
 
+  Widget _buildCoordRow(String label, String value, {bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: isBold ? AppTheme.textTitle : AppTheme.textDim, fontWeight: isBold ? FontWeight.w600 : FontWeight.normal)),
+        Text(value, style: TextStyle(fontSize: 12, color: isBold ? AppTheme.primaryBlue : AppTheme.textBody, fontWeight: isBold ? FontWeight.w700 : FontWeight.w500, fontFamily: 'Consolas')),
+      ],
+    );
+  }
+
   Widget _buildRegionStatsTab() {
+    final points = widget.service.points;
+    final count = points.length;
+
+    double mean = 0.0;
+    if (count > 0) {
+      double sum = 0.0;
+      for (final p in points) {
+        sum += p.value;
+      }
+      mean = sum / count;
+    }
+
+    final minVal = widget.service.scalarMin;
+    final maxVal = widget.service.scalarMax;
+
+    // 计算 5 个区间的直方图分布
+    final bins = [0, 0, 0, 0, 0];
+    if (count > 0 && maxVal > minVal) {
+      final step = (maxVal - minVal) / 5.0;
+      for (final p in points) {
+        final idx = ((p.value - minVal) / step).floor().clamp(0, 4);
+        bins[idx]++;
+      }
+    }
+
+    final maxBin = bins.reduce((a, b) => a > b ? a : b);
+
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -356,7 +455,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '区域统计与剖面分析',
+                '属性统计指标 (Statistics)',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -364,11 +463,66 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 10),
-              _buildToolButton(Icons.highlight_alt_rounded, '空间套索 / 框选统计'),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceMuted,
+                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                ),
+                child: Column(
+                  children: [
+                    _buildCoordRow('有效样本数 N', '$count 点'),
+                    _buildCoordRow('标量均值 Mean', mean.toStringAsFixed(3)),
+                    _buildCoordRow('最小值 Min', minVal.toStringAsFixed(3)),
+                    _buildCoordRow('最大值 Max', maxVal.toStringAsFixed(3)),
+                    _buildCoordRow('极差 Range', (maxVal - minVal).toStringAsFixed(3)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('数值直方图分布', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textTitle)),
+              const SizedBox(height: 8),
+
+              // 直方图 5 根柱子
+              SizedBox(
+                height: 80,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(5, (i) {
+                    final fraction = maxBin > 0 ? (bins[i] / maxBin) : 0.1;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text('${bins[i]}', style: const TextStyle(fontSize: 9.5, color: AppTheme.textDim)),
+                            const SizedBox(height: 2),
+                            Container(
+                              height: (60 * fraction).clamp(4.0, 60.0),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryBlue.withAlpha((100 + i * 35).clamp(0, 255)),
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
               const SizedBox(height: 6),
-              _buildToolButton(Icons.bar_chart_rounded, '属性值分布直方图'),
-              const SizedBox(height: 6),
-              _buildToolButton(Icons.timeline_rounded, '地表起伏沿线高程剖面'),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(minVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
+                  Text(((minVal + maxVal) * 0.5).toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
+                  Text(maxVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildToolButton(Icons.highlight_alt_rounded, '框选局部区域重算统计'),
             ],
           ),
         ),

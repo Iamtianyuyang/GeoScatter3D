@@ -90,6 +90,27 @@ typedef _dart_get_active_gpu_index = int Function();
 typedef _c_set_preferred_gpu = ffi.Void Function(ffi.Int32 index);
 typedef _dart_set_preferred_gpu = void Function(int index);
 
+typedef _c_get_points = ffi.Int32 Function(ffi.Pointer<ffi.Float> out_buffer, ffi.Int32 max_points);
+typedef _dart_get_points = int Function(ffi.Pointer<ffi.Float> out_buffer, int max_points);
+
+typedef _c_set_point_size = ffi.Void Function(ffi.Float size);
+typedef _dart_set_point_size = void Function(double size);
+
+typedef _c_get_point_size = ffi.Float Function();
+typedef _dart_get_point_size = double Function();
+
+typedef _c_set_colormap = ffi.Void Function(ffi.Pointer<Utf8> colormap_name);
+typedef _dart_set_colormap = void Function(ffi.Pointer<Utf8> colormap_name);
+
+typedef _c_get_colormap = ffi.Pointer<Utf8> Function();
+typedef _dart_get_colormap = ffi.Pointer<Utf8> Function();
+
+typedef _c_set_scalar_range = ffi.Void Function(ffi.Float min_val, ffi.Float max_val);
+typedef _dart_set_scalar_range = void Function(double min_val, double max_val);
+
+typedef _c_get_scalar_range = ffi.Void Function(ffi.Pointer<ffi.Float> out_min, ffi.Pointer<ffi.Float> out_max);
+typedef _dart_get_scalar_range = void Function(ffi.Pointer<ffi.Float> out_min, ffi.Pointer<ffi.Float> out_max);
+
 /// 底层 C-ABI 动态链接库直接绑定
 class GeoScatter3dBindings {
   final ffi.DynamicLibrary dylib;
@@ -124,6 +145,14 @@ class GeoScatter3dBindings {
   late final _dart_get_active_gpu_index get_active_gpu_index;
   late final _dart_set_preferred_gpu set_preferred_gpu;
 
+  late final _dart_get_points get_points;
+  late final _dart_set_point_size set_point_size;
+  late final _dart_get_point_size get_point_size;
+  late final _dart_set_colormap set_colormap;
+  late final _dart_get_colormap get_colormap;
+  late final _dart_set_scalar_range set_scalar_range;
+  late final _dart_get_scalar_range get_scalar_range;
+
   GeoScatter3dBindings(this.dylib) {
     init = dylib.lookupFunction<_c_init, _dart_init>('gs3d_ffi_init');
     shutdown = dylib.lookupFunction<_c_shutdown, _dart_shutdown>('gs3d_ffi_shutdown');
@@ -154,6 +183,14 @@ class GeoScatter3dBindings {
     get_gpu_type = dylib.lookupFunction<_c_get_gpu_type, _dart_get_gpu_type>('gs3d_ffi_get_gpu_type');
     get_active_gpu_index = dylib.lookupFunction<_c_get_active_gpu_index, _dart_get_active_gpu_index>('gs3d_ffi_get_active_gpu_index');
     set_preferred_gpu = dylib.lookupFunction<_c_set_preferred_gpu, _dart_set_preferred_gpu>('gs3d_ffi_set_preferred_gpu');
+
+    get_points = dylib.lookupFunction<_c_get_points, _dart_get_points>('gs3d_ffi_get_points');
+    set_point_size = dylib.lookupFunction<_c_set_point_size, _dart_set_point_size>('gs3d_ffi_set_point_size');
+    get_point_size = dylib.lookupFunction<_c_get_point_size, _dart_get_point_size>('gs3d_ffi_get_point_size');
+    set_colormap = dylib.lookupFunction<_c_set_colormap, _dart_set_colormap>('gs3d_ffi_set_colormap');
+    get_colormap = dylib.lookupFunction<_c_get_colormap, _dart_get_colormap>('gs3d_ffi_get_colormap');
+    set_scalar_range = dylib.lookupFunction<_c_set_scalar_range, _dart_set_scalar_range>('gs3d_ffi_set_scalar_range');
+    get_scalar_range = dylib.lookupFunction<_c_get_scalar_range, _dart_get_scalar_range>('gs3d_ffi_get_scalar_range');
   }
 
   /// 自动探测并加载动态库

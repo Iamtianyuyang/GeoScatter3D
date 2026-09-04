@@ -56,11 +56,10 @@ AnalysisRailLayout compute_analysis_rail_layout(
 }
 
 void draw_analysis_rail_overlay(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
-    float ui_scale
+    gs3d::app::AppState& /*state*/,
+    gs3d::app::UiActions& /*actions*/,
+    float /*ui_scale*/
 ) {
-    (void)draw_analysis_rail_layout(state, actions, ui_scale);
 }
 
 } // namespace gs3d::ui

@@ -33,7 +33,6 @@
 #include "ui/UiPalette.hpp"
 #include "ui/WorkspaceManager.hpp"
 #include "ui/Theme.hpp"
-#include "ui/AppChrome.hpp"
 #include "ui/UiFonts.hpp"
 #include "render/ViewportManager.hpp"
 #include "imgui.h"
@@ -97,7 +96,9 @@ void apply_control_actions(
             static_cast<gs3d::ui::ThemeId>(ca.theme_id),
             gs3d::gui::ui_fonts().ui_scale
         );
-        persist_ui_preferences(app_state, static_cast<gs3d::ui::ThemeId>(ca.theme_id));
+        gs3d::app::UiPreferences p;
+        p.theme = gs3d::ui::theme_tokens(static_cast<gs3d::ui::ThemeId>(ca.theme_id)).id;
+        gs3d::app::save_ui_preferences(p);
     }
     if (ca.reset_camera_index >= 0) {
         gui_cmds.reset_camera_index = ca.reset_camera_index;

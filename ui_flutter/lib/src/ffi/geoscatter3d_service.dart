@@ -3,6 +3,7 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import '../models/dataset_model.dart';
 import '../models/gpu_info_model.dart';
+import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import 'geoscatter3d_bindings.dart';
 
@@ -19,12 +20,24 @@ class GeoScatter3dService extends ChangeNotifier {
   int _activeGpuIndex = 0;
   bool _isWorkbenchActive = false;
 
+  List<Point3D> _points = [];
+  double _pointSize = 1.5;
+  String _colormap = 'viridis';
+  double _scalarMin = 0.0;
+  double _scalarMax = 100.0;
+
   bool get isInitialized => _initialized;
   DatasetSummary get summary => _summary;
   List<RecentProjectItem> get recentProjects => _recentProjects;
   List<GpuDeviceInfo> get gpus => _gpus;
   int get activeGpuIndex => _activeGpuIndex;
   bool get isWorkbenchActive => _isWorkbenchActive;
+
+  List<Point3D> get points => _points;
+  double get pointSize => _pointSize;
+  String get colormap => _colormap;
+  double get scalarMin => _scalarMin;
+  double get scalarMax => _scalarMax;
 
   void openWorkbench() {
     _isWorkbenchActive = true;
@@ -66,6 +79,7 @@ class GeoScatter3dService extends ChangeNotifier {
       final code = _bindings!.load_dataset(nativePath);
       if (code == 0) {
         _updateSummary();
+        _updatePoints();
         _refreshRecentProjects();
         _isWorkbenchActive = true;
         notifyListeners();
@@ -121,6 +135,43 @@ class GeoScatter3dService extends ChangeNotifier {
       calloc.free(bboxMinPtr);
       calloc.free(bboxMaxPtr);
       calloc.free(valRangePtr);
+    }
+  }
+
+  void _updatePoints() {
+    if (_bindings == null) return;
+    const maxPts = 65536;
+    final buf = calloc<ffi.Float>(maxPts * 4);
+    try {
+      final count = _bindings!.get_points(buf, maxPts);
+      final pts = <Point3D>[];
+      for (int i = 0; i < count; i++) {
+        final offset = i * 4;
+        pts.add(Point3D(
+          x: buf[offset],
+          y: buf[offset + 1],
+          z: buf[offset + 2],
+          value: buf[offset + 3],
+        ));
+      }
+      _points = pts;
+    } finally {
+      calloc.free(buf);
+    }
+
+    _pointSize = _bindings!.get_point_size();
+    final cmPtr = _bindings!.get_colormap();
+    _colormap = cmPtr.toDartString();
+
+    final minPtr = calloc<ffi.Float>();
+    final maxPtr = calloc<ffi.Float>();
+    try {
+      _bindings!.get_scalar_range(minPtr, maxPtr);
+      _scalarMin = minPtr.value;
+      _scalarMax = maxPtr.value;
+    } finally {
+      calloc.free(minPtr);
+      calloc.free(maxPtr);
     }
   }
 
@@ -180,12 +231,40 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  void setPointSize(double size) {
+    if (_bindings == null) return;
+    _bindings!.set_point_size(size);
+    _pointSize = size;
+    notifyListeners();
+  }
+
+  void setColormap(String name) {
+    if (_bindings == null) return;
+    final nativeStr = name.toNativeUtf8();
+    try {
+      _bindings!.set_colormap(nativeStr);
+      _colormap = name;
+      notifyListeners();
+    } finally {
+      calloc.free(nativeStr);
+    }
+  }
+
+  void setScalarRange(double minVal, double maxVal) {
+    if (_bindings == null) return;
+    _bindings!.set_scalar_range(minVal, maxVal);
+    _scalarMin = minVal;
+    _scalarMax = maxVal;
+    notifyListeners();
+  }
+
   void shutdown() {
     if (_bindings != null) {
       _bindings!.shutdown();
       _initialized = false;
       _summary = const DatasetSummary();
       _recentProjects.clear();
+      _points.clear();
       notifyListeners();
     }
   }

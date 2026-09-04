@@ -15,7 +15,6 @@
 #include "render/PointCloudTileGpu.hpp"
 #include "render/PointPipeline.hpp"
 #include "render/ViewportManager.hpp"
-#include "ui/SvgLogoTexture.hpp"
 #include "util/Log.hpp"
 
 #include <GLFW/glfw3.h>
@@ -157,15 +156,6 @@ ViewerRenderRuntime::ViewerRenderRuntime(
 
     const auto clear_color = make_clear_color(input.graphics_config);
     renderer_.set_clear_color(clear_color);
-    logo_texture_ = std::make_unique<gs3d::ui::SvgLogoTexture>(
-        context_.device(),
-        context_.physical_device(),
-        context_.graphics_queue(),
-        renderer_.command_pool(),
-        "assets/icon.svg",
-        128
-    );
-    gs3d::util::log::info() << "[OK] SvgLogoTexture loaded.\n";
 
     if (input.lod_config.enabled) {
         lod_gpu_cloud_ = std::make_unique<gs3d::render::PointCloudLodGpu>(
@@ -268,7 +258,7 @@ const gs3d::camera::CameraBounds& ViewerRenderRuntime::bounds() const noexcept
 
 VkDescriptorSet ViewerRenderRuntime::logo_descriptor() const noexcept
 {
-    return logo_texture_->descriptor();
+    return VK_NULL_HANDLE;
 }
 
 gs3d::render::PointCloudGpu* ViewerRenderRuntime::full_gpu_cloud() noexcept

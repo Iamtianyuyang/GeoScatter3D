@@ -31,37 +31,8 @@ inline ViewportInputRouting resolve_viewport_input_routing(
 
 struct ViewportCanvasOptions {
     int workspace_id = 0;
-    // 左上角「N 点 | x ms」信息 badge。悬浮 Dock 布局用独立的性能
-    // HUD chip 替代它，避免与文件状态 chip 重叠。
     bool show_info_badge = true;
-    // 浮动卡片、模态层等高优先级 UI 展开时关闭视口拾取和相机输入，
-    // 同时隐藏由鼠标位置驱动的准星与属性提示。
     bool interaction_enabled = true;
 };
-
-/*
- * 视口画布主体：InvisibleButton 交互层 + 点云图像 + 地图轴/十字准线/
- * 测量线 overlay，并向 actions.viewport_frames 追加本帧相机与拾取命令。
- *
- * 前置条件：调用时处于一个已 Begin 的 ImGui 窗口内，画布占满剩余
- * 内容区域。工作台布局的视图窗口和悬浮 Dock 布局的全屏沉浸视口共用
- * 这一份实现（定义在 UiRoot.cpp，与坐标轴绘制助手同翻译单元）。
- */
-void draw_viewport_canvas(
-    gs3d::app::RenderViewState& view,
-    gs3d::app::UiActions& actions,
-    const ViewportCanvasOptions& options = {}
-);
-
-// 帧首全局快捷键（Ctrl+O 打开 / Ctrl+N 新建视图），三种布局共用。
-void begin_viewport_frame_shortcuts(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions
-);
-
-void finalize_viewport_frame_shortcuts(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions
-);
 
 } // namespace gs3d::ui

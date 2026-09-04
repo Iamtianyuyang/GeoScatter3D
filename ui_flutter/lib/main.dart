@@ -78,7 +78,7 @@ class GeoScatter3dWorkbench extends StatelessWidget {
                 ),
 
                 // 【区域 4】右侧属性与渲染设置停靠区
-                const RightDockPanel(),
+                RightDockPanel(service: service),
               ],
             ),
           ),

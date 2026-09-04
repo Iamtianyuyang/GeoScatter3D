@@ -46,6 +46,11 @@ struct EngineState {
     };
     int32_t active_gpu = 0;
 
+    std::vector<gs3d::data::Gs3dPoint> cached_points;
+    float point_size = 3.0f;
+    std::string colormap = "viridis";
+    float scalar_clip[2] = {0.0f, 1.0f};
+
     std::string last_json_response;
 };
 
@@ -174,6 +179,15 @@ int32_t gs3d_ffi_load_dataset(const char* path)
         g_state.attributes.clear();
         g_state.attributes.push_back("field_statics");
         g_state.attributes.push_back("elevation");
+
+        try {
+            const auto res = gs3d::data::Gs3dReader::read_all(source_gs3d);
+            g_state.cached_points = std::move(res.points);
+            g_state.scalar_clip[0] = header.value_min;
+            g_state.scalar_clip[1] = header.value_max;
+        } catch (...) {
+            g_state.cached_points.clear();
+        }
 
         g_state.dataset_loaded = true;
         try {
@@ -395,6 +409,60 @@ void gs3d_ffi_set_preferred_gpu(int32_t index)
     if (index >= 0 && static_cast<size_t>(index) < g_state.gpus.size()) {
         g_state.active_gpu = index;
     }
+}
+
+int32_t gs3d_ffi_get_points(float* out_buffer, int32_t max_points)
+{
+    if (out_buffer == nullptr || max_points <= 0) return 0;
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    const int32_t count = std::min(max_points, static_cast<int32_t>(g_state.cached_points.size()));
+    for (int32_t i = 0; i < count; ++i) {
+        const auto& pt = g_state.cached_points[i];
+        out_buffer[i * 4 + 0] = pt.x;
+        out_buffer[i * 4 + 1] = pt.y;
+        out_buffer[i * 4 + 2] = pt.z;
+        out_buffer[i * 4 + 3] = pt.value;
+    }
+    return count;
+}
+
+void gs3d_ffi_set_point_size(float size)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    g_state.point_size = (size > 0.1f) ? size : 0.1f;
+}
+
+float gs3d_ffi_get_point_size(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    return g_state.point_size;
+}
+
+void gs3d_ffi_set_colormap(const char* colormap_name)
+{
+    if (colormap_name == nullptr) return;
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    g_state.colormap = colormap_name;
+}
+
+const char* gs3d_ffi_get_colormap(void)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    return g_state.colormap.c_str();
+}
+
+void gs3d_ffi_set_scalar_range(float min_val, float max_val)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    g_state.scalar_clip[0] = min_val;
+    g_state.scalar_clip[1] = max_val;
+}
+
+void gs3d_ffi_get_scalar_range(float* out_min, float* out_max)
+{
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    if (out_min) *out_min = g_state.scalar_clip[0];
+    if (out_max) *out_max = g_state.scalar_clip[1];
 }
 
 } // extern "C"

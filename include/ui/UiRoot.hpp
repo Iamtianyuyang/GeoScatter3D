@@ -129,24 +129,6 @@ inline ScreenPoint framebuffer_to_plot_screen(
     };
 }
 
-// Font helpers used by panel drawing functions.
-[[nodiscard]] ::ImFont* panel_title_font();
-
-// Shared panel drawing helpers.
-void draw_panel_section_label(const char* label);
-[[nodiscard]] float bytes_to_mb(std::uint64_t bytes);
-
-[[nodiscard]] std::string render_view_window_name(int index);
-
-// 视口窗口绘制工具（支持嵌入控制栏或独立相机气泡）
-void draw_viewport_window(
-    gs3d::app::AppState& state,
-    gs3d::app::RenderViewState& view,
-    gs3d::app::UiActions& actions,
-    int workspace_id = 0,
-    bool show_workbench_controls = false
-);
-
 class UiRoot {
 public:
     UiRoot() = default;

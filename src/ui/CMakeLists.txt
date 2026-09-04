@@ -25,29 +25,13 @@ target_link_libraries(gs3d_imgui PUBLIC
 # Core UI component library
 add_library(gs3d_ui STATIC
     ImGuiLayer.cpp
-    AppChrome.cpp
     color/Theme.cpp
     color/ThemeRegistry.cpp
     layouts/LayoutMetrics.cpp
-    Widgets.cpp
     UiRoot.cpp
-    layouts/standard_workbench/StandardWorkbenchLayout.cpp
-    UiOverlays.cpp
-    layouts/standard_workbench/WorkbenchViewControls.cpp
     layouts/floating_dock/FloatingDockLayout.cpp
-    layouts/floating_dock/FloatingDockUi.cpp
     layouts/analysis_rail/AnalysisRailLayout.cpp
-    layouts/analysis_rail/AnalysisRailUi.cpp
-    layouts/standard_workbench/DockLayoutBuilder.cpp
-    SvgLogoTexture.cpp
     canvas/ViewportAxisTicks.cpp
-    canvas/ViewportCanvas.cpp
-    panels/RegionStatsPanel.cpp
-    panels/DatasetPanel.cpp
-    panels/NavigationMapPanel.cpp
-    panels/MeasurementPanel.cpp
-    panels/AuxiliaryPanels.cpp
-    panels/RenderSettingsPanel.cpp
 )
 
 target_include_directories(gs3d_ui PUBLIC

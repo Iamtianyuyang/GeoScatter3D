@@ -31,7 +31,6 @@ class PointCloudTileGpu;
 class PointPipeline;
 class ViewportManager;
 }
-namespace gs3d::ui { class SvgLogoTexture; }
 
 namespace gs3d::app {
 
@@ -85,7 +84,6 @@ private:
     gs3d::render::VulkanSwapchain swapchain_;
     gs3d::render::VulkanRenderer renderer_;
     gs3d::ui::ImGuiLayer imgui_layer_;
-    std::unique_ptr<gs3d::ui::SvgLogoTexture> logo_texture_;
     std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud_;
     std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud_;
     std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud_;

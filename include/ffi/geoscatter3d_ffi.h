@@ -88,6 +88,29 @@ GS3D_FFI_API const char* gs3d_ffi_get_gpu_type(int32_t index);
 GS3D_FFI_API int32_t gs3d_ffi_get_active_gpu_index(void);
 GS3D_FFI_API void gs3d_ffi_set_preferred_gpu(int32_t index);
 
+// ============================================================================
+// 9. 测点数据与空间几何获取 (Point Cloud Stream)
+// ============================================================================
+
+/// 获取当前载入数据集的点数据（x, y, z, scalar），最多填充 max_points 个点
+/// out_buffer 连续存放：[x0, y0, z0, val0, x1, y1, z1, val1, ...]
+/// 返回实际填充的点数量
+GS3D_FFI_API int32_t gs3d_ffi_get_points(float* out_buffer, int32_t max_points);
+
+// ============================================================================
+// 10. 视口与渲染交互控制 (Render & Viewport Settings)
+// ============================================================================
+
+GS3D_FFI_API void gs3d_ffi_set_point_size(float size);
+GS3D_FFI_API float gs3d_ffi_get_point_size(void);
+
+GS3D_FFI_API void gs3d_ffi_set_colormap(const char* colormap_name);
+GS3D_FFI_API const char* gs3d_ffi_get_colormap(void);
+
+GS3D_FFI_API void gs3d_ffi_set_scalar_range(float min_val, float max_val);
+GS3D_FFI_API void gs3d_ffi_get_scalar_range(float* out_min, float* out_max);
+
 #ifdef __cplusplus
 }
 #endif
+

@@ -89,11 +89,10 @@ NavigationPreviewLayout compute_navigation_preview_layout(
 }
 
 void draw_floating_dock_overlay(
-    gs3d::app::AppState& state,
-    gs3d::app::UiActions& actions,
-    float ui_scale
+    gs3d::app::AppState& /*state*/,
+    gs3d::app::UiActions& /*actions*/,
+    float /*ui_scale*/
 ) {
-    (void)draw_floating_dock_layout(state, actions, ui_scale);
 }
 
 } // namespace gs3d::ui

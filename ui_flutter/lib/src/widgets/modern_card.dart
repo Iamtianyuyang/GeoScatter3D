@@ -86,16 +86,22 @@ class _CollapsibleCardState extends State<CollapsibleCard> {
                     size: 20,
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textTitle,
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textTitle,
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  if (widget.trailing != null) widget.trailing!,
+                  if (widget.trailing != null) ...[
+                    const SizedBox(width: 6),
+                    widget.trailing!,
+                  ],
                 ],
               ),
             ),
