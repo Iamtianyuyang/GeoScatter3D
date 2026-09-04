@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import 'welcome_ui_keys.dart';
 
 class GpuSelectionDialog extends StatefulWidget {
   final GeoScatter3dService service;
@@ -66,6 +67,7 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
+                  key: WelcomeUiKeys.gpuDialogCloseButton,
                   icon: const Icon(Icons.close, size: 18, color: AppTheme.textDim),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
@@ -82,6 +84,7 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
             ...gpus.map((gpu) {
               final isSelected = (_selectedGpu == gpu.index);
               return Container(
+                key: WelcomeUiKeys.gpuItem(gpu.index),
                 margin: const EdgeInsets.only(bottom: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
@@ -146,11 +149,13 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
+                  key: WelcomeUiKeys.gpuDialogCancelButton,
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton(
+                  key: WelcomeUiKeys.gpuDialogApplyButton,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryBlue,
                     foregroundColor: Colors.white,
@@ -158,7 +163,7 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                     elevation: 0,
                   ),
                   onPressed: () {
-                    widget.service.setPreferredGpu(_selectedGpu);
+                    widget.service.executeAction('welcome.gpu.set_preferred', {'index': _selectedGpu});
                     Navigator.of(context).pop();
                   },
                   child: const Text('应用并保存设置'),

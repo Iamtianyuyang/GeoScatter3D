@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import 'welcome_ui_keys.dart';
 
 class OpenProjectDialog extends StatefulWidget {
   final GeoScatter3dService service;
@@ -31,11 +32,11 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
       return;
     }
 
-    final success = widget.service.loadDataset(path);
-    if (success) {
+    final res = widget.service.executeAction('welcome.open_project', {'path': path});
+    if (res['success'] == true) {
       Navigator.of(context).pop(true);
     } else {
-      setState(() => _errorMessage = '未能识别或加载该数据包，请检查路径及文件格式是否为 GS3D v2');
+      setState(() => _errorMessage = res['message'] as String? ?? '未能识别或加载该数据包，请检查路径及文件格式是否为 GS3D v2');
     }
   }
 
@@ -74,6 +75,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                 ),
                 const Spacer(),
                 IconButton(
+                  key: WelcomeUiKeys.openProjectDialogCloseButton,
                   icon: const Icon(Icons.close, size: 18, color: AppTheme.textDim),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
@@ -88,6 +90,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
 
             // 路径输入框
             TextField(
+              key: WelcomeUiKeys.openProjectDialogPathInput,
               controller: _pathController,
               decoration: InputDecoration(
                 labelText: '数据集路径 (文件或 Bundle 文件夹)',
@@ -110,6 +113,25 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                 ),
               ),
               style: const TextStyle(fontSize: 13, fontFamily: 'Consolas'),
+            ),
+            const SizedBox(height: 8),
+
+            // 快捷填充 Chip
+            Row(
+              children: [
+                const Text('快捷填充:', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                const SizedBox(width: 8),
+                ActionChip(
+                  key: WelcomeUiKeys.openProjectDialogSampleChip,
+                  avatar: const Icon(Icons.auto_awesome, size: 14, color: AppTheme.primaryBlue),
+                  label: const Text('sample-points.gs3d.bundle', style: TextStyle(fontSize: 12)),
+                  backgroundColor: AppTheme.surfaceMuted,
+                  side: const BorderSide(color: AppTheme.border),
+                  onPressed: () {
+                    _pathController.text = 'data/sample-points.gs3d.bundle';
+                  },
+                ),
+              ],
             ),
 
             if (_errorMessage != null) ...[
@@ -136,11 +158,12 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               ),
             ],
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 OutlinedButton(
+                  key: WelcomeUiKeys.openProjectDialogCancelButton,
                   onPressed: () => Navigator.of(context).pop(),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.textDim,
@@ -152,6 +175,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
+                  key: WelcomeUiKeys.openProjectDialogSubmitButton,
                   onPressed: _submit,
                   icon: const Icon(Icons.check, size: 16),
                   label: const Text('立即载入'),

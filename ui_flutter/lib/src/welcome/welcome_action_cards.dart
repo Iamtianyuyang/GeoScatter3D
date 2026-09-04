@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
 import 'new_project_dialog.dart';
 import 'open_project_dialog.dart';
+import 'welcome_ui_keys.dart';
 
 class WelcomeActionCards extends StatelessWidget {
   final GeoScatter3dService service;
@@ -30,26 +30,12 @@ class WelcomeActionCards extends StatelessWidget {
   }
 
   void _onQuickDemo(BuildContext context) {
-    const candidates = [
-      'data/sample-points.gs3d.bundle',
-      '../data/sample-points.gs3d.bundle',
-      'D:/code/GeoScatter3D/data/sample-points.gs3d.bundle',
-    ];
-    String? found;
-    for (final c in candidates) {
-      if (Directory(c).existsSync()) {
-        found = c;
-        break;
-      }
-    }
-
-    if (found != null) {
-      service.loadDataset(found);
-    } else {
+    final result = service.executeAction('welcome.quick_demo');
+    if (result['success'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('未在当前环境找到 sample-points.gs3d.bundle 示例数据包'),
-          backgroundColor: Color(0xFFDC2626),
+        SnackBar(
+          content: Text(result['message'] as String? ?? '未在当前环境找到 sample-points.gs3d.bundle 示例数据包'),
+          backgroundColor: const Color(0xFFDC2626),
         ),
       );
     }
@@ -63,6 +49,7 @@ class WelcomeActionCards extends StatelessWidget {
 
         final cards = [
           _ActionCardItem(
+            key: WelcomeUiKeys.newProjectAction,
             icon: Icons.add_rounded,
             iconColor: AppTheme.primaryBlue,
             iconBg: AppTheme.primaryBlueBg,
@@ -73,6 +60,7 @@ class WelcomeActionCards extends StatelessWidget {
             onTap: () => _onNewProject(context),
           ),
           _ActionCardItem(
+            key: WelcomeUiKeys.openProjectAction,
             icon: Icons.folder_open_rounded,
             iconColor: const Color(0xFF0284C7), // Sky-600
             iconBg: const Color(0xFFF0F9FF), // Sky-50
@@ -83,6 +71,7 @@ class WelcomeActionCards extends StatelessWidget {
             onTap: () => _onOpenProject(context),
           ),
           _ActionCardItem(
+            key: WelcomeUiKeys.quickDemoAction,
             icon: Icons.rocket_launch_rounded,
             iconColor: const Color(0xFF7C3AED), // Purple-600
             iconBg: const Color(0xFFF5F3FF), // Purple-50
@@ -129,6 +118,7 @@ class _ActionCardItem extends StatefulWidget {
   final VoidCallback onTap;
 
   const _ActionCardItem({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.iconBg,
@@ -151,7 +141,7 @@ class _ActionCardItemState extends State<_ActionCardItem> {
     final borderColor = _isHovered
         ? AppTheme.primaryBlue
         : (widget.highlighted
-            ? AppTheme.primaryBlue.withAlpha(90)
+            ? AppTheme.primaryBlue.withValues(alpha: 0.35)
             : AppTheme.border);
 
     return MouseRegion(
@@ -167,7 +157,7 @@ class _ActionCardItemState extends State<_ActionCardItem> {
           boxShadow: _isHovered
               ? [
                   BoxShadow(
-                    color: AppTheme.primaryBlue.withAlpha(25),
+                    color: AppTheme.primaryBlue.withValues(alpha: 0.1),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),

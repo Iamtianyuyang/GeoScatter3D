@@ -10,4 +10,11 @@ class GpuDeviceInfo {
     required this.typeDescription,
     required this.isDiscrete,
   });
+
+  Map<String, dynamic> toJson() => {
+    'index': index,
+    'name': name,
+    'type': typeDescription,
+    'is_discrete': isDiscrete,
+  };
 }

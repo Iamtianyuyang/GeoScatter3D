@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import '../models/dataset_model.dart';
@@ -6,6 +8,31 @@ import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import 'geoscatter3d_bindings.dart';
+
+/// 动作元数据描述符，对齐 MCP 工具定义规范 (JSON-Schema)
+class UiActionDescriptor {
+  final String id;
+  final String name;
+  final String description;
+  final String category;
+  final Map<String, dynamic> parameterSchema;
+
+  const UiActionDescriptor({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.category,
+    this.parameterSchema = const {},
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'category': category,
+    'parameters': parameterSchema,
+  };
+}
 
 enum WorkbenchLayoutMode {
   standard,
@@ -105,13 +132,48 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  /// 多级候选路径解析，确保在任何工作目录或构建目录下都能正确找到点云与工程文件
+  static String? resolveDatasetPath(String inputPath) {
+    final trimmed = inputPath.trim();
+    if (trimmed.isEmpty) return null;
+
+    final candidates = [
+      trimmed,
+      '../$trimmed',
+      '../../$trimmed',
+      '../../../$trimmed',
+      '../../../../$trimmed',
+      'D:/code/GeoScatter3D/$trimmed',
+    ];
+
+    if (Platform.isWindows) {
+      try {
+        final exeParent = File(Platform.resolvedExecutable).parent;
+        candidates.add('${exeParent.path}/$trimmed');
+        candidates.add('${exeParent.parent.path}/$trimmed');
+        candidates.add('${exeParent.parent.parent.path}/$trimmed');
+        candidates.add('${exeParent.parent.parent.parent.path}/$trimmed');
+        candidates.add('${exeParent.parent.parent.parent.parent.path}/$trimmed');
+      } catch (_) {}
+    }
+
+    for (final c in candidates) {
+      final normalized = c.replaceAll('\\', '/');
+      if (File(normalized).existsSync() || Directory(normalized).existsSync()) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
   /// 加载数据集文件（.gs3d、.gs3d.bundle 等）
   bool loadDataset(String path) {
     if (!_initialized || _bindings == null) {
       if (!initialize()) return false;
     }
 
-    final nativePath = path.toNativeUtf8();
+    final resolved = resolveDatasetPath(path) ?? path;
+    final nativePath = resolved.toNativeUtf8();
     try {
       final code = _bindings!.load_dataset(nativePath);
       if (code == 0) {
@@ -256,8 +318,277 @@ class GeoScatter3dService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 执行通用 JSON-RPC 指令
+  /// 获取所有可用 UI 动作元数据清单（供 AI、MCP 工具及自动化测试调用）
+  List<UiActionDescriptor> getAvailableActions() {
+    return const [
+      UiActionDescriptor(
+        id: 'welcome.quick_demo',
+        name: '快速体验示例',
+        description: '自动解析并载入内置 25 测点 5 级八叉树 LOD 示例点云数据包 (sample-points.gs3d.bundle) 并进入三维工作台',
+        category: 'welcome',
+      ),
+      UiActionDescriptor(
+        id: 'welcome.open_project',
+        name: '打开指定工程',
+        description: '打开指定路径的 .gs3d 二进制文件或 .gs3d.bundle 空间工区包',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {
+              'type': 'string',
+              'description': '数据集绝对路径或相对工程根目录路径',
+            },
+          },
+          'required': ['path'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.new_project',
+        name: '新建散点工程',
+        description: '从指定原始 CSV/DAT/GS3D 数据源创建并加载新工程',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {'type': 'string', 'description': '数据源文件路径'},
+            'name': {'type': 'string', 'description': '工程名称 (可选)'},
+            'threads': {'type': 'integer', 'description': '预处理线程数 (可选，默认 16)'},
+          },
+          'required': ['path'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.recent.open',
+        name: '打开最近工程',
+        description: '根据索引或路径打开历史工程记录中的项目',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'description': '最近列表项索引 (从 0 开始)'},
+            'path': {'type': 'string', 'description': '或者直接指定项目路径'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.recent.clear',
+        name: '清空最近工程记录',
+        description: '清空所有最近打开的项目历史记录',
+        category: 'welcome',
+      ),
+      UiActionDescriptor(
+        id: 'welcome.gpu.set_preferred',
+        name: '设置首选渲染 GPU',
+        description: '选择并切换 Vulkan 物理显卡硬件设备',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'description': '显卡设备索引 (0 为独立显卡)'},
+          },
+          'required': ['index'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.gpu.get_list',
+        name: '获取 GPU 设备列表',
+        description: '获取系统所有已探测到的 Vulkan 显卡设备及当前选用状态',
+        category: 'welcome',
+      ),
+      UiActionDescriptor(
+        id: 'welcome.get_state',
+        name: '获取欢迎页数据状态快照',
+        description: '获取欢迎页的完整状态快照（最近工程列表、当前选用 GPU、引擎版本及工区激活状态）',
+        category: 'welcome',
+      ),
+      UiActionDescriptor(
+        id: 'welcome.about.get_info',
+        name: '获取系统关于信息',
+        description: '获取 GeoScatter3D 版本、架构特性与核心能力说明',
+        category: 'welcome',
+      ),
+      UiActionDescriptor(
+        id: 'welcome.docs.get_info',
+        name: '获取操作指南与格式标准',
+        description: '获取 GS3D v2 显式小端标准、八叉树 LOD 与交互控制指南',
+        category: 'welcome',
+      ),
+    ];
+  }
+
+  /// 执行高层 UI 动作（统一供 AI、MCP 工具、控制面及前台按钮调用）
+  Map<String, dynamic> executeAction(String actionId, [Map<String, dynamic>? params]) {
+    final p = params ?? const {};
+    switch (actionId) {
+      case 'welcome.quick_demo':
+        final resolved = resolveDatasetPath('data/sample-points.gs3d.bundle');
+        if (resolved == null) {
+          return {
+            'success': false,
+            'message': '未在当前环境找到 sample-points.gs3d.bundle 示例数据包',
+          };
+        }
+        final ok = loadDataset(resolved);
+        return {
+          'success': ok,
+          'message': ok ? '成功加载示例工区并进入工作台' : '加载示例数据失败',
+          'data': ok ? _summary.toJson() : null,
+        };
+
+      case 'welcome.open_project':
+        final path = p['path'] as String?;
+        if (path == null || path.trim().isEmpty) {
+          return {'success': false, 'message': '缺少必要参数: path'};
+        }
+        final resolved = resolveDatasetPath(path.trim());
+        if (resolved == null) {
+          return {'success': false, 'message': '指定的数据集路径不存在: $path'};
+        }
+        final ok = loadDataset(resolved);
+        return {
+          'success': ok,
+          'message': ok ? '成功打开工程: $resolved' : '工程加载失败',
+          'data': ok ? _summary.toJson() : null,
+        };
+
+      case 'welcome.new_project':
+        final path = p['path'] as String?;
+        if (path == null || path.trim().isEmpty) {
+          return {'success': false, 'message': '缺少必要参数: path'};
+        }
+        final resolved = resolveDatasetPath(path.trim());
+        if (resolved == null) {
+          return {'success': false, 'message': '指定数据源文件不存在: $path'};
+        }
+        final ok = loadDataset(resolved);
+        return {
+          'success': ok,
+          'message': ok ? '工程创建并加载成功: $resolved' : '工程创建失败',
+          'data': ok ? _summary.toJson() : null,
+        };
+
+      case 'welcome.recent.open':
+        if (p.containsKey('index')) {
+          final idx = p['index'] as int?;
+          if (idx == null || idx < 0 || idx >= _recentProjects.length) {
+            return {'success': false, 'message': '非法的最近项目索引: $idx'};
+          }
+          final path = _recentProjects[idx].path;
+          final resolved = resolveDatasetPath(path);
+          if (resolved == null) {
+            return {'success': false, 'message': '该最近项目路径已失效: $path'};
+          }
+          final ok = loadDataset(resolved);
+          return {
+            'success': ok,
+            'message': ok ? '成功打开最近项目: $resolved' : '加载失败',
+            'data': ok ? _summary.toJson() : null,
+          };
+        } else if (p.containsKey('path')) {
+          return executeAction('welcome.open_project', {'path': p['path']});
+        }
+        return {'success': false, 'message': '必须提供 index 或 path 参数'};
+
+      case 'welcome.recent.clear':
+        clearRecentProjects();
+        return {'success': true, 'message': '已清空最近打开的项目记录'};
+
+      case 'welcome.gpu.set_preferred':
+        final idx = p['index'] as int?;
+        if (idx == null || idx < 0 || idx >= _gpus.length) {
+          return {'success': false, 'message': '非法的 GPU 索引: $idx'};
+        }
+        setPreferredGpu(idx);
+        return {
+          'success': true,
+          'message': '首选 GPU 已切换为: ${_gpus[idx].name}',
+          'data': {'active_gpu': _gpus[idx].toJson()},
+        };
+
+      case 'welcome.gpu.get_list':
+        return {
+          'success': true,
+          'data': {
+            'active_index': _activeGpuIndex,
+            'gpus': _gpus.map((g) => g.toJson()).toList(),
+          },
+        };
+
+      case 'welcome.get_state':
+        return {
+          'success': true,
+          'data': {
+            'is_initialized': _initialized,
+            'is_workbench_active': _isWorkbenchActive,
+            'recent_project_count': _recentProjects.length,
+            'recent_projects': _recentProjects.map((r) => r.toJson()).toList(),
+            'active_gpu': (_activeGpuIndex >= 0 && _activeGpuIndex < _gpus.length)
+                ? _gpus[_activeGpuIndex].toJson()
+                : null,
+            'dataset_loaded': _summary.isLoaded,
+          },
+        };
+
+      case 'welcome.about.get_info':
+        return {
+          'success': true,
+          'data': {
+            'app_name': 'GeoScatter3D',
+            'version': '2.0.0-rc1',
+            'architecture': 'Flutter Desktop + C++20 / Vulkan 1.3 C-ABI FFI',
+            'spec': 'GS3D v2 Little-Endian Explicit Format',
+          },
+        };
+
+      case 'welcome.docs.get_info':
+        return {
+          'success': true,
+          'data': {
+            'supported_formats': ['.gs3d', '.gs3d.bundle', '.csv', '.dat'],
+            'controls': {
+              'orbit': '鼠标左键拖拽旋转',
+              'pan': '鼠标中键拖拽平移',
+              'zoom': '鼠标滚轮缩放',
+              'reset': '顶部重置视角按钮',
+            },
+          },
+        };
+
+      default:
+        return {
+          'success': false,
+          'message': '未知的动作 ID: $actionId',
+        };
+    }
+  }
+
+  /// 执行通用 JSON-RPC 指令（支持 MCP 动作协议与底层 C++ 引擎命令）
   String executeJsonRpc(String requestJson) {
+    try {
+      final decoded = jsonDecode(requestJson) as Map<String, dynamic>;
+      final id = decoded['id'];
+      final method = decoded['method'] as String?;
+
+      if (method == 'ui_action') {
+        final params = decoded['params'] as Map<String, dynamic>? ?? {};
+        final action = params['action'] as String? ?? '';
+        final actionParams = params['params'] as Map<String, dynamic>?;
+        final res = executeAction(action, actionParams);
+        return jsonEncode({
+          'jsonrpc': '2.0',
+          'id': id,
+          'result': res,
+        });
+      } else if (method == 'list_ui_actions') {
+        return jsonEncode({
+          'jsonrpc': '2.0',
+          'id': id,
+          'result': getAvailableActions().map((a) => a.toJson()).toList(),
+        });
+      }
+    } catch (_) {}
+
     if (_bindings == null) return '{}';
     final nativeReq = requestJson.toNativeUtf8();
     try {

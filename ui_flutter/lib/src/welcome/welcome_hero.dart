@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'welcome_ui_keys.dart';
 
 class WelcomeHero extends StatefulWidget {
   const WelcomeHero({super.key});
@@ -70,6 +71,7 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
             children: [
               // 渐变 Logo 方块 (对应 C++ draw_brand Logo)
               Container(
+                key: WelcomeUiKeys.heroLogo,
                 width: 68,
                 height: 68,
                 decoration: BoxDecoration(
@@ -84,7 +86,7 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primaryBlue.withAlpha(80),
+                      color: AppTheme.primaryBlue.withValues(alpha: 0.3),
                       blurRadius: 18,
                       offset: const Offset(0, 6),
                     ),
@@ -152,7 +154,7 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                           decoration: BoxDecoration(
                             color: AppTheme.primaryBlueBg,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.primaryBlue.withAlpha(60)),
+                            border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.25)),
                           ),
                           child: const Text(
                             'v0.1.0 · Multiplatform',
@@ -224,7 +226,7 @@ class _HeroParticlePainter extends CustomPainter {
       if (p.y < 0) p.y = size.height;
       if (p.y > size.height) p.y = 0;
 
-      paint.color = AppTheme.primaryBlue.withAlpha((p.alpha * 255).toInt());
+      paint.color = AppTheme.primaryBlue.withValues(alpha: p.alpha);
       canvas.drawCircle(Offset(p.x, p.y), p.radius, paint);
     }
   }

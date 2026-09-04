@@ -38,4 +38,19 @@ class DatasetSummary {
     }
     return '${buffer.toString().split('').reversed.join()} 点';
   }
+
+  /// 转换为 JSON 字典供控制面与 MCP 上报
+  Map<String, dynamic> toJson() => {
+    'isLoaded': isLoaded,
+    'name': name,
+    'pointCount': pointCount,
+    'formattedPointCount': formattedPointCount,
+    'fileSize': fileSize,
+    'lodEnabled': lodEnabled,
+    'lodDetails': lodDetails,
+    'attributes': attributes,
+    'bboxMin': bboxMin,
+    'bboxMax': bboxMax,
+    'valueRange': valueRange,
+  };
 }

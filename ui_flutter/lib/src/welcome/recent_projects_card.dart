@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/recent_project_model.dart';
 import '../theme/app_theme.dart';
+import 'welcome_ui_keys.dart';
 
 class RecentProjectsCard extends StatelessWidget {
   final GeoScatter3dService service;
@@ -12,11 +13,11 @@ class RecentProjectsCard extends StatelessWidget {
   });
 
   void _onOpenItem(BuildContext context, RecentProjectItem item) {
-    final success = service.loadDataset(item.path);
-    if (!success) {
+    final res = service.executeAction('welcome.recent.open', {'path': item.path});
+    if (res['success'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('无法打开项目: ${item.path}，文件可能已被移动或损坏'),
+          content: Text(res['message'] as String? ?? '无法打开项目: ${item.path}，文件可能已被移动或损坏'),
           backgroundColor: const Color(0xFFDC2626),
         ),
       );
@@ -42,13 +43,15 @@ class RecentProjectsCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
+            key: WelcomeUiKeys.recentCancelClearButton,
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
           ),
           ElevatedButton(
+            key: WelcomeUiKeys.recentConfirmClearButton,
             onPressed: () {
               Navigator.of(ctx).pop();
-              service.clearRecentProjects();
+              service.executeAction('welcome.recent.clear');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFDC2626),
@@ -121,6 +124,7 @@ class RecentProjectsCard extends StatelessWidget {
                     const Spacer(),
                     if (recentList.isNotEmpty)
                       TextButton.icon(
+                        key: WelcomeUiKeys.recentClearButton,
                         onPressed: () => _onClearConfirm(context),
                         icon: const Icon(Icons.delete_outline_rounded, size: 15),
                         label: const Text('清空记录', style: TextStyle(fontSize: 12)),
@@ -172,6 +176,19 @@ class RecentProjectsCard extends StatelessWidget {
                         '可通过上方卡片新建工区或打开已有 .gs3d 数据包',
                         style: TextStyle(fontSize: 12, color: AppTheme.textDim),
                       ),
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        key: WelcomeUiKeys.recentEmptyDemoButton,
+                        onPressed: () => service.executeAction('welcome.quick_demo'),
+                        icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
+                        label: const Text('一键载入内置示例工区体验', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primaryBlue,
+                          side: const BorderSide(color: AppTheme.primaryBlue),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        ),
+                      ),
                     ],
                   ),
                 )
@@ -184,6 +201,7 @@ class RecentProjectsCard extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final item = recentList[index];
                     return _RecentProjectTile(
+                      key: WelcomeUiKeys.recentItem(index),
                       item: item,
                       onTap: () => _onOpenItem(context, item),
                     );
@@ -202,6 +220,7 @@ class _RecentProjectTile extends StatefulWidget {
   final VoidCallback onTap;
 
   const _RecentProjectTile({
+    super.key,
     required this.item,
     required this.onTap,
   });

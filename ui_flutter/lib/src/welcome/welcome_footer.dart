@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
 import 'gpu_selection_dialog.dart';
+import 'welcome_ui_keys.dart';
 
 class WelcomeFooter extends StatelessWidget {
   final GeoScatter3dService service;
@@ -16,6 +17,77 @@ class WelcomeFooter extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       builder: (_) => GpuSelectionDialog(service: service),
+    );
+  }
+
+  void _showDocsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        backgroundColor: AppTheme.surface,
+        title: const Row(
+          children: [
+            Icon(Icons.menu_book_rounded, color: AppTheme.primaryBlue, size: 22),
+            SizedBox(width: 10),
+            Text('操作指南与技术标准', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: const SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '1. 数据格式规范 (GS3D v2)',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '• 强制采用 GS3D v2 显式小端标准，支持单体二进制 (.gs3d) 与分层工区包 (.gs3d.bundle)。\n'
+                '• 数据块严格按 point_stride 校验内存对齐区间，杜绝格式损坏与静默容忍。',
+                style: TextStyle(fontSize: 12.5, color: AppTheme.textBody, height: 1.5),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '2. 空间索引与海量点云渲染',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '• 采用动态多级八叉树 LOD 金字塔，按需流式加载与视锥裁剪，毫秒级响应上亿散点。',
+                style: TextStyle(fontSize: 12.5, color: AppTheme.textBody, height: 1.5),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '3. 视口交互控制快捷指南',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '• 旋转视角：鼠标左键按住拖拽\n'
+                '• 平移视口：鼠标中键按住拖拽 或 Shift + 鼠标左键\n'
+                '• 缩放视野：滚动鼠标滚轮\n'
+                '• 复位视角：工作台顶部工具栏「视角复位」按钮',
+                style: TextStyle(fontSize: 12.5, color: AppTheme.textBody, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            key: WelcomeUiKeys.docsDialogCloseButton,
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryBlue,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -54,6 +126,7 @@ class WelcomeFooter extends StatelessWidget {
         ),
         actions: [
           ElevatedButton(
+            key: WelcomeUiKeys.aboutDialogCloseButton,
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primaryBlue,
@@ -88,6 +161,7 @@ class WelcomeFooter extends StatelessWidget {
             children: [
               // GPU 选择 Chip (自适应最大宽度，防止溢出)
               InkWell(
+                key: WelcomeUiKeys.footerGpuButton,
                 onTap: () => _showGpuDialog(context),
                 borderRadius: BorderRadius.circular(6),
                 child: Container(
@@ -147,8 +221,24 @@ class WelcomeFooter extends StatelessWidget {
 
               const SizedBox(width: 8),
 
-              // 文档与关于
+              // 操作技术指南
               TextButton.icon(
+                key: WelcomeUiKeys.footerDocsButton,
+                onPressed: () => _showDocsDialog(context),
+                icon: const Icon(Icons.menu_book_rounded, size: 15),
+                label: const Text('技术指南', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.textDim,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 4),
+
+              // 关于
+              TextButton.icon(
+                key: WelcomeUiKeys.footerAboutButton,
                 onPressed: () => _showAboutDialog(context),
                 icon: const Icon(Icons.info_outline_rounded, size: 15),
                 label: const Text('关于系统', style: TextStyle(fontSize: 12)),

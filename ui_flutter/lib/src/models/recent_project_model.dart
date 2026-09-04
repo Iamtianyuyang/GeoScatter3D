@@ -36,4 +36,11 @@ class RecentProjectItem {
         .toString()
         .substring(0, 10);
   }
+
+  Map<String, dynamic> toJson() => {
+    'path': path,
+    'displayName': displayName,
+    'timestamp': timestampUnix,
+    'time': relativeTimeStr,
+  };
 }

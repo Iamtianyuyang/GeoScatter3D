@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import 'welcome_ui_keys.dart';
 
 class NewProjectDialog extends StatefulWidget {
   final GeoScatter3dService service;
@@ -50,11 +51,15 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
       return;
     }
 
-    final success = widget.service.loadDataset(path);
-    if (success) {
-      Navigator.of(context).pop();
+    final res = widget.service.executeAction('welcome.new_project', {
+      'path': path,
+      'name': _nameController.text.trim(),
+      'threads': _threads.toInt(),
+    });
+    if (res['success'] == true) {
+      Navigator.of(context).pop(true);
     } else {
-      setState(() => _errorMessage = '加载或转换数据失败，请检查文件格式是否有效');
+      setState(() => _errorMessage = res['message'] as String? ?? '加载或转换数据失败，请检查文件格式是否有效');
     }
   }
 
@@ -93,6 +98,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 ),
                 const Spacer(),
                 IconButton(
+                  key: WelcomeUiKeys.newProjectDialogCloseButton,
                   icon: const Icon(Icons.close, size: 18, color: AppTheme.textDim),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
@@ -108,6 +114,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               children: [
                 Expanded(
                   child: TextField(
+                    key: WelcomeUiKeys.newProjectDialogPathInput,
                     controller: _pathController,
                     onChanged: _onPathChanged,
                     style: const TextStyle(fontSize: 13, fontFamily: 'Consolas'),
@@ -121,6 +128,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
+                  key: WelcomeUiKeys.newProjectDialogBrowseButton,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -142,6 +150,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textBody)),
             const SizedBox(height: 6),
             TextField(
+              key: WelcomeUiKeys.newProjectDialogNameInput,
               controller: _nameController,
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
@@ -163,6 +172,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               ],
             ),
             Slider(
+              key: WelcomeUiKeys.newProjectDialogThreadsSlider,
               value: _threads,
               min: 1,
               max: 32,
@@ -177,15 +187,15 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.red.withAlpha(20),
+                  color: const Color(0xFFFEF2F2),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.red.withAlpha(80)),
+                  border: Border.all(color: const Color(0xFFFCA5A5)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, size: 16, color: Colors.redAccent),
+                    const Icon(Icons.error_outline, size: 16, color: Color(0xFFDC2626)),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(_errorMessage!, style: const TextStyle(fontSize: 12, color: Colors.redAccent))),
+                    Expanded(child: Text(_errorMessage!, style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626)))),
                   ],
                 ),
               ),
@@ -195,11 +205,13 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
+                  key: WelcomeUiKeys.newProjectDialogCancelButton,
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
+                  key: WelcomeUiKeys.newProjectDialogSubmitButton,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryBlue,
                     foregroundColor: Colors.white,
