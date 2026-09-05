@@ -742,7 +742,7 @@ class GeoScatter3dService extends ChangeNotifier {
           [
             '--config',
             configPath,
-            '--csv',
+            lower.endsWith('.dat') ? '--dat' : '--csv',
             resolvedSource,
             '--bundle',
             targetBundleDir,
@@ -750,20 +750,29 @@ class GeoScatter3dService extends ChangeNotifier {
           workingDirectory: repoRoot,
         );
         if (result.exitCode != 0) {
-          debugPrint('[Preprocess Warning] Process exit ${result.exitCode}: ${result.stderr}');
+          final errDetail = result.stderr.toString().trim();
+          debugPrint('[Preprocess Warning] Process exit ${result.exitCode}: $errDetail');
+          return {
+            'success': false,
+            'message': '数据预处理构建失败: ${errDetail.isNotEmpty ? errDetail : "退出码 ${result.exitCode}"}',
+          };
         }
       } catch (e) {
         debugPrint('[Preprocess Error] $e');
+        return {
+          'success': false,
+          'message': '启动预处理构建器失败: $e',
+        };
       }
+    } else {
+      return {
+        'success': false,
+        'message': '未找到预处理器可执行文件 GeoScatter3DPreprocess.exe',
+      };
     }
 
-    // 优先尝试载入刚刚生成的工区包，如果未生成则回退到备选工区
     String? bundleToLoad = resolveDatasetPath(targetBundleDir);
-    if (bundleToLoad == null || !Directory(bundleToLoad).existsSync()) {
-      bundleToLoad = resolveDatasetPath('data/sample-points.gs3d.bundle');
-    }
-
-    if (bundleToLoad != null) {
+    if (bundleToLoad != null && Directory(bundleToLoad).existsSync()) {
       final ok = loadDataset(bundleToLoad);
       return {
         'success': ok,
@@ -772,7 +781,7 @@ class GeoScatter3dService extends ChangeNotifier {
       };
     }
 
-    return {'success': false, 'message': '工程构建失败，未能生成工区包'};
+    return {'success': false, 'message': '工程构建失败，未能生成工区包目录: $targetBundleDir'};
   }
 
   /// 异步流式预处理构建：监听 stdout / stderr 输出并实时反馈进度状态
@@ -837,6 +846,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
     emitProgress('初始化构建环境', 0.10, '启动离线预处理构建器...');
 
+    String lastStderr = '';
     if (preprocessExe != null && File(preprocessExe).existsSync()) {
       try {
         final process = await Process.start(
@@ -844,7 +854,7 @@ class GeoScatter3dService extends ChangeNotifier {
           [
             '--config',
             configPath,
-            '--csv',
+            lower.endsWith('.dat') ? '--dat' : '--csv',
             resolvedSource,
             '--bundle',
             targetBundleDir,
@@ -853,6 +863,17 @@ class GeoScatter3dService extends ChangeNotifier {
         );
         _activePreprocessProcess = process;
         notifyListeners();
+
+        process.stderr
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .listen((errLine) {
+          final cleanErr = errLine.trim();
+          if (cleanErr.isNotEmpty) {
+            lastStderr = cleanErr;
+            debugPrint('[Preprocess stderr] $cleanErr');
+          }
+        });
 
         final sub = process.stdout
             .transform(utf8.decoder)
@@ -887,12 +908,19 @@ class GeoScatter3dService extends ChangeNotifier {
         }
 
         if (exitCode != 0) {
-          debugPrint('[Preprocess Warning] Process exit $exitCode');
+          final errMsg = lastStderr.isNotEmpty ? lastStderr : '退出码 $exitCode';
+          emitProgress('构建失败', 0.0, '数据转换失败: $errMsg', isRunning: false, isFailed: true, err: errMsg);
+          return {'success': false, 'message': '数据转换构建失败 ($errMsg)'};
         }
       } catch (e) {
         debugPrint('[Preprocess Error] $e');
         _activePreprocessProcess = null;
+        emitProgress('启动失败', 0.0, '未能启动构建器: $e', isRunning: false, isFailed: true, err: e.toString());
+        return {'success': false, 'message': '未能启动构建器: $e'};
       }
+    } else {
+      emitProgress('构建失败', 0.0, '未找到预处理程序 GeoScatter3DPreprocess.exe', isRunning: false, isFailed: true, err: '缺少构建器');
+      return {'success': false, 'message': '未找到预处理程序 GeoScatter3DPreprocess.exe'};
     }
 
     if (_preprocessCancelled) {
@@ -902,11 +930,7 @@ class GeoScatter3dService extends ChangeNotifier {
     emitProgress('挂载工区包', 0.96, '正在载入生成的金字塔工区包...');
 
     String? bundleToLoad = resolveDatasetPath(targetBundleDir);
-    if (bundleToLoad == null || !Directory(bundleToLoad).existsSync()) {
-      bundleToLoad = resolveDatasetPath('data/sample-points.gs3d.bundle');
-    }
-
-    if (bundleToLoad != null) {
+    if (bundleToLoad != null && Directory(bundleToLoad).existsSync()) {
       final ok = loadDataset(bundleToLoad);
       emitProgress('完成', 1.0, '工区创建成功，已载入工作台', isRunning: false, isFinished: true);
       return {
@@ -917,7 +941,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
 
     emitProgress('构建失败', 0.0, '未能生成有效的工区包目录', isRunning: false, isFailed: true, err: '未能生成工区包');
-    return {'success': false, 'message': '工程构建失败，未能生成工区包'};
+    return {'success': false, 'message': '工程构建失败，未能生成工区包目录: $targetBundleDir'};
   }
 
   /// 加载数据集文件（.gs3d、.gs3d.bundle 等）
@@ -1462,10 +1486,14 @@ class GeoScatter3dService extends ChangeNotifier {
         if (resolved == null) {
           return {'success': false, 'message': '指定的数据集路径不存在: $path'};
         }
+        final lower = resolved.toLowerCase();
+        if (lower.endsWith('.csv') || lower.endsWith('.dat')) {
+          return buildAndLoadProject(path: resolved);
+        }
         final ok = loadDataset(resolved);
         return {
           'success': ok,
-          'message': ok ? '成功打开工程: $resolved' : '工程加载失败',
+          'message': ok ? '成功打开工程: $resolved' : '工程加载失败，请检查格式是否为 GS3D v2',
           'data': ok ? _summary.toJson() : null,
         };
 

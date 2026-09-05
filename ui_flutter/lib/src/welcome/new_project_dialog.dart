@@ -5,10 +5,12 @@ import 'welcome_ui_keys.dart';
 
 class NewProjectDialog extends StatefulWidget {
   final GeoScatter3dService service;
+  final String? initialPath;
 
   const NewProjectDialog({
     super.key,
     required this.service,
+    this.initialPath,
   });
 
   @override
@@ -16,8 +18,8 @@ class NewProjectDialog extends StatefulWidget {
 }
 
 class _NewProjectDialogState extends State<NewProjectDialog> {
-  final _pathController = TextEditingController(text: 'examples/sample-points.csv');
-  final _nameController = TextEditingController(text: 'sample-points');
+  late final TextEditingController _pathController;
+  late final TextEditingController _nameController;
   double _threads = 16;
   bool _isBuilding = false;
   String? _errorMessage;
@@ -26,6 +28,16 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   String _voxelMode = 'xyz';
   double _maxPointsPerTile = 50000;
   PreprocessProgressInfo? _progressInfo;
+
+  @override
+  void initState() {
+    super.initState();
+    _pathController = TextEditingController(text: widget.initialPath ?? 'examples/sample-points.csv');
+    _nameController = TextEditingController(text: 'sample-points');
+    if (widget.initialPath != null && widget.initialPath!.isNotEmpty) {
+      _onPathChanged(widget.initialPath!);
+    }
+  }
 
   @override
   void dispose() {

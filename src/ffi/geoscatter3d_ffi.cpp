@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
@@ -136,10 +137,29 @@ int32_t gs3d_ffi_load_dataset(const char* path)
             const auto candidate_source = fs_path / "source.gs3d";
             if (std::filesystem::exists(candidate_source)) {
                 source_gs3d = candidate_source;
+            } else {
+                for (const auto& entry : std::filesystem::directory_iterator(fs_path)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".gs3d") {
+                        source_gs3d = entry.path();
+                        break;
+                    }
+                }
             }
             const auto candidate_lod = fs_path / "source.gs3dlod";
             if (std::filesystem::exists(candidate_lod)) {
                 lod_file = candidate_lod;
+            } else {
+                const auto candidate_lod2 = fs_path / "lod.gs3dlod";
+                if (std::filesystem::exists(candidate_lod2)) {
+                    lod_file = candidate_lod2;
+                } else {
+                    for (const auto& entry : std::filesystem::directory_iterator(fs_path)) {
+                        if (entry.is_regular_file() && entry.path().extension() == ".gs3dlod") {
+                            lod_file = entry.path();
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -200,6 +220,15 @@ int32_t gs3d_ffi_load_dataset(const char* path)
             g_state.scalar_clip[1] = header.value_max;
         } catch (...) {
             g_state.cached_points.clear();
+            std::ifstream in(source_gs3d, std::ios::binary);
+            if (in.is_open()) {
+                in.seekg(header.point_data_offset);
+                const size_t preview_count = std::min<uint64_t>(header.point_count, 65536);
+                g_state.cached_points.resize(preview_count);
+                in.read(reinterpret_cast<char*>(g_state.cached_points.data()), preview_count * sizeof(gs3d::data::Gs3dPoint));
+            }
+            g_state.scalar_clip[0] = header.value_min;
+            g_state.scalar_clip[1] = header.value_max;
         }
 
         g_state.dataset_loaded = true;

@@ -5,10 +5,12 @@ import 'welcome_ui_keys.dart';
 
 class OpenProjectDialog extends StatefulWidget {
   final GeoScatter3dService service;
+  final String? initialPath;
 
   const OpenProjectDialog({
     super.key,
     required this.service,
+    this.initialPath,
   });
 
   @override
@@ -16,8 +18,15 @@ class OpenProjectDialog extends StatefulWidget {
 }
 
 class _OpenProjectDialogState extends State<OpenProjectDialog> {
-  final _pathController = TextEditingController(text: 'data/sample-points.gs3d.bundle');
+  late final TextEditingController _pathController;
   String? _errorMessage;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pathController = TextEditingController(text: widget.initialPath ?? 'data/sample-points.gs3d.bundle');
+  }
 
   @override
   void dispose() {
@@ -45,18 +54,37 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
     }
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final path = _pathController.text.trim();
     if (path.isEmpty) {
       setState(() => _errorMessage = '请输入有效的数据文件或目录路径');
       return;
     }
 
-    final res = widget.service.executeAction('welcome.open_project', {'path': path});
-    if (res['success'] == true) {
-      Navigator.of(context).pop(true);
+    final lower = path.toLowerCase();
+    final isRaw = lower.endsWith('.csv') || lower.endsWith('.dat');
+
+    if (isRaw) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+      final res = await widget.service.buildAndLoadProjectAsync(path: path);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        if (res['success'] == true) {
+          Navigator.of(context).pop(true);
+        } else {
+          setState(() => _errorMessage = res['message'] as String? ?? '未能构建或载入该散点数据');
+        }
+      }
     } else {
-      setState(() => _errorMessage = res['message'] as String? ?? '未能识别或加载该数据包，请检查路径及文件格式是否为 GS3D v2');
+      final res = widget.service.executeAction('welcome.open_project', {'path': path});
+      if (res['success'] == true) {
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() => _errorMessage = res['message'] as String? ?? '未能识别或加载该数据包，请检查路径及文件格式是否为 GS3D v2');
+      }
     }
   }
 
@@ -229,9 +257,15 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
                   key: WelcomeUiKeys.openProjectDialogSubmitButton,
-                  onPressed: _submit,
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('立即载入'),
+                  onPressed: _isLoading ? null : _submit,
+                  icon: _isLoading
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check, size: 16),
+                  label: Text(_isLoading ? '正在转换构建...' : '立即载入'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryBlue,
                     foregroundColor: Colors.white,

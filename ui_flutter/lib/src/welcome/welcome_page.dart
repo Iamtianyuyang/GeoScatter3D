@@ -51,7 +51,7 @@ class _WelcomePageState extends State<WelcomePage> {
       showDialog(
         context: context,
         barrierDismissible: true,
-        builder: (_) => NewProjectDialog(service: widget.service),
+        builder: (_) => NewProjectDialog(service: widget.service, initialPath: path),
       );
     }
   }

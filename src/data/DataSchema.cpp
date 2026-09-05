@@ -21,24 +21,31 @@ ResolvedDataSchema DataSchema::resolve(
     const std::unordered_map<std::string, std::size_t>& field_to_column,
     const std::vector<std::string>& header_fields
 ) const {
-    auto find_required = [&](const std::string& field) -> std::size_t {
+    auto find_with_fallback = [&](const std::string& field, const std::vector<std::string>& aliases, std::size_t fallback_pos) -> std::size_t {
         const std::string key = normalize(field);
         const auto it = field_to_column.find(key);
-
-        if (it == field_to_column.end()) {
-            throw std::runtime_error(
-                "DataSchema: required field not found: " + field
-            );
+        if (it != field_to_column.end()) {
+            return it->second;
         }
-
-        return it->second;
+        for (const auto& alias : aliases) {
+            const auto it_alias = field_to_column.find(normalize(alias));
+            if (it_alias != field_to_column.end()) {
+                return it_alias->second;
+            }
+        }
+        if (fallback_pos < header_fields.size()) {
+            return fallback_pos;
+        }
+        throw std::runtime_error(
+            "DataSchema: required field not found: " + field
+        );
     };
 
     ResolvedDataSchema resolved;
 
-    // X and Y are always required by name — every format has them.
-    resolved.x_col = find_required(x_field);
-    resolved.y_col = find_required(y_field);
+    // X and Y are required by name or aliases, with position fallback
+    resolved.x_col = find_with_fallback(x_field, {"x", "easting", "east", "lon", "longitude", "x_coord"}, 0);
+    resolved.y_col = find_with_fallback(y_field, {"y", "northing", "north", "lat", "latitude", "y_coord"}, 1);
 
     // Z and primary value: try the configured name first.
     // If not found, fall back by position — column 2 (third) for Z,
