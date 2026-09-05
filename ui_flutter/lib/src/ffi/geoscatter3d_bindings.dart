@@ -72,8 +72,20 @@ typedef _dart_get_recent_project_timestamp = int Function(int index);
 typedef _c_remember_recent_project = ffi.Void Function(ffi.Pointer<Utf8> path);
 typedef _dart_remember_recent_project = void Function(ffi.Pointer<Utf8> path);
 
+typedef _c_remove_recent_project = ffi.Void Function(ffi.Pointer<Utf8> path);
+typedef _dart_remove_recent_project = void Function(ffi.Pointer<Utf8> path);
+
 typedef _c_clear_recent_projects = ffi.Void Function();
 typedef _dart_clear_recent_projects = void Function();
+
+typedef _c_init_drag_drop = ffi.Void Function();
+typedef _dart_init_drag_drop = void Function();
+
+typedef _c_poll_dropped_file = ffi.Pointer<Utf8> Function();
+typedef _dart_poll_dropped_file = ffi.Pointer<Utf8> Function();
+
+typedef _c_set_dropped_file = ffi.Void Function(ffi.Pointer<Utf8> path);
+typedef _dart_set_dropped_file = void Function(ffi.Pointer<Utf8> path);
 
 typedef _c_get_gpu_count = ffi.Int32 Function();
 typedef _dart_get_gpu_count = int Function();
@@ -143,7 +155,11 @@ class GeoScatter3dBindings {
   late final _dart_get_recent_project_path get_recent_project_path;
   late final _dart_get_recent_project_timestamp get_recent_project_timestamp;
   late final _dart_remember_recent_project remember_recent_project;
+  late final _dart_remove_recent_project remove_recent_project;
   late final _dart_clear_recent_projects clear_recent_projects;
+  late final _dart_init_drag_drop init_drag_drop;
+  late final _dart_poll_dropped_file poll_dropped_file;
+  late final _dart_set_dropped_file set_dropped_file;
 
   late final _dart_get_gpu_count get_gpu_count;
   late final _dart_get_gpu_name get_gpu_name;
@@ -184,7 +200,11 @@ class GeoScatter3dBindings {
     get_recent_project_path = dylib.lookupFunction<_c_get_recent_project_path, _dart_get_recent_project_path>('gs3d_ffi_get_recent_project_path');
     get_recent_project_timestamp = dylib.lookupFunction<_c_get_recent_project_timestamp, _dart_get_recent_project_timestamp>('gs3d_ffi_get_recent_project_timestamp');
     remember_recent_project = dylib.lookupFunction<_c_remember_recent_project, _dart_remember_recent_project>('gs3d_ffi_remember_recent_project');
+    remove_recent_project = dylib.lookupFunction<_c_remove_recent_project, _dart_remove_recent_project>('gs3d_ffi_remove_recent_project');
     clear_recent_projects = dylib.lookupFunction<_c_clear_recent_projects, _dart_clear_recent_projects>('gs3d_ffi_clear_recent_projects');
+    init_drag_drop = dylib.lookupFunction<_c_init_drag_drop, _dart_init_drag_drop>('gs3d_ffi_init_drag_drop');
+    poll_dropped_file = dylib.lookupFunction<_c_poll_dropped_file, _dart_poll_dropped_file>('gs3d_ffi_poll_dropped_file');
+    set_dropped_file = dylib.lookupFunction<_c_set_dropped_file, _dart_set_dropped_file>('gs3d_ffi_set_dropped_file');
 
     get_gpu_count = dylib.lookupFunction<_c_get_gpu_count, _dart_get_gpu_count>('gs3d_ffi_get_gpu_count');
     get_gpu_name = dylib.lookupFunction<_c_get_gpu_name, _dart_get_gpu_name>('gs3d_ffi_get_gpu_name');

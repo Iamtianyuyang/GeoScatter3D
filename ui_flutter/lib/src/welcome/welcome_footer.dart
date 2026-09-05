@@ -104,24 +104,24 @@ class WelcomeFooter extends StatelessWidget {
             Text('关于 GeoScatter3D', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'GeoScatter3D 三维散点数据流式可视化系统',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textTitle),
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               '• 跨平台 Flutter + Vulkan 1.3 现代桌面/移动架构\n'
               '• GS3D v2 显式小端标准与八叉树 LOD 金字塔\n'
               '• C-ABI 高性能 FFI 桥接，亿级点云零开销流式加载\n'
               '• 全异步多线程解耦与 JSON-RPC 控制面',
               style: TextStyle(fontSize: 13, color: AppTheme.textBody, height: 1.6),
             ),
-            SizedBox(height: 12),
-            Text('Version: 2.0.0-rc1 (Build 2026.09)', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+            const SizedBox(height: 12),
+            Text('引擎内核版本: ${service.engineVersion}', style: const TextStyle(fontSize: 12, color: AppTheme.textDim)),
           ],
         ),
         actions: [

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/welcome/gpu_selection_dialog.dart';
@@ -21,9 +22,9 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all 12 registered welcome actions', () {
+    test('getAvailableActions returns all 15 registered welcome actions', () {
       final actions = service.getAvailableActions();
-      expect(actions.length, equals(12));
+      expect(actions.length, equals(15));
       final ids = actions.map((a) => a.id).toSet();
       expect(ids, containsAll([
         'welcome.quick_demo',
@@ -32,9 +33,12 @@ void main() {
         'welcome.browse_file',
         'welcome.browse_folder',
         'welcome.recent.open',
+        'welcome.recent.remove',
         'welcome.recent.clear',
         'welcome.gpu.set_preferred',
         'welcome.gpu.get_list',
+        'welcome.drop_file',
+        'welcome.preprocess.cancel',
         'welcome.get_state',
         'welcome.about.get_info',
         'welcome.docs.get_info',
@@ -138,6 +142,27 @@ void main() {
       expect(openInvalidRes['success'], isFalse);
     });
 
+    test('executeAction welcome.recent.remove removes single project', () {
+      if (service.recentProjects.isNotEmpty) {
+        final path = service.recentProjects.first.path;
+        final initialCount = service.recentProjects.length;
+        final res = service.executeAction('welcome.recent.remove', {'path': path});
+        expect(res['success'], isTrue);
+        expect(service.recentProjects.length, equals(initialCount - 1));
+      }
+    });
+
+    test('executeAction welcome.drop_file processes dropped path', () {
+      final res = service.executeAction('welcome.drop_file', {'path': 'data/sample-points.gs3d.bundle'});
+      expect(res['success'], isTrue);
+      expect(service.isWorkbenchActive, isTrue);
+    });
+
+    test('executeAction welcome.preprocess.cancel cancels active build', () {
+      final res = service.executeAction('welcome.preprocess.cancel');
+      expect(res['success'], isTrue);
+    });
+
     test('executeAction handles unknown action gracefully', () {
       final res = service.executeAction('unknown.action.id');
       expect(res['success'], isFalse);
@@ -152,7 +177,7 @@ void main() {
       });
       final listRes = jsonDecode(service.executeJsonRpc(listRpc));
       expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(12));
+      expect((listRes['result'] as List).length, equals(15));
 
       final actionRpc = jsonEncode({
         'jsonrpc': '2.0',
@@ -264,6 +289,13 @@ void main() {
     });
 
     testWidgets('NewProjectDialog binds all keys and sliders', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: NewProjectDialog(service: service)),
@@ -280,6 +312,14 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.newProjectDialogCancelButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.newProjectDialogSubmitButton), findsOneWidget);
 
+      // 测试高级选项折叠与展开
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown), findsNothing);
+      await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle));
+      await tester.pump();
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogPointsPerTileSlider), findsOneWidget);
+
       // 点击快捷填充示例 Chip
       await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogSampleChip));
       await tester.pump();
@@ -294,7 +334,29 @@ void main() {
       expect(service.isWorkbenchActive, isTrue);
     });
 
-    testWidgets('RecentProjectsCard displays items, keys and empty-state demo button', (WidgetTester tester) async {
+    testWidgets('RecentProjectsCard removes single item', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: RecentProjectsCard(service: service)),
+        ),
+      );
+      await tester.pump();
+
+      if (service.recentProjects.isNotEmpty) {
+        final initialCount = service.recentProjects.length;
+        expect(find.byKey(WelcomeUiKeys.recentItemRemove(0)), findsOneWidget);
+        await tester.tap(find.byKey(WelcomeUiKeys.recentItemRemove(0)));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(service.recentProjects.length, equals(initialCount - 1));
+      }
+    });
+
+    testWidgets('RecentProjectsCard supports clear-all and empty-state demo button', (WidgetTester tester) async {
+      if (service.recentProjects.isEmpty) {
+        service.executeAction('welcome.quick_demo');
+        service.closeWorkbench();
+      }
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: RecentProjectsCard(service: service)),
@@ -306,7 +368,7 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.recentClearButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsOneWidget);
 
-      // 点击清空
+      // 点击清空全部
       await tester.tap(find.byKey(WelcomeUiKeys.recentClearButton));
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -413,6 +475,52 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.footerGpuButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.footerDocsButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.footerAboutButton), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('WelcomePage handles onFileDropped and keyboard shortcuts', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WelcomePage(service: service),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(WelcomeUiKeys.welcomeDragDropTarget), findsOneWidget);
+
+      // 模拟文件拖放通知
+      service.handleDroppedPath('data/sample-points.gs3d.bundle');
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('已载入拖放工程: data/sample-points.gs3d.bundle'), findsOneWidget);
+
+      // 模拟 Ctrl+N 打开新建工程对话框
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(WelcomeUiKeys.newProjectDialogNameInput), findsOneWidget);
+      await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogCloseButton));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // 模拟 Ctrl+O 打开工程对话框
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyO);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton), findsOneWidget);
+      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogCloseButton));
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

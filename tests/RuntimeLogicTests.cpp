@@ -142,6 +142,17 @@ void test_recent_projects_persist_and_dedupe()
         "recent projects can be cleared from the welcome window"
     );
 
+    gs3d::app::remember_recent_project(project_a);
+    gs3d::app::remember_recent_project(project_b);
+    gs3d::app::remove_recent_project(project_a);
+    const auto remaining = gs3d::app::load_recent_projects();
+    expect(
+        remaining.size() == 1 &&
+            remaining.front().path.filename() == project_b.filename(),
+        "recent project can be removed individually"
+    );
+    gs3d::app::clear_recent_projects();
+
     std::error_code ec;
     std::filesystem::remove_all(test_root, ec);
 }

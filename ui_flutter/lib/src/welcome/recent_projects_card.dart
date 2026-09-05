@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/recent_project_model.dart';
@@ -202,8 +203,10 @@ class RecentProjectsCard extends StatelessWidget {
                     final item = recentList[index];
                     return _RecentProjectTile(
                       key: WelcomeUiKeys.recentItem(index),
+                      index: index,
                       item: item,
                       onTap: () => _onOpenItem(context, item),
+                      onRemove: () => service.removeRecentProject(item.path),
                     );
                   },
                 ),
@@ -216,13 +219,17 @@ class RecentProjectsCard extends StatelessWidget {
 }
 
 class _RecentProjectTile extends StatefulWidget {
+  final int index;
   final RecentProjectItem item;
   final VoidCallback onTap;
+  final VoidCallback onRemove;
 
   const _RecentProjectTile({
     super.key,
+    required this.index,
     required this.item,
     required this.onTap,
+    required this.onRemove,
   });
 
   @override
@@ -232,8 +239,18 @@ class _RecentProjectTile extends StatefulWidget {
 class _RecentProjectTileState extends State<_RecentProjectTile> {
   bool _isHovered = false;
 
+  bool get _exists {
+    try {
+      return File(widget.item.path).existsSync() || Directory(widget.item.path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final fileExists = _exists;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -252,13 +269,17 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: _isHovered ? AppTheme.primaryBlueBg : AppTheme.surfaceMuted,
+                    color: !fileExists
+                        ? const Color(0xFFFEF2F2)
+                        : (_isHovered ? AppTheme.primaryBlueBg : AppTheme.surfaceMuted),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
-                    Icons.dataset_outlined,
+                    !fileExists ? Icons.warning_amber_rounded : Icons.dataset_outlined,
                     size: 20,
-                    color: _isHovered ? AppTheme.primaryBlue : AppTheme.textDim,
+                    color: !fileExists
+                        ? const Color(0xFFDC2626)
+                        : (_isHovered ? AppTheme.primaryBlue : AppTheme.textDim),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -268,15 +289,33 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.item.displayName,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: _isHovered ? AppTheme.primaryBlue : AppTheme.textTitle,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              widget.item.displayName,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: _isHovered ? AppTheme.primaryBlue : AppTheme.textTitle,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (!fileExists) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFFCA5A5)),
+                              ),
+                              child: const Text('文件已失效', style: TextStyle(fontSize: 10, color: Color(0xFFDC2626))),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -302,7 +341,20 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                     color: AppTheme.textDim,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
+
+                // 移除单项按钮
+                IconButton(
+                  key: WelcomeUiKeys.recentItemRemove(widget.index),
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  tooltip: '从最近列表中移除',
+                  color: AppTheme.textDim,
+                  splashRadius: 14,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: widget.onRemove,
+                ),
+                const SizedBox(width: 4),
 
                 // 载入箭头
                 Icon(

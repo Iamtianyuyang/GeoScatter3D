@@ -76,6 +76,7 @@ GS3D_FFI_API int32_t gs3d_ffi_get_recent_project_count(void);
 GS3D_FFI_API const char* gs3d_ffi_get_recent_project_path(int32_t index);
 GS3D_FFI_API int64_t gs3d_ffi_get_recent_project_timestamp(int32_t index);
 GS3D_FFI_API void gs3d_ffi_remember_recent_project(const char* path);
+GS3D_FFI_API void gs3d_ffi_remove_recent_project(const char* path);
 GS3D_FFI_API void gs3d_ffi_clear_recent_projects(void);
 
 // ============================================================================
@@ -116,6 +117,14 @@ GS3D_FFI_API void gs3d_ffi_get_scalar_range(float* out_min, float* out_max);
 
 GS3D_FFI_API const char* gs3d_ffi_pick_file(const char* filter_type);
 GS3D_FFI_API const char* gs3d_ffi_pick_folder(void);
+
+// ============================================================================
+// 12. 桌面原生文件拖拽 (Desktop Drag & Drop)
+// ============================================================================
+
+GS3D_FFI_API void gs3d_ffi_init_drag_drop(void);
+GS3D_FFI_API const char* gs3d_ffi_poll_dropped_file(void);
+GS3D_FFI_API void gs3d_ffi_set_dropped_file(const char* path);
 
 #ifdef __cplusplus
 }

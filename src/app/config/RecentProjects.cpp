@@ -116,42 +116,9 @@ std::vector<RecentProjectEntry> load_recent_projects(
     return unique_entries;
 }
 
-void remember_recent_project(
-    const std::filesystem::path& project_path,
-    std::size_t max_entries
+void save_recent_projects_internal(
+    const std::vector<RecentProjectEntry>& entries
 ) {
-    if (project_path.empty()) {
-        return;
-    }
-
-    auto entries = load_recent_projects(max_entries);
-    const auto normalized = normalized_path(project_path);
-    const auto key = path_key(normalized);
-    entries.erase(
-        std::remove_if(
-            entries.begin(),
-            entries.end(),
-            [&key](const auto& entry) {
-                return path_key(entry.path) == key;
-            }
-        ),
-        entries.end()
-    );
-    entries.insert(
-        entries.begin(),
-        RecentProjectEntry{
-            .path = normalized,
-            .last_opened_unix =
-                std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now()
-                        .time_since_epoch()
-                ).count()
-        }
-    );
-    if (entries.size() > max_entries) {
-        entries.resize(max_entries);
-    }
-
     const auto storage_path = recent_projects_storage_path();
     std::error_code ec;
     std::filesystem::create_directories(
@@ -194,6 +161,70 @@ void remember_recent_project(
             storage_path,
             ec
         );
+    }
+}
+
+void remember_recent_project(
+    const std::filesystem::path& project_path,
+    std::size_t max_entries
+) {
+    if (project_path.empty()) {
+        return;
+    }
+
+    auto entries = load_recent_projects(max_entries);
+    const auto normalized = normalized_path(project_path);
+    const auto key = path_key(normalized);
+    entries.erase(
+        std::remove_if(
+            entries.begin(),
+            entries.end(),
+            [&key](const auto& entry) {
+                return path_key(entry.path) == key;
+            }
+        ),
+        entries.end()
+    );
+    entries.insert(
+        entries.begin(),
+        RecentProjectEntry{
+            .path = normalized,
+            .last_opened_unix =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now()
+                        .time_since_epoch()
+                ).count()
+        }
+    );
+    if (entries.size() > max_entries) {
+        entries.resize(max_entries);
+    }
+
+    save_recent_projects_internal(entries);
+}
+
+void remove_recent_project(
+    const std::filesystem::path& project_path
+) {
+    if (project_path.empty()) {
+        return;
+    }
+    auto entries = load_recent_projects(100);
+    const auto normalized = normalized_path(project_path);
+    const auto key = path_key(normalized);
+    const auto original_size = entries.size();
+    entries.erase(
+        std::remove_if(
+            entries.begin(),
+            entries.end(),
+            [&key](const auto& entry) {
+                return path_key(entry.path) == key;
+            }
+        ),
+        entries.end()
+    );
+    if (entries.size() != original_size) {
+        save_recent_projects_internal(entries);
     }
 }
 

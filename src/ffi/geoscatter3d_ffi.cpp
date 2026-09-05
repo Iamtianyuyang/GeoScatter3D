@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <shobjidl.h>
+#include <shellapi.h>
 #endif
 
 #include "app/PreprocessedBundle.hpp"
@@ -376,6 +377,16 @@ void gs3d_ffi_remember_recent_project(const char* path)
     } catch (...) {}
 }
 
+void gs3d_ffi_remove_recent_project(const char* path)
+{
+    if (path == nullptr || path[0] == '\0') return;
+    std::lock_guard<std::mutex> lock(g_state.mutex);
+    try {
+        gs3d::app::remove_recent_project(path);
+        g_state.recent_projects = gs3d::app::load_recent_projects(8);
+    } catch (...) {}
+}
+
 void gs3d_ffi_clear_recent_projects(void)
 {
     std::lock_guard<std::mutex> lock(g_state.mutex);
@@ -569,6 +580,112 @@ const char* gs3d_ffi_pick_folder(void)
     if (need_uninit) CoUninitialize();
 #endif
     return "";
+}
+
+// ============================================================================
+// 12. 桌面原生文件拖拽 (Desktop Drag & Drop)
+// ============================================================================
+
+static std::mutex g_drag_drop_mutex;
+static std::string g_dropped_file_path;
+static bool g_drag_drop_initialized = false;
+
+#if defined(_WIN32)
+static WNDPROC g_original_wndproc = nullptr;
+
+static LRESULT CALLBACK DragDropWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_DROPFILES) {
+        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+        UINT count = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+        if (count > 0) {
+            wchar_t szPath[MAX_PATH];
+            if (DragQueryFileW(hDrop, 0, szPath, MAX_PATH) > 0) {
+                int size_needed = WideCharToMultiByte(CP_UTF8, 0, szPath, -1, NULL, 0, NULL, NULL);
+                if (size_needed > 1) {
+                    std::string utf8_path(size_needed - 1, '\0');
+                    WideCharToMultiByte(CP_UTF8, 0, szPath, -1, &utf8_path[0], size_needed, NULL, NULL);
+                    std::replace(utf8_path.begin(), utf8_path.end(), '\\', '/');
+                    std::lock_guard<std::mutex> lock(g_drag_drop_mutex);
+                    g_dropped_file_path = utf8_path;
+                }
+            }
+        }
+        DragFinish(hDrop);
+        return 0;
+    }
+    if (g_original_wndproc) {
+        return CallWindowProcW(g_original_wndproc, hwnd, uMsg, wParam, lParam);
+    }
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+}
+#endif
+
+void gs3d_ffi_init_drag_drop(void)
+{
+#if defined(_WIN32)
+    std::lock_guard<std::mutex> lock(g_drag_drop_mutex);
+    if (g_drag_drop_initialized) return;
+
+    HWND flutter_hwnd = nullptr;
+    const DWORD current_pid = GetCurrentProcessId();
+
+    struct FindData { DWORD pid; HWND hwnd; } fd{ current_pid, nullptr };
+    EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
+        auto* p = reinterpret_cast<FindData*>(lParam);
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == p->pid) {
+            wchar_t cls[128];
+            if (GetClassNameW(hwnd, cls, 128) > 0) {
+                if (std::wcscmp(cls, L"FLUTTER_RUNNER_WIN32_WINDOW") == 0) {
+                    p->hwnd = hwnd;
+                    return FALSE;
+                }
+            }
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&fd));
+
+    flutter_hwnd = fd.hwnd;
+
+    if (flutter_hwnd != nullptr) {
+        DragAcceptFiles(flutter_hwnd, TRUE);
+        g_original_wndproc = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(flutter_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(DragDropWndProc))
+        );
+
+        EnumChildWindows(flutter_hwnd, [](HWND child, LPARAM) -> BOOL {
+            DragAcceptFiles(child, TRUE);
+            return TRUE;
+        }, 0);
+
+        g_drag_drop_initialized = true;
+    }
+#endif
+}
+
+const char* gs3d_ffi_poll_dropped_file(void)
+{
+    std::lock_guard<std::mutex> lock(g_drag_drop_mutex);
+    if (g_dropped_file_path.empty()) {
+        return "";
+    }
+    static thread_local std::string s_dropped;
+    s_dropped = g_dropped_file_path;
+    g_dropped_file_path.clear();
+    return s_dropped.c_str();
+}
+
+void gs3d_ffi_set_dropped_file(const char* path)
+{
+    std::lock_guard<std::mutex> lock(g_drag_drop_mutex);
+    if (path == nullptr || path[0] == '\0') {
+        g_dropped_file_path.clear();
+    } else {
+        std::string p = path;
+        std::replace(p.begin(), p.end(), '\\', '/');
+        g_dropped_file_path = p;
+    }
 }
 
 } // extern "C"

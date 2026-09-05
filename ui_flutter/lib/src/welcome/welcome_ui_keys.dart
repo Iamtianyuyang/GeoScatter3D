@@ -17,6 +17,11 @@ class WelcomeUiKeys {
   static const newProjectDialogSubmitButton = ValueKey('welcome.dialog.new_project.submit_button');
   static const newProjectDialogCancelButton = ValueKey('welcome.dialog.new_project.cancel_button');
   static const newProjectDialogCloseButton = ValueKey('welcome.dialog.new_project.close_button');
+  static const newProjectDialogCancelBuildButton = ValueKey('welcome.dialog.new_project.cancel_build_button');
+  static const newProjectDialogProgressIndicator = ValueKey('welcome.dialog.new_project.progress_indicator');
+  static const newProjectDialogAdvancedToggle = ValueKey('welcome.dialog.new_project.advanced_toggle');
+  static const newProjectDialogVoxelModeDropdown = ValueKey('welcome.dialog.new_project.voxel_mode_dropdown');
+  static const newProjectDialogPointsPerTileSlider = ValueKey('welcome.dialog.new_project.points_per_tile_slider');
 
   // 3. 打开工程对话框
   static const openProjectDialogPathInput = ValueKey('welcome.dialog.open_project.path_input');
@@ -33,6 +38,7 @@ class WelcomeUiKeys {
   static const recentCancelClearButton = ValueKey('welcome.recent.cancel_clear_button');
   static const recentEmptyDemoButton = ValueKey('welcome.recent.empty_demo_button');
   static ValueKey recentItem(int index) => ValueKey('welcome.recent.item_$index');
+  static ValueKey recentItemRemove(int index) => ValueKey('welcome.recent.item_remove_$index');
 
   // 5. 底部栏按钮
   static const footerGpuButton = ValueKey('welcome.footer.gpu_button');
@@ -49,6 +55,7 @@ class WelcomeUiKeys {
   static const aboutDialogCloseButton = ValueKey('welcome.dialog.about.close_button');
   static const docsDialogCloseButton = ValueKey('welcome.dialog.docs.close_button');
 
-  // 8. 品牌徽标
+  // 8. 品牌徽标与拖拽目标
   static const heroLogo = ValueKey('welcome.hero.logo');
+  static const welcomeDragDropTarget = ValueKey('welcome.drag_drop_target');
 }

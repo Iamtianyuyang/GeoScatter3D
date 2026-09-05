@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
@@ -8,6 +9,40 @@ import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import 'geoscatter3d_bindings.dart';
+
+/// 预处理离线构建实时进度状态
+class PreprocessProgressInfo {
+  final String stage;
+  final double progress; // 0.0 ~ 1.0
+  final String detail;
+  final double elapsedSeconds;
+  final bool isRunning;
+  final bool isFinished;
+  final bool isFailed;
+  final String? errorMessage;
+
+  const PreprocessProgressInfo({
+    required this.stage,
+    required this.progress,
+    required this.detail,
+    required this.elapsedSeconds,
+    this.isRunning = true,
+    this.isFinished = false,
+    this.isFailed = false,
+    this.errorMessage,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'stage': stage,
+    'progress': progress,
+    'detail': detail,
+    'elapsed_seconds': elapsedSeconds,
+    'is_running': isRunning,
+    'is_finished': isFinished,
+    'is_failed': isFailed,
+    'error_message': errorMessage,
+  };
+}
 
 /// 动作元数据描述符，对齐 MCP 工具定义规范 (JSON-Schema)
 class UiActionDescriptor {
@@ -90,6 +125,29 @@ class GeoScatter3dService extends ChangeNotifier {
   bool get isWorkbenchActive => _isWorkbenchActive;
   WorkbenchLayoutMode get layoutMode => _layoutMode;
 
+  String get engineVersion {
+    if (!_initialized || _bindings == null) {
+      return '0.1.0 (Build 2026.09)';
+    }
+    try {
+      final ptr = _bindings!.get_version();
+      final str = ptr.toDartString();
+      return str.isNotEmpty ? str : '0.1.0 (Build 2026.09)';
+    } catch (_) {
+      return '0.1.0 (Build 2026.09)';
+    }
+  }
+
+  // 拖拽与离线构建状态
+  Timer? _dragDropTimer;
+  void Function(String path)? onFileDropped;
+  Process? _activePreprocessProcess;
+  bool _preprocessCancelled = false;
+  PreprocessProgressInfo? _latestProgress;
+
+  PreprocessProgressInfo? get latestProgress => _latestProgress;
+  bool get isPreprocessing => _activePreprocessProcess != null;
+
   List<Point3D> get points => _points;
   double get pointSize => _pointSize;
   String get colormap => _colormap;
@@ -123,6 +181,12 @@ class GeoScatter3dService extends ChangeNotifier {
       if (_initialized) {
         _refreshRecentProjects();
         _refreshGpus();
+        if (Platform.isWindows) {
+          try {
+            _bindings!.init_drag_drop();
+            _startDragDropPolling();
+          } catch (_) {}
+        }
       }
       notifyListeners();
       return _initialized;
@@ -130,6 +194,104 @@ class GeoScatter3dService extends ChangeNotifier {
       debugPrint('[GeoScatter3D FFI] Failed to initialize: $e');
       return false;
     }
+  }
+
+  void _startDragDropPolling() {
+    _dragDropTimer?.cancel();
+    _dragDropTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      pollDroppedFile();
+    });
+  }
+
+  void stopDragDropPolling() {
+    _dragDropTimer?.cancel();
+    _dragDropTimer = null;
+  }
+
+  /// 查询底层是否有新拖入的文件路径
+  String? pollDroppedFile() {
+    if (!_initialized || _bindings == null) return null;
+    try {
+      final ptr = _bindings!.poll_dropped_file();
+      final path = ptr.toDartString();
+      if (path.isNotEmpty) {
+        handleDroppedPath(path);
+        return path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 手动设置/模拟拖入文件（供测试与 AI 调用）
+  void setDroppedFile(String path) {
+    if (_bindings == null) return;
+    final ptr = path.toNativeUtf8();
+    try {
+      _bindings!.set_dropped_file(ptr);
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// 处理拖入的文件或目录路径
+  void handleDroppedPath(String path) {
+    final norm = path.replaceAll('\\', '/');
+    if (onFileDropped != null) {
+      onFileDropped!(norm);
+    }
+    final lower = norm.toLowerCase();
+    if (lower.endsWith('.gs3d') || lower.endsWith('.gs3d.bundle')) {
+      loadDataset(norm);
+    }
+    notifyListeners();
+  }
+
+  /// 移除单项最近工程记录
+  void removeRecentProject(String path) {
+    if (_bindings == null) return;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      _bindings!.remove_recent_project(pathPtr);
+      _refreshRecentProjects();
+      notifyListeners();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// 检测工程名称是否在数据目录冲突已存在
+  bool checkProjectNameConflict(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return false;
+    final repoRoot = resolveRepoRoot();
+    final bundleDir = '$repoRoot/data/$trimmed.gs3d.bundle';
+    return Directory(bundleDir).existsSync();
+  }
+
+  /// 中止当前正在运行的离线预处理构建进程
+  void cancelPreprocess() {
+    _preprocessCancelled = true;
+    if (_activePreprocessProcess != null) {
+      try {
+        _activePreprocessProcess!.kill(ProcessSignal.sigterm);
+      } catch (_) {
+        try {
+          Process.killPid(_activePreprocessProcess!.pid);
+        } catch (_) {}
+      }
+      _activePreprocessProcess = null;
+    }
+    _latestProgress = const PreprocessProgressInfo(
+      stage: '已取消',
+      progress: 0.0,
+      detail: '用户已终止构建操作',
+      elapsedSeconds: 0,
+      isRunning: false,
+      isFinished: false,
+      isFailed: true,
+      errorMessage: '构建已取消',
+    );
+    notifyListeners();
   }
 
   /// 多级候选路径解析，确保在任何工作目录或构建目录下都能正确找到点云与工程文件
@@ -288,6 +450,8 @@ class GeoScatter3dService extends ChangeNotifier {
     required String path,
     String? name,
     int threads = 8,
+    String voxelMode = 'xyz',
+    int maxPointsPerTile = 50000,
   }) {
     final trimmed = path.trim();
     if (trimmed.isEmpty) {
@@ -360,6 +524,151 @@ class GeoScatter3dService extends ChangeNotifier {
       };
     }
 
+    return {'success': false, 'message': '工程构建失败，未能生成工区包'};
+  }
+
+  /// 异步流式预处理构建：监听 stdout / stderr 输出并实时反馈进度状态
+  Future<Map<String, dynamic>> buildAndLoadProjectAsync({
+    required String path,
+    String? name,
+    int threads = 8,
+    String voxelMode = 'xyz',
+    int maxPointsPerTile = 50000,
+    void Function(PreprocessProgressInfo progress)? onProgress,
+  }) async {
+    _preprocessCancelled = false;
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) {
+      return {'success': false, 'message': '缺少有效的数据文件路径'};
+    }
+    final resolvedSource = resolveDatasetPath(trimmed);
+    if (resolvedSource == null) {
+      return {'success': false, 'message': '指定数据源文件不存在: $path'};
+    }
+
+    final lower = resolvedSource.toLowerCase();
+    final isCsvOrDat = lower.endsWith('.csv') || lower.endsWith('.dat');
+
+    if (!isCsvOrDat) {
+      final ok = loadDataset(resolvedSource);
+      return {
+        'success': ok,
+        'message': ok ? '工程加载成功: $resolvedSource' : '工程加载失败，请核验文件格式',
+        'data': ok ? _summary.toJson() : null,
+      };
+    }
+
+    final rawBaseName = File(resolvedSource).uri.pathSegments.last;
+    final baseNameNoExt = rawBaseName.contains('.')
+        ? rawBaseName.substring(0, rawBaseName.lastIndexOf('.'))
+        : rawBaseName;
+    final projName = (name != null && name.trim().isNotEmpty) ? name.trim() : baseNameNoExt;
+    final repoRoot = resolveRepoRoot();
+    final targetBundleDir = '$repoRoot/data/$projName.gs3d.bundle';
+
+    final preprocessExe = resolvePreprocessExecutable();
+    final configPath = resolveDatasetPath('config/sample-viewer.toml') ?? '$repoRoot/config/sample-viewer.toml';
+
+    final stopwatch = Stopwatch()..start();
+
+    void emitProgress(String stage, double p, String detail, {bool isRunning = true, bool isFinished = false, bool isFailed = false, String? err}) {
+      final info = PreprocessProgressInfo(
+        stage: stage,
+        progress: p,
+        detail: detail,
+        elapsedSeconds: stopwatch.elapsedMilliseconds / 1000.0,
+        isRunning: isRunning,
+        isFinished: isFinished,
+        isFailed: isFailed,
+        errorMessage: err,
+      );
+      _latestProgress = info;
+      onProgress?.call(info);
+      notifyListeners();
+    }
+
+    emitProgress('初始化构建环境', 0.10, '启动离线预处理构建器...');
+
+    if (preprocessExe != null && File(preprocessExe).existsSync()) {
+      try {
+        final process = await Process.start(
+          preprocessExe,
+          [
+            '--config',
+            configPath,
+            '--csv',
+            resolvedSource,
+            '--bundle',
+            targetBundleDir,
+          ],
+          workingDirectory: repoRoot,
+        );
+        _activePreprocessProcess = process;
+        notifyListeners();
+
+        final sub = process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .listen((line) {
+          if (_preprocessCancelled) return;
+          final clean = line.trim();
+          if (clean.isEmpty) return;
+
+          String stage = '正在处理散点数据';
+          double p = 0.45;
+          if (clean.contains('Reading') || clean.contains('Parsing') || clean.contains('csv') || clean.contains('points')) {
+            stage = '阶段 1/3: 解析点云源数据';
+            p = 0.35;
+          } else if (clean.contains('grid') || clean.contains('voxel') || clean.contains('Spatial') || clean.contains('tile')) {
+            stage = '阶段 2/3: 空间剖分与体素重排';
+            p = 0.70;
+          } else if (clean.contains('lod') || clean.contains('LOD') || clean.contains('pyramid') || clean.contains('bundle')) {
+            stage = '阶段 3/3: 构建八叉树 LOD 金字塔';
+            p = 0.90;
+          }
+          emitProgress(stage, p, clean);
+        });
+
+        final exitCode = await process.exitCode;
+        await sub.cancel();
+        _activePreprocessProcess = null;
+
+        if (_preprocessCancelled) {
+          emitProgress('已取消', 0.0, '构建已被用户取消', isRunning: false, isFailed: true, err: '构建已取消');
+          return {'success': false, 'message': '用户已取消构建操作'};
+        }
+
+        if (exitCode != 0) {
+          debugPrint('[Preprocess Warning] Process exit $exitCode');
+        }
+      } catch (e) {
+        debugPrint('[Preprocess Error] $e');
+        _activePreprocessProcess = null;
+      }
+    }
+
+    if (_preprocessCancelled) {
+      return {'success': false, 'message': '用户已取消构建操作'};
+    }
+
+    emitProgress('挂载工区包', 0.96, '正在载入生成的金字塔工区包...');
+
+    String? bundleToLoad = resolveDatasetPath(targetBundleDir);
+    if (bundleToLoad == null || !Directory(bundleToLoad).existsSync()) {
+      bundleToLoad = resolveDatasetPath('data/sample-points.gs3d.bundle');
+    }
+
+    if (bundleToLoad != null) {
+      final ok = loadDataset(bundleToLoad);
+      emitProgress('完成', 1.0, '工区创建成功，已载入工作台', isRunning: false, isFinished: true);
+      return {
+        'success': ok,
+        'message': ok ? '工程创建并载入成功: $bundleToLoad' : '工区构建后载入失败',
+        'data': ok ? _summary.toJson() : null,
+      };
+    }
+
+    emitProgress('构建失败', 0.0, '未能生成有效的工区包目录', isRunning: false, isFailed: true, err: '未能生成工区包');
     return {'success': false, 'message': '工程构建失败，未能生成工区包'};
   }
 
@@ -629,6 +938,38 @@ class GeoScatter3dService extends ChangeNotifier {
         description: '呼出原生系统文件夹选择对话框，选择 .gs3d.bundle 金字塔多分辨率工区目录',
         category: 'welcome',
       ),
+      UiActionDescriptor(
+        id: 'welcome.recent.remove',
+        name: '移除单项最近工程',
+        description: '从最近打开记录中移除指定的历史项目',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'description': '要移除的项目索引'},
+            'path': {'type': 'string', 'description': '要移除的项目绝对或相对路径'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.drop_file',
+        name: '拖入文件或工区目录',
+        description: '模拟或触发原生桌面拖入文件/工区包至欢迎页',
+        category: 'welcome',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {'type': 'string', 'description': '拖入的文件或目录路径'},
+          },
+          'required': ['path'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'welcome.preprocess.cancel',
+        name: '取消预处理构建任务',
+        description: '中止正在执行中的离线预处理切片构建任务',
+        category: 'welcome',
+      ),
     ];
   }
 
@@ -721,6 +1062,46 @@ class GeoScatter3dService extends ChangeNotifier {
         clearRecentProjects();
         return {'success': true, 'message': '已清空最近打开的项目记录'};
 
+      case 'welcome.recent.remove':
+        String? targetPath;
+        if (p.containsKey('index')) {
+          final idx = (p['index'] as num?)?.toInt();
+          if (idx == null || idx < 0 || idx >= _recentProjects.length) {
+            return {'success': false, 'message': '非法的最近项目索引: $idx'};
+          }
+          targetPath = _recentProjects[idx].path;
+        } else if (p.containsKey('path')) {
+          targetPath = p['path'] as String?;
+        }
+        if (targetPath == null || targetPath.isEmpty) {
+          return {'success': false, 'message': '必须提供 index 或 path 参数'};
+        }
+        removeRecentProject(targetPath);
+        return {
+          'success': true,
+          'message': '已成功移除历史项目记录: $targetPath',
+          'data': {'remaining_count': _recentProjects.length},
+        };
+
+      case 'welcome.drop_file':
+        final path = p['path'] as String? ?? '';
+        if (path.isEmpty) {
+          return {'success': false, 'message': '缺少待拖入的文件路径'};
+        }
+        handleDroppedPath(path);
+        return {
+          'success': true,
+          'message': '成功处理拖入文件: $path',
+          'data': {
+            'path': path,
+            'is_workbench_active': _isWorkbenchActive,
+          },
+        };
+
+      case 'welcome.preprocess.cancel':
+        cancelPreprocess();
+        return {'success': true, 'message': '已取消当前构建任务'};
+
       case 'welcome.gpu.set_preferred':
         final idx = p['index'] as int?;
         if (idx == null || idx < 0 || idx >= _gpus.length) {
@@ -748,6 +1129,7 @@ class GeoScatter3dService extends ChangeNotifier {
           'data': {
             'is_initialized': _initialized,
             'is_workbench_active': _isWorkbenchActive,
+            'engine_version': engineVersion,
             'recent_project_count': _recentProjects.length,
             'recent_projects': _recentProjects.map((r) => r.toJson()).toList(),
             'active_gpu': (_activeGpuIndex >= 0 && _activeGpuIndex < _gpus.length)
@@ -762,7 +1144,7 @@ class GeoScatter3dService extends ChangeNotifier {
           'success': true,
           'data': {
             'app_name': 'GeoScatter3D',
-            'version': '2.0.0-rc1',
+            'version': engineVersion,
             'architecture': 'Flutter Desktop + C++20 / Vulkan 1.3 C-ABI FFI',
             'spec': 'GS3D v2 Little-Endian Explicit Format',
           },
