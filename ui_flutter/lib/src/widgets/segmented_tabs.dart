@@ -5,12 +5,14 @@ class ModernSegmentedTabs extends StatelessWidget {
   final List<String> tabs;
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
+  final List<Key?>? tabKeys;
 
   const ModernSegmentedTabs({
     super.key,
     required this.tabs,
     required this.selectedIndex,
     required this.onTabSelected,
+    this.tabKeys,
   });
 
   @override
@@ -28,12 +30,14 @@ class ModernSegmentedTabs extends StatelessWidget {
           final isSelected = (index == selectedIndex);
           final isLast = (index == tabs.length - 1);
           final isNextSelected = (index + 1 == selectedIndex);
+          final key = tabKeys != null && index < tabKeys!.length ? tabKeys![index] : null;
 
           return Expanded(
             child: Row(
               children: [
                 Expanded(
                   child: GestureDetector(
+                    key: key,
                     onTap: () => onTabSelected(index),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),

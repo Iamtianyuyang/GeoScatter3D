@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import '../welcome/welcome_ui_keys.dart';
 
 class BottomStatusBar extends StatelessWidget {
   final GeoScatter3dService service;
@@ -13,6 +14,7 @@ class BottomStatusBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: WorkbenchUiKeys.bottomStatusBar,
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: const BoxDecoration(
@@ -25,6 +27,12 @@ class BottomStatusBar extends StatelessWidget {
         listenable: service,
         builder: (context, _) {
           final count = service.summary.pointCount;
+          final gpus = service.gpus;
+          final activeIdx = service.activeGpuIndex;
+          final gpuName = (activeIdx >= 0 && activeIdx < gpus.length)
+              ? gpus[activeIdx].name
+              : 'Vulkan 1.3';
+
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -41,7 +49,7 @@ class BottomStatusBar extends StatelessWidget {
 
                 const Icon(Icons.memory_rounded, size: 14, color: AppTheme.textDim),
                 const SizedBox(width: 4),
-                const Text('GPU 0.0 MB (1/0)', style: TextStyle(fontSize: 11.5, color: AppTheme.textDim)),
+                Text(gpuName, style: const TextStyle(fontSize: 11.5, color: AppTheme.textDim)),
                 const SizedBox(width: 16),
 
                 const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primaryBlue),
@@ -51,7 +59,7 @@ class BottomStatusBar extends StatelessWidget {
 
                 const Text('0.0, 0.0, 143.4', style: TextStyle(fontSize: 11.5, color: AppTheme.textDim, fontFamily: 'Consolas')),
                 const SizedBox(width: 12),
-                const Text('本地坐标 / 未知', style: TextStyle(fontSize: 11.5, color: AppTheme.textDim)),
+                const Text('本地坐标 / 空间参考系', style: TextStyle(fontSize: 11.5, color: AppTheme.textDim)),
               ],
             ),
           );

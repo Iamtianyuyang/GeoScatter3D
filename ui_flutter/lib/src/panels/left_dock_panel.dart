@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/dataset_model.dart';
 import '../theme/app_theme.dart';
+import '../welcome/welcome_ui_keys.dart';
 import '../widgets/modern_card.dart';
 import '../widgets/segmented_tabs.dart';
 
@@ -24,6 +25,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: WorkbenchUiKeys.leftDockPanel,
       width: 320,
       decoration: const BoxDecoration(
         color: AppTheme.background,
@@ -38,6 +40,11 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: ModernSegmentedTabs(
               tabs: const ['项目', '测量', '区域统计'],
+              tabKeys: const [
+                WorkbenchUiKeys.leftDockTabProject,
+                WorkbenchUiKeys.leftDockTabMeasure,
+                WorkbenchUiKeys.leftDockTabStats,
+              ],
               selectedIndex: _currentTab,
               onTabSelected: (index) {
                 setState(() {
@@ -363,7 +370,12 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildToolButton(Icons.straighten_rounded, '重新拾取测量两点'),
+              _buildToolButton(
+                key: WorkbenchUiKeys.leftDockMeasureDistButton,
+                icon: Icons.straighten_rounded,
+                label: '重新拾取测量两点',
+                onPressed: () => widget.service.calculateMeasurement('distance'),
+              ),
             ],
           ),
         ),
@@ -399,9 +411,19 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildToolButton(Icons.square_foot_rounded, '绘制多边形测面'),
+              _buildToolButton(
+                key: WorkbenchUiKeys.leftDockMeasureAreaButton,
+                icon: Icons.square_foot_rounded,
+                label: '绘制多边形测面',
+                onPressed: () => widget.service.calculateMeasurement('area'),
+              ),
               const SizedBox(height: 6),
-              _buildToolButton(Icons.rotate_90_degrees_cw, '地层产状分析 (走向/倾向/倾角)'),
+              _buildToolButton(
+                key: WorkbenchUiKeys.leftDockMeasureStrikeDipButton,
+                icon: Icons.rotate_90_degrees_cw,
+                label: '地层产状分析 (走向/倾向/倾角)',
+                onPressed: () => widget.service.calculateMeasurement('strike_dip'),
+              ),
             ],
           ),
         ),
@@ -522,7 +544,12 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ],
               ),
               const SizedBox(height: 12),
-              _buildToolButton(Icons.highlight_alt_rounded, '框选局部区域重算统计'),
+              _buildToolButton(
+                key: WorkbenchUiKeys.leftDockStatsRecalculateButton,
+                icon: Icons.highlight_alt_rounded,
+                label: '框选局部区域重算统计',
+                onPressed: () => widget.service.calculateStats(),
+              ),
             ],
           ),
         ),
@@ -530,8 +557,14 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     );
   }
 
-  Widget _buildToolButton(IconData icon, String label) {
+  Widget _buildToolButton({
+    Key? key,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
     return OutlinedButton.icon(
+      key: key,
       style: OutlinedButton.styleFrom(
         alignment: Alignment.centerLeft,
         side: const BorderSide(color: AppTheme.border),
@@ -549,7 +582,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
           fontWeight: FontWeight.w500,
         ),
       ),
-      onPressed: () {},
+      onPressed: onPressed,
     );
   }
 }

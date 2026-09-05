@@ -15,19 +15,24 @@ class StandardWorkbenchLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // 【区域 2】左侧卡片流停靠区 (工区、测量、区域统计)
-        LeftDockPanel(service: service),
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, _) {
+        return Row(
+          children: [
+            // 【区域 2】左侧卡片流停靠区 (工区、测量、区域统计)
+            if (service.leftDockVisible) LeftDockPanel(service: service),
 
-        // 【区域 3】中央 3D 渲染主视口与快捷工具条
-        Expanded(
-          child: CenterViewport(service: service),
-        ),
+            // 【区域 3】中央 3D 渲染主视口与快捷工具条
+            Expanded(
+              child: CenterViewport(service: service),
+            ),
 
-        // 【区域 4】右侧属性与渲染设置停靠区
-        RightDockPanel(service: service),
-      ],
+            // 【区域 4】右侧属性与渲染设置停靠区
+            if (service.rightDockVisible) RightDockPanel(service: service),
+          ],
+        );
+      },
     );
   }
 }

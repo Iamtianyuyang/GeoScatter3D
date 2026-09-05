@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import '../welcome/welcome_ui_keys.dart';
 import '../widgets/modern_card.dart';
 
-class RightDockPanel extends StatefulWidget {
+class RightDockPanel extends StatelessWidget {
   final GeoScatter3dService service;
 
   const RightDockPanel({
@@ -12,18 +13,9 @@ class RightDockPanel extends StatefulWidget {
   });
 
   @override
-  State<RightDockPanel> createState() => _RightDockPanelState();
-}
-
-class _RightDockPanelState extends State<RightDockPanel> {
-  String _shape = '方形';
-  String _heightSource = 'elevation';
-  final double _heightScale = 1.0;
-  String _colorSource = 'field_statics';
-
-  @override
   Widget build(BuildContext context) {
     return Container(
+      key: WorkbenchUiKeys.rightDockPanel,
       width: 290,
       decoration: const BoxDecoration(
         color: AppTheme.background,
@@ -49,8 +41,9 @@ class _RightDockPanelState extends State<RightDockPanel> {
                   ),
                 ),
                 IconButton(
+                  key: WorkbenchUiKeys.rightDockCloseButton,
                   icon: const Icon(Icons.close, size: 16, color: AppTheme.textDim),
-                  onPressed: () {},
+                  onPressed: () => service.toggleRightDock(false),
                   splashRadius: 16,
                 ),
               ],
@@ -60,14 +53,18 @@ class _RightDockPanelState extends State<RightDockPanel> {
           // 属性设置项列表
           Expanded(
             child: ListenableBuilder(
-              listenable: widget.service,
+              listenable: service,
               builder: (context, _) {
-                final pointSize = widget.service.pointSize;
-                final colormap = widget.service.colormap;
-                final scalarMin = widget.service.scalarMin;
-                final scalarMax = widget.service.scalarMax;
-                final attrs = widget.service.summary.attributes.isNotEmpty
-                    ? widget.service.summary.attributes
+                final pointSize = service.pointSize;
+                final pointShape = service.pointShape;
+                final heightSource = service.heightSource;
+                final heightScale = service.heightScale;
+                final colorAttr = service.colorAttribute;
+                final colormap = service.colormap;
+                final scalarMin = service.scalarMin;
+                final scalarMax = service.scalarMax;
+                final attrs = service.summary.attributes.isNotEmpty
+                    ? service.summary.attributes
                     : ['field_statics', 'elevation'];
 
                 return ListView(
@@ -96,10 +93,11 @@ class _RightDockPanelState extends State<RightDockPanel> {
                               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             ),
                             child: Slider(
+                              key: WorkbenchUiKeys.rightDockPointSizeSlider,
                               value: pointSize.clamp(0.5, 8.0),
                               min: 0.5,
                               max: 8.0,
-                              onChanged: (v) => widget.service.setPointSize(v),
+                              onChanged: (v) => service.setPointSize(v),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -107,37 +105,66 @@ class _RightDockPanelState extends State<RightDockPanel> {
                           // 形状
                           const Text('形状', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
                           const SizedBox(height: 4),
-                          _buildDropdown(['方形', '圆形'], _shape, (v) => setState(() => _shape = v!)),
+                          _buildDropdown(
+                            key: WorkbenchUiKeys.rightDockShapeDropdown,
+                            items: const ['方形', '圆形'],
+                            value: pointShape,
+                            onChanged: (v) {
+                              if (v != null) service.setPointShape(v);
+                            },
+                          ),
                           const SizedBox(height: 10),
 
                           // 高度来源
                           const Text('高度来源', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
                           const SizedBox(height: 4),
-                          _buildDropdown(['elevation', 'Z'], _heightSource, (v) => setState(() => _heightSource = v!)),
+                          _buildDropdown(
+                            key: WorkbenchUiKeys.rightDockHeightSourceDropdown,
+                            items: const ['elevation', 'Z'],
+                            value: heightSource,
+                            onChanged: (v) {
+                              if (v != null) service.setHeightSource(v);
+                            },
+                          ),
                           const SizedBox(height: 10),
 
                           // 高度缩放
-                          const Text('高度缩放', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 32,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(AppTheme.controlRadius),
-                              border: Border.all(color: AppTheme.border),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('高度缩放', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                              Text('${heightScale.toStringAsFixed(2)}x',
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              activeTrackColor: AppTheme.primaryBlue,
+                              thumbColor: AppTheme.primaryBlue,
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             ),
-                            alignment: Alignment.center,
-                            child: Text('${_heightScale.toStringAsFixed(2)}x',
-                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+                            child: Slider(
+                              key: WorkbenchUiKeys.rightDockHeightScaleSlider,
+                              value: heightScale.clamp(0.1, 10.0),
+                              min: 0.1,
+                              max: 10.0,
+                              onChanged: (v) => service.setHeightScale(v),
+                            ),
                           ),
                           const SizedBox(height: 10),
 
                           // 着色字段
                           const Text('着色字段', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
                           const SizedBox(height: 4),
-                          _buildDropdown(attrs, attrs.contains(_colorSource) ? _colorSource : attrs.first,
-                              (v) => setState(() => _colorSource = v!)),
+                          _buildDropdown(
+                            key: WorkbenchUiKeys.rightDockColorAttrDropdown,
+                            items: attrs,
+                            value: attrs.contains(colorAttr) ? colorAttr : attrs.first,
+                            onChanged: (v) {
+                              if (v != null) service.setColorAttribute(v);
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -152,10 +179,11 @@ class _RightDockPanelState extends State<RightDockPanel> {
                           const Text('色标方案', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
-                            ['Viridis', 'Plasma', 'Turbo', 'Jet', 'Coolwarm'],
-                            _normalizeColormap(colormap),
-                            (v) {
-                              if (v != null) widget.service.setColormap(v);
+                            key: WorkbenchUiKeys.rightDockColormapDropdown,
+                            items: const ['Viridis', 'Plasma', 'Turbo', 'Jet', 'Coolwarm'],
+                            value: _normalizeColormap(colormap),
+                            onChanged: (v) {
+                              if (v != null) service.setColormap(v);
                             },
                           ),
                           const SizedBox(height: 10),
@@ -172,15 +200,65 @@ class _RightDockPanelState extends State<RightDockPanel> {
                           ),
                           const SizedBox(height: 8),
 
-                          // 数据范围
+                          // 数据范围与复位按钮
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                '标量区间: ${scalarMin.toStringAsFixed(1)} - ${scalarMax.toStringAsFixed(1)}',
-                                style: const TextStyle(fontSize: 12, color: AppTheme.textDim, fontFamily: 'Consolas'),
+                              Expanded(
+                                child: Text(
+                                  '区间: ${scalarMin.toStringAsFixed(1)} ~ ${scalarMax.toStringAsFixed(1)}',
+                                  style: const TextStyle(fontSize: 11.5, color: AppTheme.textDim, fontFamily: 'Consolas'),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              TextButton(
+                                key: WorkbenchUiKeys.rightDockResetScalarRangeButton,
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () => service.resetScalarRange(),
+                                child: const Text('复位', style: TextStyle(fontSize: 11, color: AppTheme.primaryBlue)),
                               ),
                             ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    CollapsibleCard(
+                      title: '视口环境',
+                      initialOpen: false,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('视口底色', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const SizedBox(height: 4),
+                          _buildDropdown(
+                            key: WorkbenchUiKeys.rightDockBgColorDropdown,
+                            items: const ['深黑蓝', '纯黑', '深灰', '浅灰'],
+                            value: _colorToName(service.viewportBackgroundColor),
+                            onChanged: (v) {
+                              if (v != null) {
+                                switch (v) {
+                                  case '纯黑':
+                                    service.setViewportBackgroundColor(const Color(0xFF000000));
+                                    break;
+                                  case '深灰':
+                                    service.setViewportBackgroundColor(const Color(0xFF1E222A));
+                                    break;
+                                  case '浅灰':
+                                    service.setViewportBackgroundColor(const Color(0xFFF0F2F5));
+                                    break;
+                                  case '深黑蓝':
+                                  default:
+                                    service.setViewportBackgroundColor(const Color(0xFF161A22));
+                                    break;
+                                }
+                              }
+                            },
                           ),
                         ],
                       ),
@@ -193,6 +271,14 @@ class _RightDockPanelState extends State<RightDockPanel> {
         ],
       ),
     );
+  }
+
+  String _colorToName(Color color) {
+    final argb = color.toARGB32();
+    if (argb == 0xFF000000) return '纯黑';
+    if (argb == 0xFF1E222A) return '深灰';
+    if (argb == 0xFFF0F2F5) return '浅灰';
+    return '深黑蓝';
   }
 
   String _normalizeColormap(String name) {
@@ -219,8 +305,14 @@ class _RightDockPanelState extends State<RightDockPanel> {
     }
   }
 
-  Widget _buildDropdown(List<String> items, String value, ValueChanged<String?> onChanged) {
+  Widget _buildDropdown({
+    Key? key,
+    required List<String> items,
+    required String value,
+    required ValueChanged<String?> onChanged,
+  }) {
     return Container(
+      key: key,
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(

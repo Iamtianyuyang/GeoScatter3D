@@ -23,6 +23,9 @@ class DatasetSummary {
     this.valueRange = const [0, 0],
   });
 
+  double get minValue => valueRange.isNotEmpty ? valueRange[0] : 0.0;
+  double get maxValue => valueRange.length > 1 ? valueRange[1] : 100.0;
+
   /// 格式化为千分位点数，例如 "50,000,000 点"
   String get formattedPointCount {
     if (pointCount <= 0) return '0 点';

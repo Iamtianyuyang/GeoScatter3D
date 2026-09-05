@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../models/dataset_model.dart';
 import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
@@ -117,6 +118,33 @@ class GeoScatter3dService extends ChangeNotifier {
   double _scalarMin = 0.0;
   double _scalarMax = 100.0;
 
+  // 视口相机状态
+  double _cameraAzimuth = -45.0;
+  double _cameraElevation = 30.0;
+  double _cameraZoom = 1.0;
+  double _cameraPanX = 0.0;
+  double _cameraPanY = 0.0;
+  bool _isPanning = false;
+
+  // 视口叠加层状态
+  bool _showMapAxis = true;
+  bool _showWorldAxis = false;
+  bool _showCrosshair = true;
+
+  // 渲染外观与材质状态
+  String _pointShape = '方形';
+  double _heightScale = 1.0;
+  String _heightSource = 'elevation';
+  String _colorAttribute = 'field_statics';
+  Color _viewportBackgroundColor = const Color(0xFF161A22);
+
+  // 面板停靠显隐状态
+  bool _leftDockVisible = true;
+  bool _rightDockVisible = true;
+
+  // 截图通知回调
+  VoidCallback? onScreenshotRequested;
+
   bool get isInitialized => _initialized;
   DatasetSummary get summary => _summary;
   List<RecentProjectItem> get recentProjects => _recentProjects;
@@ -154,6 +182,224 @@ class GeoScatter3dService extends ChangeNotifier {
   double get scalarMin => _scalarMin;
   double get scalarMax => _scalarMax;
 
+  double get cameraAzimuth => _cameraAzimuth;
+  double get cameraElevation => _cameraElevation;
+  double get cameraZoom => _cameraZoom;
+  double get cameraPanX => _cameraPanX;
+  double get cameraPanY => _cameraPanY;
+  bool get isPanning => _isPanning;
+
+  bool get showMapAxis => _showMapAxis;
+  bool get showWorldAxis => _showWorldAxis;
+  bool get showCrosshair => _showCrosshair;
+
+  String get pointShape => _pointShape;
+  double get heightScale => _heightScale;
+  String get heightSource => _heightSource;
+  String get colorAttribute => _colorAttribute;
+  Color get viewportBackgroundColor => _viewportBackgroundColor;
+
+  bool get leftDockVisible => _leftDockVisible;
+  bool get rightDockVisible => _rightDockVisible;
+
+  void setPanning(bool panning) {
+    if (_isPanning != panning) {
+      _isPanning = panning;
+      notifyListeners();
+    }
+  }
+
+  void resetCamera() {
+    _cameraAzimuth = -45.0;
+    _cameraElevation = 30.0;
+    _cameraZoom = 1.0;
+    _cameraPanX = 0.0;
+    _cameraPanY = 0.0;
+    _isPanning = false;
+    notifyListeners();
+  }
+
+  void setCameraView({
+    double? azimuth,
+    double? elevation,
+    double? zoom,
+    double? panX,
+    double? panY,
+    String? preset,
+  }) {
+    if (preset != null) {
+      switch (preset.toLowerCase()) {
+        case 'top':
+          _cameraAzimuth = 0.0;
+          _cameraElevation = 90.0;
+          break;
+        case 'front':
+          _cameraAzimuth = 0.0;
+          _cameraElevation = 0.0;
+          break;
+        case 'side':
+          _cameraAzimuth = 90.0;
+          _cameraElevation = 0.0;
+          break;
+        case 'iso':
+        default:
+          _cameraAzimuth = -45.0;
+          _cameraElevation = 30.0;
+          break;
+      }
+    }
+    if (azimuth != null) _cameraAzimuth = azimuth;
+    if (elevation != null) _cameraElevation = elevation.clamp(-89.0, 89.0);
+    if (zoom != null) _cameraZoom = zoom.clamp(0.05, 50.0);
+    if (panX != null) _cameraPanX = panX;
+    if (panY != null) _cameraPanY = panY;
+    notifyListeners();
+  }
+
+  void setViewportOverlays({bool? mapAxis, bool? worldAxis, bool? crosshair}) {
+    if (mapAxis != null) _showMapAxis = mapAxis;
+    if (worldAxis != null) _showWorldAxis = worldAxis;
+    if (crosshair != null) _showCrosshair = crosshair;
+    notifyListeners();
+  }
+
+  void setPointShape(String shape) {
+    if (_pointShape != shape) {
+      _pointShape = shape;
+      notifyListeners();
+    }
+  }
+
+  void setHeightScale(double scale) {
+    final clamped = scale.clamp(0.1, 10.0);
+    if (_heightScale != clamped) {
+      _heightScale = clamped;
+      notifyListeners();
+    }
+  }
+
+  void setHeightSource(String source) {
+    if (_heightSource != source) {
+      _heightSource = source;
+      notifyListeners();
+    }
+  }
+
+  void setColorAttribute(String attr) {
+    if (_colorAttribute != attr) {
+      _colorAttribute = attr;
+      notifyListeners();
+    }
+  }
+
+  void setViewportBackgroundColor(Color color) {
+    if (_viewportBackgroundColor != color) {
+      _viewportBackgroundColor = color;
+      notifyListeners();
+    }
+  }
+
+  void resetScalarRange() {
+    _scalarMin = _summary.minValue;
+    _scalarMax = _summary.maxValue;
+    setScalarRange(_scalarMin, _scalarMax);
+  }
+
+  void toggleLeftDock([bool? visible]) {
+    _leftDockVisible = visible ?? !_leftDockVisible;
+    notifyListeners();
+  }
+
+  void toggleRightDock([bool? visible]) {
+    _rightDockVisible = visible ?? !_rightDockVisible;
+    notifyListeners();
+  }
+
+  Map<String, dynamic> calculateStats() {
+    final count = _points.length;
+    final bins = [0, 0, 0, 0, 0];
+    if (count > 0 && _scalarMax > _scalarMin) {
+      final step = (_scalarMax - _scalarMin) / 5.0;
+      for (final p in _points) {
+        final idx = ((p.value - _scalarMin) / step).floor().clamp(0, 4);
+        bins[idx]++;
+      }
+    }
+
+    if (count == 0) {
+      return {
+        'count': 0,
+        'mean': 0.0,
+        'min': _scalarMin,
+        'max': _scalarMax,
+        'range': 0.0,
+        'std_dev': 0.0,
+        'histogram': bins,
+      };
+    }
+    double sum = 0.0;
+    for (final p in _points) {
+      sum += p.value;
+    }
+    final mean = sum / count;
+    double varSum = 0.0;
+    for (final p in _points) {
+      varSum += (p.value - mean) * (p.value - mean);
+    }
+    final stdDev = math.sqrt(varSum / count);
+    return {
+      'count': count,
+      'mean': mean,
+      'min': _scalarMin,
+      'max': _scalarMax,
+      'range': _scalarMax - _scalarMin,
+      'std_dev': stdDev,
+      'histogram': bins,
+    };
+  }
+
+  Map<String, dynamic> calculateMeasurement([String type = 'distance']) {
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    final dx = (bmax[0] - bmin[0]).abs();
+    final dy = (bmax[1] - bmin[1]).abs();
+    final dz = (bmax[2] - bmin[2]).abs();
+    final diagonal = math.sqrt(dx * dx + dy * dy + dz * dz);
+    final area2d = dx * dy;
+    final strike = (dx > 0) ? (math.atan2(dy, dx) * 180 / math.pi).abs() : 0.0;
+    final dip = (diagonal > 0) ? (math.asin((dz / diagonal).clamp(-1.0, 1.0)) * 180 / math.pi) : 0.0;
+
+    String metric = '3d_distance';
+    double metricValue = diagonal;
+    if (type == 'area') {
+      metric = 'projected_area';
+      metricValue = area2d;
+    } else if (type == 'strike_dip') {
+      metric = 'strike_dip';
+      metricValue = dip;
+    }
+
+    return {
+      'type': type,
+      'metric': metric,
+      'metric_value': metricValue,
+      'dx': dx,
+      'dy': dy,
+      'dz': dz,
+      'distance_3d': diagonal,
+      'area_2d': area2d,
+      'strike': strike,
+      'dip': dip,
+      'dip_direction': (strike + 90.0) % 360.0,
+    };
+  }
+
+  void requestScreenshot() {
+    if (onScreenshotRequested != null) {
+      onScreenshotRequested!();
+    }
+  }
+
   void setLayoutMode(WorkbenchLayoutMode mode) {
     if (_layoutMode != mode) {
       _layoutMode = mode;
@@ -163,6 +409,8 @@ class GeoScatter3dService extends ChangeNotifier {
 
   void openWorkbench() {
     _isWorkbenchActive = true;
+    _leftDockVisible = true;
+    _rightDockVisible = true;
     notifyListeners();
   }
 
@@ -970,6 +1218,202 @@ class GeoScatter3dService extends ChangeNotifier {
         description: '中止正在执行中的离线预处理切片构建任务',
         category: 'welcome',
       ),
+
+      // ======================================================================
+      // 工作台动作 (Workbench Actions)
+      // ======================================================================
+      UiActionDescriptor(
+        id: 'workbench.camera.reset',
+        name: '重置相机视角',
+        description: '将三维视口相机复位到默认等轴测观察姿态 (方位角 -45°, 仰角 30°, 缩放 1.0x)',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.camera.set_view',
+        name: '设置相机姿态与视角',
+        description: '调整相机方位角、仰角、缩放、平移偏移或应用预设视角 (top, front, side, iso)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'preset': {'type': 'string', 'enum': ['top', 'front', 'side', 'iso'], 'description': '预设视角名称'},
+            'azimuth': {'type': 'number', 'description': '水平方位角 (度)'},
+            'elevation': {'type': 'number', 'description': '垂直仰角 (-89° ~ 89°)'},
+            'zoom': {'type': 'number', 'description': '视口缩放倍率 (0.05 ~ 50.0)'},
+            'pan_x': {'type': 'number', 'description': '水平平移像素'},
+            'pan_y': {'type': 'number', 'description': '垂直平移像素'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.camera.get',
+        name: '获取当前相机姿态',
+        description: '查询当前视口相机的方位角、仰角、缩放及平移偏移参数',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_point_size',
+        name: '设置点云绘制大小',
+        description: '调节三维视口中散点绘制的像素半径 (0.5 ~ 8.0)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'size': {'type': 'number', 'description': '点大小像素值 (0.5 ~ 8.0)'},
+          },
+          'required': ['size'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_colormap',
+        name: '设置色标配色方案',
+        description: '切换点云属性标量伪彩色带 (Viridis, Plasma, Turbo, Jet, Coolwarm)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'colormap': {'type': 'string', 'description': '色标方案名称'},
+          },
+          'required': ['colormap'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_color_attribute',
+        name: '设置着色属性字段',
+        description: '切换当前点云渲染使用的属性维度字段',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'attribute': {'type': 'string', 'description': '着色属性名称'},
+          },
+          'required': ['attribute'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_shape',
+        name: '设置散点图元形状',
+        description: '切换点渲染图元形状 (方形 / 圆形)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'shape': {'type': 'string', 'enum': ['方形', '圆形'], 'description': '图元形状'},
+          },
+          'required': ['shape'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_height_scale',
+        name: '设置高度缩放起伏倍率',
+        description: '动态调节地质高程 Z 轴的垂直拉伸倍率 (0.1x ~ 10.0x)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'scale': {'type': 'number', 'description': '缩放倍率'},
+          },
+          'required': ['scale'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_scalar_range',
+        name: '设置标量显示过滤区间',
+        description: '设置标量过滤范围裁剪的下限与上限',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'min': {'type': 'number', 'description': '标量极小值'},
+            'max': {'type': 'number', 'description': '标量极大值'},
+          },
+          'required': ['min', 'max'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.reset_scalar_range',
+        name: '自动自适应标量极值范围',
+        description: '根据当前工程数据集的真实验收范围自动复位标量裁剪区间',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.render.set_background',
+        name: '设置视口背景颜色',
+        description: '切换视口三维底色 (dark: 暗黑深空, light: 浅灰工程, black: 纯黑)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'theme': {'type': 'string', 'enum': ['dark', 'light', 'black'], 'description': '视口背景主题'},
+          },
+          'required': ['theme'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.layout.set',
+        name: '切换工作台布局模式',
+        description: '切换主工作台界面布局 (standard: 标准三栏, floatingDock: 悬浮胶囊Dock, analysisRail: 暗色分析舱)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'mode': {'type': 'string', 'enum': ['standard', 'floatingDock', 'analysisRail'], 'description': '布局模式标识'},
+          },
+          'required': ['mode'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.dock.toggle',
+        name: '切换停靠面板显示状态',
+        description: '控制左侧数据抽屉或右侧渲染面板的展开与折叠',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'panel': {'type': 'string', 'enum': ['left', 'right', 'both'], 'description': '面板名称'},
+            'visible': {'type': 'boolean', 'description': '显隐状态 (可选，默认反转)'},
+          },
+          'required': ['panel'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.viewport.set_overlays',
+        name: '控制视口图层叠加开关',
+        description: '开启或关闭地图轴、世界坐标轴、视口十字准线等叠加元素',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'map_axis': {'type': 'boolean', 'description': '地图轴开关'},
+            'world_axis': {'type': 'boolean', 'description': '世界坐标轴开关'},
+            'crosshair': {'type': 'boolean', 'description': '十字准线开关'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.calculate',
+        name: '空间几何测量计算',
+        description: '计算当前工区的空间距离、投影底面积、地层走向与倾向指标',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'type': {'type': 'string', 'enum': ['distance', 'area', 'strike_dip'], 'description': '测量类型'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.stats.get',
+        name: '获取属性统计分布指标',
+        description: '计算当前点云的有效样本数、均值、极值、极差与直方图统计指标',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.screenshot',
+        name: '截取三维视口并导出图片',
+        description: '触发工作台主三维视口的帧画面截屏与保存',
+        category: 'workbench',
+      ),
     ];
   }
 
@@ -1161,6 +1605,259 @@ class GeoScatter3dService extends ChangeNotifier {
               'zoom': '鼠标滚轮缩放',
               'reset': '顶部重置视角按钮',
             },
+          },
+        };
+
+      // ======================================================================
+      // 工作台动作实现 (Workbench Action Handlers)
+      // ======================================================================
+      case 'workbench.camera.reset':
+        resetCamera();
+        return {
+          'success': true,
+          'message': '视口相机已复位为默认等轴测姿态',
+          'data': {
+            'azimuth': _cameraAzimuth,
+            'elevation': _cameraElevation,
+            'zoom': _cameraZoom,
+          },
+        };
+
+      case 'workbench.camera.set_view':
+        setCameraView(
+          preset: p['preset'] as String?,
+          azimuth: (p['azimuth'] as num?)?.toDouble(),
+          elevation: (p['elevation'] as num?)?.toDouble(),
+          zoom: (p['zoom'] as num?)?.toDouble(),
+          panX: (p['pan_x'] as num?)?.toDouble(),
+          panY: (p['pan_y'] as num?)?.toDouble(),
+        );
+        return {
+          'success': true,
+          'message': '视口相机视角更新成功',
+          'data': {
+            'azimuth': _cameraAzimuth,
+            'elevation': _cameraElevation,
+            'zoom': _cameraZoom,
+            'pan_x': _cameraPanX,
+            'pan_y': _cameraPanY,
+          },
+        };
+
+      case 'workbench.camera.set_panning':
+        final panning = (p['panning'] as bool?) ?? true;
+        setPanning(panning);
+        return {
+          'success': true,
+          'message': '视口平移模式已${panning ? "开启" : "关闭"}',
+          'data': {'is_panning': _isPanning},
+        };
+
+      case 'workbench.camera.get':
+        return {
+          'success': true,
+          'data': {
+            'azimuth': _cameraAzimuth,
+            'elevation': _cameraElevation,
+            'zoom': _cameraZoom,
+            'pan_x': _cameraPanX,
+            'pan_y': _cameraPanY,
+            'is_panning': _isPanning,
+          },
+        };
+
+      case 'workbench.render.set_point_size':
+      case 'workbench.point_cloud.set_size':
+        final size = (p['size'] as num?)?.toDouble();
+        if (size == null) return {'success': false, 'message': '缺少必要参数: size'};
+        setPointSize(size);
+        return {
+          'success': true,
+          'message': '点大小已更新为: $_pointSize',
+          'data': {'point_size': _pointSize},
+        };
+
+      case 'workbench.render.set_colormap':
+      case 'workbench.point_cloud.set_colormap':
+        final cm = p['colormap'] as String?;
+        if (cm == null || cm.isEmpty) return {'success': false, 'message': '缺少必要参数: colormap'};
+        setColormap(cm);
+        return {
+          'success': true,
+          'message': '色标方案已切换为: $_colormap',
+          'data': {'colormap': _colormap},
+        };
+
+      case 'workbench.render.set_color_attribute':
+      case 'workbench.point_cloud.set_color_attribute':
+        final attr = p['attribute'] as String?;
+        if (attr == null || attr.isEmpty) return {'success': false, 'message': '缺少必要参数: attribute'};
+        setColorAttribute(attr);
+        return {
+          'success': true,
+          'message': '着色字段已切换为: $_colorAttribute',
+          'data': {'attribute': _colorAttribute},
+        };
+
+      case 'workbench.render.set_shape':
+      case 'workbench.point_cloud.set_shape':
+        final shape = p['shape'] as String?;
+        if (shape == null || shape.isEmpty) return {'success': false, 'message': '缺少必要参数: shape'};
+        setPointShape(shape);
+        return {
+          'success': true,
+          'message': '散点形状已切换为: $_pointShape',
+          'data': {'shape': _pointShape},
+        };
+
+      case 'workbench.render.set_height_scale':
+      case 'workbench.point_cloud.set_height_scale':
+        final scale = (p['scale'] as num?)?.toDouble();
+        if (scale == null) return {'success': false, 'message': '缺少必要参数: scale'};
+        setHeightScale(scale);
+        return {
+          'success': true,
+          'message': '高度缩放倍率已更新为: ${_heightScale.toStringAsFixed(2)}x',
+          'data': {'height_scale': _heightScale},
+        };
+
+      case 'workbench.render.set_height_source':
+      case 'workbench.point_cloud.set_height_source':
+        final source = p['source'] as String?;
+        if (source == null || source.isEmpty) return {'success': false, 'message': '缺少必要参数: source'};
+        setHeightSource(source);
+        return {
+          'success': true,
+          'message': '高度来源已切换为: $_heightSource',
+          'data': {'height_source': _heightSource},
+        };
+
+      case 'workbench.render.set_scalar_range':
+        final minVal = (p['min'] as num?)?.toDouble();
+        final maxVal = (p['max'] as num?)?.toDouble();
+        if (minVal == null || maxVal == null) {
+          return {'success': false, 'message': '缺少必要参数: min, max'};
+        }
+        setScalarRange(minVal, maxVal);
+        return {
+          'success': true,
+          'message': '标量过滤区间已更新为: [$_scalarMin, $_scalarMax]',
+          'data': {'scalar_min': _scalarMin, 'scalar_max': _scalarMax},
+        };
+
+      case 'workbench.render.reset_scalar_range':
+      case 'workbench.point_cloud.reset_scalar_range':
+        resetScalarRange();
+        return {
+          'success': true,
+          'message': '已将标量区间自适应复位为: [$_scalarMin, $_scalarMax]',
+          'data': {'scalar_min': _scalarMin, 'scalar_max': _scalarMax},
+        };
+
+      case 'workbench.render.set_background':
+      case 'workbench.viewport.set_bg_color':
+        final theme = (p['theme'] as String?)?.toLowerCase();
+        final colorStr = (p['color'] as String?)?.toLowerCase();
+        Color bg = const Color(0xFF161A22);
+        if (theme == 'light' || colorStr == '#f0f2f5' || colorStr == '#ffffff') {
+          bg = const Color(0xFFF0F2F5);
+        } else if (theme == 'black' || colorStr == '#000000' || colorStr == 'black') {
+          bg = Colors.black;
+        } else if (colorStr != null && colorStr.startsWith('#') && colorStr.length == 7) {
+          final hex = int.tryParse(colorStr.substring(1), radix: 16);
+          if (hex != null) {
+            bg = Color(0xFF000000 | hex);
+          }
+        }
+        setViewportBackgroundColor(bg);
+        return {
+          'success': true,
+          'message': '视口背景主题已切换',
+          'data': {'theme': theme, 'color': colorStr},
+        };
+
+      case 'workbench.layout.set':
+        final modeStr = p['mode'] as String?;
+        WorkbenchLayoutMode targetMode = WorkbenchLayoutMode.standard;
+        if (modeStr == 'floatingDock') {
+          targetMode = WorkbenchLayoutMode.floatingDock;
+        } else if (modeStr == 'analysisRail') {
+          targetMode = WorkbenchLayoutMode.analysisRail;
+        }
+        setLayoutMode(targetMode);
+        return {
+          'success': true,
+          'message': '工作台布局已切换为: ${targetMode.displayName}',
+          'data': {'layout_mode': targetMode.name},
+        };
+
+      case 'workbench.dock.toggle':
+      case 'workbench.dock.toggle_left':
+      case 'workbench.dock.toggle_right':
+        final isLeft = actionId == 'workbench.dock.toggle_left';
+        final isRight = actionId == 'workbench.dock.toggle_right';
+        final panel = isLeft ? 'left' : (isRight ? 'right' : ((p['panel'] as String?)?.toLowerCase() ?? 'left'));
+        final vis = p['visible'] as bool?;
+        if (panel == 'left') {
+          toggleLeftDock(vis);
+        } else if (panel == 'right') {
+          toggleRightDock(vis);
+        } else {
+          toggleLeftDock(vis);
+          toggleRightDock(vis);
+        }
+        return {
+          'success': true,
+          'message': '停靠面板状态已更新',
+          'data': {
+            'left_dock_visible': _leftDockVisible,
+            'right_dock_visible': _rightDockVisible,
+          },
+        };
+
+      case 'workbench.viewport.set_overlays':
+        setViewportOverlays(
+          mapAxis: p['map_axis'] as bool?,
+          worldAxis: p['world_axis'] as bool?,
+          crosshair: p['crosshair'] as bool?,
+        );
+        return {
+          'success': true,
+          'message': '视口图层叠加开关已更新',
+          'data': {
+            'map_axis': _showMapAxis,
+            'world_axis': _showWorldAxis,
+            'crosshair': _showCrosshair,
+          },
+        };
+
+      case 'workbench.measure.calculate':
+        final type = (p['type'] as String?) ?? 'distance';
+        final m = calculateMeasurement(type);
+        return {
+          'success': true,
+          'message': '空间几何指标推导完成',
+          'data': m,
+        };
+
+      case 'workbench.stats.get':
+      case 'workbench.stats.calculate':
+        final stats = calculateStats();
+        return {
+          'success': true,
+          'message': '属性统计指标计算完成',
+          'data': stats,
+        };
+
+      case 'workbench.screenshot':
+      case 'workbench.viewport.screenshot':
+        requestScreenshot();
+        return {
+          'success': true,
+          'message': '已触发三维视口截图',
+          'data': {
+            'viewport_name': 'CenterViewport',
+            'timestamp': DateTime.now().toIso8601String(),
           },
         };
 

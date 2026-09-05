@@ -59,3 +59,91 @@ class WelcomeUiKeys {
   static const heroLogo = ValueKey('welcome.hero.logo');
   static const welcomeDragDropTarget = ValueKey('welcome.drag_drop_target');
 }
+
+/// 主工作台 (Workbench) 所有可交互控件的稳定唯一语义 Key 定义
+class WorkbenchUiKeys {
+  WorkbenchUiKeys._();
+
+  // 顶部菜单栏
+  static const topMenuBar = ValueKey('workbench.top_menu_bar');
+  static const homeButton = ValueKey('workbench.menu.home_button');
+  static const menuFile = ValueKey('workbench.menu.file');
+  static const menuView = ValueKey('workbench.menu.view');
+  static const menuWindow = ValueKey('workbench.menu.window');
+  static const menuHelp = ValueKey('workbench.menu.help');
+  static const layoutSwitcher = ValueKey('workbench.menu.layout_switcher');
+  static const quickLoadDemoButton = ValueKey('workbench.menu.quick_load_demo');
+
+  // 文件菜单项
+  static const menuItemNewProject = ValueKey('workbench.menu_item.new_project');
+  static const menuItemOpenProject = ValueKey('workbench.menu_item.open_project');
+  static const menuItemQuickDemo = ValueKey('workbench.menu_item.quick_demo');
+  static const menuItemScreenshot = ValueKey('workbench.menu_item.screenshot');
+  static const menuItemWelcome = ValueKey('workbench.menu_item.welcome');
+
+  // 视图菜单项
+  static const menuItemResetCamera = ValueKey('workbench.menu_item.reset_camera');
+  static const menuItemTopView = ValueKey('workbench.menu_item.top_view');
+  static const menuItemFrontView = ValueKey('workbench.menu_item.front_view');
+  static const menuItemSideView = ValueKey('workbench.menu_item.side_view');
+  static const menuItemIsoView = ValueKey('workbench.menu_item.iso_view');
+  static const menuItemToggleMapAxis = ValueKey('workbench.menu_item.toggle_map_axis');
+  static const menuItemToggleWorldAxis = ValueKey('workbench.menu_item.toggle_world_axis');
+  static const menuItemToggleCrosshair = ValueKey('workbench.menu_item.toggle_crosshair');
+
+  // 窗口菜单项
+  static const menuItemToggleLeftDock = ValueKey('workbench.menu_item.toggle_left_dock');
+  static const menuItemToggleRightDock = ValueKey('workbench.menu_item.toggle_right_dock');
+  static const menuItemLayoutStandard = ValueKey('workbench.menu_item.layout_standard');
+  static const menuItemLayoutFloating = ValueKey('workbench.menu_item.layout_floating');
+  static const menuItemLayoutAnalysis = ValueKey('workbench.menu_item.layout_analysis');
+
+  // 帮助菜单项
+  static const menuItemDocs = ValueKey('workbench.menu_item.docs');
+  static const menuItemGpu = ValueKey('workbench.menu_item.gpu');
+  static const menuItemAbout = ValueKey('workbench.menu_item.about');
+
+  // 中央视口与浮动条
+  static const viewportCanvas = ValueKey('workbench.viewport.canvas');
+  static const viewportResetButton = ValueKey('workbench.viewport.reset_button');
+  static const viewportPanToggle = ValueKey('workbench.viewport.pan_toggle');
+  static const viewportMapAxisToggle = ValueKey('workbench.viewport.map_axis_toggle');
+  static const viewportWorldAxisToggle = ValueKey('workbench.viewport.world_axis_toggle');
+  static const viewportCrosshairToggle = ValueKey('workbench.viewport.crosshair_toggle');
+  static const viewportZoomInButton = ValueKey('workbench.viewport.zoom_in_button');
+  static const viewportZoomOutButton = ValueKey('workbench.viewport.zoom_out_button');
+  static const viewportPresetViewDropdown = ValueKey('workbench.viewport.preset_view_dropdown');
+  static const viewportScreenshotButton = ValueKey('workbench.viewport.screenshot_button');
+  static const viewportHudCard = ValueKey('workbench.viewport.hud_card');
+  static const viewportColorLegend = ValueKey('workbench.viewport.color_legend');
+  static const viewportGizmo = ValueKey('workbench.viewport.gizmo');
+  static const viewportEmptyGuideLoadButton = ValueKey('workbench.viewport.empty_guide_load_button');
+
+  // 左侧面板
+  static const leftDockPanel = ValueKey('workbench.left_dock.panel');
+  static const leftDockTabProject = ValueKey('workbench.left_dock.tab_project');
+  static const leftDockTabMeasure = ValueKey('workbench.left_dock.tab_measure');
+  static const leftDockTabStats = ValueKey('workbench.left_dock.tab_stats');
+  static const leftDockMeasureDistButton = ValueKey('workbench.left_dock.measure_dist_button');
+  static const leftDockMeasureAreaButton = ValueKey('workbench.left_dock.measure_area_button');
+  static const leftDockMeasureStrikeDipButton = ValueKey('workbench.left_dock.measure_strike_dip_button');
+  static const leftDockStatsRecalculateButton = ValueKey('workbench.left_dock.stats_recalculate_button');
+
+  // 右侧面板
+  static const rightDockPanel = ValueKey('workbench.right_dock.panel');
+  static const rightDockCloseButton = ValueKey('workbench.right_dock.close_button');
+  static const rightDockPointSizeSlider = ValueKey('workbench.right_dock.point_size_slider');
+  static const rightDockShapeDropdown = ValueKey('workbench.right_dock.shape_dropdown');
+  static const rightDockHeightSourceDropdown = ValueKey('workbench.right_dock.height_source_dropdown');
+  static const rightDockHeightScaleSlider = ValueKey('workbench.right_dock.height_scale_slider');
+  static const rightDockColorAttrDropdown = ValueKey('workbench.right_dock.color_attr_dropdown');
+  static const rightDockColormapDropdown = ValueKey('workbench.right_dock.colormap_dropdown');
+  static const rightDockScalarMinSlider = ValueKey('workbench.right_dock.scalar_min_slider');
+  static const rightDockScalarMaxSlider = ValueKey('workbench.right_dock.scalar_max_slider');
+  static const rightDockResetScalarRangeButton = ValueKey('workbench.right_dock.reset_scalar_range_button');
+  static const rightDockBgColorDropdown = ValueKey('workbench.right_dock.bg_color_dropdown');
+
+  // 底部状态栏
+  static const bottomStatusBar = ValueKey('workbench.bottom_status_bar');
+}
+
