@@ -84,13 +84,16 @@ class WelcomeActionCards extends StatelessWidget {
         ];
 
         if (isWide) {
-          return Row(
-            children: [
-              for (int i = 0; i < cards.length; i++) ...[
-                if (i > 0) const SizedBox(width: 14),
-                Expanded(child: cards[i]),
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (int i = 0; i < cards.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 14),
+                  Expanded(child: cards[i]),
+                ],
               ],
-            ],
+            ),
           );
         } else {
           return Column(
@@ -145,6 +148,7 @@ class _ActionCardItemState extends State<_ActionCardItem> {
             : AppTheme.border);
 
     return MouseRegion(
+      opaque: true,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
@@ -153,13 +157,14 @@ class _ActionCardItemState extends State<_ActionCardItem> {
         decoration: BoxDecoration(
           color: _isHovered ? const Color(0xFFFAFCFF) : AppTheme.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor, width: _isHovered ? 1.5 : 1.0),
+          // 保持恒定 1.0 像素线宽，仅在 hover 时平滑过渡边框颜色与背景，彻底杜绝几何变形与抖动
+          border: Border.all(color: borderColor, width: 1.0),
           boxShadow: _isHovered
               ? [
                   BoxShadow(
-                    color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: AppTheme.primaryBlue.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 1),
                   ),
                 ]
               : AppTheme.cardShadow,
