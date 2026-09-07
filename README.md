@@ -35,10 +35,7 @@ Vulkan 和自定义 GS3D、LOD、tile 数据格式提供高性能数据与渲染
 
 ## Flutter 前端状态
 
-Flutter 已承担欢迎页、主工作台、浮层交互和 Windows 桌面入口；C++ 核心继续负责
-数据加载、Vulkan 渲染和控制面能力。当前处于迁移收尾阶段：Flutter 单元与组件测试
-已覆盖 FFI 初始化、欢迎页、工作台布局和覆盖层交互；发布前仍应在目标 Windows 环境
-验证 FFI DLL 部署及端到端渲染流程。
+Flutter 已完整承担欢迎页、主工作台、视口深度交互、诊断套件、点云数据导出和 Windows 桌面入口；C++ 核心继续负责数据流式加载、Vulkan 1.3 离屏渲染和控制面能力。当前迁移已全面完成：50 项 Flutter 单元与组件测试及 44 项 C++ 核心测试全部通过。前端模块架构、代码拓扑与开发指南详见 [ui_flutter/README.md](ui_flutter/README.md)。
 
 ## 构建
 
