@@ -299,6 +299,11 @@ class GeoScatter3dService extends ChangeNotifier {
     double? panY,
     String? preset,
   }) {
+    final previousAzimuth = _cameraAzimuth;
+    final previousElevation = _cameraElevation;
+    final previousZoom = _cameraZoom;
+    final previousPanX = _cameraPanX;
+    final previousPanY = _cameraPanY;
     if (preset != null) {
       switch (preset.toLowerCase()) {
         case 'top':
@@ -328,6 +333,22 @@ class GeoScatter3dService extends ChangeNotifier {
     final nativeAxis = _nativeAxisForPreset(preset);
     if (nativeAxis != null) {
       _queueNativeCommand('gizmo.navigation', 'click', {'axis': nativeAxis});
+    } else if (preset == null) {
+      if (azimuth != null || elevation != null) {
+        _queueNativeCamera({
+          'rotate_delta_x': (_cameraAzimuth - previousAzimuth) / 0.4,
+          'rotate_delta_y': (previousElevation - _cameraElevation) / 0.4,
+        });
+      } else if (panX != null || panY != null) {
+        _queueNativeCamera({
+          'pan_delta_x': _cameraPanX - previousPanX,
+          'pan_delta_y': _cameraPanY - previousPanY,
+        });
+      } else if (zoom != null && previousZoom > 0.0 && _cameraZoom > 0.0) {
+        _queueNativeCamera({
+          'scroll_y': math.log(_cameraZoom / previousZoom) / math.log(1.15),
+        });
+      }
     }
     notifyListeners();
   }
@@ -555,6 +576,51 @@ class GeoScatter3dService extends ChangeNotifier {
 
   void _queueNativeRenderSettings(Map<String, dynamic> params) {
     _queueNativeCommand('runtime.render_settings', 'set', params);
+  }
+
+  void _queueNativeCamera(Map<String, dynamic> params) {
+    final hasMovement = params.values.any(
+      (value) => value is num && value != 0.0,
+    );
+    if (hasMovement) {
+      _queueNativeCommand('runtime.camera', 'input', params);
+    }
+  }
+
+  void _synchronizeNativeMeasurementMode(bool enabled) {
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) return;
+    unawaited(_syncNativeMeasurementMode(client, enabled));
+  }
+
+  Future<void> _syncNativeMeasurementMode(
+    NativeViewerControlClient client,
+    bool enabled,
+  ) async {
+    try {
+      final response = await client.request('get_state', {
+        'component': 'toolbar.measure',
+      });
+      final result = response['result'];
+      final nativeEnabled = result is Map<String, dynamic>
+          ? result['measure_mode_active'] as bool?
+          : null;
+      if (nativeEnabled != enabled) {
+        await client.request('execute', {
+          'component': 'toolbar.measure',
+          'command': 'click',
+          'params': const {},
+        });
+        if (identical(client, _nativeViewer)) {
+          await refreshNativeViewport();
+        }
+      }
+    } catch (error) {
+      if (identical(client, _nativeViewer)) {
+        _nativeViewerError = '原生测量模式同步失败: $error';
+        notifyListeners();
+      }
+    }
   }
 
   void _queueNativeCommand(
@@ -821,11 +887,11 @@ class GeoScatter3dService extends ChangeNotifier {
       }
       notifyListeners();
     }
+    _synchronizeNativeMeasurementMode(enabled);
   }
 
   void toggleMeasurementMode() {
     setMeasurementMode(!_isMeasurementMode);
-    _queueNativeCommand('toolbar.measure', 'click');
   }
 
   void addMeasurementPoint(Point3D point) {

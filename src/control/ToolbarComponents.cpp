@@ -388,6 +388,124 @@ private:
     };
 };
 
+class RuntimeCameraComponent final : public Component {
+public:
+    explicit RuntimeCameraComponent(gs3d::app::AppState& app_state)
+        : app_state_(app_state) {}
+
+    [[nodiscard]] const ComponentInfo& info() const noexcept override {
+        return info_;
+    }
+
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override {
+        return capabilities_;
+    }
+
+    [[nodiscard]] nlohmann::json get_state() override {
+        const int active = gs3d::app::resolve_viewport_index(
+            app_state_, app_state_.active_viewport_index
+        );
+        std::uint32_t width = 1;
+        std::uint32_t height = 1;
+        if (active >= 0 && active < static_cast<int>(app_state_.render_views.size())) {
+            const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
+            width = std::max(view.image_width, 1u);
+            height = std::max(view.image_height, 1u);
+        }
+        return {
+            {"id", info_.id},
+            {"active_viewport_index", active},
+            {"width", width},
+            {"height", height}
+        };
+    }
+
+    [[nodiscard]] nlohmann::json execute(
+        const std::string& command,
+        const nlohmann::json& params
+    ) override {
+        if (command == "get_state") {
+            return get_state();
+        }
+        if (command != "input") {
+            throw ComponentError(-32601, "unknown command: " + command);
+        }
+        if (!params.is_object()) {
+            throw ComponentError(-32602, "camera input params must be an object");
+        }
+
+        const int active = gs3d::app::resolve_viewport_index(
+            app_state_, app_state_.active_viewport_index
+        );
+        gs3d::app::ViewportFrameCmd frame;
+        frame.index = active;
+        frame.active = true;
+        frame.hovered = true;
+        if (active >= 0 && active < static_cast<int>(app_state_.render_views.size())) {
+            const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
+            frame.width = std::max(view.image_width, 1u);
+            frame.height = std::max(view.image_height, 1u);
+        } else {
+            frame.width = 1;
+            frame.height = 1;
+        }
+
+        const bool has_rotate = params.contains("rotate_delta_x") ||
+            params.contains("rotate_delta_y");
+        const bool has_pan = params.contains("pan_delta_x") ||
+            params.contains("pan_delta_y");
+        if (has_rotate && has_pan) {
+            throw ComponentError(-32602, "camera input cannot rotate and pan together");
+        }
+        if (has_rotate) {
+            frame.rotate = true;
+            frame.mouse_delta_x = optional_number(params, "rotate_delta_x");
+            frame.mouse_delta_y = optional_number(params, "rotate_delta_y");
+        }
+        if (has_pan) {
+            frame.pan = true;
+            frame.mouse_delta_x = optional_number(params, "pan_delta_x");
+            frame.mouse_delta_y = optional_number(params, "pan_delta_y");
+        }
+        if (params.contains("scroll_y")) {
+            frame.mouse_wheel = optional_number(params, "scroll_y");
+        }
+        if (!frame.interacting()) {
+            throw ComponentError(-32602, "camera input contains no movement");
+        }
+        app_state_.control_actions.viewport_frames.push_back(frame);
+        return {{"id", info_.id}, {"queued", true}};
+    }
+
+private:
+    static float optional_number(
+        const nlohmann::json& params,
+        const char* name
+    ) {
+        if (!params.contains(name)) {
+            return 0.0f;
+        }
+        const auto& value = params.at(name);
+        if (!value.is_number()) {
+            throw ComponentError(-32602, std::string(name) + " must be numeric");
+        }
+        return value.get<float>();
+    }
+
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{
+        "runtime.camera",
+        "原生相机输入",
+        "通过 ViewerApp 相机系统应用 Flutter 轨道、平移和缩放输入",
+        ComponentType::kCanvas,
+        false
+    };
+    std::vector<CommandSpec> capabilities_{
+        {"input", "提交相机交互增量", true},
+        {"get_state", "查询活动原生视口", false}
+    };
+};
+
 // ── 状态栏组件（只读） ──────────────────────────────────────────
 
 class StatusBarComponent final : public ReadOnlyComponentBase {
@@ -588,6 +706,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<ToolbarLinkCameraComponent>(app_state));
     result.push_back(std::make_unique<ToolbarPanelPaletteComponent>(app_state));
     result.push_back(std::make_unique<RuntimeRenderSettingsComponent>(app_state));
+    result.push_back(std::make_unique<RuntimeCameraComponent>(app_state));
     return result;
 }
 

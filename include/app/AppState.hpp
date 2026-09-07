@@ -495,6 +495,7 @@ struct AppState {
         int reset_camera_index = -1;
         int camera_view_axis = -1;
         std::vector<RenderSettingsCommand> render_settings_commands;
+        std::vector<ViewportFrameCmd> viewport_frames;
         bool toggle_fullscreen = false;
         std::string open_project_path;
     } control_actions;
