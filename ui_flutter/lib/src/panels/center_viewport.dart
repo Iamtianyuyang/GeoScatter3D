@@ -285,6 +285,16 @@ class _CenterViewportState extends State<CenterViewport> {
                                 setState(() {
                                   _hoverPos = event.localPosition;
                                 });
+                                if (widget.service.isNativeRendererActive) {
+                                  widget.service.queueNativePick(
+                                    'hover',
+                                    localX: event.localPosition.dx,
+                                    localY: event.localPosition.dy,
+                                    displayWidth: vpSize.width,
+                                    displayHeight: vpSize.height,
+                                  );
+                                  return;
+                                }
                                 final picked = widget.service.pickPointAt(
                                   event.localPosition.dx,
                                   event.localPosition.dy,
@@ -303,6 +313,18 @@ class _CenterViewportState extends State<CenterViewport> {
                               child: GestureDetector(
                                 onTapUp: (details) {
                                   _focusNode.requestFocus();
+                                  if (widget.service.isNativeRendererActive) {
+                                    widget.service.queueNativePick(
+                                      widget.service.isMeasurementMode
+                                          ? 'measure'
+                                          : 'hover',
+                                      localX: details.localPosition.dx,
+                                      localY: details.localPosition.dy,
+                                      displayWidth: vpSize.width,
+                                      displayHeight: vpSize.height,
+                                    );
+                                    return;
+                                  }
                                   final picked = widget.service.pickPointAt(
                                     details.localPosition.dx,
                                     details.localPosition.dy,
@@ -320,6 +342,16 @@ class _CenterViewportState extends State<CenterViewport> {
                                   }
                                 },
                                 onDoubleTapDown: (details) {
+                                  if (widget.service.isNativeRendererActive) {
+                                    widget.service.queueNativePick(
+                                      'focus',
+                                      localX: details.localPosition.dx,
+                                      localY: details.localPosition.dy,
+                                      displayWidth: vpSize.width,
+                                      displayHeight: vpSize.height,
+                                    );
+                                    return;
+                                  }
                                   final picked = widget.service.pickPointAt(
                                     details.localPosition.dx,
                                     details.localPosition.dy,
@@ -396,6 +428,24 @@ class _CenterViewportState extends State<CenterViewport> {
                                     );
                                     if ((maxX - minX) > 5 &&
                                         (maxY - minY) > 5) {
+                                      if (widget
+                                          .service
+                                          .isNativeRendererActive) {
+                                        widget.service.queueNativePick(
+                                          'region',
+                                          localX: minX,
+                                          localY: minY,
+                                          localMaxX: maxX,
+                                          localMaxY: maxY,
+                                          displayWidth: vpSize.width,
+                                          displayHeight: vpSize.height,
+                                        );
+                                        setState(() {
+                                          _boxSelectStart = null;
+                                          _boxSelectCurrent = null;
+                                        });
+                                        return;
+                                      }
                                       final stats = widget.service
                                           .calculateRegionBoxStats(
                                             minX,

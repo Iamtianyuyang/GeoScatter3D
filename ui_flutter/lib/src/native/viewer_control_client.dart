@@ -17,8 +17,12 @@ class NativeViewerControlClient {
   Process? _process;
   StreamSubscription<String>? _lines;
   int _nextRequestId = 1;
+  int _lastCaptureWidth = 0;
+  int _lastCaptureHeight = 0;
 
   bool get isConnected => _socket != null;
+  int get lastCaptureWidth => _lastCaptureWidth;
+  int get lastCaptureHeight => _lastCaptureHeight;
 
   Future<bool> start({
     required String executablePath,
@@ -80,6 +84,8 @@ class NativeViewerControlClient {
     if (data is! String || data.isEmpty) {
       throw StateError('原生查看器截图为空');
     }
+    _lastCaptureWidth = (result['width'] as num?)?.toInt() ?? 0;
+    _lastCaptureHeight = (result['height'] as num?)?.toInt() ?? 0;
     return base64Decode(data);
   }
 

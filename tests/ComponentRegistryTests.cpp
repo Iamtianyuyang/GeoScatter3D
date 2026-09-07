@@ -337,6 +337,9 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
                 } else if (capability.command == "input" &&
                            component->info().id == "runtime.camera") {
                     params["scroll_y"] = 1.0;
+                } else if (capability.command == "input" &&
+                           component->info().id == "runtime.pick") {
+                    params["kind"] = "measure";
                 }
             }
             nlohmann::json result;
@@ -391,11 +394,12 @@ TEST_CASE("list_json exposes stable ids and capabilities", "[component_registry]
     CHECK(ids.count("canvas.viewport") == 1);
     CHECK(ids.count("runtime.render_settings") == 1);
     CHECK(ids.count("runtime.camera") == 1);
+    CHECK(ids.count("runtime.pick") == 1);
     // 注意：viewport.main 在 ViewerAppControlPlane.cpp 中创建，
     // 测试中的 make_full_registry 不包含它
 
-    // 总组件数检查：8 panels + 9 menus + 8 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 30
-    CHECK(ids.size() >= 30);
+    // 总组件数检查：8 panels + 9 menus + 9 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 31
+    CHECK(ids.size() >= 31);
 }
 
 // ── 主题组件支持 set_value ───────────────────────────────────

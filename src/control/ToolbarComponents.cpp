@@ -506,6 +506,89 @@ private:
     };
 };
 
+class RuntimePickComponent final : public Component {
+public:
+    explicit RuntimePickComponent(gs3d::app::AppState& app_state)
+        : app_state_(app_state) {}
+
+    [[nodiscard]] const ComponentInfo& info() const noexcept override { return info_; }
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override { return capabilities_; }
+
+    [[nodiscard]] nlohmann::json get_state() override {
+        const int active = gs3d::app::resolve_viewport_index(app_state_, app_state_.active_viewport_index);
+        if (active < 0 || active >= static_cast<int>(app_state_.render_views.size())) {
+            return {{"id", info_.id}, {"ready", false}};
+        }
+        const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
+        const auto& stats = gs3d::app::region_stats_for_view(app_state_, active);
+        return {{"id", info_.id}, {"ready", true}, {"active_viewport_index", active},
+                {"canvas_left", view.canvas_rect_min_x}, {"canvas_top", view.canvas_rect_min_y},
+                {"canvas_right", view.canvas_rect_max_x}, {"canvas_bottom", view.canvas_rect_max_y},
+                {"width", view.image_width}, {"height", view.image_height},
+                {"region_computing", stats.computing}, {"region_valid", stats.valid},
+                {"region_point_count", stats.point_count}};
+    }
+
+    [[nodiscard]] nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
+        if (command == "get_state") return get_state();
+        if (command != "input" || !params.is_object()) {
+            throw ComponentError(-32602, "pick input must be an object");
+        }
+        const int active = gs3d::app::resolve_viewport_index(app_state_, app_state_.active_viewport_index);
+        if (active < 0 || active >= static_cast<int>(app_state_.render_views.size())) {
+            throw ComponentError(-32602, "no active native viewport");
+        }
+        const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
+        const auto input_kind = params.value("kind", std::string{});
+        gs3d::app::ViewportFrameCmd frame;
+        frame.index = active;
+        frame.active = true;
+        frame.width = std::max(view.image_width, 1u);
+        frame.height = std::max(view.image_height, 1u);
+        frame.mouse_on_image = true;
+
+        const auto to_local_x = [&](const char* name) {
+            return require_number(params, name) - view.canvas_rect_min_x;
+        };
+        const auto to_local_y = [&](const char* name) {
+            return require_number(params, name) - view.canvas_rect_min_y;
+        };
+        if (input_kind == "hover") {
+            frame.active = false;
+            frame.hovered = true;
+            frame.mouse_local_x = to_local_x("screen_x");
+            frame.mouse_local_y = to_local_y("screen_y");
+        } else if (input_kind == "measure") {
+            frame.measure_pick_requested = true;
+        } else if (input_kind == "focus") {
+            frame.point_double_clicked = true;
+            frame.mouse_local_x = to_local_x("screen_x");
+            frame.mouse_local_y = to_local_y("screen_y");
+        } else if (input_kind == "region") {
+            frame.stats_select_completed = true;
+            frame.stats_select_min_x = to_local_x("screen_min_x");
+            frame.stats_select_min_y = to_local_y("screen_min_y");
+            frame.stats_select_max_x = to_local_x("screen_max_x");
+            frame.stats_select_max_y = to_local_y("screen_max_y");
+        } else {
+            throw ComponentError(-32602, "unknown pick input kind: " + input_kind);
+        }
+        app_state_.control_actions.viewport_frames.push_back(frame);
+        return {{"id", info_.id}, {"queued", true}};
+    }
+
+private:
+    static float require_number(const nlohmann::json& params, const char* name) {
+        const auto& value = params.at(name);
+        if (!value.is_number()) throw ComponentError(-32602, std::string(name) + " must be numeric");
+        return value.get<float>();
+    }
+
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{"runtime.pick", "原生拾取输入", "将 Flutter 指针事件送入 GPU 拾取、测量和区域统计", ComponentType::kCanvas, false};
+    std::vector<CommandSpec> capabilities_{{"input", "提交原生拾取事件", true}, {"get_state", "查询原生画布与统计状态", false}};
+};
+
 // ── 状态栏组件（只读） ──────────────────────────────────────────
 
 class StatusBarComponent final : public ReadOnlyComponentBase {
@@ -707,6 +790,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<ToolbarPanelPaletteComponent>(app_state));
     result.push_back(std::make_unique<RuntimeRenderSettingsComponent>(app_state));
     result.push_back(std::make_unique<RuntimeCameraComponent>(app_state));
+    result.push_back(std::make_unique<RuntimePickComponent>(app_state));
     return result;
 }
 

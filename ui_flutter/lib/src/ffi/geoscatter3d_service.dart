@@ -587,6 +587,47 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  void queueNativePick(
+    String kind, {
+    required double localX,
+    required double localY,
+    required double displayWidth,
+    required double displayHeight,
+    double? localMaxX,
+    double? localMaxY,
+  }) {
+    final client = _nativeViewer;
+    if (client == null ||
+        !client.isConnected ||
+        displayWidth <= 0 ||
+        displayHeight <= 0) {
+      return;
+    }
+    final sourceWidth = client.lastCaptureWidth;
+    final sourceHeight = client.lastCaptureHeight;
+    if (sourceWidth <= 0 || sourceHeight <= 0) return;
+    final scale = math.min(
+      displayWidth / sourceWidth,
+      displayHeight / sourceHeight,
+    );
+    final offsetX = (displayWidth - sourceWidth * scale) * 0.5;
+    final offsetY = (displayHeight - sourceHeight * scale) * 0.5;
+    double mapX(double x) => (x - offsetX) / scale;
+    double mapY(double y) => (y - offsetY) / scale;
+    final params = <String, dynamic>{
+      'kind': kind,
+      'screen_x': mapX(localX),
+      'screen_y': mapY(localY),
+    };
+    if (localMaxX != null && localMaxY != null) {
+      params['screen_min_x'] = mapX(localX);
+      params['screen_min_y'] = mapY(localY);
+      params['screen_max_x'] = mapX(localMaxX);
+      params['screen_max_y'] = mapY(localMaxY);
+    }
+    _queueNativeCommand('runtime.pick', 'input', params);
+  }
+
   void _synchronizeNativeMeasurementMode(bool enabled) {
     final client = _nativeViewer;
     if (client == null || !client.isConnected) return;
