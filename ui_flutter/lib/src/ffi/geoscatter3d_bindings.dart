@@ -129,6 +129,91 @@ typedef _dart_pick_file = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> filter_ty
 typedef _c_pick_folder = ffi.Pointer<Utf8> Function();
 typedef _dart_pick_folder = ffi.Pointer<Utf8> Function();
 
+typedef _c_get_performance_metrics = ffi.Void Function(
+    ffi.Pointer<ffi.Float> out_fps,
+    ffi.Pointer<ffi.Float> out_frame_time_ms,
+    ffi.Pointer<ffi.Uint64> out_visible_points,
+    ffi.Pointer<ffi.Uint64> out_gpu_mem_bytes,
+    ffi.Pointer<ffi.Uint32> out_loaded_tiles,
+    ffi.Pointer<ffi.Uint32> out_pending_tiles,
+    ffi.Pointer<ffi.Float> out_cache_hit_rate);
+typedef _dart_get_performance_metrics = void Function(
+    ffi.Pointer<ffi.Float> out_fps,
+    ffi.Pointer<ffi.Float> out_frame_time_ms,
+    ffi.Pointer<ffi.Uint64> out_visible_points,
+    ffi.Pointer<ffi.Uint64> out_gpu_mem_bytes,
+    ffi.Pointer<ffi.Uint32> out_loaded_tiles,
+    ffi.Pointer<ffi.Uint32> out_pending_tiles,
+    ffi.Pointer<ffi.Float> out_cache_hit_rate);
+
+typedef _c_get_camera_coords_string = ffi.Pointer<Utf8> Function();
+typedef _dart_get_camera_coords_string = ffi.Pointer<Utf8> Function();
+
+typedef _c_clear_cache = ffi.Void Function();
+typedef _dart_clear_cache = void Function();
+
+typedef _c_pick_point = ffi.Int32 Function(
+    ffi.Float screen_x,
+    ffi.Float screen_y,
+    ffi.Float viewport_width,
+    ffi.Float viewport_height,
+    ffi.Float azimuth_deg,
+    ffi.Float elevation_deg,
+    ffi.Float zoom,
+    ffi.Float pan_x,
+    ffi.Float pan_y,
+    ffi.Pointer<ffi.Float> out_point_xyzv);
+typedef _dart_pick_point = int Function(
+    double screen_x,
+    double screen_y,
+    double viewport_width,
+    double viewport_height,
+    double azimuth_deg,
+    double elevation_deg,
+    double zoom,
+    double pan_x,
+    double pan_y,
+    ffi.Pointer<ffi.Float> out_point_xyzv);
+
+typedef _c_calculate_region_stats = ffi.Int32 Function(
+    ffi.Float min_x,
+    ffi.Float max_x,
+    ffi.Float min_y,
+    ffi.Float max_y,
+    ffi.Pointer<ffi.Uint64> out_count,
+    ffi.Pointer<ffi.Float> out_mean,
+    ffi.Pointer<ffi.Float> out_min,
+    ffi.Pointer<ffi.Float> out_max,
+    ffi.Pointer<ffi.Float> out_std_dev,
+    ffi.Pointer<ffi.Int32> out_hist_5bins);
+typedef _dart_calculate_region_stats = int Function(
+    double min_x,
+    double max_x,
+    double min_y,
+    double max_y,
+    ffi.Pointer<ffi.Uint64> out_count,
+    ffi.Pointer<ffi.Float> out_mean,
+    ffi.Pointer<ffi.Float> out_min,
+    ffi.Pointer<ffi.Float> out_max,
+    ffi.Pointer<ffi.Float> out_std_dev,
+    ffi.Pointer<ffi.Int32> out_hist_5bins);
+
+typedef _c_get_nav_map_thumbnail = ffi.Int32 Function(
+    ffi.Pointer<ffi.Uint8> out_rgba,
+    ffi.Int32 width,
+    ffi.Int32 height);
+typedef _dart_get_nav_map_thumbnail = int Function(
+    ffi.Pointer<ffi.Uint8> out_rgba,
+    int width,
+    int height);
+
+typedef _c_export_dataset = ffi.Int32 Function(
+    ffi.Pointer<Utf8> target_path,
+    ffi.Pointer<Utf8> format_type);
+typedef _dart_export_dataset = int Function(
+    ffi.Pointer<Utf8> target_path,
+    ffi.Pointer<Utf8> format_type);
+
 /// 底层 C-ABI 动态链接库直接绑定
 class GeoScatter3dBindings {
   final ffi.DynamicLibrary dylib;
@@ -177,6 +262,14 @@ class GeoScatter3dBindings {
   late final _dart_pick_file pick_file;
   late final _dart_pick_folder pick_folder;
 
+  late final _dart_get_performance_metrics get_performance_metrics;
+  late final _dart_get_camera_coords_string get_camera_coords_string;
+  late final _dart_clear_cache clear_cache;
+  late final _dart_pick_point pick_point;
+  late final _dart_calculate_region_stats calculate_region_stats;
+  late final _dart_get_nav_map_thumbnail get_nav_map_thumbnail;
+  late final _dart_export_dataset export_dataset;
+
   GeoScatter3dBindings(this.dylib) {
     init = dylib.lookupFunction<_c_init, _dart_init>('gs3d_ffi_init');
     shutdown = dylib.lookupFunction<_c_shutdown, _dart_shutdown>('gs3d_ffi_shutdown');
@@ -221,6 +314,14 @@ class GeoScatter3dBindings {
     get_scalar_range = dylib.lookupFunction<_c_get_scalar_range, _dart_get_scalar_range>('gs3d_ffi_get_scalar_range');
     pick_file = dylib.lookupFunction<_c_pick_file, _dart_pick_file>('gs3d_ffi_pick_file');
     pick_folder = dylib.lookupFunction<_c_pick_folder, _dart_pick_folder>('gs3d_ffi_pick_folder');
+
+    get_performance_metrics = dylib.lookupFunction<_c_get_performance_metrics, _dart_get_performance_metrics>('gs3d_ffi_get_performance_metrics');
+    get_camera_coords_string = dylib.lookupFunction<_c_get_camera_coords_string, _dart_get_camera_coords_string>('gs3d_ffi_get_camera_coords_string');
+    clear_cache = dylib.lookupFunction<_c_clear_cache, _dart_clear_cache>('gs3d_ffi_clear_cache');
+    pick_point = dylib.lookupFunction<_c_pick_point, _dart_pick_point>('gs3d_ffi_pick_point');
+    calculate_region_stats = dylib.lookupFunction<_c_calculate_region_stats, _dart_calculate_region_stats>('gs3d_ffi_calculate_region_stats');
+    get_nav_map_thumbnail = dylib.lookupFunction<_c_get_nav_map_thumbnail, _dart_get_nav_map_thumbnail>('gs3d_ffi_get_nav_map_thumbnail');
+    export_dataset = dylib.lookupFunction<_c_export_dataset, _dart_export_dataset>('gs3d_ffi_export_dataset');
   }
 
   /// 自动探测并加载动态库

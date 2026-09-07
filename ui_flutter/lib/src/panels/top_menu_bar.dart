@@ -5,6 +5,7 @@ import '../welcome/gpu_selection_dialog.dart';
 import '../welcome/new_project_dialog.dart';
 import '../welcome/open_project_dialog.dart';
 import '../welcome/welcome_ui_keys.dart';
+import 'export_dialog.dart';
 
 class TopMenuBar extends StatelessWidget {
   final GeoScatter3dService service;
@@ -13,6 +14,14 @@ class TopMenuBar extends StatelessWidget {
     super.key,
     required this.service,
   });
+
+  void _showExportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => ExportPointCloudDialog(service: service),
+    );
+  }
 
   void _showNewProjectDialog(BuildContext context) {
     showDialog(
@@ -214,6 +223,7 @@ class TopMenuBar extends StatelessWidget {
           // 菜单项
           _buildFileMenu(context),
           _buildViewMenu(context),
+          _buildToolsMenu(context),
           _buildWindowMenu(context),
           _buildHelpMenu(context),
 
@@ -351,6 +361,9 @@ class TopMenuBar extends StatelessWidget {
           case 'screenshot':
             service.requestScreenshot();
             break;
+          case 'export':
+            _showExportDialog(context);
+            break;
           case 'close':
             service.closeWorkbench();
             break;
@@ -399,6 +412,17 @@ class TopMenuBar extends StatelessWidget {
               Icon(Icons.camera_alt_outlined, size: 16, color: AppTheme.accentBlue),
               SizedBox(width: 8),
               Text('视口截图'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_export'),
+          value: 'export',
+          child: Row(
+            children: [
+              Icon(Icons.file_download_outlined, size: 16, color: AppTheme.accentBlue),
+              SizedBox(width: 8),
+              Text('导出点云 (PLY/CSV)...'),
             ],
           ),
         ),
@@ -560,6 +584,63 @@ class TopMenuBar extends StatelessWidget {
     );
   }
 
+  Widget _buildToolsMenu(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: const ValueKey('workbench.menu.tools'),
+      tooltip: '工具',
+      offset: const Offset(0, 30),
+      onSelected: (value) {
+        switch (value) {
+          case 'cmd_palette':
+            service.toggleCommandPalette(true);
+            break;
+          case 'performance':
+            service.togglePerformancePanel(true);
+            break;
+          case 'tile_inspector':
+            service.toggleTileInspector(true);
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_cmd_palette'),
+          value: 'cmd_palette',
+          child: Row(
+            children: [
+              Icon(Icons.terminal, size: 16, color: AppTheme.primaryBlue),
+              SizedBox(width: 8),
+              Text('命令面板 (Ctrl+P)...'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_performance'),
+          value: 'performance',
+          child: Row(
+            children: [
+              Icon(Icons.speed_rounded, size: 16, color: AppTheme.statusGreen),
+              SizedBox(width: 8),
+              Text('性能与显存诊断...'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_tile_inspector'),
+          value: 'tile_inspector',
+          child: Row(
+            children: [
+              Icon(Icons.grid_view_rounded, size: 16, color: AppTheme.accentBlue),
+              SizedBox(width: 8),
+              Text('八叉树瓦片与 LOD 视察器...'),
+            ],
+          ),
+        ),
+      ],
+      child: _buildMenuLabel('工具'),
+    );
+  }
+
   Widget _buildWindowMenu(BuildContext context) {
     return PopupMenuButton<String>(
       key: WorkbenchUiKeys.menuWindow,
@@ -661,6 +742,9 @@ class TopMenuBar extends StatelessWidget {
       offset: const Offset(0, 30),
       onSelected: (value) {
         switch (value) {
+          case 'shortcuts':
+            service.toggleShortcutOverlay(true);
+            break;
           case 'gpu':
             _showGpuDialog(context);
             break;
@@ -673,6 +757,17 @@ class TopMenuBar extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_shortcuts'),
+          value: 'shortcuts',
+          child: Row(
+            children: [
+              Icon(Icons.keyboard_outlined, size: 16, color: AppTheme.primaryBlue),
+              SizedBox(width: 8),
+              Text('快捷操作速查 (F1)...'),
+            ],
+          ),
+        ),
         const PopupMenuItem(
           key: WorkbenchUiKeys.menuItemGpu,
           value: 'gpu',

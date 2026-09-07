@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/dataset_model.dart';
+import '../models/point_cloud_model.dart';
 import '../theme/app_theme.dart';
 import '../welcome/welcome_ui_keys.dart';
 import '../widgets/modern_card.dart';
@@ -280,40 +282,71 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
               ),
               const SizedBox(height: 10),
 
-              // 导航图 2D 鸟瞰图画布
+              // 导航图 2D 鸟瞰图画布与视口双向同步
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-                child: Container(
-                  height: 180,
-                  width: double.infinity,
-                  color: const Color(0xFF0B1320),
-                  child: Stack(
-                    children: [
-                      // 鸟瞰地形图渐变模拟与网格
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: NavigationMapBackgroundPainter(),
-                        ),
-                      ),
-                      // 视锥体高亮框
-                      Positioned(
-                        left: 40,
-                        top: 50,
-                        width: 90,
-                        height: 70,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryBlue.withAlpha(45),
-                            border: Border.all(
-                              color: AppTheme.primaryBlue,
-                              width: 1.5,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final mapW = constraints.maxWidth;
+                    const mapH = 180.0;
+                    final zoom = widget.service.cameraZoom;
+                    final panX = widget.service.cameraPanX;
+                    final panY = widget.service.cameraPanY;
+                    final bmin = summary.bboxMin;
+                    final bmax = summary.bboxMax;
+
+                    final boxW = (mapW * 0.45 / zoom).clamp(24.0, mapW);
+                    final boxH = (mapH * 0.45 / zoom).clamp(20.0, mapH);
+                    final boxLeft = (mapW * 0.5 - panX * 0.15 - boxW * 0.5).clamp(0.0, mapW - boxW);
+                    final boxTop = (mapH * 0.5 + panY * 0.15 - boxH * 0.5).clamp(0.0, mapH - boxH);
+
+                    return GestureDetector(
+                      onTapDown: (details) {
+                        final nx = (details.localPosition.dx / mapW).clamp(0.0, 1.0);
+                        final ny = (details.localPosition.dy / mapH).clamp(0.0, 1.0);
+                        if (bmin.isNotEmpty && bmax.isNotEmpty) {
+                          final wx = bmin[0] + nx * (bmax[0] - bmin[0]);
+                          final wy = bmax[1] - ny * (bmax[1] - bmin[1]);
+                          widget.service.navigateCameraToWorld(wx, wy);
+                        }
+                      },
+                      child: Container(
+                        height: mapH,
+                        width: double.infinity,
+                        color: const Color(0xFF0B1320),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: NavigationMapBackgroundPainter(
+                                  points: widget.service.points,
+                                  bmin: bmin,
+                                  bmax: bmax,
+                                ),
+                              ),
                             ),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                            // 动态视锥体高亮框
+                            Positioned(
+                              left: boxLeft,
+                              top: boxTop,
+                              width: boxW,
+                              height: boxH,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryBlue.withAlpha(45),
+                                  border: Border.all(
+                                    color: AppTheme.primaryBlue,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -328,6 +361,9 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     final summary = widget.service.summary;
     final bmin = summary.bboxMin;
     final bmax = summary.bboxMax;
+    final lines = widget.service.measurementLines;
+    final isMeasuring = widget.service.isMeasurementMode;
+    final mode = widget.service.measurementDisplayMode;
 
     final dx = bmax.isNotEmpty && bmin.isNotEmpty ? (bmax[0] - bmin[0]).abs() : 0.0;
     final dy = bmax.length > 1 && bmin.length > 1 ? (bmax[1] - bmin[1]).abs() : 0.0;
@@ -342,51 +378,164 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '三维空间测距',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '三维空间测距与标尺',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textTitle,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isMeasuring ? const Color(0x3300E5FF) : AppTheme.surfaceMuted,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isMeasuring ? const Color(0xFF00E5FF) : AppTheme.border,
+                      ),
+                    ),
+                    child: Text(
+                      isMeasuring ? '标尺拾取中' : '未激活',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: isMeasuring ? const Color(0xFF00E5FF) : AppTheme.textDim,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceMuted,
-                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
-                ),
-                child: Column(
-                  children: [
-                    _buildCoordRow('起点 A', bmin.isNotEmpty ? '(${bmin[0].toStringAsFixed(1)}, ${bmin[1].toStringAsFixed(1)}, ${bmin[2].toStringAsFixed(1)})' : '--'),
-                    const SizedBox(height: 6),
-                    _buildCoordRow('终点 B', bmax.isNotEmpty ? '(${bmax[0].toStringAsFixed(1)}, ${bmax[1].toStringAsFixed(1)}, ${bmax[2].toStringAsFixed(1)})' : '--'),
-                    const Divider(height: 16),
-                    _buildCoordRow('空间对角距', '${dist3d.toStringAsFixed(2)} m', isBold: true),
-                    _buildCoordRow('水平投影距', '${dx.toStringAsFixed(2)} m'),
-                    _buildCoordRow('绝对高差 ΔZ', '${dz.toStringAsFixed(2)} m'),
-                  ],
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildToolButton(
+                      key: WorkbenchUiKeys.leftDockMeasureDistButton,
+                      icon: isMeasuring ? Icons.check_circle_outline : Icons.straighten_rounded,
+                      label: isMeasuring ? '退出测距模式' : '进入测距模式',
+                      onPressed: () => widget.service.toggleMeasurementMode(),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: '清空所有测量线',
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: AppTheme.textDim),
+                    onPressed: lines.isNotEmpty ? () => widget.service.clearMeasurementLines() : null,
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _buildToolButton(
-                key: WorkbenchUiKeys.leftDockMeasureDistButton,
-                icon: Icons.straighten_rounded,
-                label: '重新拾取测量两点',
-                onPressed: () => widget.service.calculateMeasurement('distance'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('标签显示: ', style: TextStyle(fontSize: 11, color: AppTheme.textDim)),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        _buildModeChip('3d', '3D 空间距', mode == '3d'),
+                        _buildModeChip('2d', '2D 平面距', mode == '2d'),
+                        _buildModeChip('both', '双重', mode == 'both'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 10),
 
+        if (lines.isNotEmpty) ...[
+          ModernCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '已测线段 (${lines.length})',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+                    ),
+                    Text(
+                      '累计长: ${lines.fold<double>(0, (sum, l) => sum + l.distance3D).toStringAsFixed(2)}m',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.primaryBlue, fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...lines.map((line) => Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceMuted,
+                    borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                    border: Border.all(color: AppTheme.border.withAlpha(80)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: line.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '3D: ${line.distance3D.toStringAsFixed(2)} m (ΔZ: ${line.deltaZ.toStringAsFixed(2)} m)',
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textTitle, fontFamily: 'monospace'),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '(${line.start.x.toStringAsFixed(1)}, ${line.start.y.toStringAsFixed(1)}) → (${line.end.x.toStringAsFixed(1)}, ${line.end.y.toStringAsFixed(1)})',
+                              style: const TextStyle(fontSize: 10, color: AppTheme.textDim, fontFamily: 'monospace'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          line.isFixed ? Icons.push_pin : Icons.push_pin_outlined,
+                          size: 14,
+                          color: line.isFixed ? const Color(0xFF00E5FF) : AppTheme.textDim,
+                        ),
+                        tooltip: line.isFixed ? '已固定' : '固定线段',
+                        onPressed: () => widget.service.toggleMeasurementLineFixed(line.id),
+                        splashRadius: 14,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 14, color: AppTheme.textDim),
+                        tooltip: '删除此测量线',
+                        onPressed: () => widget.service.removeMeasurementLine(line.id),
+                        splashRadius: 14,
+                      ),
+                    ],
+                  ),
+                )),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
         ModernCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '几何与投影面积',
+                '全工区几何与包围盒',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -406,6 +555,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     _buildCoordRow('Y 跨度', '${dy.toStringAsFixed(2)} m'),
                     _buildCoordRow('Z 跨度', '${dz.toStringAsFixed(2)} m'),
                     const Divider(height: 16),
+                    _buildCoordRow('空间对角距', '${dist3d.toStringAsFixed(2)} m', isBold: true),
                     _buildCoordRow('底面投影面积', '${area2d.toStringAsFixed(2)} m²', isBold: true),
                   ],
                 ),
@@ -414,7 +564,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
               _buildToolButton(
                 key: WorkbenchUiKeys.leftDockMeasureAreaButton,
                 icon: Icons.square_foot_rounded,
-                label: '绘制多边形测面',
+                label: '计算投影底面积',
                 onPressed: () => widget.service.calculateMeasurement('area'),
               ),
               const SizedBox(height: 6),
@@ -431,6 +581,29 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     );
   }
 
+  Widget _buildModeChip(String mode, String label, bool active) {
+    return InkWell(
+      onTap: () => widget.service.setMeasurementDisplayMode(mode),
+      borderRadius: BorderRadius.circular(3),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: active ? AppTheme.primaryBlue.withAlpha(40) : AppTheme.surfaceMuted,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: active ? AppTheme.primaryBlue : AppTheme.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: active ? AppTheme.primaryBlue : AppTheme.textDim,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCoordRow(String label, String value, {bool isBold = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -442,28 +615,36 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
   }
 
   Widget _buildRegionStatsTab() {
+    final activeBoxStats = widget.service.activeRegionStats;
     final points = widget.service.points;
-    final count = points.length;
+    final count = activeBoxStats != null ? (activeBoxStats['count'] as int) : points.length;
 
     double mean = 0.0;
-    if (count > 0) {
-      double sum = 0.0;
-      for (final p in points) {
-        sum += p.value;
+    double minVal = widget.service.scalarMin;
+    double maxVal = widget.service.scalarMax;
+    double stdDev = 0.0;
+    List<int> bins = [0, 0, 0, 0, 0];
+
+    if (activeBoxStats != null) {
+      mean = (activeBoxStats['mean'] as num).toDouble();
+      minVal = (activeBoxStats['min'] as num).toDouble();
+      maxVal = (activeBoxStats['max'] as num).toDouble();
+      stdDev = (activeBoxStats['std_dev'] as num).toDouble();
+      bins = (activeBoxStats['histogram'] as List).cast<int>();
+    } else {
+      if (count > 0) {
+        double sum = 0.0;
+        for (final p in points) {
+          sum += p.value;
+        }
+        mean = sum / count;
       }
-      mean = sum / count;
-    }
-
-    final minVal = widget.service.scalarMin;
-    final maxVal = widget.service.scalarMax;
-
-    // 计算 5 个区间的直方图分布
-    final bins = [0, 0, 0, 0, 0];
-    if (count > 0 && maxVal > minVal) {
-      final step = (maxVal - minVal) / 5.0;
-      for (final p in points) {
-        final idx = ((p.value - minVal) / step).floor().clamp(0, 4);
-        bins[idx]++;
+      if (count > 0 && maxVal > minVal) {
+        final step = (maxVal - minVal) / 5.0;
+        for (final p in points) {
+          final idx = ((p.value - minVal) / step).floor().clamp(0, 4);
+          bins[idx]++;
+        }
       }
     }
 
@@ -472,13 +653,62 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        if (activeBoxStats != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0x333B82F6),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF3B82F6)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.crop_free, size: 14, color: Color(0xFF3B82F6)),
+                    SizedBox(width: 6),
+                    Text('当前展示: 视口矩形选区统计', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF93C5FD))),
+                  ],
+                ),
+                InkWell(
+                  onTap: () => widget.service.clearRegionStats(),
+                  child: const Text('清除选区', style: TextStyle(fontSize: 11, color: Colors.white70, decoration: TextDecoration.underline)),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceMuted,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, size: 14, color: AppTheme.textDim),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '提示：在三维视口中按住 Shift 并拖拽鼠标即可框选任意局部区域进行即时统计。',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         ModernCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '属性统计指标 (Statistics)',
-                style: TextStyle(
+              Text(
+                activeBoxStats != null ? '局部选区统计指标' : '全工区属性统计指标',
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppTheme.textTitle,
@@ -498,11 +728,13 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     _buildCoordRow('最小值 Min', minVal.toStringAsFixed(3)),
                     _buildCoordRow('最大值 Max', maxVal.toStringAsFixed(3)),
                     _buildCoordRow('极差 Range', (maxVal - minVal).toStringAsFixed(3)),
+                    if (activeBoxStats != null)
+                      _buildCoordRow('标准差 StdDev', stdDev.toStringAsFixed(3)),
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              const Text('数值直方图分布', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textTitle)),
+              const Text('数值直方图分布 (5 Bins)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textTitle)),
               const SizedBox(height: 8),
 
               // 直方图 5 根柱子
@@ -523,7 +755,8 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                             Container(
                               height: (60 * fraction).clamp(4.0, 60.0),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryBlue.withAlpha((100 + i * 35).clamp(0, 255)),
+                                color: (activeBoxStats != null ? const Color(0xFF3B82F6) : AppTheme.primaryBlue)
+                                    .withAlpha((100 + i * 35).clamp(0, 255)),
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
                               ),
                             ),
@@ -544,11 +777,23 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ],
               ),
               const SizedBox(height: 12),
-              _buildToolButton(
-                key: WorkbenchUiKeys.leftDockStatsRecalculateButton,
-                icon: Icons.highlight_alt_rounded,
-                label: '框选局部区域重算统计',
-                onPressed: () => widget.service.calculateStats(),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildToolButton(
+                      key: WorkbenchUiKeys.leftDockStatsRecalculateButton,
+                      icon: Icons.copy_all_rounded,
+                      label: '复制统计指标数据',
+                      onPressed: () {
+                        final text = '样本数: $count\n均值: ${mean.toStringAsFixed(3)}\n最小值: ${minVal.toStringAsFixed(3)}\n最大值: ${maxVal.toStringAsFixed(3)}\n极差: ${(maxVal - minVal).toStringAsFixed(3)}\n直方图: $bins';
+                        Clipboard.setData(ClipboardData(text: text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已复制统计指标数据到剪贴板'), duration: Duration(seconds: 2)),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -623,6 +868,16 @@ class ViewfinderCornerPainter extends CustomPainter {
 
 /// 绘制鸟瞰导航图彩色地貌与热力背景
 class NavigationMapBackgroundPainter extends CustomPainter {
+  final List<Point3D>? points;
+  final List<double>? bmin;
+  final List<double>? bmax;
+
+  const NavigationMapBackgroundPainter({
+    this.points,
+    this.bmin,
+    this.bmax,
+  });
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
@@ -653,8 +908,24 @@ class NavigationMapBackgroundPainter extends CustomPainter {
     for (double y = 0; y < size.height; y += 24) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
+
+    if (points != null && points!.isNotEmpty && bmin != null && bmax != null && bmin!.isNotEmpty && bmax!.isNotEmpty) {
+      final spanX = (bmax![0] - bmin![0]) > 1e-4 ? (bmax![0] - bmin![0]) : 1.0;
+      final spanY = (bmax!.length > 1 && bmin!.length > 1 && (bmax![1] - bmin![1]) > 1e-4) ? (bmax![1] - bmin![1]) : 1.0;
+      final step = math.max(1, (points!.length / 200).floor());
+      final pPaint = Paint()..color = Colors.white.withAlpha(120);
+      for (int i = 0; i < points!.length; i += step) {
+        final p = points![i];
+        final nx = ((p.x - bmin![0]) / spanX).clamp(0.0, 1.0);
+        final ny = ((p.y - bmin![1]) / spanY).clamp(0.0, 1.0);
+        final px = nx * size.width;
+        final py = (1.0 - ny) * size.height;
+        canvas.drawCircle(Offset(px, py), 1.2, pPaint);
+      }
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant NavigationMapBackgroundPainter oldDelegate) =>
+      oldDelegate.points?.length != points?.length;
 }

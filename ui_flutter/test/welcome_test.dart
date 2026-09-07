@@ -22,9 +22,9 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all 32 registered actions (15 welcome + 17 workbench)', () {
+    test('getAvailableActions returns all registered actions (15 welcome + 30 workbench)', () {
       final actions = service.getAvailableActions();
-      expect(actions.length, equals(32));
+      expect(actions.length, equals(45));
       final ids = actions.map((a) => a.id).toSet();
       expect(ids, containsAll([
         'welcome.quick_demo',
@@ -177,7 +177,7 @@ void main() {
       });
       final listRes = jsonDecode(service.executeJsonRpc(listRpc));
       expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(32));
+      expect((listRes['result'] as List).length, equals(45));
 
       final actionRpc = jsonEncode({
         'jsonrpc': '2.0',

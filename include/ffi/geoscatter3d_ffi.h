@@ -126,7 +126,83 @@ GS3D_FFI_API void gs3d_ffi_init_drag_drop(void);
 GS3D_FFI_API const char* gs3d_ffi_poll_dropped_file(void);
 GS3D_FFI_API void gs3d_ffi_set_dropped_file(const char* path);
 
+// ============================================================================
+// 13. 性能诊断与流式瓦片指标 (Performance & Diagnostics)
+// ============================================================================
+
+GS3D_FFI_API void gs3d_ffi_get_performance_metrics(
+    float* out_fps,
+    float* out_frame_time_ms,
+    uint64_t* out_visible_points,
+    uint64_t* out_gpu_mem_bytes,
+    uint32_t* out_loaded_tiles,
+    uint32_t* out_pending_tiles,
+    float* out_cache_hit_rate
+);
+
+GS3D_FFI_API const char* gs3d_ffi_get_camera_coords_string(void);
+GS3D_FFI_API void gs3d_ffi_clear_cache(void);
+
+// ============================================================================
+// 14. 视口三维空间点拾取 (3D Point Picking & Raycasting)
+// ============================================================================
+
+/// 在当前视口投影几何下，通过屏幕坐标 (screen_x, screen_y) 寻找最近点
+/// out_point_xyzv 连续存放 [x, y, z, val]
+/// 若拾取成功返回 1，未命中返回 0
+GS3D_FFI_API int32_t gs3d_ffi_pick_point(
+    float screen_x,
+    float screen_y,
+    float viewport_width,
+    float viewport_height,
+    float azimuth_deg,
+    float elevation_deg,
+    float zoom,
+    float pan_x,
+    float pan_y,
+    float* out_point_xyzv
+);
+
+// ============================================================================
+// 15. 局部选区统计分析 (Region Stats Computation)
+// ============================================================================
+
+/// 针对指定的世界坐标矩形选区计算统计指标
+GS3D_FFI_API int32_t gs3d_ffi_calculate_region_stats(
+    float min_x,
+    float max_x,
+    float min_y,
+    float max_y,
+    uint64_t* out_count,
+    float* out_mean,
+    float* out_min,
+    float* out_max,
+    float* out_std_dev,
+    int32_t* out_hist_5bins
+);
+
+// ============================================================================
+// 16. 2D 鸟瞰导航图位图生成 (Navigation Map Thumbnail)
+// ============================================================================
+
+/// 生成点云在 XY 投影平面的 2D 密度/高程缩略图位图 (RGBA 格式，宽*高*4 字节)
+/// 返回 0 表示成功，负数表示失败
+GS3D_FFI_API int32_t gs3d_ffi_get_nav_map_thumbnail(
+    uint8_t* out_rgba,
+    int32_t width,
+    int32_t height
+);
+
+// ============================================================================
+// 17. 点云数据导出 (Point Cloud Export: PLY / CSV)
+// ============================================================================
+
+/// 导出当前点云或裁剪过滤后点云至目标文件 (格式: "ply" 或 "csv")
+GS3D_FFI_API int32_t gs3d_ffi_export_dataset(
+    const char* target_path,
+    const char* format_type
+);
+
 #ifdef __cplusplus
 }
 #endif
-

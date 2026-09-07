@@ -4,9 +4,13 @@ import 'src/layouts/analysis_rail_layout.dart';
 import 'src/layouts/floating_dock_layout.dart';
 import 'src/layouts/standard_workbench_layout.dart';
 import 'src/panels/bottom_status_bar.dart';
+import 'src/panels/performance_panel.dart';
+import 'src/panels/tile_inspector_dialog.dart';
 import 'src/panels/top_menu_bar.dart';
 import 'src/theme/app_theme.dart';
 import 'src/welcome/welcome_page.dart';
+import 'src/widgets/command_palette.dart';
+import 'src/widgets/shortcut_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,26 +63,48 @@ class GeoScatter3dWorkbench extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          // 1. 顶部菜单栏 (含布局切换器、工区状态、返回欢迎页)
-          TopMenuBar(service: service),
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, _) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              Column(
+                children: [
+                  // 1. 顶部菜单栏 (含布局切换器、工区状态、返回欢迎页)
+                  TopMenuBar(service: service),
 
-          // 2. 动态主工作区布局：标准三栏 / 悬浮胶囊 Dock / 暗色分析舱
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: _buildActiveLayout(),
-            ),
+                  // 2. 动态主工作区布局：标准三栏 / 悬浮胶囊 Dock / 暗色分析舱
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: _buildActiveLayout(),
+                    ),
+                  ),
+
+                  // 3. 底部状态栏
+                  BottomStatusBar(service: service),
+                ],
+              ),
+
+              // 全局模态覆盖层与诊断视察器
+              if (service.isCommandPaletteOpen)
+                CommandPalette(service: service),
+
+              if (service.isShortcutOverlayOpen)
+                ShortcutOverlay(service: service),
+
+              if (service.isPerformancePanelOpen)
+                PerformancePanel(service: service),
+
+              if (service.isTileInspectorOpen)
+                TileInspectorDialog(service: service),
+            ],
           ),
-
-          // 3. 底部状态栏
-          BottomStatusBar(service: service),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import '../models/dataset_model.dart';
 import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
+import '../models/measurement_line_model.dart';
 import 'geoscatter3d_bindings.dart';
 
 /// 预处理离线构建实时进度状态
@@ -198,6 +201,65 @@ class GeoScatter3dService extends ChangeNotifier {
   String get heightSource => _heightSource;
   String get colorAttribute => _colorAttribute;
   Color get viewportBackgroundColor => _viewportBackgroundColor;
+
+  // 动态性能与流式加载指标
+  double _fps = 120.0;
+  double _frameTimeMs = 0.83;
+  int _visiblePoints = 0;
+  int _gpuMemoryBytes = 0;
+  int _loadedTiles = 1;
+  int _pendingTiles = 0;
+  double _cacheHitRate = 99.2;
+  String _cameraCoordsString = '0.0, 0.0, 143.4';
+  Timer? _metricsTimer;
+
+  // 点拾取、对焦与测量交互状态
+  Point3D? _hoveredPoint;
+  Point3D? _selectedPoint;
+  bool _isMeasurementMode = false;
+  Point3D? _pendingMeasureStart;
+  final List<MeasurementLineItem> _measurementLines = [];
+  String _measurementDisplayMode = '3d';
+
+  // 局部选区统计分析状态
+  Map<String, dynamic>? _activeRegionStats;
+
+  // 2D 鸟瞰小地图
+  Uint8List? _minimapRgba;
+  int _minimapWidth = 200;
+  int _minimapHeight = 160;
+
+  // 全局命令面板与快捷键速查图层
+  bool _isCommandPaletteOpen = false;
+  bool _isShortcutOverlayOpen = false;
+  bool _isPerformancePanelOpen = false;
+  bool _isTileInspectorOpen = false;
+
+  double get fps => _fps;
+  double get frameTimeMs => _frameTimeMs;
+  int get visiblePoints => _visiblePoints;
+  int get gpuMemoryBytes => _gpuMemoryBytes;
+  int get loadedTiles => _loadedTiles;
+  int get pendingTiles => _pendingTiles;
+  double get cacheHitRate => _cacheHitRate;
+  String get cameraCoordsString => _cameraCoordsString;
+
+  Point3D? get hoveredPoint => _hoveredPoint;
+  Point3D? get selectedPoint => _selectedPoint;
+  bool get isMeasurementMode => _isMeasurementMode;
+  Point3D? get pendingMeasureStart => _pendingMeasureStart;
+  List<MeasurementLineItem> get measurementLines => List.unmodifiable(_measurementLines);
+  String get measurementDisplayMode => _measurementDisplayMode;
+
+  Map<String, dynamic>? get activeRegionStats => _activeRegionStats;
+  Uint8List? get minimapRgba => _minimapRgba;
+  int get minimapWidth => _minimapWidth;
+  int get minimapHeight => _minimapHeight;
+
+  bool get isCommandPaletteOpen => _isCommandPaletteOpen;
+  bool get isShortcutOverlayOpen => _isShortcutOverlayOpen;
+  bool get isPerformancePanelOpen => _isPerformancePanelOpen;
+  bool get isTileInspectorOpen => _isTileInspectorOpen;
 
   bool get leftDockVisible => _leftDockVisible;
   bool get rightDockVisible => _rightDockVisible;
@@ -400,6 +462,545 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  void _startMetricsPolling() {
+    _metricsTimer?.cancel();
+    _metricsTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      _pollMetrics();
+    });
+  }
+
+  void stopMetricsPolling() {
+    _metricsTimer?.cancel();
+    _metricsTimer = null;
+  }
+
+  void _pollMetrics() {
+    if (_bindings != null && _initialized) {
+      final pFps = calloc<ffi.Float>();
+      final pFrameTime = calloc<ffi.Float>();
+      final pVisiblePoints = calloc<ffi.Uint64>();
+      final pGpuMemBytes = calloc<ffi.Uint64>();
+      final pLoadedTiles = calloc<ffi.Uint32>();
+      final pPendingTiles = calloc<ffi.Uint32>();
+      final pCacheHitRate = calloc<ffi.Float>();
+      try {
+        _bindings!.get_performance_metrics(
+          pFps,
+          pFrameTime,
+          pVisiblePoints,
+          pGpuMemBytes,
+          pLoadedTiles,
+          pPendingTiles,
+          pCacheHitRate,
+        );
+        _fps = pFps.value;
+        _frameTimeMs = pFrameTime.value;
+        _visiblePoints = pVisiblePoints.value;
+        _gpuMemoryBytes = pGpuMemBytes.value;
+        _loadedTiles = pLoadedTiles.value;
+        _pendingTiles = pPendingTiles.value;
+        _cacheHitRate = pCacheHitRate.value;
+      } catch (_) {
+      } finally {
+        calloc.free(pFps);
+        calloc.free(pFrameTime);
+        calloc.free(pVisiblePoints);
+        calloc.free(pGpuMemBytes);
+        calloc.free(pLoadedTiles);
+        calloc.free(pPendingTiles);
+        calloc.free(pCacheHitRate);
+      }
+
+      try {
+        final pCoords = _bindings!.get_camera_coords_string();
+        final coordsStr = pCoords.toDartString();
+        if (coordsStr.isNotEmpty) {
+          _cameraCoordsString = coordsStr;
+        }
+      } catch (_) {}
+    } else {
+      _visiblePoints = _points.length;
+      _cameraCoordsString = '${_cameraPanX.toStringAsFixed(1)}, ${_cameraPanY.toStringAsFixed(1)}, ${(100.0 * _cameraZoom).toStringAsFixed(1)}';
+    }
+    notifyListeners();
+  }
+
+  void clearCache() {
+    if (_bindings != null && _initialized) {
+      try {
+        _bindings!.clear_cache();
+      } catch (_) {}
+    }
+    _loadedTiles = 0;
+    _pendingTiles = 0;
+    notifyListeners();
+  }
+
+  Point3D? pickPointAt(
+    double screenX,
+    double screenY,
+    double viewportWidth,
+    double viewportHeight, {
+    double tolerancePx = 25.0,
+  }) {
+    if (_bindings != null && _initialized) {
+      final pOut = calloc<ffi.Float>(4);
+      try {
+        final res = _bindings!.pick_point(
+          screenX,
+          screenY,
+          viewportWidth,
+          viewportHeight,
+          _cameraAzimuth,
+          _cameraElevation,
+          _cameraZoom,
+          _cameraPanX,
+          _cameraPanY,
+          pOut,
+        );
+        if (res == 1) {
+          return Point3D(
+            x: pOut[0],
+            y: pOut[1],
+            z: pOut[2],
+            value: pOut[3],
+          );
+        }
+      } catch (_) {
+      } finally {
+        calloc.free(pOut);
+      }
+    }
+
+    if (_points.isEmpty) return null;
+    final radAz = _cameraAzimuth * (math.pi / 180.0);
+    final radEl = _cameraElevation * (math.pi / 180.0);
+    final cosAz = math.cos(radAz);
+    final sinAz = math.sin(radAz);
+    final cosEl = math.cos(radEl);
+    final sinEl = math.sin(radEl);
+
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    final midX = (bmin[0] + bmax[0]) * 0.5;
+    final midY = (bmin[1] + bmax[1]) * 0.5;
+    final midZ = (bmin[2] + bmax[2]) * 0.5;
+    final maxSpan = math.max(bmax[0] - bmin[0], math.max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
+    final baseScale = (maxSpan > 1e-4) ? (math.min(viewportWidth, viewportHeight) * 0.65 / maxSpan) : 1.0;
+    final totalScale = baseScale * _cameraZoom;
+    final cx = viewportWidth * 0.5 + _cameraPanX;
+    final cy = viewportHeight * 0.5 + _cameraPanY;
+
+    Point3D? closest;
+    double closestDist = tolerancePx;
+    for (final p in _points) {
+      final rx = p.x - midX;
+      final ry = p.y - midY;
+      final rz = p.z - midZ;
+
+      final x1 = rx * cosAz - ry * sinAz;
+      final y1 = rx * sinAz + ry * cosAz;
+      final z1 = rz;
+
+      final x2 = x1;
+      final y2 = y1 * cosEl - z1 * sinEl;
+
+      final px = cx + x2 * totalScale;
+      final py = cy - y2 * totalScale;
+
+      final dist = math.sqrt((screenX - px) * (screenX - px) + (screenY - py) * (screenY - py));
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = p;
+      }
+    }
+    return closest;
+  }
+
+  void setHoveredPoint(Point3D? point) {
+    if (_hoveredPoint != point) {
+      _hoveredPoint = point;
+      notifyListeners();
+    }
+  }
+
+  void setSelectedPoint(Point3D? point) {
+    if (_selectedPoint != point) {
+      _selectedPoint = point;
+      notifyListeners();
+    }
+  }
+
+  void setOrbitPivot(Point3D point) {
+    _selectedPoint = point;
+    _cameraPanX = 0.0;
+    _cameraPanY = 0.0;
+    notifyListeners();
+  }
+
+  void setMeasurementMode(bool enabled) {
+    if (_isMeasurementMode != enabled) {
+      _isMeasurementMode = enabled;
+      if (!enabled) {
+        _pendingMeasureStart = null;
+      }
+      notifyListeners();
+    }
+  }
+
+  void toggleMeasurementMode() {
+    setMeasurementMode(!_isMeasurementMode);
+  }
+
+  void addMeasurementPoint(Point3D point) {
+    if (_pendingMeasureStart == null) {
+      _pendingMeasureStart = point;
+      notifyListeners();
+    } else {
+      final start = _pendingMeasureStart!;
+      final id = 'measure_${DateTime.now().millisecondsSinceEpoch}_${_measurementLines.length + 1}';
+      _measurementLines.add(MeasurementLineItem(
+        id: id,
+        start: start,
+        end: point,
+        color: const Color(0xFF00E5FF),
+        fixed: false,
+      ));
+      _pendingMeasureStart = null;
+      notifyListeners();
+    }
+  }
+
+  void clearPendingMeasurement() {
+    if (_pendingMeasureStart != null) {
+      _pendingMeasureStart = null;
+      notifyListeners();
+    }
+  }
+
+  void removeMeasurementLine(String id) {
+    _measurementLines.removeWhere((item) => item.id == id);
+    notifyListeners();
+  }
+
+  void clearMeasurementLines() {
+    _measurementLines.clear();
+    _pendingMeasureStart = null;
+    notifyListeners();
+  }
+
+  void toggleMeasurementLineFixed(String id) {
+    final idx = _measurementLines.indexWhere((item) => item.id == id);
+    if (idx != -1) {
+      final cur = _measurementLines[idx];
+      _measurementLines[idx] = cur.copyWith(isFixed: !cur.isFixed);
+      notifyListeners();
+    }
+  }
+
+  void setMeasurementDisplayMode(String mode) {
+    if (_measurementDisplayMode != mode) {
+      _measurementDisplayMode = mode;
+      notifyListeners();
+    }
+  }
+
+  Map<String, dynamic> calculateRegionBoxStats(
+    double minX,
+    double minY,
+    double maxX,
+    double maxY,
+    double viewportWidth,
+    double viewportHeight,
+  ) {
+    if (_bindings != null && _initialized) {
+      final pCount = calloc<ffi.Uint64>();
+      final pMean = calloc<ffi.Float>();
+      final pMin = calloc<ffi.Float>();
+      final pMax = calloc<ffi.Float>();
+      final pStdDev = calloc<ffi.Float>();
+      final pHist = calloc<ffi.Int32>(5);
+      try {
+        final res = _bindings!.calculate_region_stats(
+          minX,
+          maxX,
+          minY,
+          maxY,
+          pCount,
+          pMean,
+          pMin,
+          pMax,
+          pStdDev,
+          pHist,
+        );
+        if (res == 1) {
+          final stats = {
+            'count': pCount.value,
+            'mean': pMean.value,
+            'min': pMin.value,
+            'max': pMax.value,
+            'std_dev': pStdDev.value,
+            'histogram': [
+              pHist[0],
+              pHist[1],
+              pHist[2],
+              pHist[3],
+              pHist[4],
+            ],
+          };
+          _activeRegionStats = stats;
+          notifyListeners();
+          return stats;
+        }
+      } catch (_) {
+      } finally {
+        calloc.free(pCount);
+        calloc.free(pMean);
+        calloc.free(pMin);
+        calloc.free(pMax);
+        calloc.free(pStdDev);
+        calloc.free(pHist);
+      }
+    }
+
+    if (_points.isEmpty) {
+      final empty = {
+        'count': 0,
+        'mean': 0.0,
+        'min': 0.0,
+        'max': 0.0,
+        'std_dev': 0.0,
+        'histogram': [0, 0, 0, 0, 0],
+      };
+      _activeRegionStats = empty;
+      notifyListeners();
+      return empty;
+    }
+
+    final radAz = _cameraAzimuth * (math.pi / 180.0);
+    final radEl = _cameraElevation * (math.pi / 180.0);
+    final cosAz = math.cos(radAz);
+    final sinAz = math.sin(radAz);
+    final cosEl = math.cos(radEl);
+    final sinEl = math.sin(radEl);
+
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    final midX = (bmin[0] + bmax[0]) * 0.5;
+    final midY = (bmin[1] + bmax[1]) * 0.5;
+    final midZ = (bmin[2] + bmax[2]) * 0.5;
+    final maxSpan = math.max(bmax[0] - bmin[0], math.max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
+    final baseScale = (maxSpan > 1e-4) ? (math.min(viewportWidth, viewportHeight) * 0.65 / maxSpan) : 1.0;
+    final totalScale = baseScale * _cameraZoom;
+    final cx = viewportWidth * 0.5 + _cameraPanX;
+    final cy = viewportHeight * 0.5 + _cameraPanY;
+
+    final selected = <Point3D>[];
+    for (final p in _points) {
+      final rx = p.x - midX;
+      final ry = p.y - midY;
+      final rz = p.z - midZ;
+
+      final x1 = rx * cosAz - ry * sinAz;
+      final y1 = rx * sinAz + ry * cosAz;
+      final z1 = rz;
+
+      final x2 = x1;
+      final y2 = y1 * cosEl - z1 * sinEl;
+
+      final px = cx + x2 * totalScale;
+      final py = cy - y2 * totalScale;
+
+      if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+        selected.add(p);
+      }
+    }
+
+    if (selected.isEmpty) {
+      final empty = {
+        'count': 0,
+        'mean': 0.0,
+        'min': 0.0,
+        'max': 0.0,
+        'std_dev': 0.0,
+        'histogram': [0, 0, 0, 0, 0],
+      };
+      _activeRegionStats = empty;
+      notifyListeners();
+      return empty;
+    }
+
+    double sum = 0.0;
+    double smin = selected[0].value;
+    double smax = selected[0].value;
+    for (final p in selected) {
+      sum += p.value;
+      if (p.value < smin) smin = p.value;
+      if (p.value > smax) smax = p.value;
+    }
+    final mean = sum / selected.length;
+    double varSum = 0.0;
+    for (final p in selected) {
+      varSum += (p.value - mean) * (p.value - mean);
+    }
+    final stdDev = math.sqrt(varSum / selected.length);
+
+    final bins = [0, 0, 0, 0, 0];
+    final step = (smax > smin) ? (smax - smin) / 5.0 : 1.0;
+    for (final p in selected) {
+      final b = ((p.value - smin) / step).floor().clamp(0, 4);
+      bins[b]++;
+    }
+
+    final stats = {
+      'count': selected.length,
+      'mean': mean,
+      'min': smin,
+      'max': smax,
+      'std_dev': stdDev,
+      'histogram': bins,
+    };
+    _activeRegionStats = stats;
+    notifyListeners();
+    return stats;
+  }
+
+  void clearRegionStats() {
+    _activeRegionStats = null;
+    notifyListeners();
+  }
+
+  Uint8List? refreshMinimap({int width = 200, int height = 160}) {
+    _minimapWidth = width;
+    _minimapHeight = height;
+
+    if (_bindings != null && _initialized) {
+      final bufferSize = width * height * 4;
+      final pBuf = calloc<ffi.Uint8>(bufferSize);
+      try {
+        final res = _bindings!.get_nav_map_thumbnail(pBuf, width, height);
+        if (res == 1) {
+          _minimapRgba = Uint8List.fromList(pBuf.asTypedList(bufferSize));
+          notifyListeners();
+          return _minimapRgba;
+        }
+      } catch (_) {
+      } finally {
+        calloc.free(pBuf);
+      }
+    }
+
+    final buffer = Uint8List(width * height * 4);
+    for (int i = 0; i < width * height; ++i) {
+      buffer[i * 4 + 0] = 0x1A;
+      buffer[i * 4 + 1] = 0x1F;
+      buffer[i * 4 + 2] = 0x2C;
+      buffer[i * 4 + 3] = 0xFF;
+    }
+
+    if (_points.isNotEmpty) {
+      final bmin = _summary.bboxMin;
+      final bmax = _summary.bboxMax;
+      final spanX = (bmax[0] - bmin[0]) > 1e-4 ? (bmax[0] - bmin[0]) : 1.0;
+      final spanY = (bmax[1] - bmin[1]) > 1e-4 ? (bmax[1] - bmin[1]) : 1.0;
+
+      for (final p in _points) {
+        final normX = ((p.x - bmin[0]) / spanX).clamp(0.0, 1.0);
+        final normY = ((p.y - bmin[1]) / spanY).clamp(0.0, 1.0);
+        final px = (normX * (width - 1)).round();
+        final py = ((1.0 - normY) * (height - 1)).round();
+        final idx = (py * width + px) * 4;
+        buffer[idx + 0] = 0x4F;
+        buffer[idx + 1] = 0x46;
+        buffer[idx + 2] = 0xE5;
+        buffer[idx + 3] = 0xFF;
+      }
+    }
+
+    _minimapRgba = buffer;
+    notifyListeners();
+    return buffer;
+  }
+
+  void navigateCameraToWorld(double worldX, double worldY) {
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    final midX = (bmin[0] + bmax[0]) * 0.5;
+    final midY = (bmin[1] + bmax[1]) * 0.5;
+    _cameraPanX = (midX - worldX) * 2.0;
+    _cameraPanY = (worldY - midY) * 2.0;
+    notifyListeners();
+  }
+
+  void toggleCommandPalette([bool? open]) {
+    _isCommandPaletteOpen = open ?? !_isCommandPaletteOpen;
+    notifyListeners();
+  }
+
+  void toggleShortcutOverlay([bool? open]) {
+    _isShortcutOverlayOpen = open ?? !_isShortcutOverlayOpen;
+    notifyListeners();
+  }
+
+  void togglePerformancePanel([bool? open]) {
+    _isPerformancePanelOpen = open ?? !_isPerformancePanelOpen;
+    notifyListeners();
+  }
+
+  void toggleTileInspector([bool? open]) {
+    _isTileInspectorOpen = open ?? !_isTileInspectorOpen;
+    notifyListeners();
+  }
+
+  bool exportPointCloud(String outputPath, {String format = 'ply'}) {
+    if (_bindings != null && _initialized) {
+      final pPath = outputPath.toNativeUtf8();
+      final pFmt = format.toNativeUtf8();
+      try {
+        final res = _bindings!.export_dataset(pPath, pFmt);
+        if (res == 1) return true;
+      } catch (_) {
+      } finally {
+        calloc.free(pPath);
+        calloc.free(pFmt);
+      }
+    }
+
+    try {
+      final file = File(outputPath);
+      if (!file.parent.existsSync()) {
+        try {
+          file.parent.createSync(recursive: true);
+        } catch (_) {}
+      }
+      final sb = StringBuffer();
+      final isPly = format.toLowerCase() == 'ply';
+      if (isPly) {
+        sb.writeln('ply');
+        sb.writeln('format ascii 1.0');
+        sb.writeln('element vertex ${_points.length}');
+        sb.writeln('property float x');
+        sb.writeln('property float y');
+        sb.writeln('property float z');
+        sb.writeln('property float value');
+        sb.writeln('end_header');
+        for (final p in _points) {
+          sb.writeln('${p.x} ${p.y} ${p.z} ${p.value}');
+        }
+      } else {
+        sb.writeln('x,y,z,value');
+        for (final p in _points) {
+          sb.writeln('${p.x},${p.y},${p.z},${p.value}');
+        }
+      }
+      file.writeAsStringSync(sb.toString());
+      return true;
+    } catch (e) {
+      debugPrint('Export failed: $e');
+      return false;
+    }
+  }
+
   void setLayoutMode(WorkbenchLayoutMode mode) {
     if (_layoutMode != mode) {
       _layoutMode = mode;
@@ -429,6 +1030,7 @@ class GeoScatter3dService extends ChangeNotifier {
       if (_initialized) {
         _refreshRecentProjects();
         _refreshGpus();
+        _startMetricsPolling();
         if (Platform.isWindows) {
           try {
             _bindings!.init_drag_drop();
@@ -1438,6 +2040,170 @@ class GeoScatter3dService extends ChangeNotifier {
         description: '触发工作台主三维视口的帧画面截屏与保存',
         category: 'workbench',
       ),
+      UiActionDescriptor(
+        id: 'workbench.pick.point',
+        name: '三维点拾取',
+        description: '在三维视口屏幕坐标处拾取最近的数据点',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'screen_x': {'type': 'number', 'description': '屏幕 X 坐标'},
+            'screen_y': {'type': 'number', 'description': '屏幕 Y 坐标'},
+            'viewport_width': {'type': 'number', 'description': '视口宽度'},
+            'viewport_height': {'type': 'number', 'description': '视口高度'},
+            'tolerance': {'type': 'number', 'description': '容差像素 (默认 25.0)'},
+          },
+          'required': ['screen_x', 'screen_y', 'viewport_width', 'viewport_height'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.mode',
+        name: '切换测距标尺模式',
+        description: '启用或关闭视口两点/多点测距标尺与走向测量',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'enabled': {'type': 'boolean', 'description': '是否开启标尺模式 (默认切换反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.add_point',
+        name: '添加测量参考点',
+        description: '向测量序列追加空间参考坐标点',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'x': {'type': 'number', 'description': '空间 X 坐标'},
+            'y': {'type': 'number', 'description': '空间 Y 坐标'},
+            'z': {'type': 'number', 'description': '空间 Z 坐标'},
+            'value': {'type': 'number', 'description': '标量属性值'},
+          },
+          'required': ['x', 'y', 'z'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.clear',
+        name: '清空测量线段',
+        description: '清除所有已记录的三维几何测量线段',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.stats.box',
+        name: '视口矩形选区属性统计',
+        description: '框选屏幕矩形区域统计点云属性均值、极值、方差及直方图',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'min_x': {'type': 'number', 'description': '选区左边界像素'},
+            'min_y': {'type': 'number', 'description': '选区上边界像素'},
+            'max_x': {'type': 'number', 'description': '选区右边界像素'},
+            'max_y': {'type': 'number', 'description': '选区下边界像素'},
+            'viewport_width': {'type': 'number', 'description': '视口宽度'},
+            'viewport_height': {'type': 'number', 'description': '视口高度'},
+          },
+          'required': ['min_x', 'min_y', 'max_x', 'max_y', 'viewport_width', 'viewport_height'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.minimap.refresh',
+        name: '刷新二维俯视小地图',
+        description: '重新渲染当前工区二维平面投影缩略图',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'width': {'type': 'integer', 'description': '缩略图宽度 (默认 200)'},
+            'height': {'type': 'integer', 'description': '缩略图高度 (默认 160)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.minimap.navigate',
+        name: '小地图跳转导航',
+        description: '根据二维小地图点击坐标调整三维视口中心至该物理坐标',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'world_x': {'type': 'number', 'description': '目标工区物理 X 坐标'},
+            'world_y': {'type': 'number', 'description': '目标工区物理 Y 坐标'},
+          },
+          'required': ['world_x', 'world_y'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.overlay.command_palette',
+        name: '切换全局命令面板',
+        description: '打开或关闭 Ctrl+P 快捷搜索与命令浮窗',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'open': {'type': 'boolean', 'description': '显隐状态 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.overlay.shortcut_help',
+        name: '切换快捷键速查面板',
+        description: '打开或关闭 F1 全局按键映射与视口操作速查浮窗',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'open': {'type': 'boolean', 'description': '显隐状态 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.overlay.performance',
+        name: '切换性能诊断面板',
+        description: '打开或关闭实时 FPS、帧耗时、显存占用与瓦片统计窗口',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'open': {'type': 'boolean', 'description': '显隐状态 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.overlay.tile_inspector',
+        name: '切换瓦片与LOD检查器',
+        description: '打开或关闭八叉树分级结构与瓦片流式加载诊断对话框',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'open': {'type': 'boolean', 'description': '显隐状态 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.export',
+        name: '导出点云数据',
+        description: '将当前点云或过滤结果导出为 PLY 或 CSV 格式',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {'type': 'string', 'description': '目标文件导出路径'},
+            'format': {'type': 'string', 'enum': ['ply', 'csv'], 'description': '导出格式 (默认 ply)'},
+          },
+          'required': ['path'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.cache.clear',
+        name: '清空显存与瓦片缓存',
+        description: '释放当前已加载的瓦片内存并重置缓存命中率',
+        category: 'workbench',
+      ),
     ];
   }
 
@@ -1889,6 +2655,149 @@ class GeoScatter3dService extends ChangeNotifier {
           },
         };
 
+      case 'workbench.pick.point':
+        final sx = (p['screen_x'] as num?)?.toDouble() ?? 0.0;
+        final sy = (p['screen_y'] as num?)?.toDouble() ?? 0.0;
+        final vw = (p['viewport_width'] as num?)?.toDouble() ?? 800.0;
+        final vh = (p['viewport_height'] as num?)?.toDouble() ?? 600.0;
+        final tol = (p['tolerance'] as num?)?.toDouble() ?? 25.0;
+        final picked = pickPointAt(sx, sy, vw, vh, tolerancePx: tol);
+        if (picked != null) {
+          setSelectedPoint(picked);
+        }
+        return {
+          'success': picked != null,
+          'message': picked != null ? '拾取成功' : '未在指定容差内命中点',
+          'data': picked != null
+              ? {'x': picked.x, 'y': picked.y, 'z': picked.z, 'value': picked.value}
+              : null,
+        };
+
+      case 'workbench.measure.mode':
+        if (p.containsKey('enabled')) {
+          setMeasurementMode(p['enabled'] as bool);
+        } else {
+          toggleMeasurementMode();
+        }
+        return {
+          'success': true,
+          'message': '测量模式: ${_isMeasurementMode ? "已开启" : "已关闭"}',
+          'data': {'is_measurement_mode': _isMeasurementMode},
+        };
+
+      case 'workbench.measure.add_point':
+        final x = (p['x'] as num?)?.toDouble() ?? 0.0;
+        final y = (p['y'] as num?)?.toDouble() ?? 0.0;
+        final z = (p['z'] as num?)?.toDouble() ?? 0.0;
+        final val = (p['value'] as num?)?.toDouble() ?? 0.0;
+        final pt = Point3D(x: x, y: y, z: z, value: val);
+        addMeasurementPoint(pt);
+        return {
+          'success': true,
+          'message': '参考点已追加',
+          'data': {
+            'pending_start': _pendingMeasureStart != null,
+            'lines_count': _measurementLines.length,
+          },
+        };
+
+      case 'workbench.measure.clear':
+        clearMeasurementLines();
+        return {
+          'success': true,
+          'message': '已清空测量线段',
+        };
+
+      case 'workbench.stats.box':
+        final minX = (p['min_x'] as num?)?.toDouble() ?? 0.0;
+        final minY = (p['min_y'] as num?)?.toDouble() ?? 0.0;
+        final maxX = (p['max_x'] as num?)?.toDouble() ?? 100.0;
+        final maxY = (p['max_y'] as num?)?.toDouble() ?? 100.0;
+        final vw = (p['viewport_width'] as num?)?.toDouble() ?? 800.0;
+        final vh = (p['viewport_height'] as num?)?.toDouble() ?? 600.0;
+        final bStats = calculateRegionBoxStats(minX, minY, maxX, maxY, vw, vh);
+        return {
+          'success': true,
+          'message': '选区统计计算完成',
+          'data': bStats,
+        };
+
+      case 'workbench.minimap.refresh':
+        final w = (p['width'] as num?)?.toInt() ?? 200;
+        final h = (p['height'] as num?)?.toInt() ?? 160;
+        final thumb = refreshMinimap(width: w, height: h);
+        return {
+          'success': thumb != null,
+          'message': thumb != null ? '小地图缩略图已刷新' : '刷新小地图失败',
+          'data': {'width': w, 'height': h, 'bytes': thumb?.length ?? 0},
+        };
+
+      case 'workbench.minimap.navigate':
+        final wx = (p['world_x'] as num?)?.toDouble() ?? 0.0;
+        final wy = (p['world_y'] as num?)?.toDouble() ?? 0.0;
+        navigateCameraToWorld(wx, wy);
+        return {
+          'success': true,
+          'message': '已导航至物理坐标 ($wx, $wy)',
+          'data': {'world_x': wx, 'world_y': wy},
+        };
+
+      case 'workbench.overlay.command_palette':
+        final open = p['open'] as bool?;
+        toggleCommandPalette(open);
+        return {
+          'success': true,
+          'message': '命令面板状态已更新',
+          'data': {'open': _isCommandPaletteOpen},
+        };
+
+      case 'workbench.overlay.shortcut_help':
+        final open = p['open'] as bool?;
+        toggleShortcutOverlay(open);
+        return {
+          'success': true,
+          'message': '快捷键速查状态已更新',
+          'data': {'open': _isShortcutOverlayOpen},
+        };
+
+      case 'workbench.overlay.performance':
+        final open = p['open'] as bool?;
+        togglePerformancePanel(open);
+        return {
+          'success': true,
+          'message': '性能诊断状态已更新',
+          'data': {'open': _isPerformancePanelOpen},
+        };
+
+      case 'workbench.overlay.tile_inspector':
+        final open = p['open'] as bool?;
+        toggleTileInspector(open);
+        return {
+          'success': true,
+          'message': '瓦片检查器状态已更新',
+          'data': {'open': _isTileInspectorOpen},
+        };
+
+      case 'workbench.export':
+        final path = p['path'] as String?;
+        if (path == null || path.isEmpty) {
+          return {'success': false, 'message': '缺少必要参数: path'};
+        }
+        final fmt = (p['format'] as String?) ?? 'ply';
+        final ok = exportPointCloud(path, format: fmt);
+        return {
+          'success': ok,
+          'message': ok ? '点云已导出至: $path' : '点云导出失败',
+          'data': {'path': path, 'format': fmt},
+        };
+
+      case 'workbench.cache.clear':
+        clearCache();
+        return {
+          'success': true,
+          'message': '显存与瓦片缓存已清空',
+        };
+
       default:
         return {
           'success': false,
@@ -1961,6 +2870,8 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void shutdown() {
+    stopMetricsPolling();
+    stopDragDropPolling();
     if (_bindings != null) {
       _bindings!.shutdown();
       _initialized = false;

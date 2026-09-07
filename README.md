@@ -1,8 +1,8 @@
 # GeoScatter3D
 
-GeoScatter3D 是一个面向大规模三维散点/点云数据的 C++20 桌面查看器。项目使用
-Vulkan 渲染、GLFW 管理窗口、Dear ImGui 提供 docking UI，并使用自定义 GS3D、
-LOD 和 tile 文件支持分级与局部加载。
+GeoScatter3D 是一个面向大规模三维散点/点云数据的 C++20 桌面查看器。项目以
+Vulkan 和自定义 GS3D、LOD、tile 数据格式提供高性能数据与渲染核心；Windows
+桌面前端已迁移至 Flutter，并通过 C ABI 动态库与原生核心通信。
 
 ## 当前能力
 
@@ -12,13 +12,15 @@ LOD 和 tile 文件支持分级与局部加载。
 - 基于屏幕空间的 tile 选择、后台读取、CPU 缓存和主线程 GPU 上传。
 - Vulkan 点渲染、点大小调整、`value`/`z` 属性着色切换。
 - 轨道旋转、平移、缩放、相机重置和可选的相机联动。
-- 简体中文、Adobe 风格的紧凑 ImGui 工作台和最多 4 个三维视图。
+- 简体中文 Flutter 欢迎页和工作台，支持最多 4 个三维视图。
 - 默认只打开一个视图；可按需添加，并以标签页停靠或拖成独立系统窗口。
 - 每个视图拥有独立相机和输入状态，拖出主工作台后仍可旋转、平移、缩放和操作控件。
 - LOD sidecar 存在时只加载 GS3D 元数据，避免完整点数组常驻内存。
 - 有字节预算的 LRU tile CPU 缓存、逐帧限量 GPU 上传和拖动结束后的批量视口 resize。
 - 交互时使用低 LOD，隐藏标签页停止离屏渲染，减少旋转、移动和缩放卡顿。
 - TOML 配置和 Vulkan validation layer 开关。
+- 工作台支持点拾取、测距、矩形选区统计、小地图导航、性能与瓦片诊断、命令面板、
+  快捷键帮助，以及 PLY/CSV 点云导出。
 
 - 欢迎页 + 可折叠侧边栏工作台（docking）布局, 主题可在 视图→主题 切换（5 套：
   碳蓝·浅色 / 碳蓝 2.0·深色 / 石墨·深色 / 仪器琥珀·深色 / 高对比·浅色）。
@@ -31,6 +33,13 @@ LOD 和 tile 文件支持分级与局部加载。
 [viewer.toml 配置参考](docs/config-reference.md), 构建/运行/控制面驱动/
 进程善后手册见 [操作手册](docs/operations.md)。
 
+## Flutter 前端状态
+
+Flutter 已承担欢迎页、主工作台、浮层交互和 Windows 桌面入口；C++ 核心继续负责
+数据加载、Vulkan 渲染和控制面能力。当前处于迁移收尾阶段：Flutter 单元与组件测试
+已覆盖 FFI 初始化、欢迎页、工作台布局和覆盖层交互；发布前仍应在目标 Windows 环境
+验证 FFI DLL 部署及端到端渲染流程。
+
 ## 构建
 
 依赖：
@@ -40,7 +49,8 @@ LOD 和 tile 文件支持分级与局部加载。
 - Vulkan SDK/开发包
 - GLFW 3
 - 线程库（Linux 上为 pthreads，Windows 使用系统原生线程）
-- Git submodule 中的 Dear ImGui 与 Catch2
+- Flutter SDK（构建 Windows 桌面前端时需要）
+- Git submodule 中的 Catch2（旧 ImGui 支持代码仍作为原生工程依赖保留）
 - Python 3（配置期硬性依赖：`find_package(Python3 REQUIRED)`，用于 include
   依赖检查与工程护栏测试脚本）
 - `glslangValidator`（Vulkan SDK 或 glslang tools；CMake 会自动从 GLSL 生成 SPIR-V）
@@ -50,6 +60,20 @@ git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+```
+
+构建 Flutter Windows 桌面应用（会先构建并部署 `gs3d_ffi.dll`）：
+
+```powershell
+./scripts/build_flutter_windows.ps1
+./ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe
+```
+
+仅验证 Flutter 前端：
+
+```powershell
+cd ui_flutter
+flutter test
 ```
 
 `ctest` 包含一个从仓库内样例 CSV 生成 bundle 的无窗口 smoke test，因此上述
