@@ -78,10 +78,7 @@ namespace gs3d::app {
 namespace {
 
 // TIA-111：处理控制面命令产生的动作，合并到 gui_cmds 并清空 control_actions。
-void apply_control_actions(
-    AppState& app_state,
-    UiActions& gui_cmds
-) {
+void apply_control_actions(AppState& app_state, UiActions& gui_cmds) {
     auto& ca = app_state.control_actions;
     if (ca.open_requested) { gui_cmds.open_requested = true; }
     if (ca.open_bundle_requested) { gui_cmds.open_bundle_requested = true; }
@@ -117,6 +114,7 @@ void apply_control_actions(
         gui_cmds.camera_view_axis = ca.camera_view_axis;
     }
     gui_cmds.render_settings_commands.insert(gui_cmds.render_settings_commands.end(), ca.render_settings_commands.begin(), ca.render_settings_commands.end());
+    gui_cmds.dataset_export_commands.insert(gui_cmds.dataset_export_commands.end(), ca.dataset_export_commands.begin(), ca.dataset_export_commands.end());
     gui_cmds.viewport_frames.insert(gui_cmds.viewport_frames.end(), ca.viewport_frames.begin(), ca.viewport_frames.end());
     ca = AppState::ControlActions{};  // 清空
 }
@@ -663,6 +661,7 @@ int ViewerApp::run() {
                 tile_streaming.clear_cache(renderer, tile_gpu_cloud);
                 tile_selection_dirty = true;
             }
+            handle_dataset_export_commands(gui_cmds, app_state);
             screenshot_service.request(gui_cmds, app_state, swapchain);
             {
                 RegionStatsCommandContext rs_ctx{

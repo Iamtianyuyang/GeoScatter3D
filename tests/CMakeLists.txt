@@ -54,6 +54,21 @@ add_test(
     COMMAND GeoScatter3DGs3dV2Tests
 )
 
+add_executable(GeoScatter3DGs3dExporterTests
+    Gs3dExporterTests.cpp
+)
+target_include_directories(GeoScatter3DGs3dExporterTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(GeoScatter3DGs3dExporterTests PRIVATE
+    gs3d_data
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.Gs3dExporter
+    COMMAND GeoScatter3DGs3dExporterTests
+)
+
 add_executable(GeoScatter3DAppConfigTests
     AppConfigTests.cpp
 )

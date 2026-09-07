@@ -3,6 +3,7 @@
 #include "ui/PanelRegistry.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 
@@ -620,6 +621,102 @@ private:
     std::vector<CommandSpec> capabilities_{{"get_state", "查询实时性能指标", false}, {"clear_cache", "清空原生瓦片缓存", false}};
 };
 
+class RuntimeDatasetExportComponent final : public Component {
+public:
+    explicit RuntimeDatasetExportComponent(gs3d::app::AppState& app_state)
+        : app_state_(app_state) {}
+
+    [[nodiscard]] const ComponentInfo& info() const noexcept override {
+        return info_;
+    }
+
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override {
+        return capabilities_;
+    }
+
+    [[nodiscard]] nlohmann::json get_state() override {
+        const auto& state = app_state_.dataset_export;
+        return {
+            {"id", info_.id},
+            {"request_id", state.request_id},
+            {"active_request_id", state.active_request_id},
+            {"completed_request_id", state.completed_request_id},
+            {"in_progress", state.in_progress},
+            {"success", state.success},
+            {"point_count", state.point_count},
+            {"output_path", state.output_path},
+            {"format", state.format},
+            {"error", state.error}
+        };
+    }
+
+    [[nodiscard]] nlohmann::json execute(
+        const std::string& command,
+        const nlohmann::json& params
+    ) override {
+        if (command == "get_state") {
+            return get_state();
+        }
+        if (command != "export") {
+            throw ComponentError(-32601, "unknown command: " + command);
+        }
+        if (!params.is_object() ||
+            !params.contains("output_path") ||
+            !params.at("output_path").is_string() ||
+            !params.contains("format") ||
+            !params.at("format").is_string()) {
+            throw ComponentError(
+                -32602,
+                "dataset export requires string output_path and format"
+            );
+        }
+
+        std::string format = params.at("format").get<std::string>();
+        std::transform(
+            format.begin(), format.end(), format.begin(),
+            [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            }
+        );
+        if (format != "ply" && format != "csv") {
+            throw ComponentError(-32602, "format must be ply or csv");
+        }
+
+        auto& state = app_state_.dataset_export;
+        if (state.in_progress ||
+            !app_state_.control_actions.dataset_export_commands.empty()) {
+            throw ComponentError(
+                -32000,
+                "a dataset export is already queued or in progress"
+            );
+        }
+        const std::uint64_t request_id = state.request_id + 1;
+        state.request_id = request_id;
+        state.success = false;
+        state.error.clear();
+        app_state_.control_actions.dataset_export_commands.push_back({
+            .request_id = request_id,
+            .output_path = params.at("output_path").get<std::string>(),
+            .format = std::move(format)
+        });
+        return {{"id", info_.id}, {"queued", true}, {"request_id", request_id}};
+    }
+
+private:
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{
+        "runtime.dataset_export",
+        "原生完整数据导出",
+        "由 ViewerApp 从原始 GS3D 文件全量导出，不使用预览或可见点缓存",
+        ComponentType::kToolbar,
+        false
+    };
+    std::vector<CommandSpec> capabilities_{
+        {"export", "全量导出 PLY 或 CSV", true},
+        {"get_state", "查询导出进度和结果", false}
+    };
+};
+
 // ── 状态栏组件（只读） ──────────────────────────────────────────
 
 class StatusBarComponent final : public ReadOnlyComponentBase {
@@ -823,6 +920,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<RuntimeCameraComponent>(app_state));
     result.push_back(std::make_unique<RuntimePickComponent>(app_state));
     result.push_back(std::make_unique<RuntimeDiagnosticsComponent>(app_state));
+    result.push_back(std::make_unique<RuntimeDatasetExportComponent>(app_state));
     return result;
 }
 

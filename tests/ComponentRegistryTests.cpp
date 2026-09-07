@@ -258,6 +258,36 @@ TEST_CASE("Runtime camera queues a native viewport frame", "[component_registry]
     CHECK(frame.mouse_delta_y == -4.0f);
 }
 
+TEST_CASE("Runtime dataset export queues a complete native export", "[component_registry]") {
+    AppState state;
+    ComponentRegistry registry = make_full_registry(state);
+    auto* exporter = registry.find("runtime.dataset_export");
+    REQUIRE(exporter != nullptr);
+
+    const auto response = exporter->execute(
+        "export",
+        nlohmann::json{{"output_path", "tmp/export.csv"}, {"format", "csv"}}
+    );
+
+    CHECK(response["queued"] == true);
+    CHECK(response["request_id"] == 1);
+    REQUIRE(state.control_actions.dataset_export_commands.size() == 1);
+    const auto& command = state.control_actions.dataset_export_commands.front();
+    CHECK(command.request_id == 1);
+    CHECK(command.output_path == "tmp/export.csv");
+    CHECK(command.format == "csv");
+    REQUIRE_THROWS_AS(
+        exporter->execute(
+            "export",
+            nlohmann::json{
+                {"output_path", "tmp/second-export.csv"},
+                {"format", "csv"}
+            }
+        ),
+        ComponentError
+    );
+}
+
 // ── Overlay 组件 toggle/set_visible ───────────────────────────
 
 TEST_CASE("Overlay components support toggle and set_visible", "[component_registry]") {
@@ -340,6 +370,10 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
                 } else if (capability.command == "input" &&
                            component->info().id == "runtime.pick") {
                     params["kind"] = "measure";
+                } else if (capability.command == "export" &&
+                           component->info().id == "runtime.dataset_export") {
+                    params["output_path"] = "tmp/export.ply";
+                    params["format"] = "ply";
                 }
             }
             nlohmann::json result;
@@ -361,6 +395,9 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
     CHECK(driven_ids.count("canvas.viewport") == 1);
     CHECK(driven_ids.count("runtime.render_settings") == 1);
     CHECK(driven_ids.count("runtime.camera") == 1);
+    CHECK(driven_ids.count("runtime.pick") == 1);
+    CHECK(driven_ids.count("runtime.diagnostics") == 1);
+    CHECK(driven_ids.count("runtime.dataset_export") == 1);
 }
 
 // ── list_json 暴露稳定 ID 和能力 ─────────────────────────────
@@ -395,11 +432,13 @@ TEST_CASE("list_json exposes stable ids and capabilities", "[component_registry]
     CHECK(ids.count("runtime.render_settings") == 1);
     CHECK(ids.count("runtime.camera") == 1);
     CHECK(ids.count("runtime.pick") == 1);
+    CHECK(ids.count("runtime.diagnostics") == 1);
+    CHECK(ids.count("runtime.dataset_export") == 1);
     // 注意：viewport.main 在 ViewerAppControlPlane.cpp 中创建，
     // 测试中的 make_full_registry 不包含它
 
-    // 总组件数检查：8 panels + 9 menus + 9 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 31
-    CHECK(ids.size() >= 31);
+    // 总组件数检查：8 panels + 9 menus + 11 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 33
+    CHECK(ids.size() >= 33);
 }
 
 // ── 主题组件支持 set_value ───────────────────────────────────

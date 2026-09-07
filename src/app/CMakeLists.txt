@@ -58,6 +58,7 @@ add_library(gs3d_app STATIC
     ViewerAppCameraCommands.cpp
     ViewerAppScreenshot.cpp
     ViewerAppRegionStats.cpp
+    ViewerAppDatasetExport.cpp
     ViewerAppBenchmark.cpp
     systems/NavigationMapSystem.cpp
     ViewerAppPickDebugDump.cpp

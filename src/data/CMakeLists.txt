@@ -14,6 +14,7 @@ add_library(gs3d_data STATIC
     Gs3dReader.cpp
     Gs3dVerifier.cpp
     Gs3dDataset.cpp
+    Gs3dExporter.cpp
     Gs3dLodDataset.cpp
     Gs3dLodFormat.cpp
     Gs3dLodReader.cpp

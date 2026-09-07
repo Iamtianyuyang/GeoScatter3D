@@ -89,6 +89,12 @@ struct RenderSettingsCommand {
     int  point_shape = 0;
 };
 
+struct DatasetExportCommand {
+    std::uint64_t request_id = 0;
+    std::string output_path;
+    std::string format;
+};
+
 struct UiActions {
     bool open_requested = false;
     bool open_bundle_requested = false;
@@ -130,6 +136,7 @@ struct UiActions {
     int  point_shape = 0;
 
     std::vector<RenderSettingsCommand> render_settings_commands;
+    std::vector<DatasetExportCommand> dataset_export_commands;
     std::vector<ViewportFrameCmd> viewport_frames;
 };
 

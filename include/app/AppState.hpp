@@ -243,6 +243,20 @@ struct StatusBarState {
     std::string ready_state = "就绪";
 };
 
+// 数据导出属于长时间运行的业务操作；状态由 ViewerApp 主线程维护，供
+// Flutter 控制面轮询，不保存任何 UI 临时变量。
+struct DatasetExportState {
+    std::uint64_t request_id = 0;
+    std::uint64_t active_request_id = 0;
+    std::uint64_t completed_request_id = 0;
+    std::uint64_t point_count = 0;
+    bool in_progress = false;
+    bool success = false;
+    std::string output_path;
+    std::string format;
+    std::string error;
+};
+
 struct RenderViewState {
     int viewport_index = 0;
     bool visible = true;
@@ -465,6 +479,7 @@ struct AppState {
     DebugLogState debug_log;
     PerformanceState performance;
     StatusBarState status_bar;
+    DatasetExportState dataset_export;
     NavigationMapState navigation_map;
     MeasurementManager measurement;
     RegionStatsResult region_stats;
@@ -496,6 +511,7 @@ struct AppState {
         int reset_camera_index = -1;
         int camera_view_axis = -1;
         std::vector<RenderSettingsCommand> render_settings_commands;
+        std::vector<DatasetExportCommand> dataset_export_commands;
         std::vector<ViewportFrameCmd> viewport_frames;
         bool toggle_fullscreen = false;
         std::string open_project_path;

@@ -17,6 +17,7 @@
 #include "app/RecentProjects.hpp"
 #include "control/JsonRpc.hpp"
 #include "data/Gs3dFormat.hpp"
+#include "data/Gs3dExporter.hpp"
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dReader.hpp"
 #include "util/Log.hpp"
@@ -42,6 +43,7 @@ struct EngineState {
     bool dataset_loaded = false;
 
     std::string dataset_path;
+    std::string source_gs3d_path;
     std::string dataset_name;
     uint64_t point_count = 0;
     std::string file_size_str = "0.00 MB";
@@ -167,6 +169,7 @@ int32_t gs3d_ffi_load_dataset(const char* path)
         const auto header = gs3d::data::Gs3dReader::read_header(source_gs3d);
 
         g_state.dataset_path = path;
+        g_state.source_gs3d_path = source_gs3d.string();
         g_state.dataset_name = fs_path.stem().string();
         if (g_state.dataset_name.ends_with(".gs3d")) {
             g_state.dataset_name = g_state.dataset_name.substr(0, g_state.dataset_name.size() - 5);
@@ -1019,43 +1022,27 @@ int32_t gs3d_ffi_export_dataset(
     const char* format_type
 ) {
     if (target_path == nullptr || target_path[0] == '\0') return -1;
-    std::lock_guard<std::mutex> lock(g_state.mutex);
-    if (!g_state.dataset_loaded || g_state.cached_points.empty()) return -2;
-
-    try {
-        std::ofstream out(target_path, std::ios::out);
-        if (!out.is_open()) return -3;
-
-        std::string fmt = format_type != nullptr ? format_type : "";
-        std::string p_str = target_path;
-        if (fmt.empty()) {
-            if (p_str.ends_with(".ply")) fmt = "ply";
-            else fmt = "csv";
+    std::string source_path;
+    {
+        std::lock_guard<std::mutex> lock(g_state.mutex);
+        if (!g_state.dataset_loaded || g_state.source_gs3d_path.empty()) {
+            return -2;
         }
-
-        if (fmt == "ply") {
-            out << "ply\n";
-            out << "format ascii 1.0\n";
-            out << "comment Exported by GeoScatter3D\n";
-            out << "element vertex " << g_state.cached_points.size() << "\n";
-            out << "property float x\n";
-            out << "property float y\n";
-            out << "property float z\n";
-            out << "property float value\n";
-            out << "end_header\n";
-            for (const auto& pt : g_state.cached_points) {
-                out << pt.x << " " << pt.y << " " << pt.z << " " << pt.value << "\n";
-            }
-        } else {
-            out << "x,y,z,value\n";
-            for (const auto& pt : g_state.cached_points) {
-                out << pt.x << "," << pt.y << "," << pt.z << "," << pt.value << "\n";
-            }
-        }
-        return 0;
-    } catch (...) {
-        return -4;
+        source_path = g_state.source_gs3d_path;
     }
+
+    std::string format = format_type != nullptr ? format_type : "";
+    if (format.empty()) {
+        format = std::filesystem::path(target_path).extension() == ".ply"
+            ? "ply"
+            : "csv";
+    }
+    const auto result = gs3d::data::export_gs3d_points(
+        source_path,
+        std::filesystem::path(target_path),
+        format
+    );
+    return result.success ? 0 : -3;
 }
 
 } // extern "C"

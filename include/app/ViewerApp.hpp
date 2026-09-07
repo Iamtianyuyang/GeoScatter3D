@@ -4,6 +4,7 @@
 #include "app/BenchmarkSession.hpp"
 #include "app/ViewerAppControlPlane.hpp"
 #include "app/ViewerAppRunState.hpp"
+#include "data/Gs3dExporter.hpp"
 
 #include <array>
 #include <atomic>
@@ -254,6 +255,11 @@ private:
         const RegionStatsCommandContext& ctx
     );
 
+    void handle_dataset_export_commands(
+        const UiActions& gui_cmds,
+        AppState& app_state
+    );
+
     void print_benchmark_report(
         const BenchmarkFrameSamples& samples,
         VkPresentModeKHR present_mode
@@ -262,6 +268,7 @@ private:
     ViewerAppConfig config_;
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
+    std::future<gs3d::data::Gs3dExportResult> dataset_export_future_;
     std::atomic<std::uint64_t>     region_stats_gen_{0};
     int                            region_stats_view_index_ = 0;
 };

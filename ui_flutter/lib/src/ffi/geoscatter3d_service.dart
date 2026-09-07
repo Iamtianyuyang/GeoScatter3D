@@ -1280,7 +1280,7 @@ class GeoScatter3dService extends ChangeNotifier {
       final pFmt = format.toNativeUtf8();
       try {
         final res = _bindings!.export_dataset(pPath, pFmt);
-        if (res == 1) return true;
+        if (res == 0) return true;
       } catch (_) {
       } finally {
         calloc.free(pPath);
@@ -1319,6 +1319,51 @@ class GeoScatter3dService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('Export failed: $e');
+      return false;
+    }
+  }
+
+  /// 由运行中的 ViewerApp 从源 GS3D 全量导出，并等待原生任务完成。
+  /// 未连接原生查看器时，保留 FFI 的全量导出作为兼容路径。
+  Future<bool> exportPointCloudThroughNativeViewer(
+    String outputPath, {
+    String format = 'ply',
+  }) async {
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) {
+      return exportPointCloud(outputPath, format: format);
+    }
+
+    try {
+      final response = await client.request('execute', {
+        'component': 'runtime.dataset_export',
+        'command': 'export',
+        'params': {'output_path': outputPath, 'format': format},
+      });
+      final result = response['result'];
+      final requestId = result is Map<String, dynamic>
+          ? (result['request_id'] as num?)?.toInt()
+          : null;
+      if (requestId == null) return false;
+
+      final deadline = DateTime.now().add(const Duration(minutes: 2));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        final stateResponse = await client.request('get_state', {
+          'component': 'runtime.dataset_export',
+        });
+        final state = stateResponse['result'];
+        if (state is! Map<String, dynamic>) continue;
+        final completed = (state['completed_request_id'] as num?)?.toInt();
+        if (completed != requestId) continue;
+        return state['success'] == true;
+      }
+      return false;
+    } catch (error) {
+      if (identical(client, _nativeViewer)) {
+        _nativeViewerError = '原生完整数据导出失败: $error';
+        notifyListeners();
+      }
       return false;
     }
   }
@@ -1938,18 +1983,27 @@ class GeoScatter3dService extends ChangeNotifier {
     try {
       final code = _bindings!.load_dataset(nativePath);
       if (code == 0) {
+        final wasNativeRendererActive = isNativeRendererActive;
         _loadedDatasetPath = resolved;
         _updateSummary();
         _updatePoints();
         _refreshRecentProjects();
         _isWorkbenchActive = true;
         notifyListeners();
+        if (wasNativeRendererActive) {
+          unawaited(_restartNativeRendererForLoadedDataset());
+        }
         return true;
       }
       return false;
     } finally {
       calloc.free(nativePath);
     }
+  }
+
+  Future<void> _restartNativeRendererForLoadedDataset() async {
+    await stopNativeRenderer();
+    await startNativeRenderer();
   }
 
   void _updateSummary() {

@@ -6,17 +6,16 @@ import '../theme/app_theme.dart';
 class ExportPointCloudDialog extends StatefulWidget {
   final GeoScatter3dService service;
 
-  const ExportPointCloudDialog({
-    super.key,
-    required this.service,
-  });
+  const ExportPointCloudDialog({super.key, required this.service});
 
   @override
   State<ExportPointCloudDialog> createState() => _ExportPointCloudDialogState();
 }
 
 class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
-  final TextEditingController _pathController = TextEditingController(text: 'data/export_points.ply');
+  final TextEditingController _pathController = TextEditingController(
+    text: 'data/export_points.ply',
+  );
   String _format = 'ply';
   bool _isExporting = false;
 
@@ -38,7 +37,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
     });
   }
 
-  void _doExport() {
+  Future<void> _doExport() async {
     final path = _pathController.text.trim();
     if (path.isEmpty) return;
 
@@ -46,15 +45,21 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
       _isExporting = true;
     });
 
-    final ok = widget.service.exportPointCloud(path, format: _format);
+    final ok = await widget.service.exportPointCloudThroughNativeViewer(
+      path,
+      format: _format,
+    );
+
+    if (!mounted) return;
 
     setState(() {
       _isExporting = false;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text(ok ? '点云已成功导出至: $path' : '导出点云失败，请检查文件写入权限'),
         duration: const Duration(seconds: 3),
@@ -71,9 +76,16 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
       backgroundColor: AppTheme.surface,
       title: const Row(
         children: [
-          Icon(Icons.file_download_outlined, color: AppTheme.primaryBlue, size: 22),
+          Icon(
+            Icons.file_download_outlined,
+            color: AppTheme.primaryBlue,
+            size: 22,
+          ),
           SizedBox(width: 10),
-          Text('导出点云数据', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Text(
+            '导出点云数据',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
         ],
       ),
       content: SizedBox(
@@ -91,7 +103,11 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
             // 格式单选
             Row(
               children: [
-                _buildFormatRadio('ply', 'PLY 格式 (*.ply)', '兼容 MeshLab / CloudCompare'),
+                _buildFormatRadio(
+                  'ply',
+                  'PLY 格式 (*.ply)',
+                  '兼容 MeshLab / CloudCompare',
+                ),
                 const SizedBox(width: 12),
                 _buildFormatRadio('csv', 'CSV 文本 (*.csv)', '纯文本逗号分隔'),
               ],
@@ -99,7 +115,14 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
             const SizedBox(height: 14),
 
             // 导出路径输入
-            const Text('输出路径 (Path):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textTitle)),
+            const Text(
+              '输出路径 (Path):',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textTitle,
+              ),
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _pathController,
@@ -110,7 +133,10 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
                   borderRadius: BorderRadius.circular(6),
                   borderSide: const BorderSide(color: AppTheme.border),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -128,7 +154,11 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
         ),
         ElevatedButton(
           key: const ValueKey('btn_confirm_export'),
-          onPressed: _isExporting ? null : _doExport,
+          onPressed: _isExporting
+              ? null
+              : () {
+                  _doExport();
+                },
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primaryBlue,
             foregroundColor: Colors.white,
@@ -149,9 +179,13 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: active ? AppTheme.primaryBlue.withAlpha(25) : AppTheme.surfaceMuted,
+            color: active
+                ? AppTheme.primaryBlue.withAlpha(25)
+                : AppTheme.surfaceMuted,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: active ? AppTheme.primaryBlue : AppTheme.border),
+            border: Border.all(
+              color: active ? AppTheme.primaryBlue : AppTheme.border,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
