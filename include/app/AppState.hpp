@@ -489,6 +489,7 @@ struct AppState {
         bool open_bundle_requested = false;
         bool show_welcome_requested = false;
         bool screenshot_requested = false;
+        bool clear_cache_requested = false;
         bool restore_default_workspace_requested = false;
         bool theme_change_requested = false;
         int theme_id = 0;  // gs3d::ui::ThemeId

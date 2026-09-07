@@ -754,6 +754,10 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void _pollMetrics() {
+    if (isNativeRendererActive) {
+      unawaited(_pollNativeMetrics());
+      return;
+    }
     if (_bindings != null && _initialized) {
       final pFps = calloc<ffi.Float>();
       final pFrameTime = calloc<ffi.Float>();
@@ -806,6 +810,10 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void clearCache() {
+    if (isNativeRendererActive) {
+      _queueNativeCommand('runtime.diagnostics', 'clear_cache');
+      return;
+    }
     if (_bindings != null && _initialized) {
       try {
         _bindings!.clear_cache();
@@ -814,6 +822,35 @@ class GeoScatter3dService extends ChangeNotifier {
     _loadedTiles = 0;
     _pendingTiles = 0;
     notifyListeners();
+  }
+
+  Future<void> _pollNativeMetrics() async {
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) return;
+    try {
+      final response = await client.request('get_state', {
+        'component': 'runtime.diagnostics',
+      });
+      if (!identical(client, _nativeViewer)) return;
+      final result = response['result'];
+      if (result is! Map<String, dynamic>) return;
+      _fps = (result['fps'] as num?)?.toDouble() ?? _fps;
+      _frameTimeMs = _fps > 0 ? 1000.0 / _fps : 0.0;
+      _visiblePoints =
+          (result['visible_points'] as num?)?.toInt() ?? _visiblePoints;
+      _gpuMemoryBytes =
+          (result['gpu_memory_bytes'] as num?)?.toInt() ?? _gpuMemoryBytes;
+      _loadedTiles = (result['loaded_tiles'] as num?)?.toInt() ?? _loadedTiles;
+      _pendingTiles =
+          (result['pending_tiles'] as num?)?.toInt() ?? _pendingTiles;
+      _cacheHitRate =
+          (result['cache_hit_rate'] as num?)?.toDouble() ?? _cacheHitRate;
+      final camera = result['camera_position'];
+      if (camera is String && camera.isNotEmpty) _cameraCoordsString = camera;
+      notifyListeners();
+    } catch (_) {
+      // 原生进程停止时由 stopNativeRenderer 统一清理状态。
+    }
   }
 
   Point3D? pickPointAt(

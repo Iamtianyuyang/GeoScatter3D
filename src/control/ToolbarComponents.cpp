@@ -220,6 +220,9 @@ public:
             {"value_clip_enabled", settings.value_clip_enabled},
             {"value_clip_min", settings.value_clip_min},
             {"value_clip_max", settings.value_clip_max}
+            ,{"cache_hit_rate", settings.cache_hit_rate}
+            ,{"loaded_tiles", settings.loaded_tiles}
+            ,{"pending_tiles", settings.pending_tiles}
         };
     }
 
@@ -589,6 +592,34 @@ private:
     std::vector<CommandSpec> capabilities_{{"input", "提交原生拾取事件", true}, {"get_state", "查询原生画布与统计状态", false}};
 };
 
+class RuntimeDiagnosticsComponent final : public Component {
+public:
+    explicit RuntimeDiagnosticsComponent(gs3d::app::AppState& app_state) : app_state_(app_state) {}
+    [[nodiscard]] const ComponentInfo& info() const noexcept override { return info_; }
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override { return capabilities_; }
+    [[nodiscard]] nlohmann::json get_state() override {
+        return {{"id", info_.id}, {"fps", app_state_.status_bar.fps},
+                {"visible_points", app_state_.status_bar.visible_points},
+                {"loaded_tiles", app_state_.status_bar.loaded_tiles},
+                {"pending_tiles", app_state_.status_bar.pending_tiles},
+                {"gpu_memory_bytes", app_state_.status_bar.gpu_memory_bytes},
+                {"camera_position", app_state_.status_bar.camera_position},
+                {"cache_hit_rate", app_state_.render_settings.cache_hit_rate}};
+    }
+    [[nodiscard]] nlohmann::json execute(const std::string& command, const nlohmann::json&) override {
+        if (command == "get_state") return get_state();
+        if (command == "clear_cache") {
+            app_state_.control_actions.clear_cache_requested = true;
+            return {{"id", info_.id}, {"queued", true}};
+        }
+        throw ComponentError(-32601, "unknown command: " + command);
+    }
+private:
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{"runtime.diagnostics", "原生性能诊断", "查询 ViewerApp 实时指标并清空瓦片缓存", ComponentType::kStatus, false};
+    std::vector<CommandSpec> capabilities_{{"get_state", "查询实时性能指标", false}, {"clear_cache", "清空原生瓦片缓存", false}};
+};
+
 // ── 状态栏组件（只读） ──────────────────────────────────────────
 
 class StatusBarComponent final : public ReadOnlyComponentBase {
@@ -791,6 +822,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<RuntimeRenderSettingsComponent>(app_state));
     result.push_back(std::make_unique<RuntimeCameraComponent>(app_state));
     result.push_back(std::make_unique<RuntimePickComponent>(app_state));
+    result.push_back(std::make_unique<RuntimeDiagnosticsComponent>(app_state));
     return result;
 }
 

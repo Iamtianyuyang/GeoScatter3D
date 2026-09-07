@@ -87,6 +87,7 @@ void apply_control_actions(
     if (ca.open_bundle_requested) { gui_cmds.open_bundle_requested = true; }
     if (ca.show_welcome_requested) { gui_cmds.show_welcome_requested = true; }
     if (ca.screenshot_requested) { gui_cmds.screenshot_requested = true; }
+    if (ca.clear_cache_requested) { gui_cmds.clear_cache_requested = true; }
     if (ca.restore_default_workspace_requested) {
         gui_cmds.restore_default_workspace_requested = true;
     }
