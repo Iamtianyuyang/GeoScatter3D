@@ -39,3 +39,13 @@
 /tmp/
 build_env.cmd
 rebuild.cmd
+
+# Agent & platform context
+/.agent_context/
+/.multica/
+/.serena/
+.agent_context/
+.multica/
+.serena/
+.pi/skills/multica*
+
