@@ -521,8 +521,8 @@ int main(int argc, char** argv) {
         parse_control_plane_args(argc, argv, app_config.control_plane);
         if (has_flag(argc, argv, "--headless")) {
             app_config.viewer.window.visible = false;
-            // 隐藏窗口模式下不加载持久化布局：imgui_layout.ini 可能记录着
-            // 其他视口（多显示器会话）上的窗口，ImGui 多视口会为它们创建
+            // 隐藏窗口模式下不加载持久化布局（多显示器窗口几何）：
+            // 可能记录其他显示器上的窗口几何，违背 headless 语义。
             // 可见的原生窗口——违背 headless 语义，也让主窗口 swapchain
             // 截图缺内容。TIA-151 实测复现并修复。
             app_config.viewer.window.ui_layout_ini_path.clear();
@@ -542,7 +542,7 @@ int main(int argc, char** argv) {
         }
 
         // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
-        // ImGuiLayer::init() 会以 active_theme() 完成首次应用。
+        // 启动主题记录后由运行期应用（无 ImGui 前端，主题仅作配置投影）。
         gs3d::ui::set_startup_theme(
             gs3d::ui::theme_from_string(app_config.viewer.window.theme)
         );

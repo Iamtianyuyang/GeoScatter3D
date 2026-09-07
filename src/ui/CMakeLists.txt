@@ -1,37 +1,17 @@
 # ---------------------------------------------------------------------------
-# UI Subsystem: Dear ImGui, Panels, Styling, Canvas, and Chrome
+# UI Subsystem: 纯逻辑组件（面板注册表、工作区、主题、布局度量）。
+# ImGui 前端已移除（Flutter 为唯一前端）；本库仅保留控制面/应用依赖的
+# 无 GUI 依赖组件。
 # ---------------------------------------------------------------------------
-
-# ImGui backend library
-add_library(gs3d_imgui STATIC
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
-)
-
-target_include_directories(gs3d_imgui PUBLIC
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
-)
-
-target_link_libraries(gs3d_imgui PUBLIC
-    Vulkan::Vulkan
-    glfw
-)
 
 # Core UI component library
 add_library(gs3d_ui STATIC
-    ImGuiLayer.cpp
+    UiFonts.cpp
+    WorkspaceManager.cpp
     color/Theme.cpp
     color/ThemeRegistry.cpp
     layouts/LayoutMetrics.cpp
-    UiRoot.cpp
-    layouts/floating_dock/FloatingDockLayout.cpp
-    layouts/analysis_rail/AnalysisRailLayout.cpp
-    canvas/ViewportAxisTicks.cpp
+    layouts/LayoutRegistry.cpp
 )
 
 target_include_directories(gs3d_ui PUBLIC
@@ -43,7 +23,5 @@ target_include_directories(gs3d_ui PUBLIC
 target_link_libraries(gs3d_ui PUBLIC
     gs3d_app_support
     gs3d_render
-    gs3d_imgui
     gs3d_platform
-    glfw
 )

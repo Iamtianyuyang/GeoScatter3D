@@ -8,7 +8,6 @@
 #include "app/ViewerBenchmarkController.hpp"
 #include "app/ViewerPickSystem.hpp"
 #include "app/ViewerViewportRenderSystem.hpp"
-#include "ui/ImGuiLayer.hpp"
 #include "platform/Window.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
@@ -27,7 +26,6 @@ ViewerFrameRenderer::ViewerFrameRenderer(
     gs3d::render::VulkanContext& context,
     gs3d::render::VulkanSwapchain& swapchain,
     gs3d::render::VulkanRenderer& renderer,
-    gs3d::ui::ImGuiLayer& imgui_layer,
     NavigationMapSystem& navigation_maps,
     gs3d::render::PointPipeline& point_pipeline,
     const gs3d::render::PointCloudGpu& navigation_cloud,
@@ -42,7 +40,6 @@ ViewerFrameRenderer::ViewerFrameRenderer(
     , context_(context)
     , swapchain_(swapchain)
     , renderer_(renderer)
-    , imgui_layer_(imgui_layer)
     , navigation_maps_(navigation_maps)
     , point_pipeline_(point_pipeline)
     , navigation_cloud_(navigation_cloud)
@@ -106,9 +103,6 @@ ViewerFrameRenderMeasurements ViewerFrameRenderer::render(
                 };
                 viewport_renderer_.record(command_buffer, viewport_context);
             },
-            .in_pass = [&](VkCommandBuffer command_buffer) {
-                imgui_layer_.render(command_buffer);
-            },
             .post_pass = [&](VkCommandBuffer command_buffer,
                              const std::uint32_t image_index) {
                 screenshot_service_.record_copy(
@@ -127,8 +121,6 @@ ViewerFrameRenderMeasurements ViewerFrameRenderer::render(
         .frame_fence_wait_ms = renderer_.last_frame_fence_wait_ms(),
         .upload_fence_wait_ms = renderer_.last_upload_fence_wait_ms(),
     };
-    imgui_layer_.render_platform_windows();
-    imgui_layer_.discard_frame();
     screenshot_service_.write_pending(context_, swapchain_);
     return measurements;
 }

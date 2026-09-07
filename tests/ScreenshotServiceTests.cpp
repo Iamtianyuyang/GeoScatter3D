@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("Screenshot capture region scales and clamps an ImGui canvas")
+TEST_CASE("Screenshot capture region scales and clamps a viewport canvas")
 {
     const auto region = gs3d::app::resolve_screenshot_capture_region(
         90.0f, 40.0f, 240.0f, 170.0f,

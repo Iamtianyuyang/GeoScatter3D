@@ -3,7 +3,6 @@
 
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
-#include "imgui.h"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
 
@@ -153,17 +152,21 @@ bool ScreenshotService::prepare_capture(
         return false;
     }
 
-    const auto& io = ImGui::GetIO();
-    const ImVec2 viewport_pos = ImGui::GetMainViewport()->Pos;
+    // ImGui 已移除：视口坐标即窗口逻辑坐标，位置 (0,0)、
+    // 帧缓冲缩放按 1.0（与 headless 控制面行为一致；高 DPI 场景
+    // 后续可由窗口 API 提供真实缩放）。
+    constexpr float kViewportPosX = 0.0f;
+    constexpr float kViewportPosY = 0.0f;
+    constexpr float kFramebufferScale = 1.0f;
     const auto region = resolve_screenshot_capture_region(
         target_view->canvas_rect_min_x,
         target_view->canvas_rect_min_y,
         target_view->canvas_rect_max_x,
         target_view->canvas_rect_max_y,
-        viewport_pos.x,
-        viewport_pos.y,
-        io.DisplayFramebufferScale.x,
-        io.DisplayFramebufferScale.y,
+        kViewportPosX,
+        kViewportPosY,
+        kFramebufferScale,
+        kFramebufferScale,
         swapchain.extent()
     );
     if (!region.valid()) {

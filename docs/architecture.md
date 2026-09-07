@@ -82,7 +82,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
 | `camera` | 引擎相机层 | `Camera`, `CameraController`, `CameraHub`, `BoxSelect`：3D 视口相机变换矩阵、局部事件映射、框选与多视口同步组 |
 | `data` | 引擎数据层 | `Gs3dDataset`, `Gs3dLodDataset`, `Gs3dTileDataset`, `CsvReader`：GS3D v2 格式强校验、点数据流式解算与内存映射 |
 | `preprocess` | 引擎工具层 | `Gs3dWriter`, `Gs3dLodWriter`, `Gs3dTileWriter`, `PointStats`：离线高并发 CSV 切片、统计直方图与瓦片树生成 |
-| `ui` | 前端表现层 | `UiRoot`, `ImGuiLayer`, `AppChrome`, `UiFonts`, `ThemeRegistry`, `LayoutRegistry`, `ViewportCanvas`：统一 UI 表现（含 `panels/`, `styling/`, `canvas/` 子领域） |
+| `ui` | 前端逻辑层 | `PanelRegistry`, `LayoutRegistry`, `WorkspaceManager`, `UiFonts`, `ThemeRegistry`, `ViewportCanvas`：无 GUI 依赖的 UI 元数据/布局/主题组件（前端界面由 Flutter 承担） |
 | `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`） |
 | `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射 |
 
@@ -105,10 +105,10 @@ include/ & src/
 │
 ├── [前端表现层 UI]
 │   └── ui/           # 统一前端表现 (Dear ImGui 立即模式投影)
-│       ├── panels/   # 业务面板组件 (DatasetPanel, RenderSettingsPanel, MeasurementPanel...)
+│       ├── panels/   # 业务面板元数据 (PanelRegistry)
 │       ├── styling/  # 主题色彩与布局体系 (ThemeRegistry, LayoutRegistry, LayoutMetrics)
-│       ├── canvas/   # 3D 视口画布与坐标轴刻度 (ViewportCanvas, ViewportAxisTicks)
-│       └── (根目录)  # UI 框架外壳 (UiRoot, AppChrome, ImGuiLayer, Widgets, WelcomePage)
+│       ├── canvas/   # 视口几何与坐标轴工具 (ViewportCanvas)
+│       └── (根目录)  # UI 纯逻辑组件 (WorkspaceManager, UiFonts)
 │
 └── [应用编排与控制面 App Shell]
     ├── app/          # 顶层主循环与领域编排系统
@@ -134,9 +134,9 @@ include/ & src/
 ## 逐帧流程
 
 1. 轮询窗口事件并更新帧率。
-2. 从真实运行状态生成 `AppState`，由 `UiRoot` 返回包含各视图输入快照的
-   `UiActions`。
-3. `CameraController` 使用 ImGui 视图画布上的局部输入更新目标相机；相机默认独立，
+2. 从真实运行状态生成 `AppState`，控制面动作经 `apply_control_actions` 合并为
+   `UiActions`（前端输入来自 Flutter/控制面，不再有 ImGui 输入）。
+3. `CameraController` 使用视图画布上的局部输入更新目标相机；相机默认独立，
    只有勾选“联动相机”的视图才由 `CameraHub` 传播变化。
 4. 相机稳定后触发 tile 选择；后台 future 完成后按
    `tile.gpu_upload_budget_bytes` 分帧批量上传 GPU。
@@ -222,10 +222,10 @@ include/ & src/
   (见上"GPU Pick Contract")。
 - 导航图、导航球、自适应坐标轴刻度、高度缩放、点形状、多视图与
   可折叠侧边栏（TIA-111 方向 B）。
-- **布局现状（TIA-111 后）**：`UiLayoutMode` 枚举/配置键/休眠代码仍在
-  （workbench / floating-dock / analysis-rail 三套设计意图见
-  [operations.md](operations.md) §1.1），但 `UiRoot::draw` 只渲染 workbench
-  （docking + 侧边栏）一套；实测三个 `layout` 配置值启动窗口像素一致。
+- **前端现状（ImGui 已移除）**：C++ 侧不再有 ImGui 前端；`ui` 层仅保留控制面/应用
+  依赖的纯逻辑组件（面板/布局/主题注册表、工作区、视口几何）。前端界面全部由
+  `ui_flutter/`（Flutter Windows 桌面）承担，经 TCP + JSON-RPC 控制面交互，
+  视口图像经 screenshot PNG 回读。
 - **主题现状**：5 套（`include/ui/Theme.hpp`），代码默认 `kCarbonBlueDark`
   （深色），`config/viewer.toml` 默认 `carbon-blue`（浅色）覆盖；运行期菜单
   视图→主题 五套齐全，写入用户偏好 `[ui] theme`。
@@ -244,14 +244,12 @@ include/ & src/
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 911 行，其中 `ViewerApp::run()` 独占 688 行。运行时资源、
+1. `ViewerApp.cpp` 当前有 910 行，其中 `ViewerApp::run()` 独占 687 行。运行时资源、
    tile 流、相机、pick和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。`UiRoot.cpp` 仍有 10 行（视口画布绘制已拆分到
-   `ViewportCanvas.cpp`，TIA-92 把顶栏/状态栏/快捷键总览/命令面板拆到 AppChrome.cpp，标准工作台 Dock 流程已拆分到 StandardWorkbenchLayout.cpp），剩余的 docking
-   编排与面板绘制仍集中在一个文件。工程护栏以 912 / 716 / 1207 / 763 行分别约束 `ViewerApp.cpp`、
-   `run()`、`UiRoot.cpp` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
+   调度与错误边界。工程护栏以 912 / 716 / 763 行分别约束 `ViewerApp.cpp`、
+   `run()` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
    比较只允许下降，本地快速检查仍与 `HEAD^` 比较。当前 PR 早于 main 上的护栏，故仅在
    此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。
 2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
@@ -285,8 +283,9 @@ include/ & src/
 
 ## 后续拆分方向
 
-1. **UiRoot panel 边界**：先分离 docking/菜单编排，再把仍内嵌的 panel 绘制按数据集、
-   测量和渲染设置职责迁出；每个切片都附带交互烟测并压低 `UiRoot.cpp` 预算。
+1. **Flutter 前端收敛**：保持控制面 JSON-RPC 动作集与 `AppState`/`UiActions` 契约
+   稳定，将逐帧编排器集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
+   逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
 2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
    逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
 3. ~~稳定的文件格式层~~ **已完成** (TIA-93)：GS3D v2 / LOD / tile 已统一为

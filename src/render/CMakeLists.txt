@@ -25,8 +25,6 @@ add_library(gs3d_render STATIC
 
 target_include_directories(gs3d_render PUBLIC
     ${PROJECT_SOURCE_DIR}/include
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
 )
 
 target_link_libraries(gs3d_render PUBLIC

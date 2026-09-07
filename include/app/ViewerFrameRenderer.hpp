@@ -25,7 +25,6 @@ class VulkanSwapchain;
 struct PointPushConstants;
 struct TileSelectionResult;
 }
-namespace gs3d::ui { class ImGuiLayer; }
 namespace gs3d::platform { class Window; }
 
 namespace gs3d::app {
@@ -51,7 +50,7 @@ struct ViewerFrameRenderMeasurements {
     double upload_fence_wait_ms = 0.0;
 };
 
-// Owns the one-frame presentation sequence: offscreen viewport passes, ImGui,
+// Owns the one-frame presentation sequence: offscreen viewport passes,
 // optional screenshot readback and renderer timing measurements. Its
 // dependencies are stable for the viewer session; each call accepts only the
 // state that varies from frame to frame.
@@ -62,7 +61,6 @@ public:
         gs3d::render::VulkanContext& context,
         gs3d::render::VulkanSwapchain& swapchain,
         gs3d::render::VulkanRenderer& renderer,
-        gs3d::ui::ImGuiLayer& imgui_layer,
         NavigationMapSystem& navigation_maps,
         gs3d::render::PointPipeline& point_pipeline,
         const gs3d::render::PointCloudGpu& navigation_cloud,
@@ -83,7 +81,6 @@ private:
     gs3d::render::VulkanContext& context_;
     gs3d::render::VulkanSwapchain& swapchain_;
     gs3d::render::VulkanRenderer& renderer_;
-    gs3d::ui::ImGuiLayer& imgui_layer_;
     NavigationMapSystem& navigation_maps_;
     gs3d::render::PointPipeline& point_pipeline_;
     const gs3d::render::PointCloudGpu& navigation_cloud_;

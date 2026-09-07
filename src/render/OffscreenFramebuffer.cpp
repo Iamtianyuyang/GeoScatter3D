@@ -1,8 +1,6 @@
 #include "render/OffscreenFramebuffer.hpp"
 #include "util/Log.hpp"
 
-#include "backends/imgui_impl_vulkan.h"
-
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -40,7 +38,6 @@ OffscreenFramebuffer::OffscreenFramebuffer(OffscreenFramebuffer&& other) noexcep
     , depth_buffer_     (std::move(other.depth_buffer_))
     , render_pass_      (other.render_pass_)
     , framebuffer_      (other.framebuffer_)
-    , imgui_descriptor_ (other.imgui_descriptor_)
 {
     other.context_          = nullptr;
     other.color_image_      = VK_NULL_HANDLE;
@@ -56,7 +53,6 @@ OffscreenFramebuffer::OffscreenFramebuffer(OffscreenFramebuffer&& other) noexcep
     other.pick_depth_format_= VK_FORMAT_R32_SFLOAT;
     other.render_pass_      = VK_NULL_HANDLE;
     other.framebuffer_      = VK_NULL_HANDLE;
-    other.imgui_descriptor_ = VK_NULL_HANDLE;
 }
 
 OffscreenFramebuffer& OffscreenFramebuffer::operator=(OffscreenFramebuffer&& other) noexcept {
@@ -102,7 +98,6 @@ void OffscreenFramebuffer::create(
     );
     create_render_pass();
     create_framebuffer();
-    register_imgui_texture();
 }
 
 void OffscreenFramebuffer::resize(VkExtent2D new_extent) {
@@ -126,7 +121,6 @@ void OffscreenFramebuffer::resize_after_device_idle(VkExtent2D new_extent) {
 }
 
 void OffscreenFramebuffer::recreate_image_resources(VkExtent2D new_extent) {
-    unregister_imgui_texture();
     cleanup_image_resources();
 
     extent_ = new_extent;
@@ -140,7 +134,6 @@ void OffscreenFramebuffer::recreate_image_resources(VkExtent2D new_extent) {
         VK_IMAGE_USAGE_TRANSFER_SRC_BIT
     );
     create_framebuffer();
-    register_imgui_texture();
 }
 
 void OffscreenFramebuffer::destroy() noexcept {
@@ -148,7 +141,6 @@ void OffscreenFramebuffer::destroy() noexcept {
 
     vkDeviceWaitIdle(context_->device());
 
-    unregister_imgui_texture();
     cleanup_image_resources();
 
     if (render_pass_ != VK_NULL_HANDLE) {
@@ -200,10 +192,6 @@ VkExtent2D OffscreenFramebuffer::extent() const noexcept {
     return extent_;
 }
 
-VkDescriptorSet OffscreenFramebuffer::imgui_descriptor() const noexcept {
-    return imgui_descriptor_;
-}
-
 VkImage OffscreenFramebuffer::color_image() const noexcept {
     return color_image_;
 }
@@ -238,8 +226,7 @@ bool OffscreenFramebuffer::valid() const noexcept {
            pick_image_       != VK_NULL_HANDLE &&
            pick_depth_image_ != VK_NULL_HANDLE &&
            framebuffer_      != VK_NULL_HANDLE &&
-           render_pass_      != VK_NULL_HANDLE &&
-           imgui_descriptor_ != VK_NULL_HANDLE;
+           render_pass_      != VK_NULL_HANDLE;
 }
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
@@ -581,20 +568,6 @@ void OffscreenFramebuffer::create_framebuffer() {
         vkCreateFramebuffer(context_->device(), &fb_info, nullptr, &framebuffer_),
         "OffscreenFramebuffer: failed to create framebuffer"
     );
-}
-
-void OffscreenFramebuffer::register_imgui_texture() {
-    imgui_descriptor_ = ImGui_ImplVulkan_AddTexture(
-        color_view_,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
-}
-
-void OffscreenFramebuffer::unregister_imgui_texture() noexcept {
-    if (imgui_descriptor_ != VK_NULL_HANDLE) {
-        ImGui_ImplVulkan_RemoveTexture(imgui_descriptor_);
-        imgui_descriptor_ = VK_NULL_HANDLE;
-    }
 }
 
 void OffscreenFramebuffer::cleanup_image_resources() noexcept {

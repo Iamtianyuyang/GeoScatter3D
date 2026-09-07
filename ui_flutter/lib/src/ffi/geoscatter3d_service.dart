@@ -1580,7 +1580,13 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// 解析预处理器可执行文件路径
   static String? resolvePreprocessExecutable() {
+    // 以仓库根为基准解析（不依赖当前工作目录）。
+    final repoRoot = resolveRepoRoot();
     final candidates = [
+      '$repoRoot/tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
+      '$repoRoot/tmp/build-win/Release/GeoScatter3DPreprocess.exe',
+      '$repoRoot/build/windows/x64/runner/Debug/GeoScatter3DPreprocess.exe',
+      '$repoRoot/build/windows/x64/runner/Release/GeoScatter3DPreprocess.exe',
       'tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
       'tmp/build-win/Release/GeoScatter3DPreprocess.exe',
       'build/windows/x64/runner/Debug/GeoScatter3DPreprocess.exe',

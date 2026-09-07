@@ -15,8 +15,7 @@
 #include "render/NearestPointQuery.hpp"
 #include "render/TileSelection.hpp"
 #include "core/SceneState.hpp"
-#include "ui/UiRoot.hpp"
-#include "ui/layouts/standard_workbench/DockLayoutBuilder.hpp"
+#include "ui/ViewportCanvas.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -400,13 +399,13 @@ void test_writable_file_resolution()
     );
 
     // 文件已存在于某搜索根 → 命中既有位置（不受 CWD 影响）。
-    const auto legacy_location = config_dir / "imgui_layout.ini";
+    const auto legacy_location = config_dir / "app_layout.ini";
     std::ofstream out(legacy_location, std::ios::trunc);
     out << "[Window]\n";
     out.close();
     const auto resolved_existing =
         gs3d::app::ResourcePath::resolve_writable_file(
-            "imgui_layout.ini", context
+            "app_layout.ini", context
         );
     expect(
         resolved_existing == legacy_location,
@@ -422,63 +421,6 @@ void test_writable_file_resolution()
 
     std::error_code ec;
     std::filesystem::remove_all(test_root, ec);
-}
-
-void test_default_dock_layout_decision()
-{
-    using gs3d::ui::DockLayoutPersistState;
-    // 首帧、无持久化节点 → 构建默认布局。
-    DockLayoutPersistState state;
-    expect(
-        !gs3d::ui::keep_current_dock_layout(
-            state, false, false, false, 0x11),
-        "first frame without a persisted layout builds the default"
-    );
-    expect(state.built_once,
-           "first build marks the session built-once flag");
-
-    // 首帧、ini 已恢复持久化节点 → 采纳用户布局，不重建。
-    DockLayoutPersistState adopted;
-    expect(
-        gs3d::ui::keep_current_dock_layout(
-            adopted, false, false, true, 0x22),
-        "first frame adopts a persisted layout without rebuilding"
-    );
-    expect(adopted.initialized && adopted.signature == 0x22,
-           "adoption records initialized flag and signature");
-
-    // 稳态 → 保持现状。
-    expect(
-        gs3d::ui::keep_current_dock_layout(
-            adopted, true, false, true, 0x22),
-        "steady state keeps the current layout"
-    );
-
-    // 面板可见性变化（签名不一致）→ 重建默认布局。
-    expect(
-        !gs3d::ui::keep_current_dock_layout(
-            adopted, false, false, true, 0x22),
-        "panel visibility change rebuilds the default layout"
-    );
-
-    // 大幅 resize → 重建。
-    DockLayoutPersistState resized;
-    resized.initialized = true;
-    resized.built_once = true;
-    resized.signature = 0x33;
-    expect(
-        !gs3d::ui::keep_current_dock_layout(
-            resized, true, true, false, 0x33),
-        "significant resize rebuilds the default layout"
-    );
-
-    // 运行期"恢复默认工作区"（initialized 被清空）→ 即使节点仍存在也重建。
-    adopted.initialized = false;
-    expect(
-        !gs3d::ui::keep_current_dock_layout(
-            adopted, false, false, true, 0x22),
-        "explicit restore rebuilds even with a persisted layout"
-    );
 }
 
 void test_resource_path_resolves_assets_from_executable_directory()
@@ -1787,7 +1729,7 @@ void test_axis_ticks_step_is_a_nice_round_number()
 
 void test_axis_ticks_huge_origin_with_tiny_step_terminates()
 {
-    // Regression guard for the UiRoot "stuck in tick loop" hang:
+    // Regression guard for the axis-tick loop termination:
     // when the axis range sits at a large absolute value (e.g.
     // -14544) but the user zoomed in to a tiny window, the nice
     // step collapses to ~1e-3 — at which point float's unit-roundoff
@@ -4225,7 +4167,6 @@ void test_scenario_linked_viewports_after_propagation()
     LEGACY_TEST_CASE(test_render_settings_preferences_roundtrip)
     LEGACY_TEST_CASE(test_apply_saved_render_settings_preferences)
     LEGACY_TEST_CASE(test_writable_file_resolution)
-    LEGACY_TEST_CASE(test_default_dock_layout_decision)
     LEGACY_TEST_CASE(test_resource_path_resolves_assets_from_executable_directory)
     LEGACY_TEST_CASE(test_default_viewer_config_is_portable)
     LEGACY_TEST_CASE(test_resize_debounce)

@@ -339,6 +339,16 @@ TEST_CASE("Status bar component is read-only", "[component_registry]") {
 TEST_CASE("Every non-debug component capability is driven to success (100%)",
           "[component_registry][coverage]") {
     AppState state;
+    // 为原生运行时组件（runtime.pick / runtime.camera）提供活跃视口 fixture。
+    state.render_views.resize(1);
+    state.render_views[0].viewport_index = 0;
+    state.render_views[0].image_width = 800;
+    state.render_views[0].image_height = 600;
+    state.render_views[0].canvas_rect_min_x = 0.0f;
+    state.render_views[0].canvas_rect_min_y = 0.0f;
+    state.render_views[0].canvas_rect_max_x = 800.0f;
+    state.render_views[0].canvas_rect_max_y = 600.0f;
+    state.active_viewport_index = 0;
     ComponentRegistry registry = make_full_registry(state);
 
     std::size_t driven_capabilities = 0;

@@ -11,8 +11,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # Windows 走 vcpkg（nlohmann-json），Linux 走发行版包（libnlohmann-json3-dev）。
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
 
-set(IMGUI_DIR ${PROJECT_SOURCE_DIR}/third_party/imgui)
-
 # Shader sources are the canonical inputs. Generated SPIR-V lives only in the
 # build tree, so a source edit is always visible to the build graph.
 set(

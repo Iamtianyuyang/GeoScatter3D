@@ -264,7 +264,6 @@ int ViewerApp::run() {
         auto& context = render_runtime.context();
         auto& swapchain = render_runtime.swapchain();
         auto& renderer = render_runtime.renderer();
-        auto& imgui_layer = render_runtime.imgui_layer();
         auto& viewport_manager = render_runtime.viewport_manager();
         auto& point_pipeline = render_runtime.point_pipeline();
         const auto& bounds = render_runtime.bounds();
@@ -496,7 +495,6 @@ int ViewerApp::run() {
             context,
             swapchain,
             renderer,
-            imgui_layer,
             navigation_maps,
             point_pipeline,
             nav_cloud,
@@ -598,7 +596,8 @@ int ViewerApp::run() {
             control_session.poll();
             if (control_session.quit_requested()) window.request_close();
 
-            auto gui_cmds = imgui_layer.new_frame(app_state);
+            // ImGui 已移除：UI 输入全部来自控制面（control_session.poll()）。
+            UiActions gui_cmds;
             apply_control_actions(app_state, gui_cmds);
             viewport_presentation.copy_newly_visible_views(
                 app_state,

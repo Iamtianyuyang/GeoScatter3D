@@ -12,12 +12,12 @@
 namespace gs3d::render {
 
 /*
- * Offscreen render target that writes to a VkImage and exposes a
- * VkDescriptorSet usable directly with ImGui::Image().
+ * Offscreen render target that writes to a VkImage (color + pick + depth).
+ * The color image is consumed via Vulkan readback (e.g. screenshot PNG)
+ * or presentation; no GUI-framework descriptor is exposed.
  *
  * Design follows SaschaWillems/Vulkan offscreen sample (MIT) for the
- * render pass setup, and the ImGui docking Vulkan backend for texture
- * registration via ImGui_ImplVulkan_AddTexture.
+ * render pass setup.
  *
  * color_format passed to create() MUST match the swapchain format so
  * that PointPipeline (created against the swapchain render pass) stays
@@ -58,7 +58,6 @@ public:
 
     [[nodiscard]] VkRenderPass    render_pass()      const noexcept;
     [[nodiscard]] VkExtent2D      extent()           const noexcept;
-    [[nodiscard]] VkDescriptorSet imgui_descriptor() const noexcept;
     [[nodiscard]] VkImage         color_image()      const noexcept;
     [[nodiscard]] VkImage         pick_image()       const noexcept;
     [[nodiscard]] VkImage         pick_depth_image() const noexcept;
@@ -93,16 +92,12 @@ private:
     VkRenderPass  render_pass_  = VK_NULL_HANDLE;
     VkFramebuffer framebuffer_  = VK_NULL_HANDLE;
 
-    VkDescriptorSet imgui_descriptor_ = VK_NULL_HANDLE;
-
 private:
     void create_color_image();
     void create_pick_image();
     void create_pick_depth_image();
     void create_render_pass();
     void create_framebuffer();
-    void register_imgui_texture();
-    void unregister_imgui_texture() noexcept;
     void cleanup_image_resources() noexcept;
     void recreate_image_resources(VkExtent2D new_extent);
 

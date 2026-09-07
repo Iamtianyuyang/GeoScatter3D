@@ -26,8 +26,6 @@ target_include_directories(GeoScatter3D PRIVATE
     ${PROJECT_SOURCE_DIR}/third_party/tomlplusplus/include
     ${PROJECT_SOURCE_DIR}/third_party/stb
     ${PROJECT_SOURCE_DIR}/third_party/nanosvg
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
 )
 
 target_link_libraries(GeoScatter3D PRIVATE

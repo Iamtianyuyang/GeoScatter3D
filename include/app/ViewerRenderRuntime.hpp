@@ -1,7 +1,6 @@
 #pragma once
 
 #include "camera/Camera.hpp"
-#include "ui/ImGuiLayer.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanRenderer.hpp"
 #include "render/VulkanSwapchain.hpp"
@@ -53,7 +52,7 @@ struct ViewerRenderRuntimeInput {
 };
 
 // Owns device-backed viewer resources in dependency order. Window lifetime is
-// external; all Vulkan, ImGui and GPU objects are destroyed before it.
+// external; all Vulkan and GPU objects are destroyed before it.
 class ViewerRenderRuntime {
 public:
     ViewerRenderRuntime(
@@ -68,7 +67,6 @@ public:
     [[nodiscard]] gs3d::render::VulkanContext& context() noexcept;
     [[nodiscard]] gs3d::render::VulkanSwapchain& swapchain() noexcept;
     [[nodiscard]] gs3d::render::VulkanRenderer& renderer() noexcept;
-    [[nodiscard]] gs3d::ui::ImGuiLayer& imgui_layer() noexcept;
     [[nodiscard]] gs3d::render::ViewportManager& viewport_manager() noexcept;
     [[nodiscard]] gs3d::render::PointPipeline& point_pipeline() noexcept;
     [[nodiscard]] const gs3d::camera::CameraBounds& bounds() const noexcept;
@@ -83,7 +81,6 @@ private:
     gs3d::render::VulkanContext context_;
     gs3d::render::VulkanSwapchain swapchain_;
     gs3d::render::VulkanRenderer renderer_;
-    gs3d::ui::ImGuiLayer imgui_layer_;
     std::unique_ptr<gs3d::render::PointCloudGpu> full_gpu_cloud_;
     std::unique_ptr<gs3d::render::PointCloudLodGpu> lod_gpu_cloud_;
     std::unique_ptr<gs3d::render::PointCloudTileGpu> tile_gpu_cloud_;

@@ -39,7 +39,6 @@ IGNORE_SCOPE_PROBES = (
 LINE_BUDGETS = {
     "src/app/ViewerApp.cpp": 912,
     "ViewerApp::run()": 716,
-    "src/ui/UiRoot.cpp": 1207,
     "src/app/AppConfig.cpp": 763,
 }
 
@@ -287,7 +286,6 @@ def main() -> int:
             violations.append(f"overly broad ignore rule: {candidate}")
 
     viewer_path = root / "src/app/ViewerApp.cpp"
-    ui_path = root / "src/ui/UiRoot.cpp"
     app_config_path = root / "src/app/AppConfig.cpp"
     architecture_path = root / "docs/architecture.md"
     architecture = architecture_path.read_text(encoding="utf-8")
@@ -296,15 +294,13 @@ def main() -> int:
         r"`ViewerApp::run\(\)` 独占 (\d+) 行",
         architecture,
     )
-    ui_match = re.search(r"`UiRoot\.cpp` 仍有 (\d+) 行", architecture)
-    if viewer_match is None or ui_match is None:
+    if viewer_match is None:
         violations.append("architecture metrics are missing from docs/architecture.md")
     else:
         viewer_lines = len(viewer_path.read_text(encoding="utf-8").splitlines())
         run_lines = function_line_count(viewer_path, "int ViewerApp::run()")
-        ui_lines = len(ui_path.read_text(encoding="utf-8").splitlines())
-        documented = tuple(map(int, viewer_match.groups())) + (int(ui_match.group(1)),)
-        actual = (viewer_lines, run_lines, ui_lines)
+        documented = tuple(map(int, viewer_match.groups()))
+        actual = (viewer_lines, run_lines)
         if documented != actual:
             violations.append(
                 "stale architecture metrics: "
@@ -314,7 +310,6 @@ def main() -> int:
         line_counts = {
             "src/app/ViewerApp.cpp": viewer_lines,
             "ViewerApp::run()": run_lines,
-            "src/ui/UiRoot.cpp": ui_lines,
             "src/app/AppConfig.cpp": len(
                 app_config_path.read_text(encoding="utf-8").splitlines()
             ),

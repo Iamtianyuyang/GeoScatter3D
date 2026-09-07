@@ -408,22 +408,6 @@ add_test(
     COMMAND GeoScatter3DViewerRuntimeConfigurationTests
 )
 
-add_executable(GeoScatter3DViewerWorkbenchLayoutTests
-    ViewerWorkbenchLayoutTests.cpp
-)
-target_include_directories(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-)
-target_link_libraries(GeoScatter3DViewerWorkbenchLayoutTests PRIVATE
-    gs3d_app_support
-    gs3d_ui
-    Catch2::Catch2WithMain
-)
-add_test(
-    NAME GeoScatter3D.ViewerWorkbenchLayout
-    COMMAND GeoScatter3DViewerWorkbenchLayoutTests
-)
-
 add_executable(GeoScatter3DViewerLodFrameSystemTests
     ViewerLodFrameSystemTests.cpp
 )
@@ -437,21 +421,6 @@ target_link_libraries(GeoScatter3DViewerLodFrameSystemTests PRIVATE
 add_test(
     NAME GeoScatter3D.ViewerLodFrameSystem
     COMMAND GeoScatter3DViewerLodFrameSystemTests
-)
-
-add_executable(GeoScatter3DViewportAxisTicksTests
-    ViewportAxisTicksTests.cpp
-)
-target_include_directories(GeoScatter3DViewportAxisTicksTests PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-)
-target_link_libraries(GeoScatter3DViewportAxisTicksTests PRIVATE
-    gs3d_ui
-    Catch2::Catch2WithMain
-)
-add_test(
-    NAME GeoScatter3D.ViewportAxisTicks
-    COMMAND GeoScatter3DViewportAxisTicksTests
 )
 
 add_executable(GeoScatter3DViewerFrameStateSynchronizerTests
@@ -689,8 +658,6 @@ target_include_directories(GeoScatter3DBenchmark PRIVATE
     ${PROJECT_SOURCE_DIR}/third_party/tomlplusplus/include
     ${PROJECT_SOURCE_DIR}/third_party/stb
     ${PROJECT_SOURCE_DIR}/third_party/nanosvg
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
 )
 target_link_libraries(GeoScatter3DBenchmark PRIVATE
     gs3d_app

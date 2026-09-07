@@ -143,15 +143,6 @@ ViewerRenderRuntime::ViewerRenderRuntime(
     gs3d::util::log::info() << "Physical device: "
               << context_.physical_device_name() << '\n';
 
-    imgui_layer_.init(
-        window_.native_handle(),
-        context_,
-        renderer_,
-        swapchain_.image_count(),
-        input.window_config.ui_layout_ini_path,
-        input.window_config.ui_scale_multiplier,
-        input.window_config.enable_multi_viewports
-    );
     apply_workbench_layout(window_);
 
     const auto clear_color = make_clear_color(input.graphics_config);
@@ -234,11 +225,6 @@ gs3d::render::VulkanSwapchain& ViewerRenderRuntime::swapchain() noexcept
 gs3d::render::VulkanRenderer& ViewerRenderRuntime::renderer() noexcept
 {
     return renderer_;
-}
-
-gs3d::ui::ImGuiLayer& ViewerRenderRuntime::imgui_layer() noexcept
-{
-    return imgui_layer_;
 }
 
 gs3d::render::ViewportManager& ViewerRenderRuntime::viewport_manager() noexcept

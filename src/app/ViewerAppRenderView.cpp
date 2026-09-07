@@ -34,9 +34,10 @@ void ViewerApp::fill_render_views(
                 auto& view =
                     app_state.render_views[static_cast<std::size_t>(i)];
                 view.viewport_index = i;
-                view.descriptor = reinterpret_cast<TextureHandle>(
-                    ctx.viewport_manager.framebuffer(i).imgui_descriptor());
-                view.show_live_image = view.descriptor != kNullTextureHandle;
+                // ImGui 已移除：视口图像经由控制面 screenshot PNG 回读，
+                // 不再暴露 GPU 纹理句柄。
+                view.descriptor = kNullTextureHandle;
+                view.show_live_image = false;
                 view.image_width = camera.viewport_width();
                 view.image_height = camera.viewport_height();
                 view.points_visible = ctx.visible_points;
