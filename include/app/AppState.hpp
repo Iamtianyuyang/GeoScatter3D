@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/TextureHandle.hpp"
+#include "app/UiActions.hpp"
 
 #include <array>
 #include <algorithm>
@@ -493,6 +494,7 @@ struct AppState {
         int theme_id = 0;  // gs3d::ui::ThemeId
         int reset_camera_index = -1;
         int camera_view_axis = -1;
+        std::vector<RenderSettingsCommand> render_settings_commands;
         bool toggle_fullscreen = false;
         std::string open_project_path;
     } control_actions;

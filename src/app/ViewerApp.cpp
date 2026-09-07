@@ -115,6 +115,7 @@ void apply_control_actions(
     } else if (ca.camera_view_axis >= 0) {
         gui_cmds.camera_view_axis = ca.camera_view_axis;
     }
+    gui_cmds.render_settings_commands.insert(gui_cmds.render_settings_commands.end(), ca.render_settings_commands.begin(), ca.render_settings_commands.end());
     ca = AppState::ControlActions{};  // 清空
 }
 

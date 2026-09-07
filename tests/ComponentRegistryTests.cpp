@@ -209,6 +209,35 @@ TEST_CASE("Toolbar components modify shared AppState", "[component_registry]") {
     REQUIRE_NOTHROW(link->execute("get_state", nlohmann::json::object()));
 }
 
+TEST_CASE("Runtime render settings queue a native render command", "[component_registry]") {
+    AppState state;
+    ComponentRegistry registry = make_full_registry(state);
+    auto* settings = registry.find("runtime.render_settings");
+    REQUIRE(settings != nullptr);
+
+    const auto response = settings->execute(
+        "set",
+        nlohmann::json{
+            {"point_size", 3.5},
+            {"height_exaggeration", 2.0},
+            {"colormap_index", 6},
+            {"point_shape", 1}
+        }
+    );
+
+    CHECK(response["queued"] == true);
+    REQUIRE(state.control_actions.render_settings_commands.size() == 1);
+    const auto& command = state.control_actions.render_settings_commands.front();
+    CHECK(command.point_size_changed == true);
+    CHECK(command.point_size == 3.5f);
+    CHECK(command.height_exag_changed == true);
+    CHECK(command.height_exag == 2.0f);
+    CHECK(command.colormap_changed == true);
+    CHECK(command.colormap_index == 6);
+    CHECK(command.point_shape_changed == true);
+    CHECK(command.point_shape == 1);
+}
+
 // ── Overlay 组件 toggle/set_visible ───────────────────────────
 
 TEST_CASE("Overlay components support toggle and set_visible", "[component_registry]") {
@@ -282,6 +311,9 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
                 } else if (capability.command == "click" &&
                            component->info().id == "gizmo.navigation") {
                     params["axis"] = 0;
+                } else if (capability.command == "set" &&
+                           component->info().id == "runtime.render_settings") {
+                    params["point_size"] = 2.0;
                 }
             }
             nlohmann::json result;
@@ -301,6 +333,7 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
     CHECK(driven_ids.count("overlay.shortcut") == 1);
     CHECK(driven_ids.count("gizmo.navigation") == 1);
     CHECK(driven_ids.count("canvas.viewport") == 1);
+    CHECK(driven_ids.count("runtime.render_settings") == 1);
 }
 
 // ── list_json 暴露稳定 ID 和能力 ─────────────────────────────
@@ -332,11 +365,12 @@ TEST_CASE("list_json exposes stable ids and capabilities", "[component_registry]
     CHECK(ids.count("overlay.panel_palette") == 1);
     CHECK(ids.count("gizmo.navigation") == 1);
     CHECK(ids.count("canvas.viewport") == 1);
+    CHECK(ids.count("runtime.render_settings") == 1);
     // 注意：viewport.main 在 ViewerAppControlPlane.cpp 中创建，
     // 测试中的 make_full_registry 不包含它
 
-    // 总组件数检查：8 panels + 9 menus + 6 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 28
-    CHECK(ids.size() >= 28);
+    // 总组件数检查：8 panels + 9 menus + 7 toolbars + 1 status + 2 overlays + 1 gizmo + 1 canvas = 29
+    CHECK(ids.size() >= 29);
 }
 
 // ── 主题组件支持 set_value ───────────────────────────────────

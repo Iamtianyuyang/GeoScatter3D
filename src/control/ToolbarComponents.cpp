@@ -2,6 +2,7 @@
 
 #include "ui/PanelRegistry.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -185,6 +186,206 @@ protected:
         app_state_.ui_chrome.panel_palette_open = true;
         app_state_.ui_chrome.panel_palette_query[0] = '\0';
     }
+};
+
+// ── 原生运行时渲染参数组件 ─────────────────────────────────────────
+
+class RuntimeRenderSettingsComponent final : public Component {
+public:
+    explicit RuntimeRenderSettingsComponent(gs3d::app::AppState& app_state)
+        : app_state_(app_state) {}
+
+    [[nodiscard]] const ComponentInfo& info() const noexcept override {
+        return info_;
+    }
+
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override {
+        return capabilities_;
+    }
+
+    [[nodiscard]] nlohmann::json get_state() override {
+        const auto& settings = gs3d::app::render_settings_for_view(
+            app_state_, app_state_.active_viewport_index
+        );
+        return {
+            {"id", info_.id},
+            {"point_size", settings.point_size},
+            {"point_shape", settings.point_shape},
+            {"height_attribute_index", settings.height_attr_index},
+            {"height_attributes", settings.height_by_options},
+            {"height_exaggeration", settings.height_exaggeration},
+            {"color_attribute_index", settings.color_attr_index},
+            {"color_attributes", settings.color_by_options},
+            {"colormap_index", settings.colormap_index},
+            {"value_clip_enabled", settings.value_clip_enabled},
+            {"value_clip_min", settings.value_clip_min},
+            {"value_clip_max", settings.value_clip_max}
+        };
+    }
+
+    [[nodiscard]] nlohmann::json execute(
+        const std::string& command,
+        const nlohmann::json& params
+    ) override {
+        if (command == "get_state") {
+            return get_state();
+        }
+        if (command != "set") {
+            throw ComponentError(-32601, "unknown command: " + command);
+        }
+        if (!params.is_object()) {
+            throw ComponentError(-32602, "render settings params must be an object");
+        }
+
+        gs3d::app::RenderSettingsCommand update;
+        if (params.contains("viewport_indices")) {
+            const auto& indices = params.at("viewport_indices");
+            if (!indices.is_array()) {
+                throw ComponentError(-32602, "viewport_indices must be an array");
+            }
+            update.has_viewport_scope = true;
+            for (const auto& index : indices) {
+                if (!index.is_number_integer()) {
+                    throw ComponentError(-32602, "viewport index must be an integer");
+                }
+                update.viewport_indices.push_back(index.get<int>());
+            }
+        }
+
+        bool changed = false;
+        if (params.contains("point_size")) {
+            update.point_size_changed = true;
+            update.point_size = require_number(params, "point_size");
+            changed = true;
+        }
+        if (params.contains("height_attribute")) {
+            update.height_by_changed = true;
+            update.height_by_index = resolve_attribute_index(
+                params.at("height_attribute"),
+                gs3d::app::render_settings_for_view(
+                    app_state_, app_state_.active_viewport_index
+                ).height_by_options,
+                "height_attribute"
+            );
+            changed = true;
+        }
+        if (params.contains("height_exaggeration")) {
+            update.height_exag_changed = true;
+            update.height_exag = require_number(params, "height_exaggeration");
+            changed = true;
+        }
+        if (params.contains("color_attribute")) {
+            update.color_by_changed = true;
+            update.color_by_index = resolve_attribute_index(
+                params.at("color_attribute"),
+                gs3d::app::render_settings_for_view(
+                    app_state_, app_state_.active_viewport_index
+                ).color_by_options,
+                "color_attribute"
+            );
+            changed = true;
+        }
+        if (params.contains("colormap_index")) {
+            update.colormap_changed = true;
+            update.colormap_index = require_integer(params, "colormap_index");
+            changed = true;
+        }
+        if (params.contains("point_shape")) {
+            update.point_shape_changed = true;
+            update.point_shape = require_integer(params, "point_shape");
+            changed = true;
+        }
+
+        const bool has_clip_field =
+            params.contains("value_clip_enabled") ||
+            params.contains("value_clip_min") ||
+            params.contains("value_clip_max");
+        if (has_clip_field) {
+            const auto& settings = gs3d::app::render_settings_for_view(
+                app_state_, app_state_.active_viewport_index
+            );
+            update.value_clip_changed = true;
+            update.value_clip_enabled = params.value(
+                "value_clip_enabled", settings.value_clip_enabled
+            );
+            update.value_clip_min = params.contains("value_clip_min")
+                ? require_number(params, "value_clip_min")
+                : settings.value_clip_min;
+            update.value_clip_max = params.contains("value_clip_max")
+                ? require_number(params, "value_clip_max")
+                : settings.value_clip_max;
+            changed = true;
+        }
+
+        if (!changed) {
+            throw ComponentError(-32602, "no supported render setting was supplied");
+        }
+        app_state_.control_actions.render_settings_commands.push_back(
+            std::move(update)
+        );
+        return {{"id", info_.id}, {"queued", true}};
+    }
+
+private:
+    static float require_number(
+        const nlohmann::json& params,
+        const char* name
+    ) {
+        const auto& value = params.at(name);
+        if (!value.is_number()) {
+            throw ComponentError(-32602, std::string(name) + " must be numeric");
+        }
+        return value.get<float>();
+    }
+
+    static int require_integer(
+        const nlohmann::json& params,
+        const char* name
+    ) {
+        const auto& value = params.at(name);
+        if (!value.is_number_integer()) {
+            throw ComponentError(-32602, std::string(name) + " must be an integer");
+        }
+        return value.get<int>();
+    }
+
+    static int resolve_attribute_index(
+        const nlohmann::json& value,
+        const std::vector<std::string>& options,
+        const char* name
+    ) {
+        if (value.is_number_integer()) {
+            return value.get<int>();
+        }
+        if (!value.is_string()) {
+            throw ComponentError(
+                -32602,
+                std::string(name) + " must be an attribute name or index"
+            );
+        }
+        std::string attribute = value.get<std::string>();
+        if (attribute == "elevation") {
+            attribute = "z";
+        }
+        const auto found = std::find(options.begin(), options.end(), attribute);
+        if (found == options.end()) {
+            throw ComponentError(-32602, "unknown attribute: " + attribute);
+        }
+        return static_cast<int>(std::distance(options.begin(), found));
+    }
+
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{
+        "runtime.render_settings",
+        "原生渲染参数",
+        "通过 ViewerApp 同帧队列修改真实 Vulkan 渲染参数",
+        ComponentType::kToolbar,
+        false
+    };
+    std::vector<CommandSpec> capabilities_{
+        {"set", "设置点样式、属性映射和裁切范围", true},
+        {"get_state", "查询当前原生渲染参数", false}
+    };
 };
 
 // ── 状态栏组件（只读） ──────────────────────────────────────────
@@ -386,6 +587,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<ToolbarMeasureComponent>(app_state));
     result.push_back(std::make_unique<ToolbarLinkCameraComponent>(app_state));
     result.push_back(std::make_unique<ToolbarPanelPaletteComponent>(app_state));
+    result.push_back(std::make_unique<RuntimeRenderSettingsComponent>(app_state));
     return result;
 }
 

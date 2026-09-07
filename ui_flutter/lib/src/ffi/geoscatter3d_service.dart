@@ -287,6 +287,7 @@ class GeoScatter3dService extends ChangeNotifier {
     _cameraPanX = 0.0;
     _cameraPanY = 0.0;
     _isPanning = false;
+    _queueNativeCommand('canvas.viewport', 'reset_camera');
     notifyListeners();
   }
 
@@ -324,6 +325,10 @@ class GeoScatter3dService extends ChangeNotifier {
     if (zoom != null) _cameraZoom = zoom.clamp(0.05, 50.0);
     if (panX != null) _cameraPanX = panX;
     if (panY != null) _cameraPanY = panY;
+    final nativeAxis = _nativeAxisForPreset(preset);
+    if (nativeAxis != null) {
+      _queueNativeCommand('gizmo.navigation', 'click', {'axis': nativeAxis});
+    }
     notifyListeners();
   }
 
@@ -337,6 +342,10 @@ class GeoScatter3dService extends ChangeNotifier {
   void setPointShape(String shape) {
     if (_pointShape != shape) {
       _pointShape = shape;
+      final nativeShape = _nativePointShape(shape);
+      if (nativeShape != null) {
+        _queueNativeRenderSettings({'point_shape': nativeShape});
+      }
       notifyListeners();
     }
   }
@@ -345,6 +354,7 @@ class GeoScatter3dService extends ChangeNotifier {
     final clamped = scale.clamp(0.1, 10.0);
     if (_heightScale != clamped) {
       _heightScale = clamped;
+      _queueNativeRenderSettings({'height_exaggeration': clamped});
       notifyListeners();
     }
   }
@@ -352,6 +362,7 @@ class GeoScatter3dService extends ChangeNotifier {
   void setHeightSource(String source) {
     if (_heightSource != source) {
       _heightSource = source;
+      _queueNativeRenderSettings({'height_attribute': source});
       notifyListeners();
     }
   }
@@ -359,6 +370,7 @@ class GeoScatter3dService extends ChangeNotifier {
   void setColorAttribute(String attr) {
     if (_colorAttribute != attr) {
       _colorAttribute = attr;
+      _queueNativeRenderSettings({'color_attribute': attr});
       notifyListeners();
     }
   }
@@ -468,6 +480,9 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void requestScreenshot() {
+    if (isNativeRendererActive) {
+      unawaited(refreshNativeViewport());
+    }
     if (onScreenshotRequested != null) {
       onScreenshotRequested!();
     }
@@ -536,6 +551,75 @@ class GeoScatter3dService extends ChangeNotifier {
       await client.stop();
     }
     notifyListeners();
+  }
+
+  void _queueNativeRenderSettings(Map<String, dynamic> params) {
+    _queueNativeCommand('runtime.render_settings', 'set', params);
+  }
+
+  void _queueNativeCommand(
+    String component,
+    String command, [
+    Map<String, dynamic> params = const {},
+  ]) {
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) return;
+    unawaited(_sendNativeCommand(client, component, command, params));
+  }
+
+  Future<void> _sendNativeCommand(
+    NativeViewerControlClient client,
+    String component,
+    String command,
+    Map<String, dynamic> params,
+  ) async {
+    try {
+      await client.request('execute', {
+        'component': component,
+        'command': command,
+        'params': params,
+      });
+      if (identical(client, _nativeViewer)) {
+        await refreshNativeViewport();
+      }
+    } catch (error) {
+      if (identical(client, _nativeViewer)) {
+        _nativeViewerError = '原生命令执行失败: $error';
+        notifyListeners();
+      }
+    }
+  }
+
+  static int? _nativeAxisForPreset(String? preset) {
+    switch (preset?.toLowerCase()) {
+      case 'top':
+        return 4; // +Z
+      case 'front':
+        return 1; // -X
+      case 'side':
+        return 2; // +Y
+      default:
+        return null;
+    }
+  }
+
+  static int? _nativePointShape(String shape) {
+    switch (shape) {
+      case '方形':
+      case 'square':
+        return 0;
+      case '圆形':
+      case 'circle':
+        return 1;
+      case '菱形':
+      case 'diamond':
+        return 2;
+      case '三角形':
+      case 'triangle':
+        return 3;
+      default:
+        return null;
+    }
   }
 
   String? _resolveNativeViewerExecutable() {
@@ -741,6 +825,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   void toggleMeasurementMode() {
     setMeasurementMode(!_isMeasurementMode);
+    _queueNativeCommand('toolbar.measure', 'click');
   }
 
   void addMeasurementPoint(Point3D point) {
@@ -3042,30 +3127,71 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void setPointSize(double size) {
-    if (_bindings == null) return;
-    _bindings!.set_point_size(size);
+    if (_bindings != null) {
+      _bindings!.set_point_size(size);
+    }
     _pointSize = size;
+    _queueNativeRenderSettings({'point_size': size});
     notifyListeners();
   }
 
   void setColormap(String name) {
-    if (_bindings == null) return;
-    final nativeStr = name.toNativeUtf8();
-    try {
-      _bindings!.set_colormap(nativeStr);
-      _colormap = name;
-      notifyListeners();
-    } finally {
-      calloc.free(nativeStr);
+    if (_bindings != null) {
+      final nativeStr = name.toNativeUtf8();
+      try {
+        _bindings!.set_colormap(nativeStr);
+      } finally {
+        calloc.free(nativeStr);
+      }
     }
+    _colormap = name;
+    final nativeColormap = _nativeColormapIndex(name);
+    if (nativeColormap != null) {
+      _queueNativeRenderSettings({'colormap_index': nativeColormap});
+    }
+    notifyListeners();
   }
 
   void setScalarRange(double minVal, double maxVal) {
-    if (_bindings == null) return;
-    _bindings!.set_scalar_range(minVal, maxVal);
+    if (_bindings != null) {
+      _bindings!.set_scalar_range(minVal, maxVal);
+    }
     _scalarMin = minVal;
     _scalarMax = maxVal;
+    _queueNativeRenderSettings({
+      'value_clip_enabled': true,
+      'value_clip_min': minVal,
+      'value_clip_max': maxVal,
+    });
     notifyListeners();
+  }
+
+  static int? _nativeColormapIndex(String name) {
+    switch (name.toLowerCase()) {
+      case 'geo':
+        return 0;
+      case 'viridis':
+        return 1;
+      case 'jet':
+        return 2;
+      case 'gray':
+      case 'grey':
+        return 3;
+      case 'thermal':
+        return 4;
+      case 'coolwarm':
+      case 'cool-warm':
+        return 5;
+      case 'turbo':
+        return 6;
+      case 'plasma':
+        return 7;
+      case 'rainbow':
+      case 'rainbow256':
+        return 8;
+      default:
+        return null;
+    }
   }
 
   void shutdown() {
