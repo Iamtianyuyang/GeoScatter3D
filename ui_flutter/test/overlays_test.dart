@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
@@ -11,8 +13,30 @@ void main() {
   group('GeoScatter3D Overlays and Modals Widget Tests', () {
     late GeoScatter3dService service;
 
+    void cleanTempExports() {
+      for (final p in ['tmp/export_points.ply', 'tmp/tmp_test_export.ply', 'data/export_points.ply', 'tmp_test_export.ply']) {
+        final f = File(p);
+        if (f.existsSync()) {
+          try {
+            f.deleteSync();
+          } catch (_) {}
+        }
+      }
+      final dir = Directory('data');
+      if (dir.existsSync()) {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+
     setUp(() {
+      cleanTempExports();
       service = GeoScatter3dService();
+    });
+
+    tearDown(() {
+      cleanTempExports();
     });
 
     testWidgets('CommandPalette renders, filters actions, and executes selected action', (WidgetTester tester) async {
@@ -265,10 +289,11 @@ void main() {
 
       // 6. Point cloud export action
       final expRes = service.executeAction('workbench.export', {
-        'path': 'tmp_test_export.ply',
+        'path': 'tmp/tmp_test_export.ply',
         'format': 'ply',
       });
       expect(expRes['success'], isTrue);
+      cleanTempExports();
     });
   });
 }

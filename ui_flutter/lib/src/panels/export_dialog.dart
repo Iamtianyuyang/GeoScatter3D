@@ -14,7 +14,7 @@ class ExportPointCloudDialog extends StatefulWidget {
 
 class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
   final TextEditingController _pathController = TextEditingController(
-    text: 'data/export_points.ply',
+    text: 'tmp/export_points.ply',
   );
   String _format = 'ply';
   bool _isExporting = false;

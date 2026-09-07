@@ -40,5 +40,14 @@
 /artifacts/
 /.uitest-venv/
 /tmp/
+tmp/
+tmp_*
+*.ply
 build_env.cmd
 rebuild.cmd
+
+# Agent & platform context
+/.agent_context/
+/.multica/
+/.serena/
+
