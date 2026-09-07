@@ -46,6 +46,18 @@ Write-Host "==> [4/4] Deploying FFI dynamic library to release runner..." -Foreg
 $RunnerReleaseDir = Join-Path $FlutterDir "build/windows/x64/runner/$Config"
 if (Test-Path $RunnerReleaseDir) {
     Copy-Item $FlutterDll (Join-Path $RunnerReleaseDir "gs3d_ffi.dll") -Force
+
+    # Flutter 的原生引擎桥接会在本机回环地址启动无窗口 ViewerApp，必须随前端
+    # 一起部署其可执行文件、运行时 DLL 与 shader/font 资源，不能退回到 Dart 预览。
+    $NativeReleaseDir = Join-Path $BuildDir $Config
+    Copy-Item (Join-Path $NativeReleaseDir "GeoScatter3D.exe") $RunnerReleaseDir -Force
+    Copy-Item (Join-Path $NativeReleaseDir "glfw3.dll") $RunnerReleaseDir -Force
+    Copy-Item (Join-Path $NativeReleaseDir "vulkan-1.dll") $RunnerReleaseDir -Force
+    $RunnerAssetsDir = Join-Path $RunnerReleaseDir "assets"
+    if (-not (Test-Path $RunnerAssetsDir)) {
+        New-Item -ItemType Directory -Force -Path $RunnerAssetsDir | Out-Null
+    }
+    Copy-Item (Join-Path $NativeReleaseDir "assets/*") $RunnerAssetsDir -Recurse -Force
 }
 
 Write-Host "==> Flutter Desktop build succeeded! Ready to launch." -ForegroundColor Green

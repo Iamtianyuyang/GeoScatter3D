@@ -14,10 +14,7 @@ import '../welcome/welcome_ui_keys.dart';
 class CenterViewport extends StatefulWidget {
   final GeoScatter3dService service;
 
-  const CenterViewport({
-    super.key,
-    required this.service,
-  });
+  const CenterViewport({super.key, required this.service});
 
   @override
   State<CenterViewport> createState() => _CenterViewportState();
@@ -47,13 +44,18 @@ class _CenterViewportState extends State<CenterViewport> {
 
   Future<void> _handleScreenshot() async {
     try {
-      final boundary = _viewportRepaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          _viewportRepaintKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary != null) {
         final image = await boundary.toImage(pixelRatio: 2.0);
         final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
         if (byteData != null) {
           final bytes = byteData.buffer.asUint8List();
-          final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+          final timestamp = DateTime.now().toIso8601String().replaceAll(
+            ':',
+            '-',
+          );
           final fileName = 'screenshot_$timestamp.png';
           final file = File(fileName);
           await file.writeAsBytes(bytes);
@@ -82,7 +84,8 @@ class _CenterViewportState extends State<CenterViewport> {
   }
 
   void _copyPointCoords(Point3D point) {
-    final text = '${point.x.toStringAsFixed(3)}, ${point.y.toStringAsFixed(3)}, ${point.z.toStringAsFixed(3)}';
+    final text =
+        '${point.x.toStringAsFixed(3)}, ${point.y.toStringAsFixed(3)}, ${point.z.toStringAsFixed(3)}';
     Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -116,7 +119,9 @@ class _CenterViewportState extends State<CenterViewport> {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: AppTheme.surface,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(4),
+                  ),
                   border: Border.all(color: AppTheme.border),
                 ),
                 child: Row(
@@ -136,8 +141,35 @@ class _CenterViewportState extends State<CenterViewport> {
               ),
               const Spacer(),
               IconButton(
+                key: const ValueKey('workbench.viewport.native_renderer'),
+                icon: Icon(
+                  widget.service.isNativeRendererActive
+                      ? Icons.refresh_rounded
+                      : Icons.videogame_asset_rounded,
+                  size: 16,
+                  color: widget.service.isNativeRendererActive
+                      ? AppTheme.primaryBlue
+                      : AppTheme.textDim,
+                ),
+                tooltip: widget.service.isNativeRendererActive
+                    ? '刷新原生 Vulkan 渲染帧'
+                    : '启动原生 Vulkan 引擎',
+                onPressed: () async {
+                  if (widget.service.isNativeRendererActive) {
+                    await widget.service.refreshNativeViewport();
+                  } else {
+                    await widget.service.startNativeRenderer();
+                  }
+                },
+                splashRadius: 16,
+              ),
+              IconButton(
                 key: const ValueKey('workbench.viewport.tab_reset'),
-                icon: const Icon(Icons.refresh_rounded, size: 16, color: AppTheme.textDim),
+                icon: const Icon(
+                  Icons.refresh_rounded,
+                  size: 16,
+                  color: AppTheme.textDim,
+                ),
                 tooltip: '复位视口',
                 onPressed: () => widget.service.resetCamera(),
                 splashRadius: 16,
@@ -172,6 +204,7 @@ class _CenterViewportState extends State<CenterViewport> {
               final pointShape = widget.service.pointShape;
               final colorAttr = widget.service.colorAttribute;
               final bgColor = widget.service.viewportBackgroundColor;
+              final nativeViewportPng = widget.service.nativeViewportPng;
 
               return Stack(
                 children: [
@@ -190,20 +223,26 @@ class _CenterViewportState extends State<CenterViewport> {
                               _copyPointCoords(widget.service.selectedPoint!);
                               return KeyEventResult.handled;
                             }
-                          } else if (event.logicalKey == LogicalKeyboardKey.keyR) {
+                          } else if (event.logicalKey ==
+                              LogicalKeyboardKey.keyR) {
                             widget.service.resetCamera();
                             return KeyEventResult.handled;
-                          } else if (event.logicalKey == LogicalKeyboardKey.f1) {
+                          } else if (event.logicalKey ==
+                              LogicalKeyboardKey.f1) {
                             widget.service.toggleShortcutOverlay();
                             return KeyEventResult.handled;
-                          } else if (event.logicalKey == LogicalKeyboardKey.keyP &&
-                              (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed)) {
+                          } else if (event.logicalKey ==
+                                  LogicalKeyboardKey.keyP &&
+                              (HardwareKeyboard.instance.isControlPressed ||
+                                  HardwareKeyboard.instance.isMetaPressed)) {
                             widget.service.toggleCommandPalette();
                             return KeyEventResult.handled;
-                          } else if (event.logicalKey == LogicalKeyboardKey.keyM) {
+                          } else if (event.logicalKey ==
+                              LogicalKeyboardKey.keyM) {
                             widget.service.toggleMeasurementMode();
                             return KeyEventResult.handled;
-                          } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+                          } else if (event.logicalKey ==
+                              LogicalKeyboardKey.escape) {
                             if (widget.service.isCommandPaletteOpen ||
                                 widget.service.isShortcutOverlayOpen ||
                                 widget.service.isPerformancePanelOpen ||
@@ -224,15 +263,23 @@ class _CenterViewportState extends State<CenterViewport> {
                       child: Listener(
                         onPointerSignal: (pointerSignal) {
                           if (pointerSignal is PointerScrollEvent) {
-                            final factor = pointerSignal.scrollDelta.dy < 0 ? 1.15 : 0.87;
+                            final factor = pointerSignal.scrollDelta.dy < 0
+                                ? 1.15
+                                : 0.87;
                             widget.service.setCameraView(
-                              zoom: (widget.service.cameraZoom * factor).clamp(0.05, 50.0),
+                              zoom: (widget.service.cameraZoom * factor).clamp(
+                                0.05,
+                                50.0,
+                              ),
                             );
                           }
                         },
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            final vpSize = Size(constraints.maxWidth, constraints.maxHeight);
+                            final vpSize = Size(
+                              constraints.maxWidth,
+                              constraints.maxHeight,
+                            );
                             return MouseRegion(
                               onHover: (event) {
                                 setState(() {
@@ -264,7 +311,9 @@ class _CenterViewportState extends State<CenterViewport> {
                                   );
                                   if (widget.service.isMeasurementMode) {
                                     if (picked != null) {
-                                      widget.service.addMeasurementPoint(picked);
+                                      widget.service.addMeasurementPoint(
+                                        picked,
+                                      );
                                     }
                                   } else {
                                     widget.service.setSelectedPoint(picked);
@@ -281,7 +330,9 @@ class _CenterViewportState extends State<CenterViewport> {
                                     widget.service.setOrbitPivot(picked);
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('已将点 (${picked.x.toStringAsFixed(1)}, ${picked.y.toStringAsFixed(1)}, ${picked.z.toStringAsFixed(1)}) 设为旋转焦点'),
+                                        content: Text(
+                                          '已将点 (${picked.x.toStringAsFixed(1)}, ${picked.y.toStringAsFixed(1)}, ${picked.z.toStringAsFixed(1)}) 设为旋转焦点',
+                                        ),
                                         duration: const Duration(seconds: 2),
                                         behavior: SnackBarBehavior.floating,
                                       ),
@@ -289,7 +340,9 @@ class _CenterViewportState extends State<CenterViewport> {
                                   }
                                 },
                                 onPanStart: (details) {
-                                  if (HardwareKeyboard.instance.isShiftPressed) {
+                                  if (HardwareKeyboard
+                                      .instance
+                                      .isShiftPressed) {
                                     setState(() {
                                       _boxSelectStart = details.localPosition;
                                       _boxSelectCurrent = details.localPosition;
@@ -303,34 +356,62 @@ class _CenterViewportState extends State<CenterViewport> {
                                     });
                                   } else if (widget.service.isPanning) {
                                     widget.service.setCameraView(
-                                      panX: widget.service.cameraPanX + details.delta.dx,
-                                      panY: widget.service.cameraPanY + details.delta.dy,
+                                      panX:
+                                          widget.service.cameraPanX +
+                                          details.delta.dx,
+                                      panY:
+                                          widget.service.cameraPanY +
+                                          details.delta.dy,
                                     );
                                   } else {
                                     widget.service.setCameraView(
-                                      azimuth: widget.service.cameraAzimuth + details.delta.dx * 0.4,
-                                      elevation: (widget.service.cameraElevation - details.delta.dy * 0.4).clamp(-89.0, 89.0),
+                                      azimuth:
+                                          widget.service.cameraAzimuth +
+                                          details.delta.dx * 0.4,
+                                      elevation:
+                                          (widget.service.cameraElevation -
+                                                  details.delta.dy * 0.4)
+                                              .clamp(-89.0, 89.0),
                                     );
                                   }
                                 },
                                 onPanEnd: (details) {
-                                  if (_boxSelectStart != null && _boxSelectCurrent != null) {
-                                    final minX = math.min(_boxSelectStart!.dx, _boxSelectCurrent!.dx);
-                                    final maxX = math.max(_boxSelectStart!.dx, _boxSelectCurrent!.dx);
-                                    final minY = math.min(_boxSelectStart!.dy, _boxSelectCurrent!.dy);
-                                    final maxY = math.max(_boxSelectStart!.dy, _boxSelectCurrent!.dy);
-                                    if ((maxX - minX) > 5 && (maxY - minY) > 5) {
-                                      final stats = widget.service.calculateRegionBoxStats(
-                                        minX,
-                                        minY,
-                                        maxX,
-                                        maxY,
-                                        vpSize.width,
-                                        vpSize.height,
-                                      );
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                  if (_boxSelectStart != null &&
+                                      _boxSelectCurrent != null) {
+                                    final minX = math.min(
+                                      _boxSelectStart!.dx,
+                                      _boxSelectCurrent!.dx,
+                                    );
+                                    final maxX = math.max(
+                                      _boxSelectStart!.dx,
+                                      _boxSelectCurrent!.dx,
+                                    );
+                                    final minY = math.min(
+                                      _boxSelectStart!.dy,
+                                      _boxSelectCurrent!.dy,
+                                    );
+                                    final maxY = math.max(
+                                      _boxSelectStart!.dy,
+                                      _boxSelectCurrent!.dy,
+                                    );
+                                    if ((maxX - minX) > 5 &&
+                                        (maxY - minY) > 5) {
+                                      final stats = widget.service
+                                          .calculateRegionBoxStats(
+                                            minX,
+                                            minY,
+                                            maxX,
+                                            maxY,
+                                            vpSize.width,
+                                            vpSize.height,
+                                          );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('选区统计完成: ${stats["count"]} 个样本, 均值: ${(stats["mean"] as num).toDouble().toStringAsFixed(2)}'),
+                                          content: Text(
+                                            '选区统计完成: ${stats["count"]} 个样本, 均值: ${(stats["mean"] as num).toDouble().toStringAsFixed(2)}',
+                                          ),
                                           duration: const Duration(seconds: 2),
                                           behavior: SnackBarBehavior.floating,
                                         ),
@@ -345,35 +426,52 @@ class _CenterViewportState extends State<CenterViewport> {
                                 child: Container(
                                   key: WorkbenchUiKeys.viewportCanvas,
                                   color: bgColor,
-                                  child: RepaintBoundary(
-                                    key: _viewportRepaintKey,
-                                    child: CustomPaint(
-                                      painter: ViewportCanvasPainter(
-                                        points: points,
-                                        pointSize: pointSize,
-                                        pointShape: pointShape,
-                                        colormap: colormap,
-                                        scalarMin: scalarMin,
-                                        scalarMax: scalarMax,
-                                        azimuth: azimuth,
-                                        elevation: elevation,
-                                        zoom: zoom,
-                                        panX: panX,
-                                        panY: panY,
-                                        showMapAxis: mapAxis,
-                                        showCrosshair: crosshair,
-                                        showWorldAxis: worldAxis,
-                                        selectedPoint: widget.service.selectedPoint,
-                                        hoveredPoint: widget.service.hoveredPoint,
-                                        measurementLines: widget.service.measurementLines,
-                                        pendingMeasureStart: widget.service.pendingMeasureStart,
-                                        isMeasurementMode: widget.service.isMeasurementMode,
-                                        measurementDisplayMode: widget.service.measurementDisplayMode,
-                                        boxSelectStart: _boxSelectStart,
-                                        boxSelectCurrent: _boxSelectCurrent,
-                                      ),
-                                    ),
-                                  ),
+                                  child: nativeViewportPng != null
+                                      ? Image.memory(
+                                          nativeViewportPng,
+                                          fit: BoxFit.contain,
+                                          gaplessPlayback: true,
+                                        )
+                                      : RepaintBoundary(
+                                          key: _viewportRepaintKey,
+                                          child: CustomPaint(
+                                            painter: ViewportCanvasPainter(
+                                              points: points,
+                                              pointSize: pointSize,
+                                              pointShape: pointShape,
+                                              colormap: colormap,
+                                              scalarMin: scalarMin,
+                                              scalarMax: scalarMax,
+                                              azimuth: azimuth,
+                                              elevation: elevation,
+                                              zoom: zoom,
+                                              panX: panX,
+                                              panY: panY,
+                                              showMapAxis: mapAxis,
+                                              showCrosshair: crosshair,
+                                              showWorldAxis: worldAxis,
+                                              selectedPoint:
+                                                  widget.service.selectedPoint,
+                                              hoveredPoint:
+                                                  widget.service.hoveredPoint,
+                                              measurementLines: widget
+                                                  .service
+                                                  .measurementLines,
+                                              pendingMeasureStart: widget
+                                                  .service
+                                                  .pendingMeasureStart,
+                                              isMeasurementMode: widget
+                                                  .service
+                                                  .isMeasurementMode,
+                                              measurementDisplayMode: widget
+                                                  .service
+                                                  .measurementDisplayMode,
+                                              boxSelectStart: _boxSelectStart,
+                                              boxSelectCurrent:
+                                                  _boxSelectCurrent,
+                                            ),
+                                          ),
+                                        ),
                                 ),
                               ),
                             );
@@ -390,13 +488,23 @@ class _CenterViewportState extends State<CenterViewport> {
                       top: (_hoverPos!.dy + 15).clamp(10.0, 3000.0),
                       child: IgnorePointer(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xEE1A1E29),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppTheme.primaryBlue.withAlpha(180), width: 1),
+                            border: Border.all(
+                              color: AppTheme.primaryBlue.withAlpha(180),
+                              width: 1,
+                            ),
                             boxShadow: const [
-                              BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 3)),
+                              BoxShadow(
+                                color: Colors.black54,
+                                blurRadius: 8,
+                                offset: Offset(0, 3),
+                              ),
                             ],
                           ),
                           child: Column(
@@ -406,23 +514,39 @@ class _CenterViewportState extends State<CenterViewport> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.location_on, size: 12, color: Color(0xFF00E5FF)),
+                                  const Icon(
+                                    Icons.location_on,
+                                    size: 12,
+                                    color: Color(0xFF00E5FF),
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     'X: ${widget.service.hoveredPoint!.x.toStringAsFixed(2)}  Y: ${widget.service.hoveredPoint!.y.toStringAsFixed(2)}  Z: ${widget.service.hoveredPoint!.z.toStringAsFixed(2)}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'monospace',
+                                    ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 3),
                               Text(
                                 '属性值: ${widget.service.hoveredPoint!.value.toStringAsFixed(3)}',
-                                style: const TextStyle(color: Color(0xFFF1C21B), fontSize: 11, fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                  color: Color(0xFFF1C21B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               const Text(
                                 '[C] 复制坐标   [双击] 设为旋转焦点',
-                                style: TextStyle(color: AppTheme.textDim, fontSize: 9.5),
+                                style: TextStyle(
+                                  color: AppTheme.textDim,
+                                  fontSize: 9.5,
+                                ),
                               ),
                             ],
                           ),
@@ -453,40 +577,59 @@ class _CenterViewportState extends State<CenterViewport> {
                           key: WorkbenchUiKeys.viewportMapAxisToggle,
                           label: '地图轴',
                           active: mapAxis,
-                          onChanged: (v) => widget.service.setViewportOverlays(mapAxis: v),
+                          onChanged: (v) =>
+                              widget.service.setViewportOverlays(mapAxis: v),
                         ),
                         const SizedBox(width: 6),
                         _buildPillToggleButton(
                           key: WorkbenchUiKeys.viewportWorldAxisToggle,
                           label: '世界轴',
                           active: worldAxis,
-                          onChanged: (v) => widget.service.setViewportOverlays(worldAxis: v),
+                          onChanged: (v) =>
+                              widget.service.setViewportOverlays(worldAxis: v),
                         ),
                         const SizedBox(width: 6),
                         _buildPillToggleButton(
                           key: WorkbenchUiKeys.viewportCrosshairToggle,
                           label: '十字准线',
                           active: crosshair,
-                          onChanged: (v) => widget.service.setViewportOverlays(crosshair: v),
+                          onChanged: (v) =>
+                              widget.service.setViewportOverlays(crosshair: v),
                         ),
                         const SizedBox(width: 6),
                         _buildPillToggleButton(
-                          key: const ValueKey('workbench.viewport.measure_toggle'),
+                          key: const ValueKey(
+                            'workbench.viewport.measure_toggle',
+                          ),
                           label: '标尺测距',
                           active: widget.service.isMeasurementMode,
-                          onChanged: (v) => widget.service.setMeasurementMode(v),
+                          onChanged: (v) =>
+                              widget.service.setMeasurementMode(v),
                         ),
                         const SizedBox(width: 6),
                         // 预设视角快速切换菜单
                         PopupMenuButton<String>(
                           key: WorkbenchUiKeys.viewportPresetViewDropdown,
                           tooltip: '选择预设视角',
-                          onSelected: (view) => widget.service.setCameraView(preset: view),
+                          onSelected: (view) =>
+                              widget.service.setCameraView(preset: view),
                           itemBuilder: (ctx) => const [
-                            PopupMenuItem(value: 'top', child: Text('顶视图 (Top)')),
-                            PopupMenuItem(value: 'front', child: Text('前视图 (Front)')),
-                            PopupMenuItem(value: 'side', child: Text('侧视图 (Side)')),
-                            PopupMenuItem(value: 'iso', child: Text('等轴测 (Iso)')),
+                            PopupMenuItem(
+                              value: 'top',
+                              child: Text('顶视图 (Top)'),
+                            ),
+                            PopupMenuItem(
+                              value: 'front',
+                              child: Text('前视图 (Front)'),
+                            ),
+                            PopupMenuItem(
+                              value: 'side',
+                              child: Text('侧视图 (Side)'),
+                            ),
+                            PopupMenuItem(
+                              value: 'iso',
+                              child: Text('等轴测 (Iso)'),
+                            ),
                           ],
                           child: Container(
                             height: 28,
@@ -500,10 +643,25 @@ class _CenterViewportState extends State<CenterViewport> {
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.view_in_ar_rounded, size: 14, color: AppTheme.primaryBlue),
+                                Icon(
+                                  Icons.view_in_ar_rounded,
+                                  size: 14,
+                                  color: AppTheme.primaryBlue,
+                                ),
                                 SizedBox(width: 4),
-                                Text('视角', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textBody)),
-                                Icon(Icons.arrow_drop_down, size: 16, color: AppTheme.textDim),
+                                Text(
+                                  '视角',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.textBody,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 16,
+                                  color: AppTheme.textDim,
+                                ),
                               ],
                             ),
                           ),
@@ -515,7 +673,10 @@ class _CenterViewportState extends State<CenterViewport> {
                           tooltip: '放大',
                           onPressed: () {
                             widget.service.setCameraView(
-                              zoom: (widget.service.cameraZoom * 1.2).clamp(0.05, 50.0),
+                              zoom: (widget.service.cameraZoom * 1.2).clamp(
+                                0.05,
+                                50.0,
+                              ),
                             );
                           },
                         ),
@@ -526,7 +687,10 @@ class _CenterViewportState extends State<CenterViewport> {
                           tooltip: '缩小',
                           onPressed: () {
                             widget.service.setCameraView(
-                              zoom: (widget.service.cameraZoom / 1.2).clamp(0.05, 50.0),
+                              zoom: (widget.service.cameraZoom / 1.2).clamp(
+                                0.05,
+                                50.0,
+                              ),
                             );
                           },
                         ),
@@ -539,24 +703,31 @@ class _CenterViewportState extends State<CenterViewport> {
                         ),
                         const SizedBox(width: 4),
                         _buildIconPill(
-                          key: const ValueKey('workbench.viewport.cmd_palette_btn'),
+                          key: const ValueKey(
+                            'workbench.viewport.cmd_palette_btn',
+                          ),
                           icon: Icons.terminal,
                           tooltip: '命令面板 (Ctrl+P)',
-                          onPressed: () => widget.service.toggleCommandPalette(),
+                          onPressed: () =>
+                              widget.service.toggleCommandPalette(),
                         ),
                         const SizedBox(width: 4),
                         _buildIconPill(
-                          key: const ValueKey('workbench.viewport.shortcuts_btn'),
+                          key: const ValueKey(
+                            'workbench.viewport.shortcuts_btn',
+                          ),
                           icon: Icons.keyboard_alt_outlined,
                           tooltip: '快捷键速查 (F1)',
-                          onPressed: () => widget.service.toggleShortcutOverlay(),
+                          onPressed: () =>
+                              widget.service.toggleShortcutOverlay(),
                         ),
                         const SizedBox(width: 4),
                         _buildIconPill(
                           key: const ValueKey('workbench.viewport.perf_btn'),
                           icon: Icons.speed_rounded,
                           tooltip: '性能诊断',
-                          onPressed: () => widget.service.togglePerformancePanel(),
+                          onPressed: () =>
+                              widget.service.togglePerformancePanel(),
                         ),
                       ],
                     ),
@@ -568,7 +739,10 @@ class _CenterViewportState extends State<CenterViewport> {
                     left: 14,
                     child: Container(
                       key: WorkbenchUiKeys.viewportHudCard,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withAlpha(180),
                         borderRadius: BorderRadius.circular(4),
@@ -590,14 +764,22 @@ class _CenterViewportState extends State<CenterViewport> {
                     Positioned(
                       top: 52,
                       right: 18,
-                      child: _buildColorLegend(colormap, scalarMin, scalarMax, colorAttr),
+                      child: _buildColorLegend(
+                        colormap,
+                        scalarMin,
+                        scalarMax,
+                        colorAttr,
+                      ),
                     ),
 
                   // 若没有载入数据，显示居中友好引导
                   if (points.isEmpty)
                     Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1E222A).withAlpha(220),
                           borderRadius: BorderRadius.circular(8),
@@ -607,16 +789,27 @@ class _CenterViewportState extends State<CenterViewport> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.scatter_plot_rounded, size: 36, color: AppTheme.primaryBlue),
+                            const Icon(
+                              Icons.scatter_plot_rounded,
+                              size: 36,
+                              color: AppTheme.primaryBlue,
+                            ),
                             const SizedBox(height: 10),
                             const Text(
                               '暂未载入三维散点数据',
-                              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 6),
                             const Text(
                               '点击下方按钮立即载入内置地质样本数据',
-                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
                             ),
                             const SizedBox(height: 12),
                             ElevatedButton.icon(
@@ -624,12 +817,20 @@ class _CenterViewportState extends State<CenterViewport> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.primaryBlue,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                               ),
-                              icon: const Icon(Icons.file_open_rounded, size: 16),
+                              icon: const Icon(
+                                Icons.file_open_rounded,
+                                size: 16,
+                              ),
                               label: const Text('载入 sample-points.gs3d.bundle'),
                               onPressed: () {
-                                widget.service.loadDataset('data/sample-points.gs3d.bundle');
+                                widget.service.loadDataset(
+                                  'data/sample-points.gs3d.bundle',
+                                );
                               },
                             ),
                           ],
@@ -646,7 +847,10 @@ class _CenterViewportState extends State<CenterViewport> {
                       children: [
                         Text(
                           '${(10.0 / zoom).toStringAsFixed(1)} 米',
-                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Container(
@@ -654,9 +858,18 @@ class _CenterViewportState extends State<CenterViewport> {
                           height: 4,
                           decoration: const BoxDecoration(
                             border: Border(
-                              bottom: BorderSide(color: Colors.white70, width: 1.5),
-                              left: BorderSide(color: Colors.white70, width: 1.5),
-                              right: BorderSide(color: Colors.white70, width: 1.5),
+                              bottom: BorderSide(
+                                color: Colors.white70,
+                                width: 1.5,
+                              ),
+                              left: BorderSide(
+                                color: Colors.white70,
+                                width: 1.5,
+                              ),
+                              right: BorderSide(
+                                color: Colors.white70,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                         ),
@@ -673,7 +886,8 @@ class _CenterViewportState extends State<CenterViewport> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         GestureDetector(
-                          onTap: () => widget.service.setCameraView(preset: 'iso'),
+                          onTap: () =>
+                              widget.service.setCameraView(preset: 'iso'),
                           child: Container(
                             width: 80,
                             height: 80,
@@ -694,13 +908,27 @@ class _CenterViewportState extends State<CenterViewport> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _buildGizmoPresetTag('顶', () => widget.service.setCameraView(preset: 'top')),
+                            _buildGizmoPresetTag(
+                              '顶',
+                              () => widget.service.setCameraView(preset: 'top'),
+                            ),
                             const SizedBox(width: 3),
-                            _buildGizmoPresetTag('前', () => widget.service.setCameraView(preset: 'front')),
+                            _buildGizmoPresetTag(
+                              '前',
+                              () =>
+                                  widget.service.setCameraView(preset: 'front'),
+                            ),
                             const SizedBox(width: 3),
-                            _buildGizmoPresetTag('侧', () => widget.service.setCameraView(preset: 'side')),
+                            _buildGizmoPresetTag(
+                              '侧',
+                              () =>
+                                  widget.service.setCameraView(preset: 'side'),
+                            ),
                             const SizedBox(width: 3),
-                            _buildGizmoPresetTag('等', () => widget.service.setCameraView(preset: 'iso')),
+                            _buildGizmoPresetTag(
+                              '等',
+                              () => widget.service.setCameraView(preset: 'iso'),
+                            ),
                           ],
                         ),
                       ],
@@ -728,13 +956,22 @@ class _CenterViewportState extends State<CenterViewport> {
         ),
         child: Text(
           label,
-          style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildColorLegend(String colormap, double minVal, double maxVal, String attrName) {
+  Widget _buildColorLegend(
+    String colormap,
+    double minVal,
+    double maxVal,
+    String attrName,
+  ) {
     final colors = _getGradientColors(colormap);
     return Container(
       key: WorkbenchUiKeys.viewportColorLegend,
@@ -750,7 +987,11 @@ class _CenterViewportState extends State<CenterViewport> {
         children: [
           Text(
             attrName,
-            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -775,12 +1016,30 @@ class _CenterViewportState extends State<CenterViewport> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(maxVal.toStringAsFixed(1),
-                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Consolas')),
-                    Text(((minVal + maxVal) * 0.5).toStringAsFixed(1),
-                        style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontFamily: 'Consolas')),
-                    Text(minVal.toStringAsFixed(1),
-                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Consolas')),
+                    Text(
+                      maxVal.toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontFamily: 'Consolas',
+                      ),
+                    ),
+                    Text(
+                      ((minVal + maxVal) * 0.5).toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9.5,
+                        fontFamily: 'Consolas',
+                      ),
+                    ),
+                    Text(
+                      minVal.toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontFamily: 'Consolas',
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -799,20 +1058,59 @@ class _CenterViewportState extends State<CenterViewport> {
   List<Color> _getGradientColors(String name) {
     switch (name.toLowerCase()) {
       case 'plasma':
-        return const [Color(0xFF0D0887), Color(0xFF6A00A8), Color(0xFFB12A90), Color(0xFFE16462), Color(0xFFFCA636), Color(0xFFF0F921)];
+        return const [
+          Color(0xFF0D0887),
+          Color(0xFF6A00A8),
+          Color(0xFFB12A90),
+          Color(0xFFE16462),
+          Color(0xFFFCA636),
+          Color(0xFFF0F921),
+        ];
       case 'turbo':
-        return const [Color(0xFF30123B), Color(0xFF4686FB), Color(0xFF1AE4B6), Color(0xFFA2FC3C), Color(0xFFFABA39), Color(0xFFE4460A), Color(0xFF7A0403)];
+        return const [
+          Color(0xFF30123B),
+          Color(0xFF4686FB),
+          Color(0xFF1AE4B6),
+          Color(0xFFA2FC3C),
+          Color(0xFFFABA39),
+          Color(0xFFE4460A),
+          Color(0xFF7A0403),
+        ];
       case 'jet':
-        return const [Color(0xFF000080), Color(0xFF0000FF), Color(0xFF00FFFF), Color(0xFFFFFF00), Color(0xFFFF0000), Color(0xFF800000)];
+        return const [
+          Color(0xFF000080),
+          Color(0xFF0000FF),
+          Color(0xFF00FFFF),
+          Color(0xFFFFFF00),
+          Color(0xFFFF0000),
+          Color(0xFF800000),
+        ];
       case 'coolwarm':
-        return const [Color(0xFF3B4CC0), Color(0xFF8CBCF1), Color(0xFFDDDCDC), Color(0xFFF49A7B), Color(0xFFB40426)];
+        return const [
+          Color(0xFF3B4CC0),
+          Color(0xFF8CBCF1),
+          Color(0xFFDDDCDC),
+          Color(0xFFF49A7B),
+          Color(0xFFB40426),
+        ];
       case 'viridis':
       default:
-        return const [Color(0xFF440154), Color(0xFF414487), Color(0xFF2A788E), Color(0xFF22A884), Color(0xFF7AD151), Color(0xFFFDE725)];
+        return const [
+          Color(0xFF440154),
+          Color(0xFF414487),
+          Color(0xFF2A788E),
+          Color(0xFF22A884),
+          Color(0xFF7AD151),
+          Color(0xFFFDE725),
+        ];
     }
   }
 
-  Widget _buildPillButton({Key? key, required String label, required VoidCallback onPressed}) {
+  Widget _buildPillButton({
+    Key? key,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
     return InkWell(
       key: key,
       borderRadius: BorderRadius.circular(16),
@@ -839,7 +1137,12 @@ class _CenterViewportState extends State<CenterViewport> {
     );
   }
 
-  Widget _buildIconPill({Key? key, required IconData icon, required String tooltip, required VoidCallback onPressed}) {
+  Widget _buildIconPill({
+    Key? key,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -862,7 +1165,12 @@ class _CenterViewportState extends State<CenterViewport> {
     );
   }
 
-  Widget _buildPillToggleButton({Key? key, required String label, required bool active, required ValueChanged<bool> onChanged}) {
+  Widget _buildPillToggleButton({
+    Key? key,
+    required String label,
+    required bool active,
+    required ValueChanged<bool> onChanged,
+  }) {
     return InkWell(
       key: key,
       borderRadius: BorderRadius.circular(16),
@@ -871,7 +1179,9 @@ class _CenterViewportState extends State<CenterViewport> {
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: active ? AppTheme.primaryBlueBg : AppTheme.surface.withAlpha(235),
+          color: active
+              ? AppTheme.primaryBlueBg
+              : AppTheme.surface.withAlpha(235),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: active ? AppTheme.primaryBlue : AppTheme.border,
@@ -892,7 +1202,6 @@ class _CenterViewportState extends State<CenterViewport> {
     );
   }
 }
-
 
 /// 绘制视口 3D 点云与标尺网格
 class ViewportCanvasPainter extends CustomPainter {
@@ -978,9 +1287,12 @@ class ViewportCanvasPainter extends CustomPainter {
     // 计算点云包围盒与投影缩放
     double minX = 0, maxX = 1, minY = 0, maxY = 1, minZ = 0, maxZ = 1;
     if (points.isNotEmpty) {
-      minX = points[0].x; maxX = points[0].x;
-      minY = points[0].y; maxY = points[0].y;
-      minZ = points[0].z; maxZ = points[0].z;
+      minX = points[0].x;
+      maxX = points[0].x;
+      minY = points[0].y;
+      maxY = points[0].y;
+      minZ = points[0].z;
+      maxZ = points[0].z;
       for (final p in points) {
         if (p.x < minX) minX = p.x;
         if (p.x > maxX) maxX = p.x;
@@ -994,7 +1306,9 @@ class ViewportCanvasPainter extends CustomPainter {
     final midY = (minY + maxY) * 0.5;
     final midZ = (minZ + maxZ) * 0.5;
     final maxSpan = math.max(maxX - minX, math.max(maxY - minY, maxZ - minZ));
-    final baseScale = (maxSpan > 1e-4) ? (math.min(size.width, size.height) * 0.65 / maxSpan) : 1.0;
+    final baseScale = (maxSpan > 1e-4)
+        ? (math.min(size.width, size.height) * 0.65 / maxSpan)
+        : 1.0;
     final totalScale = baseScale * zoom;
 
     Offset projectPoint(Point3D p) {
@@ -1011,15 +1325,23 @@ class ViewportCanvasPainter extends CustomPainter {
 
     if (points.isNotEmpty) {
       final pointPaint = Paint()..style = PaintingStyle.fill;
-      final isSquare = pointShape == '方形' || pointShape.toLowerCase() == 'square';
+      final isSquare =
+          pointShape == '方形' || pointShape.toLowerCase() == 'square';
 
       for (final p in points) {
         final pos = projectPoint(p);
-        if (pos.dx >= -20 && pos.dx <= size.width + 20 && pos.dy >= -20 && pos.dy <= size.height + 20) {
+        if (pos.dx >= -20 &&
+            pos.dx <= size.width + 20 &&
+            pos.dy >= -20 &&
+            pos.dy <= size.height + 20) {
           pointPaint.color = p.toColor(colormap, scalarMin, scalarMax);
           if (isSquare) {
             canvas.drawRect(
-              Rect.fromCenter(center: pos, width: pointSize * 2, height: pointSize * 2),
+              Rect.fromCenter(
+                center: pos,
+                width: pointSize * 2,
+                height: pointSize * 2,
+              ),
               pointPaint,
             );
           } else {
@@ -1037,11 +1359,34 @@ class ViewportCanvasPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
       canvas.drawCircle(sp, 6.0, reticlePaint);
-      canvas.drawCircle(sp, 13.0, Paint()..color = const Color(0x6600E5FF)..style = PaintingStyle.stroke..strokeWidth = 1.2);
-      canvas.drawLine(Offset(sp.dx - 18, sp.dy), Offset(sp.dx - 8, sp.dy), reticlePaint);
-      canvas.drawLine(Offset(sp.dx + 8, sp.dy), Offset(sp.dx + 18, sp.dy), reticlePaint);
-      canvas.drawLine(Offset(sp.dx, sp.dy - 18), Offset(sp.dx, sp.dy - 8), reticlePaint);
-      canvas.drawLine(Offset(sp.dx, sp.dy + 8), Offset(sp.dx, sp.dy + 18), reticlePaint);
+      canvas.drawCircle(
+        sp,
+        13.0,
+        Paint()
+          ..color = const Color(0x6600E5FF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      canvas.drawLine(
+        Offset(sp.dx - 18, sp.dy),
+        Offset(sp.dx - 8, sp.dy),
+        reticlePaint,
+      );
+      canvas.drawLine(
+        Offset(sp.dx + 8, sp.dy),
+        Offset(sp.dx + 18, sp.dy),
+        reticlePaint,
+      );
+      canvas.drawLine(
+        Offset(sp.dx, sp.dy - 18),
+        Offset(sp.dx, sp.dy - 8),
+        reticlePaint,
+      );
+      canvas.drawLine(
+        Offset(sp.dx, sp.dy + 8),
+        Offset(sp.dx, sp.dy + 18),
+        reticlePaint,
+      );
     }
 
     // 绘制鼠标悬停点高亮环 (Hover Highlight Ring)
@@ -1136,10 +1481,7 @@ class ViewportCanvasPainter extends CustomPainter {
     // 绘制 Shift 框选矩形选区 (Box Selection Rectangle)
     if (boxSelectStart != null && boxSelectCurrent != null) {
       final rect = Rect.fromPoints(boxSelectStart!, boxSelectCurrent!);
-      canvas.drawRect(
-        rect,
-        Paint()..color = const Color(0x333B82F6),
-      );
+      canvas.drawRect(rect, Paint()..color = const Color(0x333B82F6));
       canvas.drawRect(
         rect,
         Paint()
@@ -1230,7 +1572,11 @@ class NavigationBallGizmoPainter extends CustomPainter {
 
       final textSpan = TextSpan(
         text: label,
-        style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.bold),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 8.5,
+          fontWeight: FontWeight.bold,
+        ),
       );
       final textPainter = TextPainter(
         text: textSpan,
