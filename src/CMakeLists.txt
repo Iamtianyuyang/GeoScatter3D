@@ -35,9 +35,11 @@ target_link_libraries(GeoScatter3D PRIVATE
 copy_runtime_assets(GeoScatter3D)
 
 add_custom_command(TARGET GeoScatter3D POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:GeoScatter3D>
-            ${PROJECT_BINARY_DIR}/$<CONFIG>/$<TARGET_FILE_NAME:GeoScatter3D>
+    # 复制完整运行时目录（exe + 依赖 DLL + assets）到根构建输出，
+    # 使 ${PROJECT_BINARY_DIR}/$<CONFIG>/ 成为可直接部署的运行时目录。
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            $<TARGET_FILE_DIR:GeoScatter3D>
+            ${PROJECT_BINARY_DIR}/$<CONFIG>
 )
 
 # Standalone Preprocessor Executable
@@ -58,9 +60,10 @@ target_link_libraries(GeoScatter3DPreprocess PRIVATE
 copy_runtime_assets(GeoScatter3DPreprocess)
 
 add_custom_command(TARGET GeoScatter3DPreprocess POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:GeoScatter3DPreprocess>
-            ${PROJECT_BINARY_DIR}/$<CONFIG>/$<TARGET_FILE_NAME:GeoScatter3DPreprocess>
+    # 同上：复制完整运行时目录（exe + 依赖 DLL + assets）。
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            $<TARGET_FILE_DIR:GeoScatter3DPreprocess>
+            ${PROJECT_BINARY_DIR}/$<CONFIG>
 )
 
 # Ground-truth validator utility
