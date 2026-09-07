@@ -50,4 +50,9 @@ rebuild.cmd
 /.agent_context/
 /.multica/
 /.serena/
+.agent_context/
+.multica/
+.serena/
+.pi/skills/multica*
+
 
