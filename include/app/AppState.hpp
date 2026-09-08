@@ -302,6 +302,8 @@ struct RenderViewState {
     // Persistent selected/focus point marker. A double-click updates it and
     // also makes the point the orbit pivot for this viewport.
     bool selected_point_visible = false;
+    std::array<double, 4> selected_point{};
+    std::array<double, 3> data_origin{};
     float selected_screen_x = -1.0f;
     float selected_screen_y = -1.0f;
 
@@ -469,6 +471,9 @@ struct RegionStatsResult {
     float elev_min = 0.0f;
     float elev_max = 0.0f;
     float elev_avg = 0.0f;
+    double fold_std_dev = 0.0;
+    std::array<std::uint64_t, 5> histogram{};
+    std::string error;
 };
 
 struct AppState {

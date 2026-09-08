@@ -1,3 +1,4 @@
+import 'support/welcome_ui_test_service.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -196,7 +197,7 @@ void main() {
     late GeoScatter3dService service;
 
     setUp(() {
-      service = GeoScatter3dService();
+      service = WelcomeUiTestService();
       service.initialize();
     });
 
@@ -500,7 +501,8 @@ void main() {
       // 模拟文件拖放通知
       service.handleDroppedPath('data/sample-points.gs3d.bundle');
       await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('已载入拖放工程: data/sample-points.gs3d.bundle'), findsOneWidget);
+      expect((service as WelcomeUiTestService).lastAction, 'welcome.open_project');
+      expect((service as WelcomeUiTestService).lastParams['path'], 'data/sample-points.gs3d.bundle');
 
       // 模拟 Ctrl+N 打开新建工程对话框
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);

@@ -24,6 +24,8 @@ namespace gs3d::app {
 struct ViewerPickState {
     std::vector<GpuPickRequest> requests;
     std::vector<std::optional<gs3d::data::Gs3dPoint>> latest_hover_points;
+    std::vector<std::optional<gs3d::data::Gs3dPoint>> selected_points;
+    std::vector<std::pair<int, gs3d::data::Gs3dPoint>> completed_measurements;
     std::vector<float> latest_capture_x;
     std::vector<float> latest_capture_y;
     std::vector<int> hover_timeout;

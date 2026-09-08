@@ -74,6 +74,7 @@ ViewerPickSystem::ViewerPickSystem(
       pending_hover_miss_dump_(viewport_count, false)
 {
     state_.latest_hover_points.resize(viewport_count);
+    state_.selected_points.resize(viewport_count);
     state_.latest_capture_x.resize(viewport_count, 0.0f);
     state_.latest_capture_y.resize(viewport_count, 0.0f);
     state_.hover_timeout.resize(viewport_count, 0);
@@ -104,6 +105,11 @@ void ViewerPickSystem::prepare_requests(
     const std::vector<float>& viewport_point_sizes,
     ViewerBenchmarkController& benchmark_controller
 ) {
+    for (const auto& [index, point] : state_.completed_measurements) {
+        auto& measurement = measurement_for_view(app_state, index);
+        if (measurement.measure_mode_active()) measurement.add_point(point);
+    }
+    state_.completed_measurements.clear();
     for (auto& request : state_.requests) {
         request = {};
     }
@@ -153,11 +159,12 @@ void ViewerPickSystem::prepare_requests(
 
         auto& measurement = measurement_for_view(app_state, frame.index);
         if (frame.measure_pick_requested && measurement.measure_mode_active()) {
-            const auto index = static_cast<std::size_t>(frame.index);
-            if (index < state_.latest_hover_points.size() &&
-                state_.latest_hover_points[index].has_value()) {
-                measurement.add_point(*state_.latest_hover_points[index]);
-            }
+            request.kind = GpuPickRequestKind::Measure;
+            request.mouse_x = frame.mouse_local_x;
+            request.mouse_y = frame.mouse_local_y;
+            request.pick_radius_px = compute_hover_pick_radius_px(
+                point_size_for_viewport(viewport_point_sizes, frame.index));
+            continue;
         }
 
         const auto index = static_cast<std::size_t>(frame.index);
@@ -225,6 +232,7 @@ void ViewerPickSystem::consume_ready_frame(
         const auto view_index =
             static_cast<std::size_t>(result.request.viewport_index);
         if ((result.request.kind == GpuPickRequestKind::Hover ||
+             result.request.kind == GpuPickRequestKind::Measure ||
              result.request.kind == GpuPickRequestKind::SetOrbitPivot) &&
             result.has_hit && !resolved.via_runtime_lookup) {
             if (const auto fallback = resolve_hover_point_from_visible_tiles(
@@ -235,6 +243,12 @@ void ViewerPickSystem::consume_ready_frame(
                 )) {
                 hit_point = *fallback;
             }
+        }
+        if (result.request.kind == GpuPickRequestKind::Measure) {
+            if (hit_point) {
+                state_.completed_measurements.emplace_back(result.request.viewport_index, *hit_point);
+            }
+            continue;
         }
         if (result.request.kind == GpuPickRequestKind::Hover) {
             if (hit_point.has_value()) {
@@ -291,6 +305,7 @@ void ViewerPickSystem::consume_ready_frame(
         }
 
         if (result.request.kind == GpuPickRequestKind::SetOrbitPivot) {
+            state_.selected_points[view_index] = hit_point;
             if (!hit_point.has_value()) {
                 camera.controllers[view_index].clear_orbit_pivot();
                 camera.selected_focus_points[view_index].reset();

@@ -14,12 +14,15 @@
 /data/
 /bench/
 /tools/__pycache__/
-/config/imgui_layout.ini
+/.cache/
 /assets/shaders/*.spv
 
 # Local IDE and debugging state
 /.idea/
-/.vscode/
+/.vscode/*
+!/.vscode/launch.json
+!/.vscode/tasks.json
+!/.vscode/extensions.json
 /.cursor/
 /.dbg/
 /.tools/

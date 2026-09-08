@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        const auto bundle_paths =
+        auto bundle_paths =
             resolve_bundle_paths(app_config);
         std::filesystem::create_directories(bundle_paths.bundle_dir);
         gs3d::app::apply_bundle_paths(
@@ -132,6 +132,12 @@ int main(int argc, char** argv) {
                         app_config.csv_convert.num_threads
                     )
                 );
+            if (lod_dataset.levels().empty()) {
+                // 小型数据无需降采样，清单准确记录实际生成的文件。
+                app_config.viewer.lod.enabled = false;
+                bundle_paths.lod_enabled = false;
+                gs3d::util::log::info() << "[PREPROCESS] lod_levels = 0 (full resolution dataset)\n";
+            } else {
             const auto lod_stats =
                 gs3d::preprocess::Gs3dLodWriter::write(
                     app_config.viewer.lod.sidecar_path,
@@ -142,6 +148,7 @@ int main(int argc, char** argv) {
                       << lod_stats.level_count << '\n';
             gs3d::util::log::info() << "[TIME] lod_write_seconds = "
                       << lod_timer.elapsed_seconds() << '\n';
+            }
         }
 
         if (app_config.viewer.tile.enabled) {

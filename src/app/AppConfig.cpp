@@ -40,17 +40,6 @@ std::filesystem::path executable_path_from_args(
 }
 
 [[nodiscard]]
-bool has_flag(int argc, char** argv, const std::string& flag) {
-    for (int i = 1; i < argc; ++i) {
-        if (argument_at(argc, argv, i) == flag) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-[[nodiscard]]
 std::filesystem::path resolve_config_file_path(
     const std::filesystem::path& path,
     const std::filesystem::path& executable_path
@@ -248,9 +237,6 @@ void resolve_viewer_resource_paths(
         );
     }
 
-    config.viewer.window.ui_layout_ini_path =
-        ResourcePath::resolve_writable_file(
-            config.viewer.window.ui_layout_ini_path, context);
 
     if (!input_mode_is_csv(config) &&
         !input_mode_is_bundle(config) &&
@@ -277,7 +263,7 @@ AppConfig AppConfigLoader::load_from_file(
     toml::table root;
 
     try {
-        root = toml::parse_file(path.string());
+        root = toml::parse_file(path.u8string());
     } catch (const toml::parse_error& e) {
         throw std::runtime_error(
             "AppConfig: failed to parse TOML file: " +
@@ -437,70 +423,6 @@ std::filesystem::path AppConfigLoader::parse_config_path_from_args(
     return default_config_path();
 }
 
-void AppConfigLoader::apply_command_line_overrides(
-    AppConfig& config,
-    int argc,
-    char** argv
-) {
-    if (has_flag(argc, argv, "--no-validation")) {
-        config.viewer.graphics.enable_validation_layers = false;
-    }
-
-    if (has_flag(argc, argv, "--validation")) {
-        config.viewer.graphics.enable_validation_layers = true;
-    }
-
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argument_at(argc, argv, i);
-
-        if (arg == "--input") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error(
-                    "AppConfig: --input requires a file path"
-                );
-            }
-
-            config.input_mode = "gs3d";
-            config.viewer.input.gs3d_path =
-                argument_at(argc, argv, i + 1);
-        }
-
-        if (arg == "--csv") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error(
-                    "AppConfig: --csv requires a file path"
-                );
-            }
-
-            config.input_mode = "csv";
-            config.csv_input_path =
-                argument_at(argc, argv, i + 1);
-        }
-
-        if (arg == "--dat") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error(
-                    "AppConfig: --dat requires a file path"
-                );
-            }
-
-            config.input_mode = "dat";
-            config.csv_input_path =
-                argument_at(argc, argv, i + 1);
-        }
-
-        if (arg == "--bundle") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error("AppConfig: --bundle requires a directory path");
-            }
-            if (config.input_mode != "csv" && config.input_mode != "dat") {
-                config.input_mode = "bundle";
-            }
-            config.bundle_dir = argument_at(argc, argv, i + 1);
-        }
-    }
-}
-
 void AppConfigPrinter::print(const AppConfig& config) {
     gs3d::util::log::info() << "[CONFIG] input.gs3d_path = "
               << config.viewer.input.gs3d_path.string() << '\n';
@@ -544,8 +466,6 @@ void AppConfigPrinter::print(const AppConfig& config) {
     gs3d::util::log::info() << "[CONFIG] window.resizable = "
               << (config.viewer.window.resizable ? "true" : "false") << '\n';
 
-    gs3d::util::log::info() << "[CONFIG] window.ui_layout_ini_path = "
-              << config.viewer.window.ui_layout_ini_path.string() << '\n';
 
     gs3d::util::log::info() << "[CONFIG] window.ui_scale_multiplier = "
               << config.viewer.window.ui_scale_multiplier << '\n';
@@ -553,9 +473,6 @@ void AppConfigPrinter::print(const AppConfig& config) {
     gs3d::util::log::info() << "[CONFIG] window.theme = "
               << config.viewer.window.theme << '\n';
 
-    gs3d::util::log::info() << "[CONFIG] window.multi_viewports = "
-              << (config.viewer.window.enable_multi_viewports ? "true" : "false")
-              << '\n';
 
     gs3d::util::log::info() << "[CONFIG] debug.pick_debug_dump_enabled = "
               << (config.viewer.pick_debug.dump_enabled ? "true" : "false")

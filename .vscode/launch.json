@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GeoScatter3D (Flutter + Native)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/ui_flutter",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "debug",
+      "preLaunchTask": "GeoScatter3D: prepare native runtime"
+    }
+  ]
+}

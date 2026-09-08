@@ -53,7 +53,8 @@ std::string toml_escape(const std::string& value) {
 
 [[nodiscard]]
 std::string toml_string(const std::filesystem::path& value) {
-    return "\"" + toml_escape(value.string()) + "\"";
+    const auto utf8 = value.u8string();
+    return "\"" + toml_escape(std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size())) + "\"";
 }
 
 [[nodiscard]]
@@ -262,7 +263,7 @@ PreprocessedBundlePaths load_bundle_manifest(
 
     toml::table root;
     try {
-        root = toml::parse_file(default_paths.manifest_path.string());
+        root = toml::parse_file(default_paths.manifest_path.u8string());
     } catch (const toml::parse_error& e) {
         throw std::runtime_error(
             "PreprocessedBundle: failed to parse manifest: " +
@@ -408,7 +409,7 @@ void load_analysis(
 
     toml::table root;
     try {
-        root = toml::parse_file(path.string());
+        root = toml::parse_file(path.u8string());
     } catch (const toml::parse_error& e) {
         gs3d::util::log::warning() << "[WARN] load_analysis: failed to parse "
                   << path.string()

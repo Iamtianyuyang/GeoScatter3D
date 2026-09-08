@@ -40,6 +40,17 @@ GeoScatter3D 是一个面向大规模三维散点/点云数据的现代桌面端
 
 ## 二、构建与运行指南
 
+### VS Code F5（整个程序）
+
+用 VS Code 打开仓库根目录，安装推荐的 Dart/Flutter 扩展，选择
+`GeoScatter3D (Flutter + Native)` 后按 F5。预启动任务自动构建 Debug 版
+FFI、Vulkan 查看器和预处理器；Flutter 构建时部署 DLL、shader、字体及配置。
+打开数据集后自动连接隐藏的原生查看器。停止调试后可再次按 F5。
+首次运行需要 Flutter SDK、Visual Studio C++ 桌面工具、CMake 3.28+、Vulkan SDK
+以及 GLFW/nlohmann-json 依赖；新构建优先使用 `VCPKG_ROOT`，已有构建沿用 CMake 缓存。
+
+功能接线和 ImGui 残留的实际检查结论见 [Flutter 集成检查](docs/flutter-integration-audit.md)。
+
 ### 1. 快速开始（一键编译与完整发布）
 
 推荐使用根目录自带的一键自动化编译部署脚本。该脚本会自动构建 C++ 原生 FFI 动态库 (`gs3d_ffi.dll`)、渲染器主程序 (`GeoScatter3D.exe`)，打包 Shader 与中文字体资源，并完成 Flutter Windows 桌面端最终打包：

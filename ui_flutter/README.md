@@ -6,10 +6,12 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 
 ---
 
+欢迎页已通过真实预处理、FFI 和 Vulkan 首帧测试。以下工作台模块清单并不等于全部端到端验收通过，最新状态见 [接入记录](../docs/flutter-integration-audit.md)。
+
 ## 一、核心特性与模块架构
 
 ### 1. 欢迎页与工区管理 (Welcome & Workspaces)
-- **新建工程向导**：支持本地海量 CSV/DAT 文件浏览、指定坐标/标量列索引与离线流式切片构建。
+- **新建工程向导**：支持 CSV/DAT 文件浏览、线程数、XY/XYZ 体素模式和最细 LOD 层目标点数，调用真实预处理器构建。当前使用 X/Y/elevation/field_statics 标准列名。
 - **工区快速载入**：支持打开 `.gs3d.bundle` 工区包文件夹及独立 `.gs3d` 点云文件。
 - **最近工程列表**：自动记录并持久化最近打开的工区，支持一键清空与快速进入。
 - **防重提交与流式反馈**：后台任务执行期间提供进度条、取消机制与防止重复触发护栏。
@@ -48,7 +50,7 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 - 注册了 **45 个统一高层 UI 动作**，覆盖欢迎页、工作台、视口控制、测量、诊断及数据导出。
 - **原生引擎联动与离线回退双轨制**：
   - 连接原生引擎时，通过 `ViewerControlClient` 将相机矩阵、渲染设置、高频事件分发给本地 C++ 渲染管线；
-  - 无论动态链接库是否存在或处于无头测试环境，均内建纯 Dart 高精度投影算法与离线数据回退，确保全平台环境 100% 健壮运行。
+  - 部分数学交互具有 Dart 回退；新建和打开工程需要完整原生运行时，缺失时显示错误。
 
 ---
 
@@ -106,11 +108,15 @@ flutter test
 *预期输出：`All tests passed! (50/50 通过)`*
 
 ### 2. 本地开发调试运行
-直接在 Windows 桌面以开发模式启动前端：
+推荐用 VS Code 打开仓库根目录，选择 `GeoScatter3D (Flutter + Native)` 后按 F5。
+在本目录使用命令行时，先准备完整 Debug 原生运行时：
 
 ```powershell
+../scripts/build_flutter_windows.ps1 -Config Debug -NativeOnly
 flutter run -d windows
 ```
+
+实际功能接线及 ImGui 残留结论见 [集成检查报告](../docs/flutter-integration-audit.md)。
 
 ### 3. 一键编译与发布构建 (Release Build)
 推荐通过工程根目录的一键自动化部署脚本进行发布构建。该脚本会自动编译 C++ 原生动态库 `gs3d_ffi.dll` 与 `GeoScatter3D.exe`，打包 Shader 与中文字体资源，并完整部署至 Flutter 输出目录：
@@ -132,3 +138,7 @@ flutter run -d windows
 2. **状态纯净化与单向通信**：
    - UI 控件不持有业务核心状态，状态统一收敛于 `GeoScatter3dService`；
    - 严禁在 UI 层引入图形驱动 API 或底层句柄，统一通过纯数据命令（`UiActions`）驱动。
+
+## 欢迎页后端验收
+
+从仓库根目录执行 `./scripts/test_welcome_backend.ps1 -Config Debug`。测试实际启动隐藏原生进程，覆盖构建、载入、错误、取消和首帧；产物及测试偏好在 `tmp` 下自动清理。

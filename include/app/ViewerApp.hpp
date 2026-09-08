@@ -78,14 +78,11 @@ struct ViewerWindowConfig {
     std::string title = "GeoScatter3D 三维散点查看器";
     bool resizable = true;
 
-    // Empty = do not persist the ImGui docking layout.
-    std::filesystem::path ui_layout_ini_path = "config/imgui_layout.ini";
     float ui_scale_multiplier = 1.15f;
     std::string theme = "carbon-blue";
     // 顶层布局："workbench"（方案 A）、"floating-dock"（方案 B）
     // 或 "analysis-rail"（方案 C）。运行时仍可在界面里切换。
     std::string layout = "workbench";
-    bool enable_multi_viewports = true;
 
     // --headless 时窗口不显示（无可见 UI、无交互），渲染/交换链/截图
     // 路径与 GUI 模式完全一致。
@@ -268,6 +265,7 @@ private:
     ViewerAppConfig config_;
     std::optional<ViewerOpenRequest> open_request_;
     std::future<RegionStatsResult> region_stats_future_;
+    std::optional<ViewportFrameCmd> pending_region_stats_;
     std::future<gs3d::data::Gs3dExportResult> dataset_export_future_;
     std::atomic<std::uint64_t>     region_stats_gen_{0};
     int                            region_stats_view_index_ = 0;

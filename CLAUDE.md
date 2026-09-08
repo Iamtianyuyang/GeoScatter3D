@@ -1,6 +1,6 @@
 # GeoScatter3D · CppStudio 开发者与智能体指令（CLAUDE.md）
 
-> 项目定性：大规模三维散点/点云数据 C++20 桌面高性能查看器（Vulkan 1.3 + GLFW + Dear ImGui Docking + 自研 GS3D/LOD/Tile 格式）。
+> 项目定性：大规模三维散点/点云数据 C++20 桌面高性能查看器（Flutter Desktop + C-ABI + Vulkan 1.3 + GLFW + 自研 GS3D/LOD/Tile 格式）。
 > 核心治理体系：已全面接入 **`cpp-cuda-vulkan-studio`** 现代化 C++ 图形工程规范。
 > 统一规则基准：详细规则与解耦规范见 [`docs/RULES.md`](docs/RULES.md)。
 
@@ -20,7 +20,7 @@
 | 关注领域 | 涉及技术契约 | 规范要求 |
 | :--- | :--- | :--- |
 | **图形与同步** | Vulkan 1.3、描述符生命周期、管线屏障 | 严禁隐式同步；离屏 Framebuffer 严格按生命周期销毁；禁止向 UI 层泄漏 Vulkan 头文件 |
-| **界面与交互** | Dear ImGui (Docking)、碳蓝工作台 2.0 | 立即模式心智模型；状态外置；UI 仅输出 `UiActions`；禁止在 UI 帧内执行耗时重计算 |
+| **界面与交互** | Flutter Desktop、GeoScatter3dService | 响应式 UI；状态归 GeoScatter3dService；UI 输出业务动作；禁止在 UI 帧内执行耗时重计算 |
 | **视口与相机** | 漫游视口、相机枢轴、GPU Pick | 默认以点云几何中心为旋转枢轴；GPU pick 为 front-most 最小深度回读；坐标映射与视口像素精确对齐 |
 | **控制面与自动化** | TCP + JSON-RPC 2.0、无头驱动、截图回读 | 自动化必须 `--headless` + `--no-welcome`；取图必须走控制面 `screenshot`；退出必须验证进程消亡 |
 | **构建与护栏** | CMake 3.24+、MSVC 2026 / Ninja、CTest | 维护工程护栏预算（`scripts/check_engineering_guardrails.py`）；CTest 37 组测试全绿保证 |
@@ -36,7 +36,7 @@
    - 自动化截图**必须走控制面 `screenshot`**（Vulkan swapchain 客户区全幅回读）；
    - **绝对禁止**操作系统级桌面/窗口截屏（BitBlt / PrintWindow / 第三方截图工具），严禁抢占系统前台焦点；全流程必须开启 `--headless`。
 3. **UI 缩放与 Vulkan 隔离**：
-   - `ui_scale_multiplier` 仅缩放 ImGui 字体与界面尺寸，**严禁**流入 Vulkan 渲染像素链。
+   - Flutter UI 缩放仅影响前端布局与字体，**严禁**流入 Vulkan 渲染像素链。
 4. **数据格式安全性**：
    - 全面采用固定小端 GS3D v2；LOD v1 显式拒绝；Tile 读取端按 `point_stride` 强校验，严禁接受损坏或混合 stride 文件。
 5. **代码是唯一信源**：

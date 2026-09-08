@@ -8,10 +8,7 @@ import 'welcome_ui_keys.dart';
 class WelcomeActionCards extends StatelessWidget {
   final GeoScatter3dService service;
 
-  const WelcomeActionCards({
-    super.key,
-    required this.service,
-  });
+  const WelcomeActionCards({super.key, required this.service});
 
   void _onNewProject(BuildContext context) {
     showDialog(
@@ -29,12 +26,16 @@ class WelcomeActionCards extends StatelessWidget {
     );
   }
 
-  void _onQuickDemo(BuildContext context) {
-    final result = service.executeAction('welcome.quick_demo');
+  Future<void> _onQuickDemo(BuildContext context) async {
+    final result = await service.executeActionAsync('welcome.quick_demo');
+    if (!context.mounted) return;
     if (result['success'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] as String? ?? '未在当前环境找到 sample-points.gs3d.bundle 示例数据包'),
+          content: Text(
+            result['message'] as String? ??
+                '未在当前环境找到 sample-points.gs3d.bundle 示例数据包',
+          ),
           backgroundColor: const Color(0xFFDC2626),
         ),
       );
@@ -76,7 +77,7 @@ class WelcomeActionCards extends StatelessWidget {
             iconColor: const Color(0xFF7C3AED), // Purple-600
             iconBg: const Color(0xFFF5F3FF), // Purple-50
             title: '快速体验示例',
-            subtitle: '一键载入内置 25 测点 5 级八叉树散点测试工区',
+            subtitle: '构建并载入内置散点示例，启动原生三维视口',
             tag: '即开即看',
             highlighted: true,
             onTap: () => _onQuickDemo(context),
@@ -144,8 +145,8 @@ class _ActionCardItemState extends State<_ActionCardItem> {
     final borderColor = _isHovered
         ? AppTheme.primaryBlue
         : (widget.highlighted
-            ? AppTheme.primaryBlue.withValues(alpha: 0.35)
-            : AppTheme.border);
+              ? AppTheme.primaryBlue.withValues(alpha: 0.35)
+              : AppTheme.border);
 
     return MouseRegion(
       opaque: true,
@@ -190,11 +191,18 @@ class _ActionCardItemState extends State<_ActionCardItem> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
-                        child: Icon(widget.icon, color: widget.iconColor, size: 22),
+                        child: Icon(
+                          widget.icon,
+                          color: widget.iconColor,
+                          size: 22,
+                        ),
                       ),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: widget.highlighted
                               ? AppTheme.primaryBlueBg

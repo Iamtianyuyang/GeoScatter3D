@@ -34,7 +34,8 @@ void ViewerApp::fill_render_views(
                 auto& view =
                     app_state.render_views[static_cast<std::size_t>(i)];
                 view.viewport_index = i;
-                // ImGui 已移除：视口图像经由控制面 screenshot PNG 回读，
+                view.data_origin = {ctx.dataset.origin_x(), ctx.dataset.origin_y(), ctx.dataset.origin_z()};
+                // 视口图像经由控制面 screenshot PNG 回读，
                 // 不再暴露 GPU 纹理句柄。
                 view.descriptor = kNullTextureHandle;
                 view.show_live_image = false;
@@ -183,6 +184,11 @@ void ViewerApp::fill_render_views(
 
                 const auto view_index = static_cast<std::size_t>(i);
                 view.selected_point_visible = false;
+                if (view_index < pick.selected_points.size() && pick.selected_points[view_index]) {
+                    const auto& point = *pick.selected_points[view_index];
+                    view.selected_point = {point.x + view.data_origin[0], point.y + view.data_origin[1],
+                                           point.z + view.data_origin[2], point.value};
+                }
                 view.selected_screen_x = -1.0f;
                 view.selected_screen_y = -1.0f;
                 if (view_index < selected_focus_points.size() &&

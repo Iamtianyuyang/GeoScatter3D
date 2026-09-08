@@ -29,7 +29,7 @@ public:
     // pre_pass:  recorded before the swapchain rendering scope begins
     //            (use for offscreen render passes)
     // in_pass:   recorded inside the swapchain dynamic rendering scope
-    //            (ImGui, overlays)
+    //            (viewport overlays)
     // post_pass: recorded after the rendering scope ends, still inside the
     //            command buffer; the swapchain image is in PRESENT_SRC_KHR
     //            (use for swapchain readback, layout transitions, etc.)

@@ -9,7 +9,7 @@ import 'dart:typed_data';
 /// 所有渲染与业务命令仍由原生主线程的控制面执行，避免在 Dart 侧复制 Vulkan、
 /// LOD 与 tile 流式逻辑。
 class NativeViewerControlClient {
-  NativeViewerControlClient({this.port = 12735});
+  NativeViewerControlClient({this.port = 0});
 
   final int port;
   final Map<int, Completer<Map<String, dynamic>>> _pending = {};
@@ -19,6 +19,9 @@ class NativeViewerControlClient {
   int _nextRequestId = 1;
   int _lastCaptureWidth = 0;
   int _lastCaptureHeight = 0;
+  String _startupLog = '';
+  int? _exitCode;
+  String get startupDiagnostics => _startupLog;
 
   bool get isConnected => _socket != null;
   int get lastCaptureWidth => _lastCaptureWidth;
@@ -33,27 +36,66 @@ class NativeViewerControlClient {
     final executable = File(executablePath);
     if (!await executable.exists()) return false;
 
+    // 每个前端实例分配独立端口，避免 F5 重启或多开时误连其他查看器。
+    final reservation = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      port,
+    );
+    final controlPort = reservation.port;
+    await reservation.close();
+
     final path = datasetPath.toLowerCase();
     final inputFlag = path.endsWith('.gs3d.bundle') ? '--bundle' : '--input';
+    _startupLog = '';
+    _exitCode = null;
     _process = await Process.start(
       executable.path,
       [
         '--no-welcome',
         '--headless',
-        '--control-plane=$port',
+        '--control-plane=$controlPort',
+        if (inputFlag == '--input') ...['--no-tiles', '--no-lod'],
         inputFlag,
         datasetPath,
       ],
-      mode: ProcessStartMode.detachedWithStdio,
+      mode: ProcessStartMode.normal,
       workingDirectory: executable.parent.path,
+    );
+
+    // 持续排空日志管道，避免原生进程因管道写满停止渲染；normal 模式可等待退出。
+    void record(String text) {
+      _startupLog += text;
+      if (_startupLog.length > 8000) {
+        _startupLog = _startupLog.substring(_startupLog.length - 8000);
+      }
+    }
+
+    unawaited(
+      _process!.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .forEach(record),
+    );
+    unawaited(
+      _process!.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .forEach(record),
+    );
+    unawaited(
+      _process!.exitCode.then((code) {
+        _exitCode = code;
+      }),
     );
 
     final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (DateTime.now().isBefore(deadline)) {
+      if (_exitCode != null) {
+        await stop(force: true);
+        throw StateError('原生查看器退出（$_exitCode）: $_startupLog');
+      }
       try {
         final socket = await Socket.connect(
           InternetAddress.loopbackIPv4,
-          port,
+          controlPort,
           timeout: const Duration(milliseconds: 500),
         );
         _attach(socket);

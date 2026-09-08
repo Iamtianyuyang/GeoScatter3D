@@ -33,7 +33,6 @@
 #include "ui/UiPalette.hpp"
 #include "ui/WorkspaceManager.hpp"
 #include "ui/Theme.hpp"
-#include "ui/UiFonts.hpp"
 #include "render/ViewportManager.hpp"
 
 #include "camera/BoxSelect.hpp"
@@ -91,7 +90,7 @@ void apply_control_actions(AppState& app_state, UiActions& gui_cmds) {
     if (ca.theme_change_requested) {
         apply_theme(
             static_cast<gs3d::ui::ThemeId>(ca.theme_id),
-            gs3d::gui::ui_fonts().ui_scale
+            1.0f
         );
         gs3d::app::UiPreferences p;
         p.theme = gs3d::ui::theme_tokens(static_cast<gs3d::ui::ThemeId>(ca.theme_id)).id;
@@ -596,7 +595,7 @@ int ViewerApp::run() {
             control_session.poll();
             if (control_session.quit_requested()) window.request_close();
 
-            // ImGui 已移除：UI 输入全部来自控制面（control_session.poll()）。
+            // UI 输入全部来自控制面（control_session.poll()）。
             UiActions gui_cmds;
             apply_control_actions(app_state, gui_cmds);
             viewport_presentation.copy_newly_visible_views(
@@ -668,7 +667,8 @@ int ViewerApp::run() {
                     .dataset = dataset,
                     .bounds = bounds,
                     .primary_value_name = primary_value_name,
-                    .z_field_name = z_field_name
+                    .z_field_name = z_field_name,
+                    .viewport_pushes = viewport_pushes
                 };
                 handle_region_stats_commands(gui_cmds, app_state, rs_ctx);
             }

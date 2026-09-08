@@ -32,6 +32,7 @@ constexpr int kNoHitClearThreshold = 3;
 enum class GpuPickRequestKind {
     None,
     Hover,
+    Measure,
     SetOrbitPivot,
     BoxSelectAnchor
 };

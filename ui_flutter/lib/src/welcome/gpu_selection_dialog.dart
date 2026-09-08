@@ -8,10 +8,7 @@ import 'welcome_ui_keys.dart';
 class GpuSelectionDialog extends StatefulWidget {
   final GeoScatter3dService service;
 
-  const GpuSelectionDialog({
-    super.key,
-    required this.service,
-  });
+  const GpuSelectionDialog({super.key, required this.service});
 
   @override
   State<GpuSelectionDialog> createState() => _GpuSelectionDialogState();
@@ -19,6 +16,7 @@ class GpuSelectionDialog extends StatefulWidget {
 
 class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
   late int _selectedGpu;
+  String? _error;
 
   @override
   void initState() {
@@ -41,6 +39,9 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (gpus.isEmpty) const Text('未探测到可用 Vulkan 设备，请检查驱动。'),
+            if (_error != null)
+              Text(_error!, style: const TextStyle(color: Colors.red)),
             // 标题 (使用 Expanded 避免窄屏溢出)
             Row(
               children: [
@@ -50,7 +51,11 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                     color: AppTheme.primaryBlueBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.memory_rounded, color: AppTheme.primaryBlue, size: 20),
+                  child: const Icon(
+                    Icons.memory_rounded,
+                    color: AppTheme.primaryBlue,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -68,7 +73,11 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                 const SizedBox(width: 8),
                 IconButton(
                   key: WelcomeUiKeys.gpuDialogCloseButton,
-                  icon: const Icon(Icons.close, size: 18, color: AppTheme.textDim),
+                  icon: const Icon(
+                    Icons.close,
+                    size: 18,
+                    color: AppTheme.textDim,
+                  ),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -100,7 +109,10 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                     borderRadius: BorderRadius.circular(8),
                     onTap: () => setState(() => _selectedGpu = gpu.index),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       child: Row(
                         children: [
                           Radio<int>(
@@ -108,7 +120,9 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                             groupValue: _selectedGpu,
                             activeColor: AppTheme.primaryBlue,
                             onChanged: (val) {
-                              if (val != null) setState(() => _selectedGpu = val);
+                              if (val != null) {
+                                setState(() => _selectedGpu = val);
+                              }
                             },
                           ),
                           const SizedBox(width: 10),
@@ -120,7 +134,9 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                                   gpu.name,
                                   style: TextStyle(
                                     fontSize: 13.5,
-                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
                                     color: AppTheme.textTitle,
                                   ),
                                 ),
@@ -129,7 +145,9 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                                   gpu.typeDescription,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: isSelected ? AppTheme.primaryBlue : AppTheme.textDim,
+                                    color: isSelected
+                                        ? AppTheme.primaryBlue
+                                        : AppTheme.textDim,
                                   ),
                                 ),
                               ],
@@ -151,7 +169,10 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                 TextButton(
                   key: WelcomeUiKeys.gpuDialogCancelButton,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(color: AppTheme.textDim),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton(
@@ -159,13 +180,26 @@ class _GpuSelectionDialogState extends State<GpuSelectionDialog> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryBlue,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     elevation: 0,
                   ),
-                  onPressed: () {
-                    widget.service.executeAction('welcome.gpu.set_preferred', {'index': _selectedGpu});
-                    Navigator.of(context).pop();
-                  },
+                  onPressed: gpus.isEmpty
+                      ? null
+                      : () {
+                          final result = widget.service.executeAction(
+                            'welcome.gpu.set_preferred',
+                            {'index': _selectedGpu},
+                          );
+                          if (result['success'] == true) {
+                            Navigator.of(context).pop();
+                          } else {
+                            setState(
+                              () => _error = result['message'] as String?,
+                            );
+                          }
+                        },
                   child: const Text('应用并保存设置'),
                 ),
               ],

@@ -266,8 +266,7 @@ void VulkanContext::create_logical_device() {
     device_features.independentBlend =
         supported_features_.independentBlend;
 
-    // ImGui 多视口副窗口与主窗口共用 dynamic rendering 管线，
-    // 由此副窗口交换链能继承主交换链的 sRGB 格式（配色一致）。
+    // 为离屏视口与交换链启用 dynamic rendering。
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{};
     dynamic_rendering_features.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;

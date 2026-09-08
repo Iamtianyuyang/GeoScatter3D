@@ -23,7 +23,7 @@ void main() {
     expect(find.text('打开工程'), findsOneWidget);
     expect(find.text('快速体验示例'), findsOneWidget);
     expect(find.text('最近打开的项目'), findsOneWidget);
-    expect(find.textContaining('Vulkan 1.3 / GS3D v2 核心引擎就绪'), findsOneWidget);
+    expect(find.text(service.backendStatus), findsOneWidget);
 
     // 2. 交互测试：点击“新建工程”卡片弹出向导弹窗
     await tester.tap(find.text('新建工程'));

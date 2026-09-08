@@ -7,6 +7,20 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // 将当前 Runner 及其后代放入进程作业。F5 强制停止或热重启退出时，
+  // Windows 关闭最后一个作业句柄，确保原生渲染器/预处理器不会成为孤儿。
+  // 成功时句柄保留到进程退出，不能提前 CloseHandle（会终止当前 Runner）。
+  HANDLE runtime_job = ::CreateJobObjectW(nullptr, nullptr);
+  if (runtime_job) {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!::SetInformationJobObject(runtime_job, JobObjectExtendedLimitInformation,
+                                  &limits, sizeof(limits)) ||
+        !::AssignProcessToJobObject(runtime_job, ::GetCurrentProcess())) {
+      ::CloseHandle(runtime_job);
+      ::OutputDebugStringW(L"GeoScatter3D: failed to enable child process cleanup\n");
+    }
+  }
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {

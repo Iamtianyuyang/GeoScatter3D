@@ -10,6 +10,7 @@ add_library(gs3d_control STATIC
     MenuComponents.cpp
     PanelComponents.cpp
     ToolbarComponents.cpp
+    RuntimeSnapshot.cpp
 )
 
 target_include_directories(gs3d_control PUBLIC

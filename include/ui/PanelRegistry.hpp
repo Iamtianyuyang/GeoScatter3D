@@ -15,7 +15,7 @@ namespace gs3d::ui {
  * 所有可开关面板的唯一事实来源：菜单「窗口」、Ctrl+P 命令面板、
  * 默认布局构建都从这里取面板清单，不再各自维护一份 checkbox 列表。
  *
- * 本头文件不依赖 ImGui，纯逻辑可直接单测（UiPanelRegistryTests）。
+ * 本头文件不依赖图形界面运行时，纯逻辑可直接单测（UiPanelRegistryTests）。
  */
 
 enum class PanelId : int {

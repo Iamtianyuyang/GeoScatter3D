@@ -16,6 +16,7 @@ target_link_libraries(gs3d_ffi PRIVATE
     gs3d_platform
     gs3d_app_support
     gs3d_control
+    Vulkan::Vulkan
 )
 
 if(WIN32)

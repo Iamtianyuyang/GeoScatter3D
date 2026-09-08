@@ -22,10 +22,8 @@ width = 1280
 height = 720
 title = "GeoScatter3D sample dataset"
 resizable = true
-ui_layout_ini_path = ""
 ui_scale_multiplier = 1.0
 theme = "carbon-blue"
-multi_viewports = false
 
 [vulkan]
 validation_layers = false

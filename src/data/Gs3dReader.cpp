@@ -40,6 +40,39 @@ Gs3dHeader Gs3dReader::read_header(const std::filesystem::path& path) {
     return header;
 }
 
+Gs3dReadResult Gs3dReader::read_preview(const std::filesystem::path& path, std::size_t limit) {
+    Gs3dReadResult result;
+    result.header = read_header(path);
+    if (std::filesystem::file_size(path) != Gs3dFormat::expected_file_size(result.header)) {
+        throw std::runtime_error("Gs3dReader: file size does not match GS3D header");
+    }
+    std::ifstream input(path, std::ios::binary);
+    input.seekg(static_cast<std::streamoff>(result.header.point_data_offset));
+    result.points.resize(static_cast<std::size_t>(std::min<std::uint64_t>(limit, result.header.point_count)));
+    if (!Gs3dFormat::read_points(input, result.header, result.points)) {
+        throw std::runtime_error("Gs3dReader: cannot read preview");
+    }
+    return result;
+}
+
+bool Gs3dReader::visit_points(const std::filesystem::path& path,
+    const std::function<bool(std::span<const Gs3dPoint>)>& visitor) {
+    const auto header = read_header(path);
+    if (std::filesystem::file_size(path) != Gs3dFormat::expected_file_size(header)) {
+        throw std::runtime_error("Gs3dReader: file size does not match GS3D header");
+    }
+    std::ifstream input(path, std::ios::binary);
+    input.seekg(static_cast<std::streamoff>(header.point_data_offset));
+    std::vector<Gs3dPoint> block;
+    for (std::uint64_t offset = 0; offset < header.point_count;) {
+        block.resize(static_cast<std::size_t>(std::min<std::uint64_t>(65536, header.point_count - offset)));
+        if (!Gs3dFormat::read_points(input, header, block)) throw std::runtime_error("Gs3dReader: truncated point block");
+        if (!visitor(block)) return false;
+        offset += block.size();
+    }
+    return true;
+}
+
 Gs3dReadResult Gs3dReader::read_all(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) {

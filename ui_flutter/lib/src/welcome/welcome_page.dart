@@ -13,10 +13,7 @@ import 'welcome_ui_keys.dart';
 class WelcomePage extends StatefulWidget {
   final GeoScatter3dService service;
 
-  const WelcomePage({
-    super.key,
-    required this.service,
-  });
+  const WelcomePage({super.key, required this.service});
 
   @override
   State<WelcomePage> createState() => _WelcomePageState();
@@ -37,21 +34,27 @@ class _WelcomePageState extends State<WelcomePage> {
     super.dispose();
   }
 
-  void _handleFileDropped(String path) {
+  Future<void> _handleFileDropped(String path) async {
     if (!mounted) return;
     final lower = path.toLowerCase();
     if (lower.endsWith('.gs3d') || lower.endsWith('.gs3d.bundle')) {
+      final result = await widget.service.executeActionAsync(
+        'welcome.open_project',
+        {'path': path},
+      );
+      if (!mounted || result['success'] == true) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已载入拖放工程: $path'),
-          backgroundColor: const Color(0xFF10B981),
+          content: Text(result['message'] as String? ?? '工程加载失败'),
+          backgroundColor: const Color(0xFFDC2626),
         ),
       );
     } else {
       showDialog(
         context: context,
         barrierDismissible: true,
-        builder: (_) => NewProjectDialog(service: widget.service, initialPath: path),
+        builder: (_) =>
+            NewProjectDialog(service: widget.service, initialPath: path),
       );
     }
   }
@@ -76,8 +79,10 @@ class _WelcomePageState extends State<WelcomePage> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): _openNewProjectDialog,
-        const SingleActivator(LogicalKeyboardKey.keyO, control: true): _openProjectDialog,
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+            _openNewProjectDialog,
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true):
+            _openProjectDialog,
       },
       child: Focus(
         autofocus: true,
@@ -86,6 +91,42 @@ class _WelcomePageState extends State<WelcomePage> {
           backgroundColor: AppTheme.background,
           body: Column(
             children: [
+              ListenableBuilder(
+                listenable: widget.service,
+                builder: (context, _) {
+                  final service = widget.service;
+                  if (!service.welcomeBusy && service.welcomeError == null) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    color: service.welcomeError == null
+                        ? AppTheme.primaryBlueBg
+                        : const Color(0xFFFEF2F2),
+                    child: Row(
+                      children: [
+                        if (service.welcomeBusy)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            service.welcomeError ?? service.backendStatus,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
               // 顶部细微留白 / 窗口顶部空间
               Container(
                 height: 28,
@@ -94,7 +135,11 @@ class _WelcomePageState extends State<WelcomePage> {
                 alignment: Alignment.centerLeft,
                 child: const Row(
                   children: [
-                    Icon(Icons.scatter_plot_rounded, size: 14, color: AppTheme.primaryBlue),
+                    Icon(
+                      Icons.scatter_plot_rounded,
+                      size: 14,
+                      color: AppTheme.primaryBlue,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'GeoScatter3D v2.0 - 现代化三维散点系统 (Flutter Desktop)',
@@ -112,7 +157,10 @@ class _WelcomePageState extends State<WelcomePage> {
               // 主体滚动内容区（水平居中，自适应最大宽度）
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 24,
+                  ),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 960),

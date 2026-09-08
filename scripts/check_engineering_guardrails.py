@@ -18,6 +18,8 @@ FORBIDDEN_TRACKED_PREFIXES = (
     ".vscode/",
 )
 
+SHARED_VSCODE_FILES = {".vscode/launch.json", ".vscode/tasks.json", ".vscode/extensions.json"}
+
 SOURCE_SUFFIXES = {".cpp", ".hpp"}
 PORTABILITY_PATHS = {
     pathlib.PurePosixPath("CMakeLists.txt"),
@@ -257,7 +259,8 @@ def main() -> int:
 
     for path in tracked:
         path_string = path.as_posix()
-        if path_string.startswith(FORBIDDEN_TRACKED_PREFIXES):
+        if (path_string.startswith(FORBIDDEN_TRACKED_PREFIXES) and
+                path_string not in SHARED_VSCODE_FILES):
             violations.append(f"tracked local/tool state: {path_string}")
 
         absolute_path_candidate = (

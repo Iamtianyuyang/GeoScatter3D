@@ -521,11 +521,6 @@ int main(int argc, char** argv) {
         parse_control_plane_args(argc, argv, app_config.control_plane);
         if (has_flag(argc, argv, "--headless")) {
             app_config.viewer.window.visible = false;
-            // 隐藏窗口模式下不加载持久化布局（多显示器窗口几何）：
-            // 可能记录其他显示器上的窗口几何，违背 headless 语义。
-            // 可见的原生窗口——违背 headless 语义，也让主窗口 swapchain
-            // 截图缺内容。TIA-151 实测复现并修复。
-            app_config.viewer.window.ui_layout_ini_path.clear();
         }
         const bool no_welcome = has_flag(argc, argv, "--no-welcome");
         // GPU UUIDs identify hardware on one machine. Keep the project
@@ -541,8 +536,7 @@ int main(int argc, char** argv) {
             if (!ui_prefs->layout.empty()) app_config.viewer.window.layout = ui_prefs->layout;
         }
 
-        // 启动主题只记录，不触碰 ImGui；欢迎窗口和主查看器各自的
-        // 启动主题记录后由运行期应用（无 ImGui 前端，主题仅作配置投影）。
+        // 启动主题仅作配置投影，界面由 Flutter 管理。
         gs3d::ui::set_startup_theme(
             gs3d::ui::theme_from_string(app_config.viewer.window.theme)
         );

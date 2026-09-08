@@ -48,7 +48,7 @@ std::filesystem::path user_config_directory()
 [[nodiscard]]
 toml::table load_existing(const std::filesystem::path& p)
 {
-    try { return toml::parse_file(p.string()); }
+    try { return toml::parse_file(p.u8string()); }
     catch (const std::exception& e) {
         gs3d::util::log::warning()
             << "[WARN] Ignoring invalid preferences at "

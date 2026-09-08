@@ -1,101 +1,106 @@
-<#
+﻿<#
 .SYNOPSIS
-    Builds the C++ FFI dynamic library and the Flutter Windows Desktop application.
+    Build and stage the complete native runtime, then optionally build Flutter.
 #>
-
 param(
-    [string]$Config = "Release"
+    [ValidateSet('Debug', 'Profile', 'Release')]
+    [string]$Config = 'Release',
+    [switch]$NativeOnly,
+    [string]$VcpkgRoot = $env:VCPKG_ROOT
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$BuildDir = Join-Path $RepoRoot 'tmp/build-win'
+$FlutterDir = Join-Path $RepoRoot 'ui_flutter'
+$NativeConfig = if ($Config -eq 'Profile') { 'Release' } else { $Config }
 
-Write-Host "==> [1/4] Terminating any running application processes..." -ForegroundColor Cyan
-Stop-Process -Name ui_flutter, GeoScatter3D -Force -ErrorAction SilentlyContinue
-
-Write-Host "==> [2/4] Building C++ FFI library (gs3d_ffi)..." -ForegroundColor Cyan
-$BuildDir = Join-Path $RepoRoot "tmp/build-win"
-if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
-    cmake -B $BuildDir -S $RepoRoot -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DBUILD_TESTING=ON
+# VS Code 启动的终端不一定继承 CMake PATH，兼容独立安装和 VS 内置工具。
+$Cmake = Get-Command cmake -ErrorAction SilentlyContinue
+if ($Cmake) { $Cmake = $Cmake.Source } else {
+    $Cmake = Join-Path $env:ProgramFiles 'CMake/bin/cmake.exe'
+    if (-not (Test-Path -LiteralPath $Cmake)) {
+        $Vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+        if (Test-Path -LiteralPath $Vswhere) {
+            $VsRoot = & $Vswhere -latest -products '*' -property installationPath
+            if ($VsRoot) { $Cmake = Join-Path $VsRoot 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe' }
+        }
+    }
 }
-cmake --build $BuildDir --config $Config --target gs3d_ffi GeoScatter3D --parallel
+if (-not (Test-Path -LiteralPath $Cmake)) { throw 'CMake 3.28+ is required.' }
 
-$SourceDll = Join-Path $BuildDir "src/ffi/$Config/gs3d_ffi.dll"
-$FlutterDir = Join-Path $RepoRoot "ui_flutter"
-$FlutterDll = Join-Path $FlutterDir "gs3d_ffi.dll"
-Copy-Item $SourceDll $FlutterDll -Force
-
-$FlutterFontsDir = Join-Path $FlutterDir "assets/fonts"
-if (-not (Test-Path $FlutterFontsDir)) {
-    New-Item -ItemType Directory -Force -Path $FlutterFontsDir | Out-Null
+function Invoke-Checked {
+    param([string]$Program, [string[]]$Arguments)
+    & $Program @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
-Copy-Item (Join-Path $RepoRoot "assets/fonts/*") $FlutterFontsDir -Force
 
-$env:NO_PROXY = "localhost,127.0.0.1"
-$env:HTTP_PROXY = ""
-$env:HTTPS_PROXY = ""
-$env:ALL_PROXY = ""
+$ConfigureArgs = @('-S', $RepoRoot, '-B', $BuildDir, '-DBUILD_TESTING=ON')
+if (-not (Test-Path (Join-Path $BuildDir 'CMakeCache.txt'))) {
+    if (-not $VcpkgRoot -and (Test-Path 'C:/vcpkg/scripts/buildsystems/vcpkg.cmake')) {
+        $VcpkgRoot = 'C:/vcpkg'
+    }
+    if ($VcpkgRoot) {
+        $ConfigureArgs += "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+    }
+}
+Write-Host "==> Building native runtime ($NativeConfig)..."
+Invoke-Checked $Cmake $ConfigureArgs
+Invoke-Checked $Cmake @('--build', $BuildDir, '--config', $NativeConfig, '--target',
+    'gs3d_ffi', 'GeoScatter3D', 'GeoScatter3DPreprocess', '--parallel')
+
+# 原生资源只暂存到 tmp；Flutter CMake 的 install 步骤负责部署 Debug/Release。
+$StageDir = Join-Path $RepoRoot "tmp/flutter-native/$Config"
+$NativeDir = Join-Path $BuildDir "src/$NativeConfig"
+$FfiDir = Join-Path $BuildDir "src/ffi/$NativeConfig"
+New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+foreach ($Exe in @('GeoScatter3D.exe', 'GeoScatter3DPreprocess.exe')) {
+    Copy-Item -LiteralPath (Join-Path $NativeDir $Exe) -Destination $StageDir -Force
+}
+Copy-Item -LiteralPath (Join-Path $FfiDir 'gs3d_ffi.dll') -Destination $StageDir -Force
+foreach ($RuntimeDir in @($NativeDir, $FfiDir)) {
+    Get-ChildItem -LiteralPath $RuntimeDir -Filter '*.dll' | Copy-Item -Destination $StageDir -Force
+}
+if (-not (Get-ChildItem -LiteralPath $StageDir -Filter 'glfw3*.dll')) {
+    throw 'GLFW runtime DLL was not deployed by the native build.'
+}
+foreach ($Directory in @('assets', 'config', 'examples')) {
+    $SourceDir = if ($Directory -eq 'assets') { Join-Path $NativeDir $Directory } else { Join-Path $RepoRoot $Directory }
+    $DestinationDir = Join-Path $StageDir $Directory
+    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    Copy-Item (Join-Path $SourceDir '*') $DestinationDir -Recurse -Force
+}
+Write-Host "==> Native runtime staged at $StageDir"
+
+# Flutter 会随已安装的 VS 工具链切换生成器；保留旧产物并让下一次 F5 重新配置。
+$FlutterCmakeDir = Join-Path $FlutterDir 'build/windows/x64'
+$FlutterCache = Join-Path $FlutterCmakeDir 'CMakeCache.txt'
+$Vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+if ((Test-Path -LiteralPath $FlutterCache) -and (Test-Path -LiteralPath $Vswhere)) {
+    $CachedGenerator = Select-String -LiteralPath $FlutterCache -Pattern '^CMAKE_GENERATOR:INTERNAL=Visual Studio ([0-9]+) '
+    $InstalledVersion = & $Vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+    if ($CachedGenerator -and $InstalledVersion -and ([version]$InstalledVersion).Major -ne [int]$CachedGenerator.Matches[0].Groups[1].Value) {
+        $SourcePath = [IO.Path]::GetFullPath($FlutterCmakeDir)
+        $ArchivePath = [IO.Path]::GetFullPath((Join-Path $RepoRoot ('tmp/flutter-cmake-' + [Guid]::NewGuid().ToString('N'))))
+        $AllowedSource = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'ui_flutter/build/windows')) + [IO.Path]::DirectorySeparatorChar
+        $AllowedArchive = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'tmp')) + [IO.Path]::DirectorySeparatorChar
+        if (!$SourcePath.StartsWith($AllowedSource, [StringComparison]::OrdinalIgnoreCase) -or !$ArchivePath.StartsWith($AllowedArchive, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected Flutter build directory.' }
+        Move-Item -LiteralPath $SourcePath -Destination $ArchivePath
+        Write-Host "==> Archived obsolete Flutter CMake output to $ArchivePath"
+    }
+}
+if ($NativeOnly) { return }
+
 Push-Location $FlutterDir
 try {
-    flutter build windows
+    Invoke-Checked 'flutter' @('build', 'windows', "--$($Config.ToLowerInvariant())")
 } finally {
     Pop-Location
 }
-
-Write-Host "==> [4/4] Deploying FFI dynamic library to release runner..." -ForegroundColor Cyan
-$RunnerReleaseDir = Join-Path $FlutterDir "build/windows/x64/runner/$Config"
-if (Test-Path $RunnerReleaseDir) {
-    Copy-Item $FlutterDll (Join-Path $RunnerReleaseDir "gs3d_ffi.dll") -Force
-
-    # Flutter 的原生引擎桥接会在本机回环地址启动无窗口 ViewerApp，必须随前端
-    # 一起部署其可执行文件、运行时 DLL 与 shader/font 资源，不能退回到 Dart 预览。
-    # 运行时目录优先取 exe 实际输出目录（src/<Config>，含 copy_runtime_assets
-    # 生成的 assets 与 vcpkg 自动复制的依赖 DLL）；回退到根构建输出
-    # ${PROJECT_BINARY_DIR}/<Config>（CMake POST_BUILD 也会复制完整运行时）。
-    $NativeReleaseDir = Join-Path $BuildDir "src/$Config"
-    if (-not (Test-Path (Join-Path $NativeReleaseDir "GeoScatter3D.exe"))) {
-        $NativeReleaseDir = Join-Path $BuildDir $Config
-    }
-    $NativeExe = Join-Path $NativeReleaseDir "GeoScatter3D.exe"
-    if (-not (Test-Path $NativeExe)) {
-        throw "Native viewer executable not found: $NativeExe"
-    }
-    Copy-Item $NativeExe $RunnerReleaseDir -Force
-
-    # glfw3.dll：vcpkg applocal 复制到 exe 同目录；若缺失则从 vcpkg 安装目录回退。
-    $GlfwSrc = Join-Path $NativeReleaseDir "glfw3.dll"
-    if (-not (Test-Path $GlfwSrc)) {
-        $GlfwSrc = Join-Path $env:VCPKG_ROOT "installed/x64-windows/bin/glfw3.dll"
-        if (-not $env:VCPKG_ROOT) { $GlfwSrc = "C:/vcpkg/installed/x64-windows/bin/glfw3.dll" }
-    }
-    if (Test-Path $GlfwSrc) {
-        Copy-Item $GlfwSrc $RunnerReleaseDir -Force
-    } else {
-        Write-Warning "glfw3.dll not found; the runner may fail to load the native viewer."
-    }
-
-    # vulkan-1.dll：优先随运行时目录部署；缺失时回退到系统 Vulkan Runtime
-    # （%SystemRoot%\System32），仍缺失则跳过（系统已注册 loader 时可正常运行）。
-    $VulkanSrc = Join-Path $NativeReleaseDir "vulkan-1.dll"
-    if (-not (Test-Path $VulkanSrc)) {
-        $VulkanSrc = Join-Path $env:SystemRoot "System32/vulkan-1.dll"
-    }
-    if (Test-Path $VulkanSrc) {
-        Copy-Item $VulkanSrc $RunnerReleaseDir -Force
-    } else {
-        Write-Warning "vulkan-1.dll not found; relying on system Vulkan runtime."
-    }
-
-    $RunnerAssetsDir = Join-Path $RunnerReleaseDir "assets"
-    if (-not (Test-Path $RunnerAssetsDir)) {
-        New-Item -ItemType Directory -Force -Path $RunnerAssetsDir | Out-Null
-    }
-    $NativeAssets = Join-Path $NativeReleaseDir "assets"
-    if (Test-Path $NativeAssets) {
-        Copy-Item (Join-Path $NativeAssets "*") $RunnerAssetsDir -Recurse -Force
-    } else {
-        Write-Warning "Native assets directory not found: $NativeAssets"
+$RunnerDir = Join-Path $FlutterDir "build/windows/x64/runner/$Config"
+foreach ($File in @('ui_flutter.exe', 'gs3d_ffi.dll', 'GeoScatter3D.exe', 'GeoScatter3DPreprocess.exe', 'assets/shaders/point.vert.spv')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $RunnerDir $File))) {
+        throw "Incomplete Flutter runtime: $File"
     }
 }
-
-Write-Host "==> Flutter Desktop build succeeded! Ready to launch." -ForegroundColor Green
+Write-Host "==> Flutter Desktop build succeeded: $RunnerDir/ui_flutter.exe" -ForegroundColor Green

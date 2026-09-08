@@ -41,7 +41,7 @@ install(
 )
 install(DIRECTORY ${GS3D_GENERATED_SHADER_DIR}/ DESTINATION assets/shaders)
 
-# Committed configuration templates only — local UI state (imgui_layout.ini)
+# Committed configuration templates only — local UI state
 # and debug configs stay out of the package.
 install(FILES
     ${PROJECT_SOURCE_DIR}/config/viewer.toml

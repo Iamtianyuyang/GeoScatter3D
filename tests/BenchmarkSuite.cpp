@@ -893,7 +893,6 @@ PickBatchSummary run_pick_batch(
     run_config.window.viewport_count = 1;
     run_config.window.width = viewport.width;
     run_config.window.height = viewport.height;
-    run_config.window.ui_layout_ini_path.clear();
     run_config.camera.mode = "fixed";
     run_config.camera.position = {
         camera.position().x,

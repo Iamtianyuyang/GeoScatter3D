@@ -34,7 +34,7 @@ flowchart LR
     subgraph Render["渲染层"]
         GPUCLOUD --> PIPE["PointPipeline"]
         PIPE --> OFF["OffscreenFramebuffer[N]"]
-        OFF --> IMG["ImGui::Image[N]"]
+        OFF --> IMG["Flutter Image.memory"]
         CAM["Camera/CameraController/CameraHub"] --> OFF
     end
 
@@ -68,7 +68,7 @@ Gs3dDataset metadata/full points + optional LOD/tile sidecars
 PointCloudGpu / PointCloudLodGpu / PointCloudTileGpu
         |
         v
-PointPipeline --> OffscreenFramebuffer[N] --> ImGui::Image[N]
+PointPipeline --> OffscreenFramebuffer[N] --> Flutter Image.memory
 ```
 
 ## 主要模块
@@ -104,7 +104,7 @@ include/ & src/
 │   └── preprocess/   # 离线数据切片预处理流水线 (Gs3dWriter, Gs3dLodWriter, Gs3dTileWriter...)
 │
 ├── [前端表现层 UI]
-│   └── ui/           # 统一前端表现 (Dear ImGui 立即模式投影)
+│   └── ui/           # 纯逻辑面板、布局与工作区注册表
 │       ├── panels/   # 业务面板元数据 (PanelRegistry)
 │       ├── styling/  # 主题色彩与布局体系 (ThemeRegistry, LayoutRegistry, LayoutMetrics)
 │       ├── canvas/   # 视口几何与坐标轴工具 (ViewportCanvas)
@@ -126,7 +126,7 @@ include/ & src/
 2. CSV/DAT 模式先生成 GS3D；启用 tile 时同时生成 tile index/data；bundle
    模式按 manifest 解析已有产物。
 3. LOD sidecar 可用时只加载 GS3D header；需要构建 LOD 或全量渲染时才加载点数组。
-4. 创建窗口、Vulkan context、swapchain、renderer 和 ImGui。
+4. 创建窗口、Vulkan context、swapchain、renderer；界面由 Flutter 进程承载。
 5. 预分配最多 4 个独立离屏视口，默认显示配置指定的 1 个视图，并创建点渲染
    管线、相机控制器和 GPU 点云。
 6. 进入逐帧循环。
@@ -135,18 +135,17 @@ include/ & src/
 
 1. 轮询窗口事件并更新帧率。
 2. 从真实运行状态生成 `AppState`，控制面动作经 `apply_control_actions` 合并为
-   `UiActions`（前端输入来自 Flutter/控制面，不再有 ImGui 输入）。
+   `UiActions`（前端输入来自 Flutter/控制面）。
 3. `CameraController` 使用视图画布上的局部输入更新目标相机；相机默认独立，
    只有勾选“联动相机”的视图才由 `CameraHub` 传播变化。
 4. 相机稳定后触发 tile 选择；后台 future 完成后按
    `tile.gpu_upload_budget_bytes` 分帧批量上传 GPU。
 5. 在 swapchain render pass 前仅渲染激活标签页和实际可见的独立平台窗口。
-6. 每个视图由独立 ImGui 窗口采样，可作为中央标签页或拖成跨屏平台窗口；输入不再
-   依赖 GLFW 主窗口鼠标坐标。
+6. Flutter 通过控制面回读视口 PNG 与交互快照，并发送相对于显示区域的输入坐标。
 7. resize 请求稳定 150 ms 后批量处理，一批只执行一次 GPU 空闲同步。
 
 控制面命令在主循环里按固定时序插入：
-`control_session.poll()`（帧边界取请求）→ `imgui_layer.new_frame`（UI 绘制）→
+`control_session.poll()`（帧边界取请求）→
 `apply_control_actions()`（控制面动作并入 `UiActions`，主题切换直接
 `apply_theme`）→ 相机/渲染设置/拾取命令 → `frame_renderer.render()`。
 因此 `toggle` 后本帧 UI 即变化、`screenshot` 必含处理帧效果（帧同步保证）。
@@ -192,11 +191,9 @@ include/ & src/
 - `VulkanContext` 比所有 Vulkan 子资源活得更久。
 - `VulkanRenderer` 拥有 swapchain framebuffer、同步对象和命令缓冲。
 - `ViewportManager` 拥有每个视口的 `Camera + OffscreenFramebuffer`。
-- `OffscreenFramebuffer` 拥有颜色图、深度图、render pass、framebuffer 和
-  ImGui texture descriptor。
+- `OffscreenFramebuffer` 拥有颜色图、深度图、render pass 和 framebuffer。
 - `PointCloud*Gpu` 拥有点数据对应的 Vulkan buffer。
-- `ImGuiLayer` 在 `ViewportManager` 之后析构，保证 descriptor 先注销、ImGui
-  backend 后关闭。
+- Flutter 退出时停止原生进程；原生内部按 Vulkan 资源所有权释放对象。
 
 ## 当前功能状态
 
@@ -222,7 +219,7 @@ include/ & src/
   (见上"GPU Pick Contract")。
 - 导航图、导航球、自适应坐标轴刻度、高度缩放、点形状、多视图与
   可折叠侧边栏（TIA-111 方向 B）。
-- **前端现状（ImGui 已移除）**：C++ 侧不再有 ImGui 前端；`ui` 层仅保留控制面/应用
+- **前端现状**：C++ 侧只保留原生渲染与控制面；`ui` 层仅保留控制面/应用
   依赖的纯逻辑组件（面板/布局/主题注册表、工作区、视口几何）。前端界面全部由
   `ui_flutter/`（Flutter Windows 桌面）承担，经 TCP + JSON-RPC 控制面交互，
   视口图像经 screenshot PNG 回读。
@@ -239,12 +236,11 @@ include/ & src/
 - 无空间裁剪与光照/着色模型: 管线 push constant 存在 `spatial_clip_enable`
   flag (PointPipeline.hpp:56) 但无 UI/应用层接线 (渲染端恒为 0);
   仅值域裁切与色带映射可用。
-- dock 布局持久化已生效 (TIA-90): 见 [config-reference.md](config-reference.md)
-  的 `ui_layout_ini_path`。
+- 旧 docking 布局 ini 已移除；Flutter 布局持久化需单独验收。
 
 ## 重大风险
 
-1. `ViewerApp.cpp` 当前有 910 行，其中 `ViewerApp::run()` 独占 687 行。运行时资源、
+1. `ViewerApp.cpp` 当前有 910 行，其中 `ViewerApp::run()` 独占 688 行。运行时资源、
    tile 流、相机、pick和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
    `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
    帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
@@ -261,7 +257,7 @@ include/ & src/
    空洞等损坏/手工拼装文件会被显式拒绝，不再可能按错误 stride 解码静默置零。
    （格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。）
 3. swapchain 重建假设颜色格式和 image count 不变。显示模式或 surface 能力变化时，
-   ImGui pipeline/render pass 以及 image-count 配置可能失配。
+   Vulkan pipeline/render pass 以及 image-count 配置可能失配。
 4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按
    frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
 5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算、视图局部
@@ -291,5 +287,5 @@ include/ & src/
 3. ~~稳定的文件格式层~~ **已完成** (TIA-93)：GS3D v2 / LOD / tile 已统一为
    显式小端字段编码，LOD v1 已废弃，tile 读取端按 stride 强校验；
    格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。
-4. **Swapchain 变更接口**：明确通知 ImGui 和依赖 render pass 的管线重建，而不是
+4. **Swapchain 变更接口**：明确通知依赖 render pass 的管线重建，而不是
    依赖当前隐含的初始化顺序。

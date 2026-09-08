@@ -97,10 +97,10 @@ public:
 `ToolbarComponents.cpp` 装配；全部组件在 `ViewerAppControlPlane.cpp`
 的 `ControlPlaneSession` 构造时注册，与 UI 绘制共享同一个 `AppState`。
 
-## 4. 如何接入新组件（imgui-coder 步骤）
+## 4. 如何接入新组件（原生控制面与 Flutter）
 
 1. **实现 `Component` 子类**：稳定 ID（见 §5 命名）、能力表、`get_state`、
-   `execute`。纯逻辑部分放进 `src/control/`，需要渲染/ImGui 状态的放进
+   `execute`。纯逻辑部分放进 `src/control/`，需要原生渲染状态的放进
    `src/app/`（如 `ViewportStateComponent` 先例）。
 2. **在 `ControlPlaneSession` 构造函数注册**（`ViewerAppControlPlane.cpp`）：
    ```cpp

@@ -18,8 +18,7 @@ namespace gs3d::app {
  * QGIS Print Layout 风格的地图坐标框：
  *   底面矩形框 + 四边刻度标注 + 四根角柱 + 高程刻度。
  *
- * 所有几何在这里算好（世界坐标 -> 视口本地像素），UiRoot 只管用 ImGui
- * draw list 画线/画字，不需要碰相机或投影矩阵。
+ * 所有几何在这里算好（世界坐标 -> 视口本地像素），Flutter 通过控制面快照画线和文字，不需要碰相机或投影矩阵。
  */
 /*
  * Orientation gizmo 三轴方向：用 MouseRay::to_screen 把相机 target 点和
@@ -279,7 +278,7 @@ void compute_map_axis_overlay(
     const gs3d::camera::Vec3 ground_point{0.0f, 0.0f, 0.0f};
     const gs3d::camera::Vec3 ground_normal{0.0f, 0.0f, 1.0f};
 
-    // 4 corners of the viewport in screen space (y=0 is top in GLFW/ImGui)
+    // 4 corners of the viewport in screen space (y=0 is top in GLFW/Flutter)
     const float scr_w = static_cast<float>(vp.width);
     const float scr_h = static_cast<float>(vp.height);
     const float corners[4][2] = {

@@ -45,11 +45,9 @@
 | `width` / `height` | int | 1280 × 720 | 初始窗口尺寸 |
 | `title` | string | GeoScatter3D 三维散点查看器 | 窗口标题 |
 | `resizable` | bool | true | 窗口可缩放 |
-| `ui_layout_ini_path` | path | `config/imgui_layout.ini` | ImGui docking 布局持久化文件。留空字符串 `""` 表示不持久化, 每次启动用默认布局; 非空时首次启动写入默认布局, 之后跨重启保留用户停靠/浮动布局 (`keep_current_dock_layout` 逻辑在 `src/ui/UiRoot.cpp`) |
 | `ui_scale_multiplier` | float | 1.15 | PPI 推导 ui_scale 之上的用户舒适系数, 最终 `clamp(ppi_scale × multiplier, 1.0, 2.5)` |
 | `theme` | string | `carbon-blue` | UI 主题，共 **5 套**（`include/ui/Theme.hpp`、`src/ui/Theme.cpp`）：`carbon-blue` (碳蓝·浅色) / `carbon-blue-dark` (碳蓝 2.0·深色) / `deep-graphite` (石墨·深色) / `instrument-amber` (仪器琥珀·深色) / `high-contrast` (高对比·浅色)。**代码默认是深色 `kCarbonBlueDark`** (`src/ui/Theme.cpp:294`)，本文件默认值将其覆盖为浅色 `carbon-blue`。运行期可在 视图→主题 菜单切换（5 套全列），写入用户偏好 `[ui] theme` 后优先于本文件；不回写本文件 |
 | `layout` | string | `workbench` | 顶层布局键（`workbench` / `floating-dock` / `analysis-rail`），解析见 `AppState.hpp` `ui_layout_from_string`。**TIA-111 后仅 workbench 实际渲染**：floating-dock / analysis-rail 的绘制代码无调用点（休眠），该键在 HEAD 上无视觉效果（实测三值启动窗口像素一致）。详见 [operations.md](operations.md) §1.1 |
-| `multi_viewports` | bool | true | 启用 Dear ImGui Multi-Viewports: 停靠面板可拖成原生 OS 窗口。Wayland 等平台 ImGui 可能自动禁用 |
 
 ## [vulkan]
 

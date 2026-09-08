@@ -1,3 +1,4 @@
+import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'src/ffi/geoscatter3d_service.dart';
 import 'src/layouts/analysis_rail_layout.dart';
@@ -22,13 +23,37 @@ void main() {
   runApp(GeoScatter3dApp(service: service));
 }
 
-class GeoScatter3dApp extends StatelessWidget {
+class GeoScatter3dApp extends StatefulWidget {
   final GeoScatter3dService service;
 
   const GeoScatter3dApp({
     super.key,
     required this.service,
   });
+
+  @override
+  State<GeoScatter3dApp> createState() => _GeoScatter3dAppState();
+}
+
+class _GeoScatter3dAppState extends State<GeoScatter3dApp> {
+  late final AppLifecycleListener _lifecycle;
+  GeoScatter3dService get service => widget.service;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onExitRequested: () async {
+      await service.shutdownAsync();
+      return AppExitResponse.exit;
+    });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    service.shutdown();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

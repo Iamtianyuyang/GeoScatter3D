@@ -9,10 +9,12 @@
 #include "data/Gs3dDataset.hpp"
 #include "data/Gs3dReader.hpp"
 #include "render/ViewportManager.hpp"
+#include "render/PointPipeline.hpp"
 
 #include <filesystem>
 #include <future>
 #include <limits>
+#include <cmath>
 
 namespace gs3d::app {
 
@@ -30,7 +32,12 @@ void ViewerApp::handle_region_stats_commands(
     // 每 64K 点检查一次并提前退出，结果被丢弃。
 
     // ── Submit ──
-    for (const auto& frame : gui_cmds.viewport_frames) {
+    auto frames = gui_cmds.viewport_frames;
+    if (pending_region_stats_) {
+        frames.insert(frames.begin(), *pending_region_stats_);
+        pending_region_stats_.reset();
+    }
+    for (const auto& frame : frames) {
         if (!frame.stats_select_completed || !frame.mouse_on_image) {
             continue;
         }
@@ -39,6 +46,12 @@ void ViewerApp::handle_region_stats_commands(
             continue;
         }
 
+        // 不析构仍在运行的 async future（其析构会阻塞渲染线程）。
+        if (region_stats_future_.valid() && region_stats_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            ++region_stats_gen_;
+            pending_region_stats_ = frame;
+            continue;
+        }
         // Cancel any in-flight computation by bumping the generation.
         const auto gen = ++region_stats_gen_;
         if (region_stats_view_index_ >= 0 &&
@@ -64,6 +77,7 @@ void ViewerApp::handle_region_stats_commands(
         const float sx_max = frame.stats_select_max_x;
         const float sy_min = frame.stats_select_min_y;
         const float sy_max = frame.stats_select_max_y;
+        const auto push = ctx.viewport_pushes.at(static_cast<std::size_t>(frame.index));
 
         // Snapshot point-data access: raw pointer when in-memory
         // (dataset lives for the entire run() scope, safe to
@@ -118,6 +132,7 @@ void ViewerApp::handle_region_stats_commands(
             [gen,
              vp, vp_w, vp_h,
              sx_min, sx_max, sy_min, sy_max,
+             push,
              has_points, points_data, point_count,
              gs3d_path,
              world_x_min, world_x_max, world_y_min, world_y_max,
@@ -136,18 +151,33 @@ void ViewerApp::handle_region_stats_commands(
                 float elev_max =
                     std::numeric_limits<float>::lowest();
                 std::uint64_t count = 0;
+                double mean = 0.0;
+                double m2 = 0.0;
+                std::array<std::uint64_t, 5> histogram{};
+                bool histogram_pass = false;
 
                 const auto process =
                     [&](const gs3d::data::Gs3dPoint& p) {
                         const auto sp =
                             gs3d::camera::MouseRay::world_to_screen(
-                                vp, p.x, p.y, p.z, vp_w, vp_h);
+                                vp, p.x, p.y,
+                                push.height_offset + (push.height_source == static_cast<std::uint32_t>(AttrPhysicalSource::Value) ? p.value : p.z) * push.height_mult,
+                                vp_w, vp_h);
                         if (!sp) return;
                         if (sp->x < sx_min || sp->x > sx_max ||
                             sp->y < sy_min || sp->y > sy_max) {
                             return;
                         }
+                        if (!std::isfinite(p.value) || !std::isfinite(p.z)) return;
+                        if (histogram_pass) {
+                            const int bin = fold_max > fold_min ? std::clamp(static_cast<int>((p.value - fold_min) / (fold_max - fold_min) * 5.0f), 0, 4) : 0;
+                            ++histogram[static_cast<std::size_t>(bin)];
+                            return;
+                        }
                         ++count;
+                        const double delta = p.value - mean;
+                        mean += delta / static_cast<double>(count);
+                        m2 += delta * (p.value - mean);
                         const float f = p.value;
                         const float e = p.z;
                         fold_sum += static_cast<double>(f);
@@ -161,6 +191,7 @@ void ViewerApp::handle_region_stats_commands(
                 constexpr std::uint64_t kCancelCheckInterval =
                     65536;
 
+                const auto scan = [&]() -> bool {
                 if (has_points) {
                     for (std::uint64_t i = 0; i < point_count;
                          ++i) {
@@ -168,32 +199,29 @@ void ViewerApp::handle_region_stats_commands(
                             if (gen_counter.load(
                                     std::memory_order_relaxed) !=
                                 gen) {
-                                return RegionStatsResult{};
+                                return false;
                             }
                         }
                         process(points_data[i]);
                     }
                 } else {
-                    auto read_result =
-                        gs3d::data::Gs3dReader::read_all(
-                            gs3d_path);
-                    std::uint64_t i = 0;
-                    for (const auto& p : read_result.points) {
-                        if ((i & (kCancelCheckInterval - 1)) == 0) {
-                            if (gen_counter.load(
-                                    std::memory_order_relaxed) !=
-                                gen) {
-                                return RegionStatsResult{};
-                            }
-                        }
-                        process(p);
-                        ++i;
-                    }
+                    return gs3d::data::Gs3dReader::visit_points(gs3d_path, [&](std::span<const gs3d::data::Gs3dPoint> block) {
+                        if (gen_counter.load(std::memory_order_relaxed) != gen) return false;
+                        for (const auto& point : block) process(point);
+                        return true;
+                    });
                 }
+                return true;
+                };
+                if (!scan()) return RegionStatsResult{};
+                histogram_pass = true;
+                if (count > 0 && !scan()) return RegionStatsResult{};
 
                 RegionStatsResult out;
                 out.valid = true;
                 out.point_count = count;
+                out.histogram = histogram;
+                out.fold_std_dev = count ? std::sqrt(std::max(0.0, m2 / static_cast<double>(count))) : 0.0;
                 out.world_x_min = world_x_min;
                 out.world_x_max = world_x_max;
                 out.world_y_min = world_y_min;
@@ -226,13 +254,16 @@ void ViewerApp::handle_region_stats_commands(
         if (region_stats_future_.wait_for(
                 std::chrono::seconds(0)) ==
             std::future_status::ready) {
-            auto result = region_stats_future_.get();
+            RegionStatsResult result;
+            try { result = region_stats_future_.get(); }
+            catch (const std::exception& error) { result.error = error.what(); }
             auto& target_stats =
                 region_stats_for_view(app_state, region_stats_view_index_);
             if (result.valid) {
                 target_stats = std::move(result);
             } else {
                 target_stats.computing = false;
+                target_stats.error = result.error;
             }
             app_state.region_stats = region_stats_for_view(
                 app_state,

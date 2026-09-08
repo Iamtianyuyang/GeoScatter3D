@@ -23,9 +23,6 @@ width = 1280
 height = 720
 title = "GeoScatter3D 三维散点查看器"
 resizable = true
-# ImGui docking 布局持久化文件路径；留空字符串 ("") 表示不持久化，每次启动
-# 都用默认布局。之前是硬编码 io.IniFilename = nullptr，面板布局不会保存。
-ui_layout_ini_path = "config/imgui_layout.ini"
 # User comfort multiplier on top of the PPI-derived ui_scale.
 #   final_ui_scale = clamp(ppi_scale * ui_scale_multiplier, 1.0, 2.5)
 # Default 1.15 gives a modest comfort bump. Increase if UI feels too small,
@@ -37,9 +34,6 @@ theme = "carbon-blue"
 # 顶层布局：workbench（方案 A）| floating-dock（方案 B）|
 # analysis-rail（方案 C：暗色分析舱）。运行期可在界面里切换。
 layout = "workbench"
-# Enable Dear ImGui Multi-Viewports: docked panels can be dragged into native
-# OS windows. On unsupported platforms, such as Wayland, ImGui may disable it.
-multi_viewports = true
 
 [vulkan]
 # 验证层是调试工具：拦截并检查每一次 Vulkan API 调用。日常使用关闭；

@@ -29,9 +29,6 @@ void apply_window(const toml::table& root, AppConfig& config)
             *window, "title", config.viewer.window.title);
         config.viewer.window.resizable = bool_or_default(
             *window, "resizable", config.viewer.window.resizable);
-        config.viewer.window.ui_layout_ini_path = path_or_default(
-            *window, "ui_layout_ini_path",
-            config.viewer.window.ui_layout_ini_path);
         config.viewer.window.ui_scale_multiplier = float_or_default(
             *window, "ui_scale_multiplier",
             config.viewer.window.ui_scale_multiplier);
@@ -39,9 +36,6 @@ void apply_window(const toml::table& root, AppConfig& config)
             *window, "theme", config.viewer.window.theme);
         config.viewer.window.layout = string_or_default(
             *window, "layout", config.viewer.window.layout);
-        config.viewer.window.enable_multi_viewports = bool_or_default(
-            *window, "multi_viewports",
-            config.viewer.window.enable_multi_viewports);
     }
 }
 

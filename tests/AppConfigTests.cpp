@@ -69,6 +69,31 @@ std::vector<char*> mutable_args(std::vector<std::string>& args)
 
 } // namespace
 
+TEST_CASE("Welcome preprocessing controls reach the native configuration", "[app_config][welcome]") {
+    TemporaryDirectory fixture;
+    const auto config_path = fixture.path() / "config" / "viewer.toml";
+    write_file(fixture.path() / "input.csv", "X,Y,elevation,field_statics\n0,0,0,1\n");
+    write_file(fixture.path() / "point.vert.spv", "vertex");
+    write_file(fixture.path() / "point.frag.spv", "fragment");
+    write_file(config_path, "[input]\nmode = \"csv\"\ncsv_path = \"input.csv\"\n"
+        "[shader]\nvertex_shader_path = \"point.vert.spv\"\nfragment_shader_path = \"point.frag.spv\"\n"
+        "[tile]\nenabled = false\n[lod]\nauto_load_sidecar = false\n");
+    std::vector<std::string> arguments{"GeoScatter3DPreprocess", "--config", config_path.string(), "--threads", "3",
+        "--voxel-mode", "XYZ", "--finest-target-points", "12345"};
+    auto argv = mutable_args(arguments);
+    const auto config = gs3d::app::AppConfigLoader::load_from_args(static_cast<int>(argv.size()), argv.data());
+    CHECK(config.csv_convert.num_threads == 3);
+    CHECK(config.tile_build.num_threads == 3);
+    CHECK(config.viewer.lod.enabled);
+    CHECK(config.viewer.lod.voxel_mode == "XYZ");
+    CHECK(config.viewer.lod.finest_target_points == 12345);
+    for (const auto& value : {"0", "-1", "257", "3oops"}) {
+        arguments = {"GeoScatter3DPreprocess", "--config", config_path.string(), "--threads", value};
+        argv = mutable_args(arguments);
+        CHECK_THROWS(gs3d::app::AppConfigLoader::load_from_args(static_cast<int>(argv.size()), argv.data()));
+    }
+}
+
 TEST_CASE(
     "AppConfig resolves a portable CSV configuration without modifying it",
     "[app_config][paths]"
@@ -85,11 +110,6 @@ TEST_CASE(
     write_file(vertex_shader, "vertex");
     write_file(fragment_shader, "fragment");
 
-    const auto stamp =
-        std::chrono::steady_clock::now().time_since_epoch().count();
-    // 随机后缀避免与进程 CWD 下的同名文件（如仓库 config/）产生歧义。
-    const std::string layout_ini_name =
-        "gs3d-test-layout-" + std::to_string(stamp) + ".ini";
     const std::string toml =
         "[input]\n"
         "mode = \"csv\"\n"
@@ -103,8 +123,6 @@ TEST_CASE(
         "[window]\n"
         "width = 1024\n"
         "height = 768\n"
-        "multi_viewports = true\n"
-        "ui_layout_ini_path = \"" + layout_ini_name + "\"\n"
         "\n"
         "[graphics]\n"
         "preferred_gpu = \"auto\"\n"
@@ -133,11 +151,6 @@ TEST_CASE(
     CHECK(config.viewer.graphics.fragment_shader_path == fragment_shader);
     CHECK(config.viewer.window.width == 1024);
     CHECK(config.viewer.window.height == 768);
-    CHECK(config.viewer.window.enable_multi_viewports);
-    // ui_layout_ini_path 走 ResourcePath 搜索根回退：发布根下尚不存在时
-    // 落到第一个搜索根（配置目录的父目录），而非 CWD。
-    CHECK(config.viewer.window.ui_layout_ini_path ==
-          root / layout_ini_name);
     CHECK(config.viewer.graphics.preferred_gpu == "auto");
     CHECK(config.viewer.tile.gpu_cache_max_tiles == 288);
     CHECK(config.viewer.lod.interactive_display_mode ==
@@ -226,10 +239,8 @@ width = 1600
 height = 900
 title = "portable test"
 resizable = false
-ui_layout_ini_path = "layout.ini"
 ui_scale_multiplier = 1.4
 theme = "instrument-amber"
-multi_viewports = false
 
 [vulkan]
 validation_layers = false
@@ -313,7 +324,6 @@ pick_debug_dump_once_on_hover = false
     CHECK(config.viewer.window.title == "portable test");
     CHECK_FALSE(config.viewer.window.resizable);
     CHECK(config.viewer.window.theme == "instrument-amber");
-    CHECK_FALSE(config.viewer.window.enable_multi_viewports);
     CHECK_FALSE(config.viewer.graphics.enable_validation_layers);
     CHECK(config.viewer.graphics.preferred_gpu ==
           "uuid:0123456789abcdef0123456789abcdef");

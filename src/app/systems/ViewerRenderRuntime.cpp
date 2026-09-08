@@ -8,7 +8,6 @@
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dLodDataset.hpp"
 #include "data/PointDataAdapters.hpp"
-#include "ui/UiFonts.hpp"
 #include "platform/Window.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
@@ -107,7 +106,7 @@ void apply_workbench_layout(gs3d::platform::Window& window)
         &frame_insets.bottom
     );
     const auto layout = compute_workbench_window_layout(
-        gs3d::gui::ui_fonts().ui_scale,
+        1.0f,
         primary_work_area,
         frame_insets
     );

@@ -152,7 +152,7 @@ bool ScreenshotService::prepare_capture(
         return false;
     }
 
-    // ImGui 已移除：视口坐标即窗口逻辑坐标，位置 (0,0)、
+    // 视口坐标即窗口逻辑坐标，位置 (0,0)、
     // 帧缓冲缩放按 1.0（与 headless 控制面行为一致；高 DPI 场景
     // 后续可由窗口 API 提供真实缩放）。
     constexpr float kViewportPosX = 0.0f;

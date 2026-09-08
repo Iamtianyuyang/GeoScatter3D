@@ -152,7 +152,7 @@ void NavigationMapSystem::render_thumbnail(
         }
     );
 
-    // ImGui 已移除：导航图不再暴露 GPU 纹理句柄（控制面经 PNG 回读）。
+    // 导航图不暴露 GPU 纹理句柄（控制面经 PNG 回读）。
     state.texture_descriptor = kNullTextureHandle;
     state.dirty = false;
 }

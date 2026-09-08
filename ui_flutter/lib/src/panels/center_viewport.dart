@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/measurement_line_model.dart';
 import '../models/point_cloud_model.dart';
+import '../native/native_overlay_painter.dart';
 import '../theme/app_theme.dart';
 import '../welcome/welcome_ui_keys.dart';
 
@@ -477,10 +478,26 @@ class _CenterViewportState extends State<CenterViewport> {
                                   key: WorkbenchUiKeys.viewportCanvas,
                                   color: bgColor,
                                   child: nativeViewportPng != null
-                                      ? Image.memory(
-                                          nativeViewportPng,
-                                          fit: BoxFit.contain,
-                                          gaplessPlayback: true,
+                                      ? RepaintBoundary(
+                                          key: _viewportRepaintKey,
+                                          child: CustomPaint(
+                                            foregroundPainter:
+                                                NativeOverlayPainter(
+                                                  widget.service.nativeSnapshot,
+                                                  worldAxis:
+                                                      worldAxis || mapAxis,
+                                                  crosshair: crosshair,
+                                                  selectionStart:
+                                                      _boxSelectStart,
+                                                  selectionEnd:
+                                                      _boxSelectCurrent,
+                                                ),
+                                            child: Image.memory(
+                                              nativeViewportPng,
+                                              fit: BoxFit.contain,
+                                              gaplessPlayback: true,
+                                            ),
+                                          ),
                                         )
                                       : RepaintBoundary(
                                           key: _viewportRepaintKey,

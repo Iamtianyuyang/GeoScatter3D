@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/recent_project_model.dart';
@@ -8,17 +7,19 @@ import 'welcome_ui_keys.dart';
 class RecentProjectsCard extends StatelessWidget {
   final GeoScatter3dService service;
 
-  const RecentProjectsCard({
-    super.key,
-    required this.service,
-  });
+  const RecentProjectsCard({super.key, required this.service});
 
-  void _onOpenItem(BuildContext context, RecentProjectItem item) {
-    final res = service.executeAction('welcome.recent.open', {'path': item.path});
+  Future<void> _onOpenItem(BuildContext context, RecentProjectItem item) async {
+    final res = await service.executeActionAsync('welcome.recent.open', {
+      'path': item.path,
+    });
+    if (!context.mounted) return;
     if (res['success'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(res['message'] as String? ?? '无法打开项目: ${item.path}，文件可能已被移动或损坏'),
+          content: Text(
+            res['message'] as String? ?? '无法打开项目: ${item.path}，文件可能已被移动或损坏',
+          ),
           backgroundColor: const Color(0xFFDC2626),
         ),
       );
@@ -33,9 +34,16 @@ class RecentProjectsCard extends StatelessWidget {
         backgroundColor: AppTheme.surface,
         title: const Row(
           children: [
-            Icon(Icons.delete_sweep_rounded, color: Color(0xFFDC2626), size: 22),
+            Icon(
+              Icons.delete_sweep_rounded,
+              color: Color(0xFFDC2626),
+              size: 22,
+            ),
             SizedBox(width: 8),
-            Text('清空最近记录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text(
+              '清空最近记录',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: const Text(
@@ -86,7 +94,10 @@ class RecentProjectsCard extends StatelessWidget {
             children: [
               // 头部栏
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -108,7 +119,10 @@ class RecentProjectsCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1.5,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.surfaceMuted,
                         borderRadius: BorderRadius.circular(10),
@@ -127,11 +141,20 @@ class RecentProjectsCard extends StatelessWidget {
                       TextButton.icon(
                         key: WelcomeUiKeys.recentClearButton,
                         onPressed: () => _onClearConfirm(context),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 15),
-                        label: const Text('清空记录', style: TextStyle(fontSize: 12)),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 15,
+                        ),
+                        label: const Text(
+                          '清空记录',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         style: TextButton.styleFrom(
                           foregroundColor: AppTheme.textDim,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
@@ -180,14 +203,26 @@ class RecentProjectsCard extends StatelessWidget {
                       const SizedBox(height: 14),
                       OutlinedButton.icon(
                         key: WelcomeUiKeys.recentEmptyDemoButton,
-                        onPressed: () => service.executeAction('welcome.quick_demo'),
-                        icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
-                        label: const Text('一键载入内置示例工区体验', style: TextStyle(fontSize: 12)),
+                        onPressed: () =>
+                            service.executeActionAsync('welcome.quick_demo'),
+                        icon: const Icon(
+                          Icons.play_circle_outline_rounded,
+                          size: 16,
+                        ),
+                        label: const Text(
+                          '一键载入内置示例工区体验',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.primaryBlue,
                           side: const BorderSide(color: AppTheme.primaryBlue),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
                         ),
                       ),
                     ],
@@ -198,7 +233,8 @@ class RecentProjectsCard extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: recentList.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.border),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1, color: AppTheme.border),
                   itemBuilder: (context, index) {
                     final item = recentList[index];
                     return _RecentProjectTile(
@@ -240,11 +276,7 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
   bool _isHovered = false;
 
   bool get _exists {
-    try {
-      return File(widget.item.path).existsSync() || Directory(widget.item.path).existsSync();
-    } catch (_) {
-      return false;
-    }
+    return widget.item.exists;
   }
 
   @override
@@ -271,15 +303,21 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                   decoration: BoxDecoration(
                     color: !fileExists
                         ? const Color(0xFFFEF2F2)
-                        : (_isHovered ? AppTheme.primaryBlueBg : AppTheme.surfaceMuted),
+                        : (_isHovered
+                              ? AppTheme.primaryBlueBg
+                              : AppTheme.surfaceMuted),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
-                    !fileExists ? Icons.warning_amber_rounded : Icons.dataset_outlined,
+                    !fileExists
+                        ? Icons.warning_amber_rounded
+                        : Icons.dataset_outlined,
                     size: 20,
                     color: !fileExists
                         ? const Color(0xFFDC2626)
-                        : (_isHovered ? AppTheme.primaryBlue : AppTheme.textDim),
+                        : (_isHovered
+                              ? AppTheme.primaryBlue
+                              : AppTheme.textDim),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -297,7 +335,9 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                               style: TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w600,
-                                color: _isHovered ? AppTheme.primaryBlue : AppTheme.textTitle,
+                                color: _isHovered
+                                    ? AppTheme.primaryBlue
+                                    : AppTheme.textTitle,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -306,13 +346,24 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                           if (!fileExists) ...[
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFEF2F2),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFFCA5A5)),
+                                border: Border.all(
+                                  color: const Color(0xFFFCA5A5),
+                                ),
                               ),
-                              child: const Text('文件已失效', style: TextStyle(fontSize: 10, color: Color(0xFFDC2626))),
+                              child: const Text(
+                                '文件已失效',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
                             ),
                           ],
                         ],
@@ -336,10 +387,7 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                 // 相对时间
                 Text(
                   widget.item.relativeTimeStr,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textDim,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
                 ),
                 const SizedBox(width: 8),
 
@@ -351,7 +399,10 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                   color: AppTheme.textDim,
                   splashRadius: 14,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                   onPressed: widget.onRemove,
                 ),
                 const SizedBox(width: 4),
@@ -360,7 +411,9 @@ class _RecentProjectTileState extends State<_RecentProjectTile> {
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 18,
-                  color: _isHovered ? AppTheme.primaryBlue : AppTheme.borderSubtle,
+                  color: _isHovered
+                      ? AppTheme.primaryBlue
+                      : AppTheme.borderSubtle,
                 ),
               ],
             ),

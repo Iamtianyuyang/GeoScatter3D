@@ -1,10 +1,12 @@
 class RecentProjectItem {
   final String path;
   final int timestampUnix;
+  final bool exists;
 
   const RecentProjectItem({
     required this.path,
     required this.timestampUnix,
+    this.exists = true,
   });
 
   String get displayName {
@@ -32,9 +34,9 @@ class RecentProjectItem {
     if (diff < 3600) return '${diff ~/ 60} 分钟前';
     if (diff < 86400) return '${diff ~/ 3600} 小时前';
     if (diff < 86400 * 7) return '${diff ~/ 86400} 天前';
-    return DateTime.fromMillisecondsSinceEpoch(timestampUnix * 1000)
-        .toString()
-        .substring(0, 10);
+    return DateTime.fromMillisecondsSinceEpoch(
+      timestampUnix * 1000,
+    ).toString().substring(0, 10);
   }
 
   Map<String, dynamic> toJson() => {

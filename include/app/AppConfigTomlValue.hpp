@@ -17,7 +17,7 @@ namespace gs3d::app::detail {
     const std::filesystem::path& default_value
 ) {
     if (const auto value = table[key].value<std::string>()) {
-        return std::filesystem::path(*value);
+        return std::filesystem::u8path(*value);
     }
     return default_value;
 }

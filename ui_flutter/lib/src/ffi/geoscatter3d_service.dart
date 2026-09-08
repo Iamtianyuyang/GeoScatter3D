@@ -15,6 +15,8 @@ import '../models/measurement_line_model.dart';
 import '../native/viewer_control_client.dart';
 import 'geoscatter3d_bindings.dart';
 
+part 'welcome_backend.dart';
+
 /// 预处理离线构建实时进度状态
 class PreprocessProgressInfo {
   final String stage;
@@ -106,10 +108,23 @@ class GeoScatter3dService extends ChangeNotifier {
   static final GeoScatter3dService _instance = GeoScatter3dService._internal();
   factory GeoScatter3dService() => _instance;
   GeoScatter3dService._internal();
+  GeoScatter3dService.detached();
 
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
   NativeViewerControlClient? _nativeViewer;
+  Timer? _nativeFrameTimer;
+  bool _nativeFrameBusy = false;
+  Future<void> _nativeCommandTail = Future<void>.value();
+  Map<String, dynamic> _nativeSnapshot = const {};
+  Map<String, dynamic> get nativeSnapshot => _nativeSnapshot;
+  bool get isRegionComputing => _nativeSnapshot['region_computing'] == true;
+  List<String> get nativeTileDetails => List<String>.from(
+    (_nativeSnapshot['dataset'] as Map?)?['tile_details'] ?? const [],
+  );
+  List<String> get nativeLodDetails => List<String>.from(
+    (_nativeSnapshot['dataset'] as Map?)?['lod_details'] ?? _summary.lodDetails,
+  );
   Uint8List? _nativeViewportPng;
   String? _nativeViewerError;
   String? _loadedDatasetPath;
@@ -154,6 +169,43 @@ class GeoScatter3dService extends ChangeNotifier {
   VoidCallback? onScreenshotRequested;
 
   bool get isInitialized => _initialized;
+  bool _welcomeBusy = false;
+  String? _welcomeError;
+  bool get welcomeBusy => _welcomeBusy;
+  String? get welcomeError => _welcomeError;
+  void _notifyWelcome() => notifyListeners();
+  Future<Map<String, dynamic>>? _welcomeTask;
+  Future<Map<String, dynamic>> executeActionAsync(
+    String action, [
+    Map<String, dynamic> params = const {},
+  ]) {
+    if (_welcomeBusy) return _executeWelcomeAction(action, params);
+    return _welcomeTask = _executeWelcomeAction(action, params);
+  }
+
+  static String? get runtimeDirectory =>
+      Platform.environment['GS3D_RUNTIME_DIR'];
+  static String get projectsDirectory {
+    final configured = Platform.environment['GS3D_PROJECTS_DIR'];
+    if (configured != null && configured.isNotEmpty) {
+      return Directory(configured).absolute.path;
+    }
+    final root = resolveRepoRoot();
+    if (File('$root/CMakeLists.txt').existsSync()) return '$root/data';
+    final userRoot =
+        Platform.environment['LOCALAPPDATA'] ??
+        Platform.environment['HOME'] ??
+        root;
+    return '$userRoot/GeoScatter3D/projects';
+  }
+
+  String get backendStatus => _welcomeBusy
+      ? (_latestProgress?.stage ?? '正在载入工程与启动渲染器…')
+      : isNativeRendererActive
+      ? '原生渲染器已连接'
+      : _initialized
+      ? '数据引擎已连接，等待打开工程'
+      : '原生数据引擎未连接';
   DatasetSummary get summary => _summary;
   List<RecentProjectItem> get recentProjects => _recentProjects;
   List<GpuDeviceInfo> get gpus => _gpus;
@@ -208,13 +260,13 @@ class GeoScatter3dService extends ChangeNotifier {
   Color get viewportBackgroundColor => _viewportBackgroundColor;
 
   // 动态性能与流式加载指标
-  double _fps = 120.0;
-  double _frameTimeMs = 0.83;
+  double _fps = 0.0;
+  double _frameTimeMs = 0.0;
   int _visiblePoints = 0;
   int _gpuMemoryBytes = 0;
-  int _loadedTiles = 1;
+  int _loadedTiles = 0;
   int _pendingTiles = 0;
-  double _cacheHitRate = 99.2;
+  double _cacheHitRate = -1.0;
   String _cameraCoordsString = '0.0, 0.0, 143.4';
   Timer? _metricsTimer;
 
@@ -543,8 +595,17 @@ class GeoScatter3dService extends ChangeNotifier {
       }
       _nativeViewerError = null;
       await refreshNativeViewport();
+      if (_nativeViewportPng == null || _nativeSnapshot['ready'] != true) {
+        throw StateError(_nativeViewerError ?? '原生视口尚未就绪');
+      }
+      _nativeFrameTimer = Timer.periodic(const Duration(milliseconds: 100), (
+        _,
+      ) {
+        unawaited(refreshNativeViewport());
+      });
       return true;
     } catch (error) {
+      await client.stop(force: true);
       _nativeViewer = null;
       _nativeViewerError = '原生查看器启动失败: $error';
       notifyListeners();
@@ -554,20 +615,81 @@ class GeoScatter3dService extends ChangeNotifier {
 
   Future<void> refreshNativeViewport() async {
     final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
+    if (client == null || !client.isConnected || _nativeFrameBusy) return;
+    _nativeFrameBusy = true;
     try {
-      _nativeViewportPng = await client.capturePng();
+      final png = await client.capturePng();
+      final state = await client.request('get_state', {
+        'component': 'runtime.pick',
+      });
+      if (!identical(client, _nativeViewer)) return;
+      _nativeViewportPng = png;
       _nativeViewerError = null;
+      applyNativeSnapshot(Map<String, dynamic>.from(state['result'] as Map));
     } catch (error) {
-      _nativeViewerError = '读取原生渲染帧失败: $error';
+      if (identical(client, _nativeViewer)) {
+        _nativeViewerError = '读取原生渲染帧失败: $error';
+      }
+    } finally {
+      _nativeFrameBusy = false;
     }
     notifyListeners();
   }
 
+  /// 原生主线程产生的纯数据快照统一归并到状态中枢。
+  void applyNativeSnapshot(Map<String, dynamic> state) {
+    _nativeSnapshot = Map.unmodifiable(state);
+    Point3D? point(dynamic value) {
+      if (value is! List || value.length < 4) return null;
+      return Point3D(
+        x: (value[0] as num).toDouble(),
+        y: (value[1] as num).toDouble(),
+        z: (value[2] as num).toDouble(),
+        value: (value[3] as num).toDouble(),
+      );
+    }
+
+    _hoveredPoint = point(state['hover']);
+    _selectedPoint = point(state['selected']);
+    _pendingMeasureStart = point(state['pending_point']);
+    _isMeasurementMode = state['measurement_mode'] == true;
+    final mode = (state['measurement_display_mode'] as num?)?.toInt() ?? 0;
+    _measurementDisplayMode = mode == 1 ? '2d' : (mode == 2 ? 'both' : '3d');
+    _measurementLines.clear();
+    for (final item in (state['measurement_lines'] as List? ?? const [])) {
+      final start = point(item['start']);
+      final end = point(item['end']);
+      if (start == null || end == null) continue;
+      final rgba = (item['color'] as num?)?.toInt() ?? 0xff1bc2f1;
+      _measurementLines.add(
+        MeasurementLineItem(
+          id: item['id'].toString(),
+          start: start,
+          end: end,
+          fixed: item['fixed'] == true,
+          color: Color(
+            (rgba & 0xff00ff00) | ((rgba & 0xff) << 16) | ((rgba >> 16) & 0xff),
+          ),
+        ),
+      );
+    }
+    if (state['region_valid'] == true || state['region_computing'] == true) {
+      _activeRegionStats = Map<String, dynamic>.from(
+        state['region_stats'] as Map,
+      );
+    }
+    final error = state['region_error'];
+    if (error is String && error.isNotEmpty) _nativeViewerError = error;
+    notifyListeners();
+  }
+
   Future<void> stopNativeRenderer() async {
+    _nativeFrameTimer?.cancel();
+    _nativeFrameTimer = null;
     final client = _nativeViewer;
     _nativeViewer = null;
     _nativeViewportPng = null;
+    _nativeSnapshot = const {};
     if (client != null) {
       await client.stop();
     }
@@ -671,7 +793,11 @@ class GeoScatter3dService extends ChangeNotifier {
   ]) {
     final client = _nativeViewer;
     if (client == null || !client.isConnected) return;
-    unawaited(_sendNativeCommand(client, component, command, params));
+    _nativeCommandTail = _nativeCommandTail.then((_) async {
+      if (identical(client, _nativeViewer)) {
+        await _sendNativeCommand(client, component, command, params);
+      }
+    });
   }
 
   Future<void> _sendNativeCommand(
@@ -731,6 +857,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   String? _resolveNativeViewerExecutable() {
     final candidates = <String>[
+      if (runtimeDirectory != null) '$runtimeDirectory/GeoScatter3D.exe',
       '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}GeoScatter3D.exe',
       '${Directory.current.path}${Platform.pathSeparator}GeoScatter3D.exe',
       '${resolveRepoRoot()}${Platform.pathSeparator}tmp${Platform.pathSeparator}build-win${Platform.pathSeparator}Release${Platform.pathSeparator}GeoScatter3D.exe',
@@ -1002,17 +1129,40 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void removeMeasurementLine(String id) {
+    if (isNativeRendererActive) {
+      _queueNativeCommand('runtime.pick', 'input', {
+        'kind': 'measurement',
+        'operation': 'remove',
+        'index': int.parse(id),
+      });
+      return;
+    }
     _measurementLines.removeWhere((item) => item.id == id);
     notifyListeners();
   }
 
   void clearMeasurementLines() {
+    if (isNativeRendererActive) {
+      _queueNativeCommand('runtime.pick', 'input', {
+        'kind': 'measurement',
+        'operation': 'clear',
+      });
+      return;
+    }
     _measurementLines.clear();
     _pendingMeasureStart = null;
     notifyListeners();
   }
 
   void toggleMeasurementLineFixed(String id) {
+    if (isNativeRendererActive) {
+      _queueNativeCommand('runtime.pick', 'input', {
+        'kind': 'measurement',
+        'operation': 'toggle_fixed',
+        'index': int.parse(id),
+      });
+      return;
+    }
     final idx = _measurementLines.indexWhere((item) => item.id == id);
     if (idx != -1) {
       final cur = _measurementLines[idx];
@@ -1022,6 +1172,13 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void setMeasurementDisplayMode(String mode) {
+    if (isNativeRendererActive) {
+      _queueNativeCommand('runtime.pick', 'input', {
+        'kind': 'measurement',
+        'operation': 'display',
+        'mode': mode == '2d' ? 1 : (mode == 'both' ? 2 : 0),
+      });
+    }
     if (_measurementDisplayMode != mode) {
       _measurementDisplayMode = mode;
       notifyListeners();
@@ -1455,10 +1612,8 @@ class GeoScatter3dService extends ChangeNotifier {
     final norm = path.replaceAll('\\', '/');
     if (onFileDropped != null) {
       onFileDropped!(norm);
-    }
-    final lower = norm.toLowerCase();
-    if (lower.endsWith('.gs3d') || lower.endsWith('.gs3d.bundle')) {
-      loadDataset(norm);
+    } else {
+      unawaited(executeActionAsync('welcome.open_project', {'path': norm}));
     }
     notifyListeners();
   }
@@ -1496,7 +1651,6 @@ class GeoScatter3dService extends ChangeNotifier {
           Process.killPid(_activePreprocessProcess!.pid);
         } catch (_) {}
       }
-      _activePreprocessProcess = null;
     }
     _latestProgress = const PreprocessProgressInfo(
       stage: '已取消',
@@ -1531,12 +1685,13 @@ class GeoScatter3dService extends ChangeNotifier {
     }
 
     final candidates = [
+      if (runtimeDirectory != null) '$runtimeDirectory/$trimmed',
+      '${File(Platform.resolvedExecutable).parent.path}/$trimmed',
       trimmed,
       '../$trimmed',
       '../../$trimmed',
       '../../../$trimmed',
       '../../../../$trimmed',
-      'D:/code/GeoScatter3D/$trimmed',
     ];
 
     if (Platform.isWindows) {
@@ -1568,14 +1723,16 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// 解析代码仓根目录绝对路径
   static String resolveRepoRoot() {
-    final candidates = ['D:/code/GeoScatter3D', '.', '..', '../..'];
+    final candidates = ['.', '..', '../..'];
     for (final c in candidates) {
       if (File('$c/CMakeLists.txt').existsSync() &&
           Directory('$c/config').existsSync()) {
         return Directory(c).absolute.path.replaceAll('\\', '/');
       }
     }
-    return Directory.current.absolute.path.replaceAll('\\', '/');
+    return File(
+      Platform.resolvedExecutable,
+    ).parent.absolute.path.replaceAll('\\', '/');
   }
 
   /// 解析预处理器可执行文件路径
@@ -1583,6 +1740,9 @@ class GeoScatter3dService extends ChangeNotifier {
     // 以仓库根为基准解析（不依赖当前工作目录）。
     final repoRoot = resolveRepoRoot();
     final candidates = [
+      if (runtimeDirectory != null)
+        '$runtimeDirectory/GeoScatter3DPreprocess.exe',
+      '${File(Platform.resolvedExecutable).parent.path}/GeoScatter3DPreprocess.exe',
       '$repoRoot/tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
       '$repoRoot/tmp/build-win/Release/GeoScatter3DPreprocess.exe',
       '$repoRoot/build/windows/x64/runner/Debug/GeoScatter3DPreprocess.exe',
@@ -1592,9 +1752,6 @@ class GeoScatter3dService extends ChangeNotifier {
       'build/windows/x64/runner/Debug/GeoScatter3DPreprocess.exe',
       'build/windows/x64/runner/Release/GeoScatter3DPreprocess.exe',
       'GeoScatter3DPreprocess.exe',
-      'D:/code/GeoScatter3D/tmp/build-win/src/Release/GeoScatter3DPreprocess.exe',
-      'D:/code/GeoScatter3D/tmp/build-win/Release/GeoScatter3DPreprocess.exe',
-      'D:/code/GeoScatter3D/ui_flutter/GeoScatter3DPreprocess.exe',
     ];
     if (Platform.isWindows) {
       try {
@@ -1757,229 +1914,35 @@ class GeoScatter3dService extends ChangeNotifier {
     return {'success': false, 'message': '工程构建失败，未能生成工区包目录: $targetBundleDir'};
   }
 
-  /// 异步流式预处理构建：监听 stdout / stderr 输出并实时反馈进度状态
+  /// 兼容调用入口；欢迎页构建统一经过异步动作调度。
   Future<Map<String, dynamic>> buildAndLoadProjectAsync({
     required String path,
     String? name,
     int threads = 8,
     String voxelMode = 'xyz',
-    int maxPointsPerTile = 50000,
+    int finestTargetPoints = 50000,
     void Function(PreprocessProgressInfo progress)? onProgress,
   }) async {
-    _preprocessCancelled = false;
-    final trimmed = path.trim();
-    if (trimmed.isEmpty) {
-      return {'success': false, 'message': '缺少有效的数据文件路径'};
-    }
-    final resolvedSource = resolveDatasetPath(trimmed);
-    if (resolvedSource == null) {
-      return {'success': false, 'message': '指定数据源文件不存在: $path'};
+    void changed() {
+      if (_latestProgress != null) onProgress?.call(_latestProgress!);
     }
 
-    final lower = resolvedSource.toLowerCase();
-    final isCsvOrDat = lower.endsWith('.csv') || lower.endsWith('.dat');
-
-    if (!isCsvOrDat) {
-      final ok = loadDataset(resolvedSource);
-      return {
-        'success': ok,
-        'message': ok ? '工程加载成功: $resolvedSource' : '工程加载失败，请核验文件格式',
-        'data': ok ? _summary.toJson() : null,
-      };
+    addListener(changed);
+    try {
+      return await executeActionAsync('welcome.new_project', {
+        'path': path,
+        'name': name,
+        'threads': threads,
+        'voxel_mode': voxelMode,
+        'finest_target_points': finestTargetPoints,
+      });
+    } finally {
+      removeListener(changed);
     }
-
-    final rawBaseName = File(resolvedSource).uri.pathSegments.last;
-    final baseNameNoExt = rawBaseName.contains('.')
-        ? rawBaseName.substring(0, rawBaseName.lastIndexOf('.'))
-        : rawBaseName;
-    final projName = (name != null && name.trim().isNotEmpty)
-        ? name.trim()
-        : baseNameNoExt;
-    final repoRoot = resolveRepoRoot();
-    final targetBundleDir = '$repoRoot/data/$projName.gs3d.bundle';
-
-    final preprocessExe = resolvePreprocessExecutable();
-    final configPath =
-        resolveDatasetPath('config/sample-viewer.toml') ??
-        '$repoRoot/config/sample-viewer.toml';
-
-    final stopwatch = Stopwatch()..start();
-
-    void emitProgress(
-      String stage,
-      double p,
-      String detail, {
-      bool isRunning = true,
-      bool isFinished = false,
-      bool isFailed = false,
-      String? err,
-    }) {
-      final info = PreprocessProgressInfo(
-        stage: stage,
-        progress: p,
-        detail: detail,
-        elapsedSeconds: stopwatch.elapsedMilliseconds / 1000.0,
-        isRunning: isRunning,
-        isFinished: isFinished,
-        isFailed: isFailed,
-        errorMessage: err,
-      );
-      _latestProgress = info;
-      onProgress?.call(info);
-      notifyListeners();
-    }
-
-    emitProgress('初始化构建环境', 0.10, '启动离线预处理构建器...');
-
-    String lastStderr = '';
-    if (preprocessExe != null && File(preprocessExe).existsSync()) {
-      try {
-        final process = await Process.start(preprocessExe, [
-          '--config',
-          configPath,
-          lower.endsWith('.dat') ? '--dat' : '--csv',
-          resolvedSource,
-          '--bundle',
-          targetBundleDir,
-        ], workingDirectory: repoRoot);
-        _activePreprocessProcess = process;
-        notifyListeners();
-
-        process.stderr
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())
-            .listen((errLine) {
-              final cleanErr = errLine.trim();
-              if (cleanErr.isNotEmpty) {
-                lastStderr = cleanErr;
-                debugPrint('[Preprocess stderr] $cleanErr');
-              }
-            });
-
-        final sub = process.stdout
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())
-            .listen((line) {
-              if (_preprocessCancelled) return;
-              final clean = line.trim();
-              if (clean.isEmpty) return;
-
-              String stage = '正在处理散点数据';
-              double p = 0.45;
-              if (clean.contains('Reading') ||
-                  clean.contains('Parsing') ||
-                  clean.contains('csv') ||
-                  clean.contains('points')) {
-                stage = '阶段 1/3: 解析点云源数据';
-                p = 0.35;
-              } else if (clean.contains('grid') ||
-                  clean.contains('voxel') ||
-                  clean.contains('Spatial') ||
-                  clean.contains('tile')) {
-                stage = '阶段 2/3: 空间剖分与体素重排';
-                p = 0.70;
-              } else if (clean.contains('lod') ||
-                  clean.contains('LOD') ||
-                  clean.contains('pyramid') ||
-                  clean.contains('bundle')) {
-                stage = '阶段 3/3: 构建八叉树 LOD 金字塔';
-                p = 0.90;
-              }
-              emitProgress(stage, p, clean);
-            });
-
-        final exitCode = await process.exitCode;
-        await sub.cancel();
-        _activePreprocessProcess = null;
-
-        if (_preprocessCancelled) {
-          emitProgress(
-            '已取消',
-            0.0,
-            '构建已被用户取消',
-            isRunning: false,
-            isFailed: true,
-            err: '构建已取消',
-          );
-          return {'success': false, 'message': '用户已取消构建操作'};
-        }
-
-        if (exitCode != 0) {
-          final errMsg = lastStderr.isNotEmpty ? lastStderr : '退出码 $exitCode';
-          emitProgress(
-            '构建失败',
-            0.0,
-            '数据转换失败: $errMsg',
-            isRunning: false,
-            isFailed: true,
-            err: errMsg,
-          );
-          return {'success': false, 'message': '数据转换构建失败 ($errMsg)'};
-        }
-      } catch (e) {
-        debugPrint('[Preprocess Error] $e');
-        _activePreprocessProcess = null;
-        emitProgress(
-          '启动失败',
-          0.0,
-          '未能启动构建器: $e',
-          isRunning: false,
-          isFailed: true,
-          err: e.toString(),
-        );
-        return {'success': false, 'message': '未能启动构建器: $e'};
-      }
-    } else {
-      emitProgress(
-        '构建失败',
-        0.0,
-        '未找到预处理程序 GeoScatter3DPreprocess.exe',
-        isRunning: false,
-        isFailed: true,
-        err: '缺少构建器',
-      );
-      return {
-        'success': false,
-        'message': '未找到预处理程序 GeoScatter3DPreprocess.exe',
-      };
-    }
-
-    if (_preprocessCancelled) {
-      return {'success': false, 'message': '用户已取消构建操作'};
-    }
-
-    emitProgress('挂载工区包', 0.96, '正在载入生成的金字塔工区包...');
-
-    String? bundleToLoad = resolveDatasetPath(targetBundleDir);
-    if (bundleToLoad != null && Directory(bundleToLoad).existsSync()) {
-      final ok = loadDataset(bundleToLoad);
-      emitProgress(
-        '完成',
-        1.0,
-        '工区创建成功，已载入工作台',
-        isRunning: false,
-        isFinished: true,
-      );
-      return {
-        'success': ok,
-        'message': ok ? '工程创建并载入成功: $bundleToLoad' : '工区构建后载入失败',
-        'data': ok ? _summary.toJson() : null,
-      };
-    }
-
-    emitProgress(
-      '构建失败',
-      0.0,
-      '未能生成有效的工区包目录',
-      isRunning: false,
-      isFailed: true,
-      err: '未能生成工区包',
-    );
-    return {'success': false, 'message': '工程构建失败，未能生成工区包目录: $targetBundleDir'};
   }
 
   /// 加载数据集文件（.gs3d、.gs3d.bundle 等）
-  bool loadDataset(String path) {
+  bool loadDataset(String path, {bool activate = true}) {
     if (!_initialized || _bindings == null) {
       if (!initialize()) return false;
     }
@@ -1994,9 +1957,12 @@ class GeoScatter3dService extends ChangeNotifier {
         _updateSummary();
         _updatePoints();
         _refreshRecentProjects();
-        _isWorkbenchActive = true;
+        _isWorkbenchActive = activate;
         notifyListeners();
-        if (wasNativeRendererActive) {
+        if (activate &&
+            (wasNativeRendererActive ||
+                (Platform.isWindows &&
+                    !Platform.environment.containsKey('FLUTTER_TEST')))) {
           unawaited(_restartNativeRendererForLoadedDataset());
         }
         return true;
@@ -2105,7 +2071,13 @@ class GeoScatter3dService extends ChangeNotifier {
     for (int i = 0; i < count; i++) {
       final p = _bindings!.get_recent_project_path(i).toDartString();
       final ts = _bindings!.get_recent_project_timestamp(i);
-      list.add(RecentProjectItem(path: p, timestampUnix: ts));
+      list.add(
+        RecentProjectItem(
+          path: p,
+          timestampUnix: ts,
+          exists: File(p).existsSync() || Directory(p).existsSync(),
+        ),
+      );
     }
     _recentProjects = list;
   }
@@ -2130,11 +2102,12 @@ class GeoScatter3dService extends ChangeNotifier {
     _activeGpuIndex = _bindings!.get_active_gpu_index();
   }
 
-  void setPreferredGpu(int index) {
-    if (_bindings == null) return;
+  bool setPreferredGpu(int index) {
+    if (_bindings == null || index < 0 || index >= _gpus.length) return false;
     _bindings!.set_preferred_gpu(index);
-    _activeGpuIndex = index;
+    _activeGpuIndex = _bindings!.get_active_gpu_index();
     notifyListeners();
+    return _activeGpuIndex == index;
   }
 
   void clearRecentProjects() {
@@ -2177,7 +2150,22 @@ class GeoScatter3dService extends ChangeNotifier {
           'properties': {
             'path': {'type': 'string', 'description': '数据源文件路径'},
             'name': {'type': 'string', 'description': '工程名称 (可选)'},
-            'threads': {'type': 'integer', 'description': '预处理线程数 (可选，默认 16)'},
+            'threads': {
+              'type': 'integer',
+              'minimum': 1,
+              'maximum': 256,
+              'description': '预处理线程数 (默认 8)',
+            },
+            'voxel_mode': {
+              'type': 'string',
+              'enum': ['xy', 'xyz'],
+              'description': 'LOD 体素模式',
+            },
+            'finest_target_points': {
+              'type': 'integer',
+              'minimum': 1,
+              'description': '最细 LOD 层目标点数',
+            },
           },
           'required': ['path'],
         },
@@ -2837,10 +2825,12 @@ class GeoScatter3dService extends ChangeNotifier {
         if (idx == null || idx < 0 || idx >= _gpus.length) {
           return {'success': false, 'message': '非法的 GPU 索引: $idx'};
         }
-        setPreferredGpu(idx);
+        if (!setPreferredGpu(idx)) {
+          return {'success': false, 'message': '无法保存显卡设置，请检查用户配置目录'};
+        }
         return {
           'success': true,
-          'message': '首选 GPU 已切换为: ${_gpus[idx].name}',
+          'message': '首选 GPU 已保存，下次打开工程时生效: ${_gpus[idx].name}',
           'data': {'active_gpu': _gpus[idx].toJson()},
         };
 
@@ -2967,8 +2957,9 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.render.set_colormap':
       case 'workbench.point_cloud.set_colormap':
         final cm = p['colormap'] as String?;
-        if (cm == null || cm.isEmpty)
+        if (cm == null || cm.isEmpty) {
           return {'success': false, 'message': '缺少必要参数: colormap'};
+        }
         setColormap(cm);
         return {
           'success': true,
@@ -2979,8 +2970,9 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.render.set_color_attribute':
       case 'workbench.point_cloud.set_color_attribute':
         final attr = p['attribute'] as String?;
-        if (attr == null || attr.isEmpty)
+        if (attr == null || attr.isEmpty) {
           return {'success': false, 'message': '缺少必要参数: attribute'};
+        }
         setColorAttribute(attr);
         return {
           'success': true,
@@ -2991,8 +2983,9 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.render.set_shape':
       case 'workbench.point_cloud.set_shape':
         final shape = p['shape'] as String?;
-        if (shape == null || shape.isEmpty)
+        if (shape == null || shape.isEmpty) {
           return {'success': false, 'message': '缺少必要参数: shape'};
+        }
         setPointShape(shape);
         return {
           'success': true,
@@ -3003,8 +2996,9 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.render.set_height_scale':
       case 'workbench.point_cloud.set_height_scale':
         final scale = (p['scale'] as num?)?.toDouble();
-        if (scale == null)
+        if (scale == null) {
           return {'success': false, 'message': '缺少必要参数: scale'};
+        }
         setHeightScale(scale);
         return {
           'success': true,
@@ -3015,8 +3009,9 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.render.set_height_source':
       case 'workbench.point_cloud.set_height_source':
         final source = p['source'] as String?;
-        if (source == null || source.isEmpty)
+        if (source == null || source.isEmpty) {
           return {'success': false, 'message': '缺少必要参数: source'};
+        }
         setHeightSource(source);
         return {
           'success': true,
@@ -3299,6 +3294,48 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   /// 执行通用 JSON-RPC 指令（支持 MCP 动作协议与底层 C++ 引擎命令）
+  Future<String> executeJsonRpcAsync(String requestJson) async {
+    try {
+      final request = jsonDecode(requestJson);
+      if (request is! Map<String, dynamic> || request['jsonrpc'] != '2.0') {
+        return jsonEncode({
+          'jsonrpc': '2.0',
+          'id': null,
+          'error': {'code': -32600, 'message': 'Invalid Request'},
+        });
+      }
+      if (request['method'] != 'ui_action') return executeJsonRpc(requestJson);
+      final params = request['params'];
+      if (params is! Map<String, dynamic> ||
+          params['action'] is! String ||
+          (params['params'] != null &&
+              params['params'] is! Map<String, dynamic>)) {
+        return jsonEncode({
+          'jsonrpc': '2.0',
+          'id': request['id'],
+          'error': {'code': -32602, 'message': 'Invalid params'},
+        });
+      }
+      final result = await executeActionAsync(
+        params['action'] as String,
+        params['params'] as Map<String, dynamic>? ?? {},
+      );
+      return request.containsKey('id')
+          ? jsonEncode({
+              'jsonrpc': '2.0',
+              'id': request['id'],
+              'result': result,
+            })
+          : '';
+    } on FormatException {
+      return jsonEncode({
+        'jsonrpc': '2.0',
+        'id': null,
+        'error': {'code': -32700, 'message': 'Parse error'},
+      });
+    }
+  }
+
   String executeJsonRpc(String requestJson) {
     try {
       final decoded = jsonDecode(requestJson) as Map<String, dynamic>;
@@ -3399,6 +3436,7 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void shutdown() {
+    if (_welcomeBusy || _activePreprocessProcess != null) cancelPreprocess();
     unawaited(stopNativeRenderer());
     stopMetricsPolling();
     stopDragDropPolling();
@@ -3410,5 +3448,12 @@ class GeoScatter3dService extends ChangeNotifier {
       _points.clear();
       notifyListeners();
     }
+  }
+
+  Future<void> shutdownAsync() async {
+    if (_welcomeBusy) cancelPreprocess();
+    await _welcomeTask;
+    await stopNativeRenderer();
+    shutdown();
   }
 }

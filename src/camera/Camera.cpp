@@ -129,7 +129,7 @@ Mat4 perspective_vulkan(
     out.m[0] = 1.0f / (aspect * tan_half);
     // Negate Y: Vulkan viewport maps NDC y=-1→top, y=+1→bottom.
     // Flipping this sign makes world +Y / eye +Y map to screen top,
-    // consistent with MouseRay::from_screen / to_screen and ImGui.
+    // consistent with MouseRay::from_screen / to_screen and Flutter.
     out.m[5] = -1.0f / tan_half;
 
     out.m[10] = far_plane / (near_plane - far_plane);
@@ -150,7 +150,7 @@ Mat4 orthographic_vulkan(
      * Vulkan NDC: x∈[-1,1], y∈[-1,1], z∈[0,1].
      * Map world [−half_w, +half_w] → NDC [−1, 1], etc.
      * Y is negated so world +Y / eye +Y maps to screen top,
-     * consistent with MouseRay and ImGui coordinate conventions.
+     * consistent with MouseRay and Flutter coordinate conventions.
      */
     Mat4 out{};
 

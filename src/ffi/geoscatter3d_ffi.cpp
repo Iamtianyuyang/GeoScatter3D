@@ -15,6 +15,8 @@
 
 #include "app/PreprocessedBundle.hpp"
 #include "app/RecentProjects.hpp"
+#include "app/UserPreferences.hpp"
+#include <vulkan/vulkan.h>
 #include "control/JsonRpc.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dExporter.hpp"
@@ -31,6 +33,7 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -57,11 +60,9 @@ struct EngineState {
     std::vector<std::string> attributes;
 
     std::vector<gs3d::app::RecentProjectEntry> recent_projects;
-    std::vector<std::pair<std::string, std::string>> gpus = {
-        {"NVIDIA GeForce RTX 5060 Laptop GPU", "独立显卡 (7.7 GB 显存)"},
-        {"Intel(R) Graphics", "集成显卡 (共享内存)"}
-    };
-    int32_t active_gpu = 0;
+    std::vector<std::pair<std::string, std::string>> gpus;
+    std::vector<std::string> gpu_preferences;
+    int32_t active_gpu = -1;
 
     std::vector<gs3d::data::Gs3dPoint> cached_points;
     float point_size = 3.0f;
@@ -72,6 +73,57 @@ struct EngineState {
 };
 
 EngineState g_state;
+
+std::string path_utf8(const std::filesystem::path& path) {
+    const auto value = path.u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
+
+// 只将设备名称、类型和稳定 UUID 留在数据引擎；GPU 句柄不跨越 C-ABI。
+void refresh_gpu_devices() {
+    g_state.gpus.clear();
+    g_state.gpu_preferences.clear();
+    g_state.active_gpu = -1;
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    app.pApplicationName = "GeoScatter3D device discovery";
+    app.apiVersion = VK_API_VERSION_1_2;
+    VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    create.pApplicationInfo = &app;
+    VkInstance instance = VK_NULL_HANDLE;
+    if (vkCreateInstance(&create, nullptr, &instance) != VK_SUCCESS) return;
+    try {
+        uint32_t count = 0;
+        if (vkEnumeratePhysicalDevices(instance, &count, nullptr) == VK_SUCCESS) {
+            std::vector<VkPhysicalDevice> devices(count);
+            if (vkEnumeratePhysicalDevices(instance, &count, devices.data()) == VK_SUCCESS) {
+                const auto preferred = gs3d::app::load_preferred_gpu_preference();
+                int best_score = -1;
+                for (const auto device : devices) {
+                    VkPhysicalDeviceIDProperties id{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+                    VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+                    props.pNext = &id;
+                    vkGetPhysicalDeviceProperties2(device, &props);
+                    if (props.properties.apiVersion < VK_API_VERSION_1_2) continue;
+                    std::ostringstream uuid;
+                    uuid << "uuid:" << std::hex << std::setfill('0');
+                    for (const auto byte : id.deviceUUID) uuid << std::setw(2) << static_cast<unsigned>(byte);
+                    if (std::find(g_state.gpu_preferences.begin(), g_state.gpu_preferences.end(), uuid.str()) != g_state.gpu_preferences.end()) continue;
+                    const auto type = props.properties.deviceType;
+                    const bool discrete = type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+                    g_state.gpus.emplace_back(props.properties.deviceName, discrete ? "独立显卡" : type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? "集成显卡" : "其他 Vulkan 设备");
+                    g_state.gpu_preferences.push_back(uuid.str());
+                    const int score = preferred && *preferred == uuid.str() ? 100 : discrete ? 3 : 1;
+                    if (score > best_score) { best_score = score; g_state.active_gpu = static_cast<int32_t>(g_state.gpus.size() - 1); }
+                }
+            }
+        }
+    } catch (...) {
+        g_state.gpus.clear();
+        g_state.gpu_preferences.clear();
+        g_state.active_gpu = -1;
+    }
+    vkDestroyInstance(instance, nullptr);
+}
 
 std::string format_file_size(uint64_t bytes)
 {
@@ -99,6 +151,7 @@ int32_t gs3d_ffi_init(void)
 {
     std::lock_guard<std::mutex> lock(g_state.mutex);
     g_state.initialized = true;
+    refresh_gpu_devices();
     try {
         g_state.recent_projects = gs3d::app::load_recent_projects(8);
     } catch (...) {}
@@ -127,7 +180,7 @@ int32_t gs3d_ffi_load_dataset(const char* path)
 
     std::lock_guard<std::mutex> lock(g_state.mutex);
     try {
-        std::filesystem::path fs_path(path);
+        const auto fs_path = std::filesystem::u8path(path);
         if (!std::filesystem::exists(fs_path)) {
             return -2;
         }
@@ -136,41 +189,18 @@ int32_t gs3d_ffi_load_dataset(const char* path)
         std::filesystem::path lod_file;
 
         if (std::filesystem::is_directory(fs_path)) {
-            // Bundle 目录
-            const auto candidate_source = fs_path / "source.gs3d";
-            if (std::filesystem::exists(candidate_source)) {
-                source_gs3d = candidate_source;
-            } else {
-                for (const auto& entry : std::filesystem::directory_iterator(fs_path)) {
-                    if (entry.is_regular_file() && entry.path().extension() == ".gs3d") {
-                        source_gs3d = entry.path();
-                        break;
-                    }
-                }
-            }
-            const auto candidate_lod = fs_path / "source.gs3dlod";
-            if (std::filesystem::exists(candidate_lod)) {
-                lod_file = candidate_lod;
-            } else {
-                const auto candidate_lod2 = fs_path / "lod.gs3dlod";
-                if (std::filesystem::exists(candidate_lod2)) {
-                    lod_file = candidate_lod2;
-                } else {
-                    for (const auto& entry : std::filesystem::directory_iterator(fs_path)) {
-                        if (entry.is_regular_file() && entry.path().extension() == ".gs3dlod") {
-                            lod_file = entry.path();
-                            break;
-                        }
-                    }
-                }
-            }
+            const auto bundle = gs3d::app::load_bundle_manifest(fs_path);
+            source_gs3d = bundle.gs3d_path;
+            if (bundle.lod_enabled) lod_file = bundle.lod_path;
         }
 
+        // 完成文件长度校验后才修改对外可见的数据状态。
+        auto preview = gs3d::data::Gs3dReader::read_preview(source_gs3d);
         const auto header = gs3d::data::Gs3dReader::read_header(source_gs3d);
 
         g_state.dataset_path = path;
         g_state.source_gs3d_path = source_gs3d.string();
-        g_state.dataset_name = fs_path.stem().string();
+        g_state.dataset_name = path_utf8(fs_path.stem());
         if (g_state.dataset_name.ends_with(".gs3d")) {
             g_state.dataset_name = g_state.dataset_name.substr(0, g_state.dataset_name.size() - 5);
         }
@@ -217,27 +247,13 @@ int32_t gs3d_ffi_load_dataset(const char* path)
         g_state.attributes.push_back("field_statics");
         g_state.attributes.push_back("elevation");
 
-        try {
-            const auto res = gs3d::data::Gs3dReader::read_all(source_gs3d);
-            g_state.cached_points = std::move(res.points);
-            g_state.scalar_clip[0] = header.value_min;
-            g_state.scalar_clip[1] = header.value_max;
-        } catch (...) {
-            g_state.cached_points.clear();
-            std::ifstream in(source_gs3d, std::ios::binary);
-            if (in.is_open()) {
-                in.seekg(header.point_data_offset);
-                const size_t preview_count = std::min<uint64_t>(header.point_count, 65536);
-                g_state.cached_points.resize(preview_count);
-                in.read(reinterpret_cast<char*>(g_state.cached_points.data()), preview_count * sizeof(gs3d::data::Gs3dPoint));
-            }
-            g_state.scalar_clip[0] = header.value_min;
-            g_state.scalar_clip[1] = header.value_max;
-        }
+        g_state.cached_points = std::move(preview.points);
+        g_state.scalar_clip[0] = header.value_min;
+        g_state.scalar_clip[1] = header.value_max;
 
         g_state.dataset_loaded = true;
         try {
-            gs3d::app::remember_recent_project(path, 8);
+            gs3d::app::remember_recent_project(fs_path, 8);
             g_state.recent_projects = gs3d::app::load_recent_projects(8);
         } catch (...) {}
         return 0;
@@ -357,10 +373,10 @@ const char* gs3d_ffi_execute_command(const char* json_request)
                 gs3d::control::make_json_rpc_response(req.id, res).dump();
         } else if (req.method == "performance.get_metrics") {
             nlohmann::json res;
-            res["fps"] = g_state.dataset_loaded ? 120.0f : 60.0f;
-            res["frame_time_ms"] = g_state.dataset_loaded ? 0.83f : 16.6f;
+            res["fps"] = 0.0f;
+            res["frame_time_ms"] = 0.0f;
             res["visible_points"] = g_state.cached_points.size();
-            res["gpu_memory_bytes"] = g_state.point_count * 16ULL;
+            res["gpu_memory_bytes"] = 0;
             res["loaded_tiles"] = g_state.lod_enabled ? static_cast<uint32_t>(g_state.lod_details.size()) : 1;
             res["pending_tiles"] = 0;
             res["cache_hit_rate"] = 99.2f;
@@ -417,7 +433,7 @@ const char* gs3d_ffi_get_recent_project_path(int32_t index)
         return "";
     }
     static thread_local std::string s_path;
-    s_path = g_state.recent_projects[index].path.string();
+    s_path = path_utf8(g_state.recent_projects[index].path);
     return s_path.c_str();
 }
 
@@ -435,7 +451,7 @@ void gs3d_ffi_remember_recent_project(const char* path)
     if (path == nullptr || path[0] == '\0') return;
     std::lock_guard<std::mutex> lock(g_state.mutex);
     try {
-        gs3d::app::remember_recent_project(path, 8);
+        gs3d::app::remember_recent_project(std::filesystem::u8path(path), 8);
         g_state.recent_projects = gs3d::app::load_recent_projects(8);
     } catch (...) {}
 }
@@ -445,7 +461,7 @@ void gs3d_ffi_remove_recent_project(const char* path)
     if (path == nullptr || path[0] == '\0') return;
     std::lock_guard<std::mutex> lock(g_state.mutex);
     try {
-        gs3d::app::remove_recent_project(path);
+        gs3d::app::remove_recent_project(std::filesystem::u8path(path));
         g_state.recent_projects = gs3d::app::load_recent_projects(8);
     } catch (...) {}
 }
@@ -493,7 +509,11 @@ void gs3d_ffi_set_preferred_gpu(int32_t index)
 {
     std::lock_guard<std::mutex> lock(g_state.mutex);
     if (index >= 0 && static_cast<size_t>(index) < g_state.gpus.size()) {
-        g_state.active_gpu = index;
+        try {
+            if (gs3d::app::save_preferred_gpu_preference(g_state.gpu_preferences[index])) {
+                g_state.active_gpu = index;
+            }
+        } catch (...) {}
     }
 }
 
@@ -765,13 +785,14 @@ void gs3d_ffi_get_performance_metrics(
     float* out_cache_hit_rate
 ) {
     std::lock_guard<std::mutex> lock(g_state.mutex);
-    if (out_fps) *out_fps = g_state.dataset_loaded ? 120.0f : 60.0f;
-    if (out_frame_time_ms) *out_frame_time_ms = g_state.dataset_loaded ? 0.83f : 16.6f;
+    // FFI 数据服务不拥有渲染器，实时指标从 ViewerApp 控制面获取。
+    if (out_fps) *out_fps = 0.0f;
+    if (out_frame_time_ms) *out_frame_time_ms = 0.0f;
     if (out_visible_points) *out_visible_points = g_state.cached_points.size();
-    if (out_gpu_mem_bytes) *out_gpu_mem_bytes = g_state.point_count * 16ULL;
-    if (out_loaded_tiles) *out_loaded_tiles = g_state.lod_enabled ? static_cast<uint32_t>(g_state.lod_details.size()) : 1;
+    if (out_gpu_mem_bytes) *out_gpu_mem_bytes = 0;
+    if (out_loaded_tiles) *out_loaded_tiles = 0;
     if (out_pending_tiles) *out_pending_tiles = 0;
-    if (out_cache_hit_rate) *out_cache_hit_rate = 99.2f;
+    if (out_cache_hit_rate) *out_cache_hit_rate = -1.0f;
 }
 
 const char* gs3d_ffi_get_camera_coords_string(void) {
@@ -792,6 +813,7 @@ const char* gs3d_ffi_get_camera_coords_string(void) {
 
 void gs3d_ffi_clear_cache(void) {
     std::lock_guard<std::mutex> lock(g_state.mutex);
+    std::vector<gs3d::data::Gs3dPoint>().swap(g_state.cached_points);
 }
 
 // ============================================================================
@@ -889,68 +911,56 @@ int32_t gs3d_ffi_calculate_region_stats(
     int32_t* out_hist_5bins
 ) {
     std::lock_guard<std::mutex> lock(g_state.mutex);
-    if (!g_state.dataset_loaded || g_state.cached_points.empty()) return 0;
-
-    const float x0 = std::min(min_x, max_x);
-    const float x1 = std::max(min_x, max_x);
-    const float y0 = std::min(min_y, max_y);
-    const float y1 = std::max(min_y, max_y);
-
+    if (out_count) *out_count = 0;
+    if (out_mean) *out_mean = 0;
+    if (out_min) *out_min = 0;
+    if (out_max) *out_max = 0;
+    if (out_std_dev) *out_std_dev = 0;
+    if (out_hist_5bins) std::fill_n(out_hist_5bins, 5, 0);
+    if (!g_state.dataset_loaded) return 0;
+    const float x0 = std::min(min_x, max_x), x1 = std::max(min_x, max_x);
+    const float y0 = std::min(min_y, max_y), y1 = std::max(min_y, max_y);
     uint64_t count = 0;
-    double sum = 0.0;
-    float v_min = 1e30f;
-    float v_max = -1e30f;
-
-    std::vector<float> inside_vals;
-    inside_vals.reserve(g_state.cached_points.size() / 4);
-
-    for (const auto& p : g_state.cached_points) {
-        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) {
-            count++;
-            sum += p.value;
-            if (p.value < v_min) v_min = p.value;
-            if (p.value > v_max) v_max = p.value;
-            inside_vals.push_back(p.value);
-        }
-    }
-
-    if (count == 0) {
-        if (out_count) *out_count = 0;
-        if (out_mean) *out_mean = 0.0f;
-        if (out_min) *out_min = 0.0f;
-        if (out_max) *out_max = 0.0f;
-        if (out_std_dev) *out_std_dev = 0.0f;
+    double mean = 0, m2 = 0;
+    float v_min = std::numeric_limits<float>::max();
+    float v_max = std::numeric_limits<float>::lowest();
+    const auto inside = [&](const gs3d::data::Gs3dPoint& p) {
+        return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 && std::isfinite(p.value);
+    };
+    try {
+        // 预览只保留有界点数；统计始终扫描完整原始数据。
+        gs3d::data::Gs3dReader::visit_points(g_state.source_gs3d_path, [&](auto block) {
+            for (const auto& p : block) if (inside(p)) {
+                ++count;
+                const double delta = p.value - mean;
+                mean += delta / static_cast<double>(count);
+                m2 += delta * (p.value - mean);
+                v_min = std::min(v_min, p.value);
+                v_max = std::max(v_max, p.value);
+            }
+            return true;
+        });
+        if (count == 0) return 0;
         if (out_hist_5bins) {
-            for (int i = 0; i < 5; ++i) out_hist_5bins[i] = 0;
+            gs3d::data::Gs3dReader::visit_points(g_state.source_gs3d_path, [&](auto block) {
+                for (const auto& p : block) if (inside(p)) {
+                    const int bin = v_max > v_min ? std::clamp(static_cast<int>(
+                        (static_cast<double>(p.value) - v_min) / (static_cast<double>(v_max) - v_min) * 5), 0, 4) : 0;
+                    if (out_hist_5bins[bin] < std::numeric_limits<int32_t>::max()) ++out_hist_5bins[bin];
+                }
+                return true;
+            });
         }
+        if (out_count) *out_count = count;
+        if (out_mean) *out_mean = static_cast<float>(mean);
+        if (out_min) *out_min = v_min;
+        if (out_max) *out_max = v_max;
+        if (out_std_dev) *out_std_dev = static_cast<float>(std::sqrt(std::max(0.0, m2 / static_cast<double>(count))));
+        return 1;
+    } catch (...) {
+        if (out_hist_5bins) std::fill_n(out_hist_5bins, 5, 0);
         return 0;
     }
-
-    const float mean = static_cast<float>(sum / count);
-    double var_sum = 0.0;
-    for (float v : inside_vals) {
-        var_sum += (v - mean) * (v - mean);
-    }
-    const float std_dev = static_cast<float>(std::sqrt(var_sum / count));
-
-    if (out_count) *out_count = count;
-    if (out_mean) *out_mean = mean;
-    if (out_min) *out_min = v_min;
-    if (out_max) *out_max = v_max;
-    if (out_std_dev) *out_std_dev = std_dev;
-
-    if (out_hist_5bins) {
-        for (int i = 0; i < 5; ++i) out_hist_5bins[i] = 0;
-        const float range = v_max - v_min;
-        const float step = (range > 0.0f) ? (range / 5.0f) : 1.0f;
-        for (float v : inside_vals) {
-            int bin = static_cast<int>((v - v_min) / step);
-            if (bin < 0) bin = 0;
-            if (bin > 4) bin = 4;
-            out_hist_5bins[bin]++;
-        }
-    }
-    return 1;
 }
 
 // ============================================================================

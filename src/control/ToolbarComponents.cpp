@@ -1,4 +1,5 @@
 #include "control/ToolbarComponents.hpp"
+#include "control/RuntimeSnapshot.hpp"
 
 #include "ui/PanelRegistry.hpp"
 
@@ -519,18 +520,7 @@ public:
     [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override { return capabilities_; }
 
     [[nodiscard]] nlohmann::json get_state() override {
-        const int active = gs3d::app::resolve_viewport_index(app_state_, app_state_.active_viewport_index);
-        if (active < 0 || active >= static_cast<int>(app_state_.render_views.size())) {
-            return {{"id", info_.id}, {"ready", false}};
-        }
-        const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
-        const auto& stats = gs3d::app::region_stats_for_view(app_state_, active);
-        return {{"id", info_.id}, {"ready", true}, {"active_viewport_index", active},
-                {"canvas_left", view.canvas_rect_min_x}, {"canvas_top", view.canvas_rect_min_y},
-                {"canvas_right", view.canvas_rect_max_x}, {"canvas_bottom", view.canvas_rect_max_y},
-                {"width", view.image_width}, {"height", view.image_height},
-                {"region_computing", stats.computing}, {"region_valid", stats.valid},
-                {"region_point_count", stats.point_count}};
+        return interaction_snapshot(app_state_);
     }
 
     [[nodiscard]] nlohmann::json execute(const std::string& command, const nlohmann::json& params) override {
@@ -544,6 +534,28 @@ public:
         }
         const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
         const auto input_kind = params.value("kind", std::string{});
+        if (input_kind == "measurement") {
+            auto& measurement = gs3d::app::measurement_for_view(app_state_, active);
+            const auto operation = params.value("operation", std::string{});
+            if (operation == "mode") {
+                measurement.set_measure_mode(params.at("enabled").get<bool>());
+                if (!measurement.measure_mode_active()) measurement.clear_pending();
+            } else if (operation == "clear") {
+                measurement.lines().clear();
+                measurement.clear_pending();
+            } else if (operation == "display") {
+                const int mode = params.at("mode").get<int>();
+                if (mode < 0 || mode > 2) throw ComponentError(-32602, "invalid display mode");
+                measurement.set_display_mode(static_cast<gs3d::app::DistanceDisplayMode>(mode));
+            } else if (operation == "remove" || operation == "toggle_fixed") {
+                const auto index = params.at("index").get<int>();
+                if (index < 0 || index >= static_cast<int>(measurement.line_count())) throw ComponentError(-32602, "invalid measurement index");
+                if (operation == "remove") measurement.remove_line(static_cast<std::size_t>(index));
+                else measurement.toggle_fixed(static_cast<std::size_t>(index));
+            } else throw ComponentError(-32602, "unknown measurement operation");
+            if (measurement.on_changed) measurement.on_changed();
+            return get_state();
+        }
         gs3d::app::ViewportFrameCmd frame;
         frame.index = active;
         frame.active = true;
@@ -564,10 +576,18 @@ public:
             frame.mouse_local_y = to_local_y("screen_y");
         } else if (input_kind == "measure") {
             frame.measure_pick_requested = true;
+            frame.mouse_local_x = params.contains("screen_x") ? to_local_x("screen_x") : 0.0f;
+            frame.mouse_local_y = params.contains("screen_y") ? to_local_y("screen_y") : 0.0f;
         } else if (input_kind == "focus") {
             frame.point_double_clicked = true;
             frame.mouse_local_x = to_local_x("screen_x");
             frame.mouse_local_y = to_local_y("screen_y");
+        } else if (input_kind == "box_zoom") {
+            frame.box_select_completed = true;
+            frame.box_select_min_x = to_local_x("screen_min_x");
+            frame.box_select_min_y = to_local_y("screen_min_y");
+            frame.box_select_max_x = to_local_x("screen_max_x");
+            frame.box_select_max_y = to_local_y("screen_max_y");
         } else if (input_kind == "region") {
             frame.stats_select_completed = true;
             frame.stats_select_min_x = to_local_x("screen_min_x");

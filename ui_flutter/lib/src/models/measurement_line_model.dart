@@ -33,7 +33,7 @@ class MeasurementLineItem {
       start: start ?? this.start,
       end: end ?? this.end,
       color: color ?? this.color,
-      fixed: isFixed ?? this.fixed,
+      fixed: isFixed ?? fixed,
     );
   }
 

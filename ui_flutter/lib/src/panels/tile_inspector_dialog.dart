@@ -6,10 +6,7 @@ import '../theme/app_theme.dart';
 class TileInspectorDialog extends StatelessWidget {
   final GeoScatter3dService service;
 
-  const TileInspectorDialog({
-    super.key,
-    required this.service,
-  });
+  const TileInspectorDialog({super.key, required this.service});
 
   @override
   Widget build(BuildContext context) {
@@ -27,14 +24,11 @@ class TileInspectorDialog extends StatelessWidget {
         final spanY = (bmax[1] - bmin[1]).abs();
         final spanZ = (bmax[2] - bmin[2]).abs();
 
-        final lodList = summary.lodDetails.isNotEmpty
-            ? summary.lodDetails
-            : [
-                'LOD 0 (完整分辨率) - 采样率 100% - 全景高精',
-                'LOD 1 (中景半精采样) - 采样率 50% - 视距 > 100m',
-                'LOD 2 (远景四分采样) - 采样率 25% - 视距 > 300m',
-                'LOD 3 (全景八分骨架) - 采样率 12.5% - 视距 > 800m',
-              ];
+        final lodList = [
+          ...service.nativeLodDetails,
+          ...service.nativeTileDetails,
+        ];
+        if (lodList.isEmpty) lodList.add('当前数据集没有 LOD / 瓦片层级');
 
         return Stack(
           children: [
@@ -42,9 +36,7 @@ class TileInspectorDialog extends StatelessWidget {
             Positioned.fill(
               child: GestureDetector(
                 onTap: () => service.toggleTileInspector(false),
-                child: Container(
-                  color: Colors.black.withAlpha(120),
-                ),
+                child: Container(color: Colors.black.withAlpha(120)),
               ),
             ),
 
@@ -74,10 +66,18 @@ class TileInspectorDialog extends StatelessWidget {
                     children: [
                       // 顶部标题栏
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
                         decoration: const BoxDecoration(
                           color: AppTheme.surfaceMuted,
-                          border: Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+                          border: Border(
+                            bottom: BorderSide(
+                              color: AppTheme.border,
+                              width: 1,
+                            ),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -87,7 +87,11 @@ class TileInspectorDialog extends StatelessWidget {
                                 color: AppTheme.primaryBlue.withAlpha(30),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.grid_view_rounded, size: 20, color: AppTheme.primaryBlue),
+                              child: const Icon(
+                                Icons.grid_view_rounded,
+                                size: 20,
+                                color: AppTheme.primaryBlue,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -105,7 +109,10 @@ class TileInspectorDialog extends StatelessWidget {
                                   SizedBox(height: 2),
                                   Text(
                                     'Octree Tile Pyramid & LOD Streaming Pipeline Inspector',
-                                    style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textDim,
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -113,8 +120,13 @@ class TileInspectorDialog extends StatelessWidget {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.textDim),
-                              onPressed: () => service.toggleTileInspector(false),
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                size: 20,
+                                color: AppTheme.textDim,
+                              ),
+                              onPressed: () =>
+                                  service.toggleTileInspector(false),
                               splashRadius: 18,
                               tooltip: '关闭',
                             ),
@@ -129,20 +141,28 @@ class TileInspectorDialog extends StatelessWidget {
                           shrinkWrap: true,
                           children: [
                             // 空间包围盒与数据特征
-                            _buildSectionHeader('工区空间范围与几何边界 (GS3D v2)', Icons.view_in_ar_rounded),
+                            _buildSectionHeader(
+                              '工区空间范围与几何边界 (GS3D v2)',
+                              Icons.view_in_ar_rounded,
+                            ),
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppTheme.surfaceMuted,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border.withAlpha(100)),
+                                border: Border.all(
+                                  color: AppTheme.border.withAlpha(100),
+                                ),
                               ),
                               child: Column(
                                 children: [
                                   _buildDataRow('数据集名称', summary.name),
                                   const Divider(height: 14),
-                                  _buildDataRow('数据点总数', summary.formattedPointCount),
+                                  _buildDataRow(
+                                    '数据点总数',
+                                    summary.formattedPointCount,
+                                  ),
                                   const Divider(height: 14),
                                   _buildDataRow(
                                     '最小三维边界 (BBox Min)',
@@ -164,14 +184,19 @@ class TileInspectorDialog extends StatelessWidget {
                             const SizedBox(height: 18),
 
                             // 八叉树分级 LOD 结构
-                            _buildSectionHeader('八叉树 LOD 金字塔分级', Icons.layers_outlined),
+                            _buildSectionHeader(
+                              '八叉树 LOD 金字塔分级',
+                              Icons.layers_outlined,
+                            ),
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppTheme.surfaceMuted,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border.withAlpha(100)),
+                                border: Border.all(
+                                  color: AppTheme.border.withAlpha(100),
+                                ),
                               ),
                               child: Column(
                                 children: lodList.asMap().entries.map((entry) {
@@ -179,39 +204,66 @@ class TileInspectorDialog extends StatelessWidget {
                                   final detail = entry.value;
                                   final isBase = idx == 0;
                                   return Container(
-                                    margin: EdgeInsets.only(bottom: idx < lodList.length - 1 ? 8 : 0),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    margin: EdgeInsets.only(
+                                      bottom: idx < lodList.length - 1 ? 8 : 0,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: isBase ? AppTheme.primaryBlue.withAlpha(20) : AppTheme.surface,
+                                      color: isBase
+                                          ? AppTheme.primaryBlue.withAlpha(20)
+                                          : AppTheme.surface,
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
-                                        color: isBase ? AppTheme.primaryBlue.withAlpha(100) : AppTheme.border,
+                                        color: isBase
+                                            ? AppTheme.primaryBlue.withAlpha(
+                                                100,
+                                              )
+                                            : AppTheme.border,
                                       ),
                                     ),
                                     child: Row(
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: isBase ? AppTheme.primaryBlue : AppTheme.textDim,
-                                            borderRadius: BorderRadius.circular(4),
+                                            color: isBase
+                                                ? AppTheme.primaryBlue
+                                                : AppTheme.textDim,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
                                           ),
                                           child: Text(
                                             'LOD $idx',
-                                            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: Text(
                                             detail,
-                                            style: const TextStyle(fontSize: 12, color: AppTheme.textTitle),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppTheme.textTitle,
+                                            ),
                                           ),
                                         ),
                                         Icon(
                                           Icons.check_circle_rounded,
                                           size: 15,
-                                          color: isBase ? const Color(0xFF10B981) : AppTheme.textDim,
+                                          color: isBase
+                                              ? const Color(0xFF10B981)
+                                              : AppTheme.textDim,
                                         ),
                                       ],
                                     ),
@@ -222,27 +274,44 @@ class TileInspectorDialog extends StatelessWidget {
                             const SizedBox(height: 18),
 
                             // 流式瓦片流水线状态
-                            _buildSectionHeader('瓦片流式加载与缓存状态', Icons.memory_rounded),
+                            _buildSectionHeader(
+                              '瓦片流式加载与缓存状态',
+                              Icons.memory_rounded,
+                            ),
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppTheme.surfaceMuted,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border.withAlpha(100)),
+                                border: Border.all(
+                                  color: AppTheme.border.withAlpha(100),
+                                ),
                               ),
                               child: Row(
                                 children: [
                                   Expanded(
-                                    child: _buildTileStatCard('已装载瓦片', '$loadedTiles', AppTheme.primaryBlue),
+                                    child: _buildTileStatCard(
+                                      '已装载瓦片',
+                                      '$loadedTiles',
+                                      AppTheme.primaryBlue,
+                                    ),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: _buildTileStatCard('等待 IO 队列', '$pendingTiles', Colors.orangeAccent),
+                                    child: _buildTileStatCard(
+                                      '等待 IO 队列',
+                                      '$pendingTiles',
+                                      Colors.orangeAccent,
+                                    ),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: _buildTileStatCard('缓存命中率', '${hitRate.toStringAsFixed(1)}%', const Color(0xFF10B981)),
+                                    child: _buildTileStatCard(
+                                      '缓存命中率',
+                                      '${hitRate.toStringAsFixed(1)}%',
+                                      const Color(0xFF10B981),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -253,10 +322,15 @@ class TileInspectorDialog extends StatelessWidget {
 
                       // 底部动作栏
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
                         decoration: const BoxDecoration(
                           color: AppTheme.surfaceMuted,
-                          border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
+                          border: Border(
+                            top: BorderSide(color: AppTheme.border, width: 1),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -265,10 +339,16 @@ class TileInspectorDialog extends StatelessWidget {
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppTheme.textTitle,
                                 side: const BorderSide(color: AppTheme.border),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                               ),
                               icon: const Icon(Icons.refresh_rounded, size: 16),
-                              label: const Text('强制刷新瓦片缓存', style: TextStyle(fontSize: 12.5)),
+                              label: const Text(
+                                '强制刷新瓦片缓存',
+                                style: TextStyle(fontSize: 12.5),
+                              ),
                               onPressed: () {
                                 service.clearCache();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -286,10 +366,17 @@ class TileInspectorDialog extends StatelessWidget {
                                 backgroundColor: AppTheme.primaryBlue,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 8,
+                                ),
                               ),
-                              onPressed: () => service.toggleTileInspector(false),
-                              child: const Text('完成', style: TextStyle(fontSize: 12.5)),
+                              onPressed: () =>
+                                  service.toggleTileInspector(false),
+                              child: const Text(
+                                '完成',
+                                style: TextStyle(fontSize: 12.5),
+                              ),
                             ),
                           ],
                         ),
@@ -312,7 +399,11 @@ class TileInspectorDialog extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           title,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textTitle,
+          ),
         ),
       ],
     );
@@ -322,7 +413,10 @@ class TileInspectorDialog extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textDim)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+        ),
         Text(
           value,
           style: const TextStyle(
@@ -346,11 +440,19 @@ class TileInspectorDialog extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textDim)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+          ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace'),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: color,
+              fontFamily: 'monospace',
+            ),
           ),
         ],
       ),

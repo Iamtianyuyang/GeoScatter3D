@@ -5,6 +5,7 @@
 # App Support & State Model Library
 add_library(gs3d_app_support STATIC
     AppConfig.cpp
+    config/AppConfigCommandLine.cpp
     config/AppConfigValidation.cpp
     config/AppConfigViewerToml.cpp
     session/BenchmarkSession.cpp

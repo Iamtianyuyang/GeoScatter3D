@@ -86,6 +86,7 @@ struct RegionStatsCommandContext {
     const gs3d::camera::CameraBounds& bounds;
     const std::string& primary_value_name;
     const std::string& z_field_name;
+    const std::vector<gs3d::render::PointPushConstants>& viewport_pushes;
 };
 
 } // namespace gs3d::app

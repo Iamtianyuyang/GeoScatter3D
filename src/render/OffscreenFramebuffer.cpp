@@ -424,7 +424,7 @@ void OffscreenFramebuffer::create_pick_depth_image() {
 }
 
 void OffscreenFramebuffer::create_render_pass() {
-    // Color attachment finalLayout = SHADER_READ_ONLY_OPTIMAL so ImGui can
+    // Color attachment finalLayout = SHADER_READ_ONLY_OPTIMAL so downstream passes can
     // sample the image in the same command buffer's subsequent render pass.
     // Pattern: SaschaWillems/Vulkan offscreen sample (MIT).
     VkAttachmentDescription color_att{};
@@ -495,9 +495,9 @@ void OffscreenFramebuffer::create_render_pass() {
     subpass.pColorAttachments       = color_refs;
     subpass.pDepthStencilAttachment = &depth_ref;
 
-    // dep[0]: wait for ImGui sampling of previous frame to finish before
+    // dep[0]: wait for texture sampling of previous frame to finish before
     //         writing as color attachment this frame.
-    // dep[1]: wait for color attachment write to finish before ImGui
+    // dep[1]: wait for color attachment write to finish before downstream
     //         samples it in the subsequent main render pass.
     VkSubpassDependency deps[2]{};
 
