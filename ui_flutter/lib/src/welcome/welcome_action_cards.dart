@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../widgets/fluid.dart';
 import 'new_project_dialog.dart';
@@ -19,17 +20,17 @@ class WelcomeActionCards extends StatelessWidget {
   final GeoScatter3dService service;
 
   Future<void> _onNewProject(BuildContext context) {
-    return showDialog(
-      context: context,
-      barrierDismissible: true,
+    return Gs3dResponsiveDialog.show(
+      context,
+      title: '新建散点工程',
       builder: (_) => NewProjectDialog(service: service),
     );
   }
 
   Future<void> _onOpenProject(BuildContext context) {
-    return showDialog(
-      context: context,
-      barrierDismissible: true,
+    return Gs3dResponsiveDialog.show(
+      context,
+      title: '打开工程数据包',
       builder: (_) => OpenProjectDialog(service: service),
     );
   }
@@ -52,9 +53,11 @@ class WelcomeActionCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 触控档：动作行命中区 ≥48（视觉不变）；卡片间距相应放大。
+    final touch = context.isTouchPreferred;
     return Wrap(
-      spacing: Gs3dTokens.space12,
-      runSpacing: Gs3dTokens.space12,
+      spacing: touch ? Gs3dTokens.space16 : Gs3dTokens.space12,
+      runSpacing: touch ? Gs3dTokens.space16 : Gs3dTokens.space12,
       children: [
         _HeroButton(
           key: WelcomeUiKeys.newProjectAction,
@@ -62,6 +65,7 @@ class WelcomeActionCards extends StatelessWidget {
           label: '新建工程',
           hint: 'CSV / DAT · LOD 金字塔',
           variant: _HeroVariant.primary,
+          touchTarget: touch,
           onTap: () => _onNewProject(context),
         ),
         _HeroButton(
@@ -70,6 +74,7 @@ class WelcomeActionCards extends StatelessWidget {
           label: '打开工程',
           hint: '.gs3d / .gs3d.bundle',
           variant: _HeroVariant.secondary,
+          touchTarget: touch,
           onTap: () => _onOpenProject(context),
         ),
         _HeroButton(
@@ -78,6 +83,7 @@ class WelcomeActionCards extends StatelessWidget {
           label: '快速体验示例',
           hint: '内置散点示例，直达三维视口',
           variant: _HeroVariant.quiet,
+          touchTarget: touch,
           onTap: () => _onQuickDemo(context),
         ),
       ],
@@ -96,6 +102,7 @@ class _HeroButton extends StatelessWidget {
     required this.hint,
     required this.variant,
     required this.onTap,
+    this.touchTarget = false,
   });
 
   final IconData icon;
@@ -104,12 +111,16 @@ class _HeroButton extends StatelessWidget {
   final _HeroVariant variant;
   final VoidCallback onTap;
 
+  /// 触控档命中区 ≥48。
+  final bool touchTarget;
+
   @override
   Widget build(BuildContext context) {
     final a11y = context.gs3dA11y;
     return Gs3dPressable(
       onTap: onTap,
       hoverScale: variant == _HeroVariant.primary ? 0.015 : 0.008,
+      minTouchSize: touchTarget ? Gs3dTokens.hitTargetTouch : null,
       builder: (context, state) {
         final hovered = state != Gs3dInteractionState.idle;
 

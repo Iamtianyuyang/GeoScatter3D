@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 
+import 'support/tablet_surface.dart';
+import 'support/welcome_ui_test_service.dart';
+
 /// 动作目录端到端路由覆盖。
 ///
 /// 目标：目录中**声明**的每一个动作都必须有真实路由分支，不得落入
@@ -177,6 +180,64 @@ void main() {
       expect(export['success'], isTrue);
       expect(File(exportPath).existsSync(), isTrue);
       expect(File(exportPath).lengthSync(), greaterThan(0));
+    });
+  });
+
+  group('平板 surface（1192×820）动作路由可达复跑', () {
+    testWidgets('45+ 项动作在 tablet 档全量可达：纯 UI 类可执行、引擎依赖类显式降级',
+        (tester) async {
+      final service = WelcomeUiTestService();
+      // 引擎不可用预设（模拟 Android 无 libgs3d_ffi.so）。
+      service.markEngineUnavailable('libgs3d_ffi.so not found');
+
+      final catalog = service.getAvailableActions();
+      expect(
+        catalog.length,
+        greaterThanOrEqualTo(45),
+        reason: '动作目录规模异常',
+      );
+
+      final params = _params();
+      final unrouted = <String>[];
+      final crashed = <String>[];
+      final notDegraded = <String>[];
+      final degradedButHidden = <String>[];
+
+      await TabletSurface.pumpTabletApp(tester, service);
+      service.openWorkbench();
+      await tester.pumpAndSettle();
+
+      for (final action in catalog) {
+        final arg = Map<String, dynamic>.from(params[action.id] ?? const {});
+        try {
+          final res = service.executeAction(action.id, arg);
+          final message = res['message'] as String? ?? '';
+          if (message.startsWith('未知的动作 ID')) {
+            unrouted.add(action.id);
+            continue;
+          }
+          final isEngineDependent = GeoScatter3dService
+              .engineDependentActionPrefixes
+              .any(action.id.startsWith);
+          if (isEngineDependent) {
+            // R3：引擎依赖类动作必须显式报错（可达 + 降级反馈），不得静默。
+            if (res['success'] == true) {
+              degradedButHidden.add('${action.id}: 引擎不可用时不应返回成功');
+            } else if (!message.contains('渲染内核在本平台不可用')) {
+              notDegraded.add('${action.id}: 缺少 R3 显式降级文案');
+            }
+          }
+        } catch (error) {
+          crashed.add('${action.id}: $error');
+        }
+      }
+
+      expect(unrouted, isEmpty, reason: 'tablet 档下未路由的动作: $unrouted');
+      expect(crashed, isEmpty, reason: '执行抛异常的动作: $crashed');
+      expect(degradedButHidden, isEmpty,
+          reason: '引擎不可用时仍返回成功的动作: $degradedButHidden');
+      expect(notDegraded, isEmpty,
+          reason: '缺少 R3 显式降级文案的动作: $notDegraded');
     });
   });
 }

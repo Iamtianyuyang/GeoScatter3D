@@ -49,8 +49,8 @@
      cd ui_flutter
      flutter test
      ```
-     必须全部通过（当前基准：60 通过 / 3 跳过；`GS3D_ENGINE_E2E=1` 时
-     62 通过 / 1 跳过），且测试后 `git status` 必须保持 Clean；
+    必须全部通过（当前基准：82 通过 / 3 跳过；`GS3D_ENGINE_E2E=1` 时
+    84 通过 / 1 跳过），且测试后 `git status` 必须保持 Clean；
    - **C++ 依赖与架构护栏检查**：
      ```powershell
      python scripts/check_include_deps.py

@@ -1,0 +1,105 @@
+classDiagram
+    direction LR
+
+    class Gs3dFormFactorSlot {
+        <<enumeration>>
+        compact
+        tablet
+        expanded
+    }
+
+    class Gs3dFormFactorScope {
+        <<InheritedWidget>>
+        +Gs3dFormFactorSlot slot
+        +bool get isTouchPreferred
+        +of(BuildContext) Gs3dFormFactor
+        +maybeOf(BuildContext) Gs3dFormFactor?
+        +resolve(MediaQueryData)$ Gs3dFormFactorSlot
+    }
+
+    class Gs3dTokens {
+        +double hitTarget = 28.0
+        +double hitTargetTouch = 48.0
+        +double bottomBarTouchHeight = 64.0
+    }
+
+    class Gs3dResponsiveDialog {
+        +show~T~(BuildContext, Widget content, String title)$ Future~T?~
+        -_isExpanded(BuildContext) bool
+    }
+
+    class Gs3dTouchTarget {
+        +Widget child
+        +double minSize
+        +build() Widget
+    }
+
+    class EngineAvailability {
+        <<enumeration>>
+        available
+        unavailable
+    }
+
+    class GeoScatter3dService {
+        <<ChangeNotifier 单例>>
+        -EngineAvailability _engineAvailability
+        -String? _initializationError
+        +EngineAvailability engineAvailability
+        +String? initializationError
+        +markEngineUnavailable(String reason) void
+        +executeAction(String id, Map? params) Map
+        +setCameraView(...) void
+        +toggleCommandPalette([bool]) void
+        +openWorkbench() void
+        +setLayoutMode(WorkbenchLayoutMode) void
+        +shutdown() void
+    }
+
+    class GeoScatter3dBindings {
+        +DynamicLibrary dylib
+        +openLibrary([String path])$ GeoScatter3dBindings
+    }
+
+    class Gs3dEngineLoadException {
+        <<Exception>>
+        +String reason
+    }
+
+    class TabletDrawerScaffold {
+        +Widget center
+        +Widget? leftPanel
+        +Widget? rightPanel
+        -bool _leftOpen
+        -bool _rightOpen
+        +build() Widget
+    }
+
+    class TabletActionBar {
+        +GeoScatter3dService service
+        +build() Widget
+    }
+
+    class CenterViewport {
+        -Map~int, Offset~ _activePointers
+        -Offset? _lastCentroid
+        -double? _lastPinchSpan
+        -_dispatchTouchGesture() void
+        -_showTouchContextMenu(Offset) void
+    }
+
+    class ViewportEngineErrorCard {
+        +String? reason
+        +build() Widget
+    }
+
+    Gs3dFormFactorScope --> Gs3dFormFactorSlot : 产出档位
+    Gs3dFormFactorScope ..> Gs3dTokens : 读取 hitTargetTouch
+    Gs3dResponsiveDialog ..> Gs3dFormFactorScope : 档位判定
+    Gs3dTouchTarget ..> Gs3dTokens : 读取 hitTargetTouch
+    TabletDrawerScaffold ..> Gs3dFormFactorScope : isTouchPreferred
+    TabletActionBar --> GeoScatter3dService : executeAction（只调控制面）
+    CenterViewport --> GeoScatter3dService : setCameraView / executeAction
+    CenterViewport ..> ViewportEngineErrorCard : engineAvailability==unavailable 时渲染
+    GeoScatter3dService --> GeoScatter3dBindings : initialize() 打开动态库
+    GeoScatter3dBindings ..> Gs3dEngineLoadException : Android open 失败包装
+    GeoScatter3dService --> EngineAvailability : 维护状态

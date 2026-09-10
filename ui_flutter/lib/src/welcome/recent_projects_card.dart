@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
 import '../models/recent_project_model.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../widgets/fluid.dart';
 import 'welcome_ui_keys.dart';
@@ -189,12 +190,20 @@ class RecentProjectsCard extends StatelessWidget {
                     const SizedBox(height: Gs3dTokens.space8),
                 itemBuilder: (context, index) {
                   final item = recentList[index];
-                  return _RecentProjectRow(
-                    key: WelcomeUiKeys.recentItem(index),
-                    index: index,
-                    item: item,
-                    onTap: () => _onOpenItem(context, item),
-                    onRemove: () => service.removeRecentProject(item.path),
+                  // 触控档：卡片间距与行命中区放大（间距仅动 Padding，不动列表语义）。
+                  final touch = context.isTouchPreferred;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(
+                      vertical: touch ? Gs3dTokens.space2 : 0,
+                    ),
+                    child: _RecentProjectRow(
+                      key: WelcomeUiKeys.recentItem(index),
+                      index: index,
+                      item: item,
+                      touchTarget: touch,
+                      onTap: () => _onOpenItem(context, item),
+                      onRemove: () => service.removeRecentProject(item.path),
+                    ),
                   );
                 },
               ),
@@ -212,6 +221,7 @@ class _RecentProjectRow extends StatelessWidget {
     required this.item,
     required this.onTap,
     required this.onRemove,
+    this.touchTarget = false,
   });
 
   final int index;
@@ -219,12 +229,16 @@ class _RecentProjectRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onRemove;
 
+  /// 触控档：整行命中区 ≥48。
+  final bool touchTarget;
+
   @override
   Widget build(BuildContext context) {
     final a11y = context.gs3dA11y;
     return Gs3dPressable(
       onTap: onTap,
       hoverScale: 0.002,
+      minTouchSize: touchTarget ? Gs3dTokens.hitTargetTouch : null,
       builder: (context, state) {
         final hovered = state != Gs3dInteractionState.idle;
         return AnimatedContainer(
@@ -300,9 +314,13 @@ class _RecentProjectRow extends StatelessWidget {
                 ),
                 tooltip: '移除记录',
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 26,
-                  minHeight: 26,
+                constraints: BoxConstraints(
+                  minWidth: touchTarget
+                      ? Gs3dTokens.hitTargetTouch
+                      : 26,
+                  minHeight: touchTarget
+                      ? Gs3dTokens.hitTargetTouch
+                      : 26,
                 ),
                 onPressed: onRemove,
               ),

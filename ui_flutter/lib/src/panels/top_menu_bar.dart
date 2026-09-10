@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../welcome/gpu_selection_dialog.dart';
 import '../welcome/new_project_dialog.dart';
@@ -16,34 +17,36 @@ class TopMenuBar extends StatelessWidget {
     required this.service,
   });
 
+  // 对话框弹出统一收敛到 Gs3dResponsiveDialog：expanded 档保持居中模态
+  // （桌面行为零变化），compact/tablet 档自动落底部 sheet（拇指可达）。
   void _showExportDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '导出点云数据',
       builder: (_) => ExportPointCloudDialog(service: service),
     );
   }
 
   void _showNewProjectDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '新建散点工程',
       builder: (_) => NewProjectDialog(service: service),
     );
   }
 
   void _showOpenProjectDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '打开工程数据包',
       builder: (_) => OpenProjectDialog(service: service),
     );
   }
 
   void _showGpuDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '选择首选渲染 GPU',
       builder: (_) => GpuSelectionDialog(service: service),
     );
   }
@@ -170,6 +173,11 @@ class TopMenuBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 触控档（compact/tablet）：菜单收敛为触控工具条（高 56 + 命令按钮 +
+    // 布局切换）；expanded 档保持既有桌面菜单条，像素零变化。
+    if (context.isTouchPreferred) {
+      return _buildTouchToolbar(context);
+    }
     return Container(
       key: WorkbenchUiKeys.topMenuBar,
       height: 38,
@@ -1096,6 +1104,205 @@ class TopMenuBar extends StatelessWidget {
             color: Gs3dTokens.textPrimary,
           ),
         ),
+      ),
+    );
+  }
+
+  /// 触控工具条（tablet/compact 档，高 56，命中区 ≥48）。
+  ///
+  /// 抽屉开合由边缘把手直达（把手常驻可见），此处不重复放置抽屉开关，
+  /// 避免与 TabletDrawerScaffold 的局部开合状态做跨组件同步。
+  Widget _buildTouchToolbar(BuildContext context) {
+    return Container(
+      key: WorkbenchUiKeys.topMenuBar,
+      height: Gs3dTokens.topBarTouchHeight,
+      padding: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space12),
+      decoration: const BoxDecoration(
+        color: Gs3dTokens.surfaceHeader,
+        border: Border(
+          bottom: BorderSide(color: Gs3dTokens.hairline),
+        ),
+      ),
+      child: Row(
+        children: [
+          // 品牌与返回欢迎页（长按品牌区亦可唤起命令面板）。
+          Gs3dPressable(
+            onTap: () => service.closeWorkbench(),
+            onLongPress: () => service.toggleCommandPalette(true),
+            hoverScale: 0,
+            minTouchSize: Gs3dTokens.hitTargetTouch,
+            key: WorkbenchUiKeys.homeButton,
+            builder: (context, state) => AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Gs3dMotion.standardCurve,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: state == Gs3dInteractionState.idle
+                    ? Colors.transparent
+                    : Gs3dTokens.surfaceHover,
+                borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.home_outlined,
+                    size: 20,
+                    color: Gs3dTokens.accent,
+                  ),
+                  const SizedBox(width: 6),
+                  RichText(
+                    // `RichText` 不合并环境 `DefaultTextStyle`，显式带字体族。
+                    text: const TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'GeoScatter ',
+                          style: TextStyle(
+                            fontFamily: Gs3dType.fontFamily,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Gs3dTokens.textPrimary,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '3D',
+                          style: TextStyle(
+                            fontFamily: Gs3dType.fontFamily,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Gs3dTokens.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: Gs3dTokens.space12),
+
+          // 布局切换（触控命中 ≥48）。
+          PopupMenuButton<WorkbenchLayoutMode>(
+            key: WorkbenchUiKeys.layoutSwitcher,
+            tooltip: '切换工作区布局模式',
+            initialValue: service.layoutMode,
+            onSelected: (mode) => service.setLayoutMode(mode),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutStandard,
+                value: WorkbenchLayoutMode.standard,
+                child: Gs3dMenuItem(
+                  label: '标准工作台 (触控)',
+                  icon: Icons.dashboard_customize_outlined,
+                  iconColor: Gs3dTokens.accent,
+                ),
+              ),
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutFloating,
+                value: WorkbenchLayoutMode.floatingDock,
+                child: Gs3dMenuItem(
+                  label: '悬浮胶囊 Dock (桌面专属)',
+                  icon: Icons.layers_outlined,
+                  iconColor: Gs3dTokens.accent,
+                ),
+              ),
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutAnalysis,
+                value: WorkbenchLayoutMode.analysisRail,
+                child: Gs3dMenuItem(
+                  label: '暗色分析舱 (桌面专属)',
+                  icon: Icons.view_sidebar_outlined,
+                  iconColor: Gs3dTokens.success,
+                ),
+              ),
+            ],
+            child: Gs3dTouchTarget(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Gs3dTokens.space8,
+                  vertical: Gs3dTokens.space4,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Gs3dTokens.border),
+                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+                  color: Gs3dTokens.surface,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.view_quilt_outlined,
+                      size: 15,
+                      color: Gs3dTokens.accent,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      service.layoutMode.displayName,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Gs3dTokens.textPrimary,
+                        fontFamily: Gs3dType.fontFamily,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_drop_down_rounded,
+                      size: 16,
+                      color: Gs3dTokens.textSecondary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const Spacer(),
+
+          // 居中数据集名称。
+          ListenableBuilder(
+            listenable: service,
+            builder: (context, _) {
+              return Flexible(
+                child: Text(
+                  service.summary.name.isEmpty
+                      ? '未载入工程'
+                      : service.summary.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Gs3dTokens.textSecondary,
+                    fontFamily: Gs3dType.fontFamily,
+                  ),
+                ),
+              );
+            },
+          ),
+
+          const Spacer(),
+
+          // 常驻「命令」按钮（等价 Ctrl+K/P 入口，无键盘可达）。
+          Gs3dPillButton(
+            key: const ValueKey('workbench.menu.command'),
+            label: '命令',
+            icon: Icons.terminal,
+            touchTarget: true,
+            onPressed: () =>
+                service.executeAction('workbench.overlay.command_palette',
+                    {'open': true}),
+          ),
+          const SizedBox(width: Gs3dTokens.space8),
+
+          // 载入示例。
+          Gs3dPillButton(
+            key: WorkbenchUiKeys.quickLoadDemoButton,
+            label: '载入示例',
+            icon: Icons.folder_open_rounded,
+            touchTarget: true,
+            onPressed: () {
+              service.loadDataset('data/sample-points.gs3d.bundle');
+            },
+          ),
+        ],
       ),
     );
   }

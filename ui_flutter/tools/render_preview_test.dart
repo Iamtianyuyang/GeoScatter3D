@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/main.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
+import 'package:ui_flutter/src/panels/tablet/tablet_drawer_scaffold.dart';
 
 /// 预览画布尺寸（逻辑像素）。
 const Size _canvas = Size(1680, 1000);
@@ -289,6 +290,51 @@ void main() {
       GeoScatter3dApp(service: service),
       '04-workbench-analysis-rail.png',
       settle: _workbenchSettle,
+    );
+  });
+
+  // ==========================================================================
+  // 平板预览（Pixel_10_Pro_Fold 内屏竖向基准 1192×820）。
+  // 断点由 Gs3dFormFactorScope 从 MediaQuery 派生：1192 宽命中 tablet 档，
+  // 呈现抽屉（收起）+ 触控顶栏 + 底部拇指动作条形态。
+  // ==========================================================================
+  const Size tabletCanvas = Size(1192, 820);
+
+  testWidgets('平板预览', (tester) async {
+    tester.view.physicalSize = tabletCanvas;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final service = await _managedService(
+      tester,
+      bundle: '$_repoRoot/data/sample-points.gs3d.bundle',
+      name: '05-tablet.png',
+    );
+    // 预览要呈现工作台本体，跳过首次进入的手势引导卡遮罩。
+    TabletDrawerScaffold.suppressGestureGuide();
+    service
+      ..openWorkbench()
+      ..setLayoutMode(WorkbenchLayoutMode.standard);
+
+    await _capture(
+      tester,
+      GeoScatter3dApp(service: service),
+      '05-tablet.png',
+      settle: _workbenchSettle,
+    );
+  });
+
+  testWidgets('平板欢迎页预览', (tester) async {
+    tester.view.physicalSize = tabletCanvas;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final service = await _managedService(tester, name: '06-tablet-welcome.png');
+
+    await _capture(
+      tester,
+      GeoScatter3dApp(service: service),
+      '06-tablet-welcome.png',
     );
   });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../widgets/fluid.dart';
 import 'gpu_selection_dialog.dart';
@@ -32,9 +33,9 @@ class WelcomeSidebar extends StatefulWidget {
 
 class _WelcomeSidebarState extends State<WelcomeSidebar> {
   void _showGpuDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '选择首选渲染 GPU',
       builder: (_) => GpuSelectionDialog(service: widget.service),
     );
   }
@@ -42,6 +43,9 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
   @override
   Widget build(BuildContext context) {
     final collapsed = widget.isCollapsed;
+    // 触控档：导航项与 GPU 卡片命中区撑到 ≥48（桌面档 36/42 不变）。
+    final touchMin = context.isTouchPreferred ? Gs3dTokens.hitTargetTouch : 36.0;
+    final gpuMin = context.isTouchPreferred ? Gs3dTokens.hitTargetTouch : 42.0;
     final targetWidth = collapsed
         ? Gs3dTokens.sidebarCollapsed
         : Gs3dTokens.sidebarExpanded;
@@ -133,6 +137,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                             label: '文件',
                             isSelected: widget.selectedIndex == 0,
                             isCollapsed: isNarrow,
+                            minTouchSize: touchMin,
                             onTap: () => widget.onSelectIndex(0),
                           ),
                           const SizedBox(height: Gs3dTokens.space4),
@@ -141,6 +146,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                             label: '最近项目',
                             isSelected: widget.selectedIndex == 1,
                             isCollapsed: isNarrow,
+                            minTouchSize: touchMin,
                             onTap: () => widget.onSelectIndex(1),
                           ),
                           const SizedBox(height: Gs3dTokens.space4),
@@ -149,6 +155,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                             label: '示例',
                             isSelected: widget.selectedIndex == 2,
                             isCollapsed: isNarrow,
+                            minTouchSize: touchMin,
                             onTap: () => widget.onSelectIndex(2),
                           ),
                           const SizedBox(height: Gs3dTokens.space4),
@@ -159,6 +166,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                             label: '帮助',
                             isSelected: widget.selectedIndex == 3,
                             isCollapsed: isNarrow,
+                            minTouchSize: touchMin,
                             onTap: () => widget.onSelectIndex(3),
                           ),
                           const SizedBox(height: Gs3dTokens.space4),
@@ -168,6 +176,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                             label: '关于',
                             isSelected: widget.selectedIndex == 4,
                             isCollapsed: isNarrow,
+                            minTouchSize: touchMin,
                             onTap: () => widget.onSelectIndex(4),
                           ),
                         ],
@@ -197,10 +206,13 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                                 waitDuration: const Duration(milliseconds: 200),
                                 child: Gs3dPressable(
                                   onTap: () => _showGpuDialog(context),
+                                  minTouchSize: context.isTouchPreferred
+                                      ? Gs3dTokens.hitTargetTouch
+                                      : null,
                                   child: Container(
                                     key: WelcomeUiKeys.footerGpuButton,
-                                    width: 42,
-                                    height: 42,
+                                    width: gpuMin,
+                                    height: gpuMin,
                                     decoration: BoxDecoration(
                                       color: Gs3dTokens.surfaceSunken,
                                       borderRadius: BorderRadius.circular(
@@ -236,6 +248,9 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
 
                           return Gs3dPressable(
                             onTap: () => _showGpuDialog(context),
+                            minTouchSize: context.isTouchPreferred
+                                ? Gs3dTokens.hitTargetTouch
+                                : null,
                             child: Container(
                               key: WelcomeUiKeys.footerGpuButton,
                               width: double.infinity,
@@ -342,6 +357,7 @@ class _SidebarNavItem extends StatelessWidget {
     required this.isSelected,
     required this.isCollapsed,
     required this.onTap,
+    this.minTouchSize,
   });
 
   final IconData icon;
@@ -350,10 +366,14 @@ class _SidebarNavItem extends StatelessWidget {
   final bool isCollapsed;
   final VoidCallback onTap;
 
+  /// 可选最小命中区（触控档 48；桌面档 null 保持 36）。
+  final double? minTouchSize;
+
   @override
   Widget build(BuildContext context) {
     final item = Gs3dPressable(
       onTap: onTap,
+      minTouchSize: minTouchSize,
       builder: (context, state) {
         final active = isSelected;
         final hovered = state != Gs3dInteractionState.idle;

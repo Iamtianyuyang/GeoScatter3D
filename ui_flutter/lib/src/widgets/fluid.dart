@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 
 /// GeoScatter3D 流体交互组件库。
@@ -124,9 +125,11 @@ class Gs3dPressable extends StatefulWidget {
     this.child,
     this.onTap,
     this.onSecondaryTap,
+    this.onLongPress,
     this.hoverScale = 0.0,
     this.pressScale = 0.018,
     this.cursor = SystemMouseCursors.click,
+    this.minTouchSize,
     this.builder,
   }) : assert(child != null || builder != null, 'child 与 builder 至少提供其一');
 
@@ -135,6 +138,9 @@ class Gs3dPressable extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onSecondaryTap;
 
+  /// 长按回调（触屏场景替代右键菜单的通用入口）。
+  final VoidCallback? onLongPress;
+
   /// 悬停时的放大比例（0 表示不缩放，仅走 [builder] 外观变化）。
   final double hoverScale;
 
@@ -142,6 +148,10 @@ class Gs3dPressable extends StatefulWidget {
   final double pressScale;
 
   final MouseCursor cursor;
+
+  /// 可选触控命中区下限：非空时整个交互区（含 GestureDetector）被
+  /// [Gs3dTouchTarget] 撑到 ≥ 该值；null 保持桌面原样。
+  final double? minTouchSize;
 
   /// 自定义外观：接收当前交互态。
   final Widget Function(BuildContext context, Gs3dInteractionState state)?
@@ -186,7 +196,7 @@ class _Gs3dPressableState extends State<Gs3dPressable> {
       child: content,
     );
 
-    return MouseRegion(
+    final interactive = MouseRegion(
       cursor: widget.onTap != null ? widget.cursor : MouseCursor.defer,
       onEnter: (_) => _set(Gs3dInteractionState.hovered),
       onExit: (_) => _set(Gs3dInteractionState.idle),
@@ -203,7 +213,164 @@ class _Gs3dPressableState extends State<Gs3dPressable> {
                 widget.onTap!();
               },
         onSecondaryTap: widget.onSecondaryTap,
+        onLongPress: widget.onLongPress,
         child: content,
+      ),
+    );
+
+    // 触控档：命中区撑到 ≥ minTouchSize（默认 48）。
+    final minTouch = widget.minTouchSize;
+    if (minTouch != null) {
+      return Gs3dTouchTarget(minSize: minTouch, child: interactive);
+    }
+    return interactive;
+  }
+}
+
+// ============================================================================
+// 2b. 触控命中区包裹器
+// ============================================================================
+
+/// 触控命中区包裹器：视觉尺寸不变、命中区撑到 ≥ [minSize]。
+///
+/// 平板 / 手机档位（`context.isTouchPreferred`）下所有可交互控件经此包裹，
+/// 命中区达到 [Gs3dTokens.hitTargetTouch]（48，Material 下限 ∩ Apple HIG）。
+/// expanded 档不包裹，桌面像素零变化。
+class Gs3dTouchTarget extends StatelessWidget {
+  const Gs3dTouchTarget({
+    super.key,
+    required this.child,
+    this.minSize = Gs3dTokens.hitTargetTouch,
+  });
+
+  final Widget child;
+
+  /// 最小命中区（宽高各向）。
+  final double minSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: minSize, minHeight: minSize),
+      child: Center(
+        widthFactor: 1.0,
+        heightFactor: 1.0,
+        child: child,
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 2c. 响应式对话框（平板档 → 底部 sheet / 桌面档 → 居中模态）
+// ============================================================================
+
+/// 响应式对话框统一入口。
+///
+///   * expanded 档：保持既有居中模态（[Gs3dDialogRoute] 弹簧），桌面交互
+///     零变化（含 Windows 窗口 > 1100 的场景）；
+///   * compact / tablet 档：走 [showModalBottomSheet] 底部表单——拖拽把手 +
+///     标题 + 内容，拇指可达。桌面窗口被手动缩窄到 tablet 档时同样落
+///     sheet，单一代码路径、无平台特判。
+///
+/// 新对话框一律经此弹出，禁止散写 `showDialog` / `showModalBottomSheet`。
+abstract final class Gs3dResponsiveDialog {
+  /// 弹出对话框。[builder] 构建对话框内容本体（内容组件不做任何改动）。
+  static Future<T?> show<T>(
+    BuildContext context, {
+    required String title,
+    required WidgetBuilder builder,
+  }) {
+    final slot = context.gs3dFormFactor;
+    if (slot == Gs3dFormFactorSlot.expanded) {
+      return showDialog<T>(
+        context: context,
+        barrierDismissible: true,
+        builder: builder,
+      );
+    }
+    final a11y = context.gs3dA11y;
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: !a11y.reduceMotion,
+      backgroundColor: Colors.transparent,
+      barrierColor: Gs3dMaterial.scrim,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+        ),
+        child: Gs3dGlass(
+          spec: Gs3dMaterial.panel,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Gs3dTokens.radiusXl),
+          ),
+          border: Border.all(color: Gs3dTokens.border),
+          child: SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(sheetContext).size.height * 0.86,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 拖拽把手（可下滑关闭）。
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(
+                        top: Gs3dTokens.space8,
+                        bottom: Gs3dTokens.space4,
+                      ),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Gs3dTokens.borderStrong,
+                        borderRadius: BorderRadius.circular(
+                          Gs3dTokens.radiusPill,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Gs3dTokens.space16,
+                      vertical: Gs3dTokens.space4,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Gs3dType.headline.copyWith(fontSize: 15),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '关闭',
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            size: 18,
+                            color: Gs3dTokens.textSecondary,
+                          ),
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(
+                        bottom: Gs3dTokens.space16,
+                      ),
+                      child: builder(sheetContext),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -377,6 +544,7 @@ class Gs3dMenuItem extends StatelessWidget {
     this.shortcut,
     this.checked,
     this.enabled = true,
+    this.touchTarget = false,
     this.trailing,
   });
 
@@ -386,12 +554,16 @@ class Gs3dMenuItem extends StatelessWidget {
   final String? shortcut;
   final bool? checked;
   final bool enabled;
+
+  /// 触控档：菜单行最小高度撑到 ≥ [Gs3dTokens.hitTargetTouch]。
+  final bool touchTarget;
+
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final fg = enabled ? Gs3dTokens.textPrimary : Gs3dTokens.textDisabled;
-    return Row(
+    final row = Row(
       children: [
         if (icon != null) ...[
           Icon(
@@ -430,6 +602,12 @@ class Gs3dMenuItem extends StatelessWidget {
         ],
       ],
     );
+
+    // 触控档：整行最小高度撑到 48（视觉内边距不变）。
+    if (touchTarget) {
+      return Gs3dTouchTarget(minSize: Gs3dTokens.hitTargetTouch, child: row);
+    }
+    return row;
   }
 }
 
@@ -484,6 +662,7 @@ class Gs3dPillButton extends StatelessWidget {
     this.active = false,
     this.tooltip,
     this.dense = false,
+    this.touchTarget = false,
   });
 
   final String label;
@@ -492,6 +671,9 @@ class Gs3dPillButton extends StatelessWidget {
   final bool active;
   final String? tooltip;
   final bool dense;
+
+  /// 触控档：命中区撑到 ≥ [Gs3dTokens.hitTargetTouch]。
+  final bool touchTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -504,6 +686,7 @@ class Gs3dPillButton extends StatelessWidget {
       onTap: onPressed,
       hoverScale: 0.012,
       pressScale: 0.03,
+      minTouchSize: touchTarget ? Gs3dTokens.hitTargetTouch : null,
       builder: (context, state) {
         final bg = switch (state) {
           Gs3dInteractionState.pressed => active

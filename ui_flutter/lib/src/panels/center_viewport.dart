@@ -9,8 +9,11 @@ import '../ffi/geoscatter3d_service.dart';
 import '../models/measurement_line_model.dart';
 import '../models/point_cloud_model.dart';
 import '../native/native_overlay_painter.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../welcome/welcome_ui_keys.dart';
+import '../widgets/fluid.dart';
+import 'viewport_engine_error_card.dart';
 
 class CenterViewport extends StatefulWidget {
   final GeoScatter3dService service;
@@ -33,6 +36,151 @@ class _CenterViewportState extends State<CenterViewport> {
   bool _dragIsBox = false;
   bool _dragForcePan = false; // 右键/中键拖动强制平移
   Size _lastVpSize = Size.zero;
+
+  // 平板多指手势追踪（沿用裸 Listener 路线，不换 GestureDetector.onScale，
+  // 避免与既有低延迟路径冲突）：pointerId → 最近本地坐标。
+  // 1 指 = 旋转（等价桌面左键）；2 指 = 质心位移平移 + 指距比例捏合缩放。
+  final Map<int, Offset> _activePointers = <int, Offset>{};
+  Offset? _lastCentroid;
+  double? _lastPinchSpan;
+
+  /// 当前在屏指针是否为触屏多指（≥2）。
+  bool get _isMultiTouch => _activePointers.length >= 2;
+
+  /// 多指手势开始：取消框选并初始化质心 / 指距基准。
+  void _beginTouchMultiGesture() {
+    _boxSelectStart = null;
+    _boxSelectCurrent = null;
+    final positions = _activePointers.values.toList(growable: false);
+    if (positions.length < 2) return;
+    _lastCentroid = Offset(
+      (positions[0].dx + positions[1].dx) * 0.5,
+      (positions[0].dy + positions[1].dy) * 0.5,
+    );
+    _lastPinchSpan = (positions[0] - positions[1]).distance;
+  }
+
+  /// 双指分派：质心位移 → pan_delta；指距连续比例 → zoom（非绝对跨度，
+  /// 避免手指先后落地导致跳变）。
+  void _dispatchTouchGesture() {
+    if (!_isMultiTouch) return;
+    final positions = _activePointers.values.toList(growable: false);
+    if (positions.length < 2) return;
+    final centroid = Offset(
+      (positions[0].dx + positions[1].dx) * 0.5,
+      (positions[0].dy + positions[1].dy) * 0.5,
+    );
+    final span = (positions[0] - positions[1]).distance;
+    final service = widget.service;
+    final lastCentroid = _lastCentroid;
+    final lastSpan = _lastPinchSpan;
+    if (lastCentroid != null) {
+      final ddx = centroid.dx - lastCentroid.dx;
+      final ddy = centroid.dy - lastCentroid.dy;
+      if (ddx != 0 || ddy != 0) {
+        service.setCameraView(
+          panX: service.cameraPanX + ddx,
+          panY: service.cameraPanY + ddy,
+        );
+      }
+    }
+    if (lastSpan != null && lastSpan > 1.0 && span > 1.0) {
+      final factor = span / lastSpan;
+      if ((factor - 1.0).abs() > 0.001) {
+        service.setCameraView(
+          zoom: (service.cameraZoom * factor).clamp(0.05, 50.0),
+        );
+      }
+    }
+    _lastCentroid = centroid;
+    _lastPinchSpan = span;
+  }
+
+  /// 触屏长按上下文菜单（替代右键菜单；全部动作经 executeAction，R2）。
+  Future<void> _showTouchContextMenu(Offset globalPosition) async {
+    final service = widget.service;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final position = overlay == null
+        ? globalPosition
+        : overlay.globalToLocal(globalPosition);
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        overlay?.size.width ?? 0,
+        (overlay?.size.height ?? 0) - position.dy,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: 'reset',
+          height: Gs3dTokens.hitTargetTouch,
+          child: Row(children: [
+            Icon(Icons.refresh_rounded, size: 18, color: Gs3dTokens.accent),
+            SizedBox(width: 10),
+            Text('复位视角', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'pan',
+          height: Gs3dTokens.hitTargetTouch,
+          child: Row(children: [
+            Icon(Icons.open_with_rounded, size: 18, color: Gs3dTokens.textBody),
+            SizedBox(width: 10),
+            Text('平移模式', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'measure',
+          height: Gs3dTokens.hitTargetTouch,
+          child: Row(children: [
+            Icon(Icons.straighten_rounded, size: 18, color: Gs3dTokens.textBody),
+            SizedBox(width: 10),
+            Text('标尺测距', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'screenshot',
+          height: Gs3dTokens.hitTargetTouch,
+          child: Row(children: [
+            Icon(Icons.camera_alt_outlined, size: 18, color: Gs3dTokens.textBody),
+            SizedBox(width: 10),
+            Text('视口截图', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'command',
+          height: Gs3dTokens.hitTargetTouch,
+          child: Row(children: [
+            Icon(Icons.terminal, size: 18, color: Gs3dTokens.accent),
+            SizedBox(width: 10),
+            Text('命令面板', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+          ]),
+        ),
+      ],
+    );
+    if (selected == null || !mounted) return;
+    switch (selected) {
+      case 'reset':
+        service.executeAction('workbench.camera.reset');
+        break;
+      case 'pan':
+        service.executeAction('workbench.camera.set_panning',
+            {'panning': !service.isPanning});
+        break;
+      case 'measure':
+        service.executeAction('workbench.measure.mode');
+        break;
+      case 'screenshot':
+        service.executeAction('workbench.screenshot');
+        break;
+      case 'command':
+        service.executeAction('workbench.overlay.command_palette',
+            {'open': true});
+        break;
+    }
+  }
 
   void _finishBoxSelect(Offset start, Offset current) {
     final minX = math.min(start.dx, current.dx);
@@ -301,6 +449,18 @@ class _CenterViewportState extends State<CenterViewport> {
                       },
                       child: Listener(
                         onPointerDown: (event) {
+                          final isTouch =
+                              event.kind == PointerDeviceKind.touch;
+                          // 多指追踪：所有触屏指针按 pointerId 登记生命周期。
+                          if (isTouch) {
+                            _activePointers[event.pointer] =
+                                event.localPosition;
+                            if (_isMultiTouch) {
+                              _focusNode.requestFocus();
+                              _beginTouchMultiGesture();
+                              return;
+                            }
+                          }
                           final isPrimary = event.buttons == kPrimaryButton;
                           final isPanBtn = event.buttons == kSecondaryButton ||
                               event.buttons == kTertiaryButton;
@@ -309,9 +469,11 @@ class _CenterViewportState extends State<CenterViewport> {
                           _dragPointer = event.pointer;
                           _dragLastLocal = event.localPosition;
                           _dragForcePan = isPanBtn;
-                          // Shift+左键仍为框选；右键/中键不进入框选
-                          _dragIsBox =
-                              isPrimary && HardwareKeyboard.instance.isShiftPressed;
+                          // Shift+左键仍为框选；右键/中键不进入框选；
+                          // 触屏单指不进框选（长按菜单替代右键语义）。
+                          _dragIsBox = isPrimary &&
+                              !isTouch &&
+                              HardwareKeyboard.instance.isShiftPressed;
                           if (_dragIsBox) {
                             setState(() {
                               _boxSelectStart = event.localPosition;
@@ -320,6 +482,15 @@ class _CenterViewportState extends State<CenterViewport> {
                           }
                         },
                         onPointerMove: (event) {
+                          // 多指手势优先：双指 → 平移 + 捏合缩放。
+                          if (_activePointers.containsKey(event.pointer)) {
+                            _activePointers[event.pointer] =
+                                event.localPosition;
+                            if (_isMultiTouch) {
+                              _dispatchTouchGesture();
+                              return;
+                            }
+                          }
                           if (event.pointer != _dragPointer ||
                               _dragLastLocal == null) {
                             return;
@@ -337,7 +508,8 @@ class _CenterViewportState extends State<CenterViewport> {
                           }
                           if (dx == 0 && dy == 0) return;
                           final service = widget.service;
-                          // 右键/中键始终平移；左键看是否处于平移模式
+                          // 右键/中键始终平移；左键看是否处于平移模式；
+                          // 触屏单指 = 旋转（平板主操作，总监裁决）。
                           if (service.isPanning || _dragForcePan) {
                             service.setCameraView(
                               panX: service.cameraPanX + dx,
@@ -352,6 +524,20 @@ class _CenterViewportState extends State<CenterViewport> {
                           }
                         },
                         onPointerUp: (event) {
+                          if (_activePointers.remove(event.pointer) != null) {
+                            _lastCentroid = null;
+                            _lastPinchSpan = null;
+                            // 双指抬起一指后，剩余一指接续为单指旋转，
+                            // 避免手势断流。
+                            if (_activePointers.length == 1) {
+                              final remaining = _activePointers.entries.first;
+                              _dragPointer = remaining.key;
+                              _dragLastLocal = remaining.value;
+                              _dragIsBox = false;
+                              _dragForcePan = false;
+                              return;
+                            }
+                          }
                           if (event.pointer != _dragPointer) return;
                           final wasBox = _dragIsBox;
                           final start = _boxSelectStart;
@@ -364,7 +550,10 @@ class _CenterViewportState extends State<CenterViewport> {
                             _finishBoxSelect(start, current);
                           }
                         },
-                        onPointerCancel: (_) {
+                        onPointerCancel: (event) {
+                          _activePointers.remove(event.pointer);
+                          _lastCentroid = null;
+                          _lastPinchSpan = null;
                           _dragPointer = null;
                           _dragLastLocal = null;
                           _dragIsBox = false;
@@ -396,6 +585,11 @@ class _CenterViewportState extends State<CenterViewport> {
                             _lastVpSize = vpSize;
                             return MouseRegion(
                               onHover: (event) {
+                                // 触屏设备不产生真实 hover；hover pick 仅
+                                // 鼠标源指针触发（平板长按/点击走拾取）。
+                                if (event.kind != PointerDeviceKind.mouse) {
+                                  return;
+                                }
                                 setState(() {
                                   _hoverPos = event.localPosition;
                                 });
@@ -454,7 +648,11 @@ class _CenterViewportState extends State<CenterViewport> {
                                   }
                                 },
                                 // 轨道/平移由外层 Listener 的 onPointerMove 处理；
-                                // GestureDetector 只负责点击/双击。
+                                // GestureDetector 只负责点击/双击/长按菜单。
+                                onLongPressStart: (details) {
+                                  // 长按 = 触屏右键（上下文菜单）。
+                                  _showTouchContextMenu(details.globalPosition);
+                                },
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
                                     final w = constraints.maxWidth.round();
@@ -472,7 +670,18 @@ class _CenterViewportState extends State<CenterViewport> {
                                     return Container(
                                       key: WorkbenchUiKeys.viewportCanvas,
                                       color: bgColor,
-                                      child: nativeFrameImage != null
+                                      // R3：引擎不可用时渲染显式降级错误卡片，
+                                      // 禁止任何 Dart 绘制的点云替代物。
+                                      child: widget.service
+                                                  .engineAvailability ==
+                                              EngineAvailability.unavailable
+                                          ? Center(
+                                              child: ViewportEngineErrorCard(
+                                                reason: widget.service
+                                                    .initializationError,
+                                              ),
+                                            )
+                                          : nativeFrameImage != null
                                       ? RepaintBoundary(
                                           key: _viewportRepaintKey,
                                           child: CustomPaint(
@@ -699,38 +908,42 @@ class _CenterViewportState extends State<CenterViewport> {
                               child: Text('等轴测 (Iso)'),
                             ),
                           ],
-                          child: Container(
-                            height: 28,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: Gs3dTokens.surface.withAlpha(235),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Gs3dTokens.border),
-                              boxShadow: Gs3dTokens.elevation1,
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.view_in_ar_rounded,
-                                  size: 14,
-                                  color: Gs3dTokens.accent,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  '视角',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: Gs3dTokens.textBody,
+                          child: _touchHitArea(
+                            Container(
+                              height: 28,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Gs3dTokens.surface.withAlpha(235),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Gs3dTokens.border),
+                                boxShadow: Gs3dTokens.elevation1,
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.view_in_ar_rounded,
+                                    size: 14,
+                                    color: Gs3dTokens.accent,
                                   ),
-                                ),
-                                Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 16,
-                                  color: Gs3dTokens.textSecondary,
-                                ),
-                              ],
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '视角',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Gs3dTokens.textBody,
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.arrow_drop_down,
+                                    size: 16,
+                                    color: Gs3dTokens.textSecondary,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -840,8 +1053,13 @@ class _CenterViewportState extends State<CenterViewport> {
                       ),
                     ),
 
-                  // 若没有载入数据，显示居中友好引导
-                  if (points.isEmpty)
+                  // 若没有载入数据，显示居中友好引导。
+                  // R3：引擎不可用时不显示该引导（错误卡片已显式告知
+                  // 引擎缺失；且该卡片为 Stack 上层不透明浮层，会遮蔽
+                  // 触控手势命中视口 Listener）。
+                  if (points.isEmpty &&
+                      widget.service.engineAvailability !=
+                          EngineAvailability.unavailable)
                     Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1011,23 +1229,33 @@ class _CenterViewportState extends State<CenterViewport> {
     );
   }
 
+  /// KB-01：触控档（compact / tablet）把视觉容器外包 [Gs3dTouchTarget]，
+  /// 命中区撑到 ≥ [Gs3dTokens.hitTargetTouch]（48），视觉尺寸不变；
+  /// expanded 档（桌面键鼠）原样返回，保持现状 28，桌面视觉与交互零变化。
+  Widget _touchHitArea(Widget visual) {
+    if (!context.isTouchPreferred) return visual;
+    return Gs3dTouchTarget(minSize: Gs3dTokens.hitTargetTouch, child: visual);
+  }
+
   Widget _buildGizmoPresetTag(String label, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(3),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.black.withAlpha(180),
-          borderRadius: BorderRadius.circular(3),
-          border: Border.all(color: Colors.white24, width: 0.8),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
+      child: _touchHitArea(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black.withAlpha(180),
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: Colors.white24, width: 0.8),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),
@@ -1183,22 +1411,24 @@ class _CenterViewportState extends State<CenterViewport> {
       key: key,
       borderRadius: BorderRadius.circular(16),
       onTap: onPressed,
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: Gs3dTokens.surface.withAlpha(235),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Gs3dTokens.border),
-          boxShadow: Gs3dTokens.elevation1,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Gs3dTokens.textBody,
+      child: _touchHitArea(
+        Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Gs3dTokens.surface.withAlpha(235),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Gs3dTokens.border),
+            boxShadow: Gs3dTokens.elevation1,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Gs3dTokens.textBody,
+            ),
           ),
         ),
       ),
@@ -1217,17 +1447,19 @@ class _CenterViewportState extends State<CenterViewport> {
         key: key,
         borderRadius: BorderRadius.circular(14),
         onTap: onPressed,
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: Gs3dTokens.surface.withAlpha(235),
-            shape: BoxShape.circle,
-            border: Border.all(color: Gs3dTokens.border),
-            boxShadow: Gs3dTokens.elevation1,
+        child: _touchHitArea(
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: Gs3dTokens.surface.withAlpha(235),
+              shape: BoxShape.circle,
+              border: Border.all(color: Gs3dTokens.border),
+              boxShadow: Gs3dTokens.elevation1,
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 15, color: Gs3dTokens.textBody),
           ),
-          alignment: Alignment.center,
-          child: Icon(icon, size: 15, color: Gs3dTokens.textBody),
         ),
       ),
     );
@@ -1243,27 +1475,29 @@ class _CenterViewportState extends State<CenterViewport> {
       key: key,
       borderRadius: BorderRadius.circular(16),
       onTap: () => onChanged(!active),
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: active
-              ? Gs3dTokens.accentSubtle
-              : Gs3dTokens.surface.withAlpha(235),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: active ? Gs3dTokens.accent : Gs3dTokens.border,
-            width: active ? 1.2 : 1.0,
+      child: _touchHitArea(
+        Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: active
+                ? Gs3dTokens.accentSubtle
+                : Gs3dTokens.surface.withAlpha(235),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: active ? Gs3dTokens.accent : Gs3dTokens.border,
+              width: active ? 1.2 : 1.0,
+            ),
+            boxShadow: Gs3dTokens.elevation1,
           ),
-          boxShadow: Gs3dTokens.elevation1,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            color: active ? Gs3dTokens.accent : Gs3dTokens.textBody,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              color: active ? Gs3dTokens.accent : Gs3dTokens.textBody,
+            ),
           ),
         ),
       ),

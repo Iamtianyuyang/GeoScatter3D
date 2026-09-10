@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
 import '../panels/center_viewport.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import '../widgets/fluid.dart';
+import 'standard_workbench_layout.dart';
 
 enum FloatingDockPanelType {
   dataset,
@@ -67,6 +69,11 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
 
   @override
   Widget build(BuildContext context) {
+    // 入口档位守卫：悬浮胶囊 Dock 为桌面专属形态（键鼠假设）；触控档
+    // 切到本布局时保持触控工作台并显式提示，避免出现触控不可用形态。
+    if (context.isTouchPreferred) {
+      return _TouchFallbackScaffold(service: widget.service);
+    }
     return Stack(
       children: [
         // 1. 底层：充满全屏的真 3D 渲染主视口
@@ -478,6 +485,37 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 触控档布局守卫回退：提示 + 触控工作台（StandardWorkbenchLayout 内部
+/// 已按档位呈现抽屉形态）。
+class _TouchFallbackScaffold extends StatelessWidget {
+  const _TouchFallbackScaffold({required this.service});
+
+  final GeoScatter3dService service;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          key: const ValueKey('tablet.layout_guard_banner'),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gs3dTokens.space16,
+            vertical: Gs3dTokens.space8,
+          ),
+          color: Gs3dTokens.infoSubtle,
+          child: Text(
+            '「${service.layoutMode.displayName}」为桌面专属布局，'
+            '已在触控设备保持触控工作台',
+            style: Gs3dType.caption.copyWith(color: Gs3dTokens.textBody),
+          ),
+        ),
+        Expanded(child: StandardWorkbenchLayout(service: service)),
+      ],
     );
   }
 }

@@ -105,6 +105,16 @@ enum WorkbenchLayoutMode {
   }
 }
 
+/// 渲染内核可用性状态（R3：无引擎必须显式外显，不得静默假装可用）。
+enum EngineAvailability {
+  /// 内核已随平台部署且加载成功。
+  available,
+
+  /// 内核在本平台不可用（如 Android 未移植）——依赖引擎的动作保持可达，
+  /// 但执行时返回显式错误反馈。
+  unavailable,
+}
+
 class GeoScatter3dService extends ChangeNotifier {
   static final GeoScatter3dService _instance = GeoScatter3dService._internal();
   factory GeoScatter3dService() => _instance;
@@ -113,6 +123,10 @@ class GeoScatter3dService extends ChangeNotifier {
 
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
+  // 引擎可用性显式状态机（R3）。默认 available：Windows 有 DLL 时行为零变化；
+  // initialize() 失败（含 Android .so 加载失败）时写入 unavailable 并外显。
+  EngineAvailability _engineAvailability = EngineAvailability.available;
+  String? _initializationError;
   // 单进程离屏引擎：唯一渲染路径；无引擎则工作台不可用（无 Dart 软预览）
   Pointer<Void>? _engineHandle;
   int _engineW = 0;
@@ -214,6 +228,47 @@ class GeoScatter3dService extends ChangeNotifier {
   void Function(String path)? onScreenshotSaved;
 
   bool get isInitialized => _initialized;
+
+  /// 引擎可用性状态（视口据此渲染显式降级错误卡片）。
+  EngineAvailability get engineAvailability => _engineAvailability;
+
+  /// 初始化失败原因（engineAvailability == unavailable 时非空）。
+  String? get initializationError => _initializationError;
+
+  /// 显式标记引擎不可用（供 initialize 失败路径与测试预设使用）。
+  void markEngineUnavailable(String reason) {
+    _engineAvailability = EngineAvailability.unavailable;
+    _initializationError = reason;
+    notifyListeners();
+  }
+
+  /// 依赖渲染内核的动作前缀集合。
+  ///
+  /// 命中这些前缀的动作在 `engineAvailability == unavailable` 时保持入口
+  /// 可达（不置灰、不隐藏），但 `executeAction` 前置 guard 返回显式错误
+  /// （R3：引擎依赖类「点击 → 显式报错」，与纯 UI 类动作区分）。
+  static const Set<String> engineDependentActionPrefixes = <String>{
+    'workbench.camera',
+    'workbench.gizmo',
+    'workbench.render',
+    'workbench.point_cloud',
+    'workbench.pick',
+    'workbench.minimap',
+    'workbench.screenshot',
+    'workbench.export',
+    'workbench.cache',
+    'workbench.diagnostics',
+    'workbench.stats',
+    'workbench.measure',
+    'workbench.file',
+  };
+
+  bool _isEngineDependentAction(String actionId) =>
+      engineDependentActionPrefixes.any(actionId.startsWith);
+
+  /// R3 统一降级反馈文案。
+  static String get engineUnavailableMessage =>
+      '渲染内核在本平台不可用，无法执行该动作。请回到桌面版使用完整渲染功能。';
   bool _welcomeBusy = false;
   String? _welcomeError;
   bool get welcomeBusy => _welcomeBusy;
@@ -246,6 +301,8 @@ class GeoScatter3dService extends ChangeNotifier {
 
   String get backendStatus => _welcomeBusy
       ? (_latestProgress?.stage ?? '正在载入工程与启动渲染器…')
+      : _engineAvailability == EngineAvailability.unavailable
+      ? '渲染内核在本平台不可用${_initializationError == null ? '' : '（$_initializationError）'}'
       : isNativeRendererActive
       ? '原生渲染器已连接'
       : _initialized
@@ -1956,11 +2013,18 @@ class GeoScatter3dService extends ChangeNotifier {
             _startDragDropPolling();
           } catch (_) {}
         }
+      } else {
+        // init 返回非 0：内核库虽已打开但自检失败，同样显式降级（R3）。
+        markEngineUnavailable('渲染内核初始化失败 (init rc=$res)');
       }
       notifyListeners();
       return _initialized;
     } catch (e) {
       debugPrint('[GeoScatter3D FFI] Failed to initialize: $e');
+      // 加载/初始化异常显式写入状态机并广播（R3：不再静默吞掉）。
+      markEngineUnavailable(
+        e is Gs3dEngineLoadException ? e.reason : e.toString(),
+      );
       return false;
     }
   }
@@ -3252,6 +3316,17 @@ class GeoScatter3dService extends ChangeNotifier {
     Map<String, dynamic>? params,
   ]) {
     final p = params ?? const {};
+    // R3 前置 guard：引擎不可用时，引擎依赖类动作保持可达但显式报错
+    // （不静默失败、不置灰隐藏，与「功能缺失」显式区分）。
+    if (_engineAvailability == EngineAvailability.unavailable &&
+        _isEngineDependentAction(actionId)) {
+      return {
+        'success': false,
+        'message': '${GeoScatter3dService.engineUnavailableMessage}'
+            ' ($_initializationError)',
+        'engine_available': false,
+      };
+    }
     switch (actionId) {
       case 'welcome.quick_demo':
         final resolved = resolveDatasetPath('data/sample-points.gs3d.bundle');

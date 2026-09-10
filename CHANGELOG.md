@@ -3,6 +3,34 @@
 版本号沿用 Git 提交历史; 未打 release tag 前按里程碑组织。条目按时间倒序,
 日期为提交日期 (GitHub 仓库 `Iamtianyuyang/GeoScatter3D`)。
 
+## 2026-09-11 — 平板适配（响应式 UI + 触控 + 引擎显式降级）
+
+- **响应式断点中枢**: 新增 `Gs3dFormFactorScope`
+  (`gs3d_form_factor.dart`)，由窗口宽度派生 compact<600 / tablet<1280 /
+  expanded 三档，经 `MaterialApp.builder` 与 `Gs3dA11yScope` 并排注入；
+  组件一律经 `context.gs3dFormFactor` 消费，禁止散落判宽。折叠屏姿态
+  (P1) 预留同一工厂扩展点。
+- **触控目标**: 新增 `hitTargetTouch = 48` 与 `Gs3dTouchTarget` 包裹器
+  (视觉不变、命中区撑足)；视口浮层工具条 5 处与 Gizmo 预设标签在
+  触控档 ≥48，expanded 档保持桌面 28 不变。
+- **视口多指手势**: `center_viewport` 裸 `Listener` 路径扩展多指追踪
+  ——单指拖拽=旋转、双指=平移+捏合缩放、第三指不崩溃、抬指复位；
+  桌面键鼠路径零回退。
+- **平板工作台形态**: 新增 `panels/tablet/`（drawer_scaffold +
+  action_bar）：侧栏收合为图标 rail、拇指区动作条、对话框经
+  `Gs3dResponsiveDialog` 在窄档落底部 sheet（桌面保持居中模态）、
+  命令面板入口按钮化（无键盘可达）。
+- **引擎显式降级 (R3)**: service 新增 `EngineAvailability` 状态机，
+  Android 上 `DynamicLibrary.open('libgs3d_ffi.so')` 失败不再被吞——
+  显式 unavailable 状态 + 视口错误卡 + 13 类引擎依赖动作前置 guard
+  返回明确错误；新增 `viewport_engine_error_card`。零 C++/CMake 改动。
+- **测试基线**: 60/3 → 82/3（e2e 62/1 → 84/1）；新增平板三档 surface
+  用例、断点边界、触控命中区、R3 降级直测、多指状态机用例；离屏预览
+  新增 `05-tablet.png` / `06-tablet-welcome.png`。
+- **遗留**: Android 模拟器 APK 走查因沙箱 gradle 受限未完成，补做步骤
+  见 `deliverables/software-company/tablet-qa-report.md`；引擎 NDK
+  移植（GLFW → Android surface）留待下迭代。
+
 ## 2026-09-10 — 前后端全量接入 + 前端统一重构
 
 ### 后端接入（Flutter ↔ C-ABI）

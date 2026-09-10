@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
+import '../widgets/command_palette.dart';
 import '../widgets/fluid.dart';
 import 'new_project_dialog.dart';
 import 'open_project_dialog.dart';
@@ -56,9 +58,9 @@ class _WelcomePageState extends State<WelcomePage> {
         ),
       );
     } else {
-      showDialog(
-        context: context,
-        barrierDismissible: true,
+      Gs3dResponsiveDialog.show(
+        context,
+        title: '新建散点工程',
         builder: (_) =>
             NewProjectDialog(service: widget.service, initialPath: path),
       );
@@ -66,23 +68,33 @@ class _WelcomePageState extends State<WelcomePage> {
   }
 
   void _openNewProjectDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '新建散点工程',
       builder: (_) => NewProjectDialog(service: widget.service),
     );
   }
 
   void _openProjectDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '打开工程数据包',
       builder: (_) => OpenProjectDialog(service: widget.service),
     );
   }
 
+  /// 唤起命令面板（等价 Ctrl+K/P 入口；无键盘设备可达，R2 走 executeAction）。
+  void _openCommandPalette() {
+    widget.service.executeAction('workbench.overlay.command_palette',
+        {'open': true});
+  }
+
   @override
   Widget build(BuildContext context) {
+    final touchPreferred = context.isTouchPreferred;
+    // 触控档：欢迎页侧栏常显 64 图标栏（命中 ≥48），不做抽屉化
+    // （架构假设声明：工程量收益比最优，PRD 未强制欢迎页抽屉化）。
+    final collapsed = _isDrawerCollapsed || touchPreferred;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true):
@@ -98,7 +110,9 @@ class _WelcomePageState extends State<WelcomePage> {
         child: Scaffold(
           key: WelcomeUiKeys.welcomeDragDropTarget,
           backgroundColor: Gs3dTokens.windowBg,
-          body: Column(
+          body: Stack(
+            children: [
+              Column(
             children: [
               // 1. 统一顶栏（居中标题，左右对称，永不溢出）。
               Container(
@@ -107,13 +121,36 @@ class _WelcomePageState extends State<WelcomePage> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: Gs3dTokens.space12 + 2,
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    MacTrafficLights(),
-                    Spacer(),
-                    Text('GeoScatter3D · v0.1.0', style: Gs3dType.bodyStrong),
-                    Spacer(),
-                    SizedBox(width: 47),
+                    const MacTrafficLights(),
+                    const Spacer(),
+                    // 品牌区：长按唤起命令面板（触屏等价快捷键入口）。
+                    GestureDetector(
+                      onLongPress: _openCommandPalette,
+                      child: const Text(
+                        'GeoScatter3D · v0.1.0',
+                        style: Gs3dType.bodyStrong,
+                      ),
+                    ),
+                    const Spacer(),
+                    // 触控档常驻「命令」按钮（等价 Ctrl+K/P）。
+                    if (touchPreferred)
+                      IconButton(
+                        key: const ValueKey('welcome.topbar.command'),
+                        tooltip: '命令面板',
+                        icon: const Icon(
+                          Icons.terminal,
+                          size: 18,
+                          color: Gs3dTokens.textSecondary,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: Gs3dTokens.hitTargetTouch,
+                          minHeight: Gs3dTokens.hitTargetTouch,
+                        ),
+                        onPressed: _openCommandPalette,
+                      ),
+                    const SizedBox(width: 47),
                   ],
                 ),
               ),
@@ -129,7 +166,7 @@ class _WelcomePageState extends State<WelcomePage> {
                       onSelectIndex: (idx) {
                         setState(() => _selectedNavIndex = idx);
                       },
-                      isCollapsed: _isDrawerCollapsed,
+                      isCollapsed: collapsed,
                       onToggleCollapse: () {
                         setState(() => _isDrawerCollapsed = !_isDrawerCollapsed);
                       },
@@ -216,6 +253,19 @@ class _WelcomePageState extends State<WelcomePage> {
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+
+              // 全局命令面板覆盖层（触控入口按钮化后，欢迎页同样可达）。
+              ListenableBuilder(
+                listenable: widget.service,
+                builder: (context, _) {
+                  if (!widget.service.isCommandPaletteOpen) {
+                    return const SizedBox.shrink();
+                  }
+                  return CommandPalette(service: widget.service);
+                },
               ),
             ],
           ),

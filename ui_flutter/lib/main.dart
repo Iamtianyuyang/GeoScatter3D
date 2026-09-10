@@ -6,8 +6,10 @@ import 'src/layouts/floating_dock_layout.dart';
 import 'src/layouts/standard_workbench_layout.dart';
 import 'src/panels/bottom_status_bar.dart';
 import 'src/panels/performance_panel.dart';
+import 'src/panels/tablet/tablet_action_bar.dart';
 import 'src/panels/tile_inspector_dialog.dart';
 import 'src/panels/top_menu_bar.dart';
+import 'src/theme/gs3d_form_factor.dart';
 import 'src/theme/gs3d_theme.dart';
 import 'src/theme/gs3d_tokens.dart';
 import 'src/welcome/welcome_page.dart';
@@ -62,11 +64,16 @@ class _GeoScatter3dAppState extends State<GeoScatter3dApp> {
       title: 'GeoScatter3D 三维散点系统 (Flutter)',
       debugShowCheckedModeBanner: false,
       theme: Gs3dTheme.light(),
-      // 注入无障碍偏好（减弱动效 / 降低透明度 / 高对比），
-      // 供全应用通过 context.gs3dA11y 统一读取。
-      builder: (context, child) => Gs3dA11yScope(
-        a11y: Gs3dA11y.fromContext(context),
-        child: child ?? const SizedBox.shrink(),
+      // 注入无障碍偏好与形态因子档位（二者并排，供全应用通过
+      // context.gs3dA11y / context.gs3dFormFactor 统一读取）。
+      builder: (context, child) => Gs3dFormFactorScope(
+        slot: Gs3dFormFactorScope.resolve(
+          MediaQuery.maybeOf(context) ?? const MediaQueryData(),
+        ),
+        child: Gs3dA11yScope(
+          a11y: Gs3dA11y.fromContext(context),
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
       home: ListenableBuilder(
         listenable: service,
@@ -116,7 +123,11 @@ class GeoScatter3dWorkbench extends StatelessWidget {
                     ),
                   ),
 
-                  // 3. 底部状态栏
+                  // 3. 平板拇指动作条（仅触控档；位于状态栏之上让位）
+                  if (context.isTouchPreferred)
+                    TabletActionBar(service: service),
+
+                  // 4. 底部状态栏（只读遥测保留）
                   BottomStatusBar(service: service),
                 ],
               ),

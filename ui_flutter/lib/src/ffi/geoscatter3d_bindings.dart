@@ -4,6 +4,21 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 
+/// 渲染内核动态库加载失败异常（带人类可读原因）。
+///
+/// Android / Linux 上 `DynamicLibrary.open` 抛出的原始异常被包装为本类型，
+/// `GeoScatter3dService.initialize()` 捕获后写入显式「引擎不可用」状态
+/// （R3：不静默、不假装可用）。
+class Gs3dEngineLoadException implements Exception {
+  const Gs3dEngineLoadException(this.reason);
+
+  /// 加载失败原因（面向用户可展示）。
+  final String reason;
+
+  @override
+  String toString() => 'Gs3dEngineLoadException: $reason';
+}
+
 // Native function typedefs
 typedef _c_init = ffi.Int32 Function();
 typedef _dart_init = int Function();
@@ -888,6 +903,19 @@ class GeoScatter3dBindings {
     return ffi.DynamicLibrary.open(absolutePath);
   }
 
+  /// Android / Linux：`DynamicLibrary.open('libgs3d_ffi.so')` 失败（典型为
+  /// 引擎未做安卓移植、找不到 .so）时包装为带原因的 [Gs3dEngineLoadException]，
+  /// 供 service 捕获归类为显式「引擎不可用」状态。**不改加载路径本身**。
+  static ffi.DynamicLibrary _openPosixSo() {
+    try {
+      return ffi.DynamicLibrary.open('libgs3d_ffi.so');
+    } catch (error) {
+      throw Gs3dEngineLoadException(
+        '无法加载 libgs3d_ffi.so（渲染内核未随平台部署）: $error',
+      );
+    }
+  }
+
   /// 自动探测并加载动态库
   static GeoScatter3dBindings openLibrary([String? customPath]) {
     if (customPath != null && File(customPath).existsSync()) {
@@ -917,7 +945,7 @@ class GeoScatter3dBindings {
       }
       return GeoScatter3dBindings(_openWithLocalDeps('gs3d_ffi.dll'));
     } else if (Platform.isAndroid || Platform.isLinux) {
-      return GeoScatter3dBindings(ffi.DynamicLibrary.open('libgs3d_ffi.so'));
+      return GeoScatter3dBindings(_openPosixSo());
     } else if (Platform.isMacOS || Platform.isIOS) {
       return GeoScatter3dBindings(ffi.DynamicLibrary.process());
     }

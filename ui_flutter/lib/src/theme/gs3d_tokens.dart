@@ -212,6 +212,16 @@ abstract final class Gs3dTokens {
   /// 控件最小可点击尺寸（Apple 建议 ≥ 28×28 桌面）。
   static const double hitTarget = 28.0;
 
+  /// 触控最小命中区（Material 下限 48 ∩ Apple HIG 44pt）。
+  /// 平板 / 手机档位下所有可交互控件经 `Gs3dTouchTarget` 撑到此值。
+  static const double hitTargetTouch = 48.0;
+
+  /// 平板底部拇指动作条高度（≥64 拇指区）。
+  static const double bottomBarTouchHeight = 64.0;
+
+  /// 平板触控顶栏高度（≥56，桌面标题栏仍为 40）。
+  static const double topBarTouchHeight = 56.0;
+
   // ---- 层级阴影（z0..z4）---------------------------------------------------
   /// z0：贴合表面，无阴影。
   static const List<BoxShadow> elevation0 = <BoxShadow>[];
