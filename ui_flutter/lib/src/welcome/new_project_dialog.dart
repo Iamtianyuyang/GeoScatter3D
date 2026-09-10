@@ -476,7 +476,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     decoration: BoxDecoration(
                       color: Gs3dTokens.dangerSubtle,
                       borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
-                      border: Border.all(color: const Color(0xFFFCA5A5)),
+                      border: Border.all(color: Gs3dTokens.dangerBorder),
                     ),
                     child: Row(
                       children: [
@@ -507,7 +507,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                         key: WelcomeUiKeys.newProjectDialogCancelBuildButton,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Gs3dTokens.danger,
-                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          side: const BorderSide(color: Gs3dTokens.dangerBorder),
                         ),
                         icon: const Icon(Icons.stop_circle_outlined, size: 16),
                         label: const Text('取消构建'),

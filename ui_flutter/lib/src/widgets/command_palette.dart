@@ -431,32 +431,32 @@ class _CommandPaletteState extends State<CommandPalette> {
     String label = '全局';
 
     if (category.contains('camera') || category.contains('viewport')) {
-      color = const Color(0xFF00B0FF);
+      color = Gs3dTokens.categoryViewport;
       label = '视口';
     } else if (category.contains('point_cloud') ||
         category.contains('render')) {
-      color = const Color(0xFF7C4DFF);
+      color = Gs3dTokens.categoryRender;
       label = '渲染';
     } else if (category.contains('measure')) {
       color = Gs3dTokens.measure;
       label = '测量';
     } else if (category.contains('stats')) {
-      color = const Color(0xFFFF9100);
+      color = Gs3dTokens.categoryStats;
       label = '统计';
     } else if (category.contains('dock') || category.contains('layout')) {
-      color = const Color(0xFF00C853);
+      color = Gs3dTokens.categoryUi;
       label = '界面';
     } else if (category.contains('project') || category.contains('welcome')) {
-      color = const Color(0xFFFF5252);
+      color = Gs3dTokens.categoryProject;
       label = '工程';
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withAlpha(35),
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withAlpha(120), width: 0.8),
+        border: Border.all(color: color.withValues(alpha: 0.47), width: 0.8),
       ),
       child: Text(
         label,

@@ -147,6 +147,32 @@ abstract final class Gs3dTokens {
   /// 平盘：中性灰。
   static const Color quoteFlat = Gs3dPalette.slate500;
 
+  // ---- 状态描边 -----------------------------------------------------------
+  /// 错误态描边（浅红，用于表单校验）。
+  static const Color dangerBorder = Color(0xFFFCA5A5);
+
+  // ---- 命令分类标识色（命令面板 / 动作目录）--------------------------------
+  /// 全局 / 未分类。
+  static const Color categoryGlobal = accent;
+
+  /// 视口 / 相机类。
+  static const Color categoryViewport = Color(0xFF00B0FF);
+
+  /// 点云渲染类。
+  static const Color categoryRender = Color(0xFF7C4DFF);
+
+  /// 测量类。
+  static const Color categoryMeasure = measure;
+
+  /// 统计类。
+  static const Color categoryStats = Color(0xFFFF9100);
+
+  /// 界面 / 布局 / 停靠类。
+  static const Color categoryUi = Color(0xFF00C853);
+
+  /// 工程 / 数据装载类。
+  static const Color categoryProject = Color(0xFFFF5252);
+
   // ---- 圆角（Apple Squircle 连续曲率）--------------------------------------
   static const double radiusXs = 4.0;
   static const double radiusSm = 6.0;

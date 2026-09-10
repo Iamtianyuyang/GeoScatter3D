@@ -307,7 +307,7 @@ class _InlineError extends StatelessWidget {
       decoration: BoxDecoration(
         color: Gs3dTokens.dangerSubtle,
         borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: Gs3dTokens.dangerBorder),
       ),
       child: Row(
         children: [

@@ -81,6 +81,12 @@ gs3d_engine* gs3d_engine_create(const gs3d_engine_config* cfg) {
             }
             kcfg.enable_validation = cfg->enable_validation != 0;
         }
+        // 未显式指定时回退到与 DLL 同目录解析出的资产路径。否则
+        // PointPipeline 会退回相对路径 assets/shaders，一旦工作目录不是
+        // 仓库根就会静默取不到着色器。
+        if (kcfg.shader_dir.empty()) {
+            kcfg.shader_dir = resolve_default_shader_dir();
+        }
         auto engine = std::make_unique<gs3d_engine>();
         const int rc = engine->kernel.create(kcfg);
         if (rc != 0) {
