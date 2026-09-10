@@ -309,7 +309,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
 
   Widget _buildLogoBadge() {
     return Container(
-      key: WelcomeUiKeys.heroLogo,
+      key: WelcomeUiKeys.sidebarLogo,
       width: 32,
       height: 32,
       decoration: BoxDecoration(

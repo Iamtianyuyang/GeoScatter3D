@@ -56,7 +56,11 @@ class WelcomeUiKeys {
   static const docsDialogCloseButton = ValueKey('welcome.dialog.docs.close_button');
 
   // 8. 品牌徽标与拖拽目标
+  /// Hero 区主品牌字标（每屏仅一枚；侧栏迷你徽标用 [sidebarLogo]）。
   static const heroLogo = ValueKey('welcome.hero.logo');
+
+  /// 侧栏顶部迷你品牌徽标。
+  static const sidebarLogo = ValueKey('welcome.sidebar.logo');
   static const welcomeDragDropTarget = ValueKey('welcome.drag_drop_target');
 }
 

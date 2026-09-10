@@ -87,7 +87,30 @@ class RecentProjectsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Text('最近打开的项目', style: Gs3dType.headline),
+                // 直接用 overline 字级（Gs3dSectionLabel 内部含 Expanded，
+                // 不能作为 Row 的非弹性子项直接使用）。
+                Text('最近打开', style: Gs3dType.overline),
+                if (recentList.isNotEmpty) ...[
+                  const SizedBox(width: Gs3dTokens.space8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Gs3dTokens.surfaceSunken,
+                      borderRadius: BorderRadius.circular(
+                        Gs3dTokens.radiusPill,
+                      ),
+                    ),
+                    child: Text(
+                      '${recentList.length}',
+                      style: Gs3dType.micro.copyWith(
+                        color: Gs3dTokens.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 if (recentList.isNotEmpty)
                   Gs3dPressable(
@@ -99,7 +122,7 @@ class RecentProjectsCard extends StatelessWidget {
                         vertical: Gs3dTokens.space2,
                       ),
                       child: Text(
-                        '清除',
+                        '清除全部',
                         style: Gs3dType.caption.copyWith(
                           color: Gs3dTokens.textTertiary,
                         ),
@@ -109,20 +132,6 @@ class RecentProjectsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: Gs3dTokens.space12),
-
-            // 表头列标题。
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  SizedBox(width: 220, child: Gs3dSectionLabel('项目名称')),
-                  Expanded(child: Gs3dSectionLabel('路径')),
-                  SizedBox(width: 140, child: Gs3dSectionLabel('最后打开时间')),
-                  SizedBox(width: 48),
-                ],
-              ),
-            ),
-            const Gs3dDivider(height: 1),
 
             if (recentList.isEmpty)
               Container(
@@ -148,7 +157,7 @@ class RecentProjectsCard extends StatelessWidget {
                     ),
                     const SizedBox(height: Gs3dTokens.space4),
                     Text(
-                      '可使用上方卡片新建工区或打开已有 .gs3d 数据包',
+                      '可使用上方动作新建工程，或打开已有 .gs3d 数据包',
                       style: Gs3dType.caption,
                     ),
                     const SizedBox(height: Gs3dTokens.space12 + 2),
@@ -177,7 +186,7 @@ class RecentProjectsCard extends StatelessWidget {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: recentList.length,
                 separatorBuilder: (context, index) =>
-                    const Gs3dDivider(height: 1),
+                    const SizedBox(height: Gs3dTokens.space8),
                 itemBuilder: (context, index) {
                   final item = recentList[index];
                   return _RecentProjectRow(
@@ -212,92 +221,90 @@ class _RecentProjectRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final a11y = context.gs3dA11y;
     return Gs3dPressable(
       onTap: onTap,
+      hoverScale: 0.002,
       builder: (context, state) {
         final hovered = state != Gs3dInteractionState.idle;
         return AnimatedContainer(
-          duration: Gs3dMotion.micro,
-          curve: Gs3dMotion.standardCurve,
-          color: hovered ? Gs3dTokens.surfaceHover : Colors.transparent,
-          padding: const EdgeInsets.symmetric(vertical: 9),
+          duration: a11y.resolve(Gs3dMotion.micro),
+          curve: Gs3dMotion.enterCurve,
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gs3dTokens.space12 + 2,
+            vertical: Gs3dTokens.space8 + 2,
+          ),
+          decoration: BoxDecoration(
+            color: hovered ? Gs3dTokens.surface : Gs3dTokens.surfaceMuted,
+            borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd + 2),
+            border: Border.all(
+              color: hovered ? Gs3dTokens.accentBorder : Gs3dTokens.border,
+            ),
+            boxShadow: hovered ? Gs3dTokens.elevation2 : Gs3dTokens.elevation0,
+          ),
           child: Row(
             children: [
-              SizedBox(
-                width: 220,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: Gs3dTokens.surfaceSunken,
-                        borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
-                      ),
-                      child: const CustomPaint(
-                        painter: _WaveBadgeIconPainter(),
-                      ),
-                    ),
-                    const SizedBox(width: Gs3dTokens.space8 + 2),
-                    Expanded(
-                      child: Text(
-                        item.displayName,
-                        style: Gs3dType.body.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Gs3dTokens.textPrimary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+              // 项目徽标：波形折线，暗示"高程曲线"。
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: hovered
+                      ? Gs3dTokens.accentSubtle
+                      : Gs3dTokens.surfaceSunken,
+                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm + 1),
                 ),
+                child: const CustomPaint(painter: _WaveBadgeIconPainter()),
               ),
+              const SizedBox(width: Gs3dTokens.space12),
+              // 主信息：名称 + 等宽路径，两行胜过三列表格（窄窗也不挤压）。
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: Gs3dTokens.space16),
-                  child: Text(
-                    item.path,
-                    style: Gs3dType.mono.copyWith(
-                      fontWeight: FontWeight.w400,
-                      color: Gs3dTokens.textBody,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 140,
-                child: Text(item.relativeTimeStr, style: Gs3dType.caption),
-              ),
-              SizedBox(
-                width: 48,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      key: WelcomeUiKeys.recentItemRemove(index),
-                      icon: Icon(
-                        hovered
-                            ? Icons.close_rounded
-                            : Icons.more_horiz_rounded,
-                        size: 15,
-                        color: hovered
-                            ? Gs3dTokens.danger
-                            : Gs3dTokens.textTertiary,
+                    Text(
+                      item.displayName,
+                      style: Gs3dType.body.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Gs3dTokens.textPrimary,
                       ),
-                      tooltip: '移除记录',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 26,
-                        minHeight: 26,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.path,
+                      style: Gs3dType.mono.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        color: Gs3dTokens.textTertiary,
                       ),
-                      onPressed: onRemove,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(width: Gs3dTokens.space12),
+              Text(item.relativeTimeStr, style: Gs3dType.caption),
+              const SizedBox(width: Gs3dTokens.space4),
+              IconButton(
+                key: WelcomeUiKeys.recentItemRemove(index),
+                icon: Icon(
+                  hovered ? Icons.close_rounded : Icons.more_horiz_rounded,
+                  size: 15,
+                  color: hovered
+                      ? Gs3dTokens.danger
+                      : Gs3dTokens.textTertiary,
+                ),
+                tooltip: '移除记录',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 26,
+                  minHeight: 26,
+                ),
+                onPressed: onRemove,
               ),
             ],
           ),

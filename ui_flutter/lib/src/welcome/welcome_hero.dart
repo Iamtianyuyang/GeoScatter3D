@@ -1,292 +1,165 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../theme/gs3d_tokens.dart';
+import 'welcome_scatter_specimen.dart';
 import 'welcome_ui_keys.dart';
 
-/// 欢迎页品牌头图。
+/// 欢迎页 Hero：品牌标识 + 光学标题 + 价值主张 + 「散点标本」装饰画。
 ///
-/// 视觉取自统一令牌 [Gs3dTokens] / [Gs3dType]；粒子流为纯装饰，遵循
-/// 「减弱动效」无障碍偏好而自动静止。
-class WelcomeHero extends StatefulWidget {
+/// 纯展示组件，不依赖服务对象；首屏动作区见 [WelcomeActionCards]。
+/// 入场为一次性淡入上浮（`TweenAnimationBuilder`，无周期定时器），并遵循
+/// 「减弱动效」无障碍偏好自动退化为即时呈现。
+class WelcomeHero extends StatelessWidget {
   const WelcomeHero({super.key});
 
   @override
-  State<WelcomeHero> createState() => _WelcomeHeroState();
-}
-
-class _WelcomeHeroState extends State<WelcomeHero>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  final List<_HeroParticle> _particles = [];
-  final math.Random _random = math.Random(42);
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat();
-
-    for (int i = 0; i < 48; i++) {
-      _particles.add(
-        _HeroParticle(
-          x: _random.nextDouble() * 800,
-          y: _random.nextDouble() * 180,
-          vx: (_random.nextDouble() - 0.5) * 24,
-          vy: (_random.nextDouble() - 0.5) * 16,
-          radius: _random.nextDouble() * 2.5 + 1.2,
-          alpha: _random.nextDouble() * 0.45 + 0.15,
-        ),
-      );
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 尊重「减弱动效」：停用装饰性粒子流。
-    final reduce = context.gs3dA11y.reduceMotion;
-    if (reduce && _controller.isAnimating) {
-      _controller.stop();
-    } else if (!reduce && !_controller.isAnimating) {
-      _controller.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: Gs3dTokens.space24),
-      padding: const EdgeInsets.symmetric(vertical: Gs3dTokens.space8),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // 粒子流动态画布（装饰层，置于内容之下）。
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) => CustomPaint(
-                painter: _HeroParticlePainter(particles: _particles),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 720;
+
+        final text = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _RiseIn(
+              delay: 0,
+              child: _brandRow(),
+            ),
+            const SizedBox(height: Gs3dTokens.space16 + 2),
+            _RiseIn(
+              delay: 0.15,
+              child: const Text('从一份点云，到可漫游的地形。', style: Gs3dType.display),
+            ),
+            const SizedBox(height: Gs3dTokens.space12),
+            _RiseIn(
+              delay: 0.3,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Text(
+                  '导入 CSV / DAT 点云，自动构建八叉树 LOD 金字塔，'
+                  '在 Vulkan 1.3 视口里实时漫游百万级散点。',
+                  style: Gs3dType.body.copyWith(
+                    color: Gs3dTokens.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
+        );
 
-          // 品牌标识 + 名称 + 版本徽章 + 特性胶囊。
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
+        final specimen = _RiseIn(
+          delay: 0.45,
+          child: WelcomeScatterSpecimen(height: stacked ? 176 : 236),
+        );
+
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 连续曲率 Squircle 渐变 App Icon（Apple HIG）。
-              Container(
-                key: WelcomeUiKeys.heroLogo,
-                width: 76,
-                height: 76,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      Gs3dPalette.systemBluePressed,
-                      Gs3dTokens.accent,
-                      Gs3dPalette.systemIndigo,
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
-                  border: Border.all(
-                    color: Gs3dTokens.textOnAccent.withValues(alpha: 0.4),
-                    width: 1.2,
-                  ),
-                  boxShadow: Gs3dTokens.accentGlow(alpha: 0.25, blur: 28),
-                ),
-                alignment: Alignment.center,
-                child: const Text(
-                  'G',
-                  style: TextStyle(
-                    fontSize: 38,
-                    fontWeight: FontWeight.w800,
-                    color: Gs3dTokens.textOnAccent,
-                    letterSpacing: -1,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 22),
-
-              // 品牌字样、版本与副标题。
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: Gs3dTokens.space12,
-                      runSpacing: Gs3dTokens.space4,
-                      children: [
-                        Text.rich(
-                          const TextSpan(
-                            children: [
-                              TextSpan(
-                                text: 'Geo',
-                                style: TextStyle(color: Gs3dTokens.textPrimary),
-                              ),
-                              TextSpan(
-                                text: 'Scatter',
-                                style: TextStyle(color: Gs3dTokens.accent),
-                              ),
-                              TextSpan(
-                                text: ' 3D',
-                                style: TextStyle(color: Gs3dTokens.textPrimary),
-                              ),
-                            ],
-                          ),
-                          style: Gs3dType.display.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        // 胶囊版本徽章。
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: Gs3dTokens.space8 + 2,
-                            vertical: 3.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Gs3dTokens.accentSubtle,
-                            borderRadius: BorderRadius.circular(
-                              Gs3dTokens.radiusPill,
-                            ),
-                            border: Border.all(color: Gs3dTokens.accentBorder),
-                          ),
-                          child: Text(
-                            'v2.0 · Windows Edition',
-                            style: Gs3dType.micro.copyWith(
-                              color: Gs3dTokens.accent,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '高精度大规模三维散点时空流式渲染系统 · 现代图形工坊',
-                      style: Gs3dType.body.copyWith(fontSize: 13.5),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    const SizedBox(height: Gs3dTokens.space8 + 2),
-                    // 技术特性微标签。
-                    const Wrap(
-                      spacing: Gs3dTokens.space8,
-                      runSpacing: Gs3dTokens.space4,
-                      children: [
-                        _FeaturePill(
-                          text: '八叉树 LOD 金字塔',
-                          color: Gs3dPalette.systemBlue,
-                        ),
-                        _FeaturePill(
-                          text: '纯 C-ABI 跨语言引擎',
-                          color: Gs3dPalette.systemPurple,
-                        ),
-                        _FeaturePill(
-                          text: '毫秒级亿级点云裁剪',
-                          color: Gs3dPalette.systemGreen,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              text,
+              const SizedBox(height: Gs3dTokens.space20),
+              SizedBox(width: double.infinity, child: specimen),
             ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(flex: 11, child: text),
+            const SizedBox(width: Gs3dTokens.space32),
+            Expanded(flex: 9, child: specimen),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 品牌行：渐变字标 + 眉题。
+  Widget _brandRow() {
+    return Row(
+      children: [
+        // 渐变字标（与「关于」视图同一视觉语言，保证品牌一致）。
+        Container(
+          key: WelcomeUiKeys.heroLogo,
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Gs3dTokens.accent, Gs3dPalette.systemIndigo],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(Gs3dTokens.radiusLg),
+            boxShadow: Gs3dTokens.accentGlow(alpha: 0.26, blur: 14),
           ),
-        ],
-      ),
+          alignment: Alignment.center,
+          child: const Text(
+            'G',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: Gs3dTokens.textOnAccent,
+            ),
+          ),
+        ),
+        const SizedBox(width: Gs3dTokens.space12 + 2),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '空间数据工作台',
+              style: Gs3dType.caption.copyWith(
+                color: Gs3dTokens.accent,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2.4,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'GEOSCATTER 3D · v0.1.0',
+              style: Gs3dType.micro.copyWith(
+                color: Gs3dTokens.textTertiary,
+                letterSpacing: 0.6,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-class _FeaturePill extends StatelessWidget {
-  const _FeaturePill({required this.text, required this.color});
+/// 一次性入场动效：淡入 + 14px 上浮，[delay]（0..1）在总时长内错峰。
+///
+/// 减弱动效时时长归零，直接呈现静止态；无周期定时器，用例可安全结束。
+class _RiseIn extends StatelessWidget {
+  const _RiseIn({required this.delay, required this.child});
 
-  final String text;
-  final Color color;
+  final double delay;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Gs3dTokens.space8,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(Gs3dTokens.radiusPill),
-        border: Border.all(color: color.withValues(alpha: 0.15)),
-      ),
-      child: Text(
-        text,
-        style: Gs3dType.micro.copyWith(
-          color: color,
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0,
+    final a11y = context.gs3dA11y;
+    final base = a11y.resolve(Gs3dMotion.slow);
+    final duration = base == Duration.zero
+        ? Duration.zero
+        : base + Duration(milliseconds: (delay * 240).round());
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: duration,
+      curve: Interval(delay.clamp(0.0, 1.0), 1.0, curve: Gs3dMotion.enterCurve),
+      builder: (context, t, child) => Opacity(
+        opacity: t.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, 14 * (1 - t)),
+          child: child,
         ),
       ),
+      child: child,
     );
   }
-}
-
-class _HeroParticle {
-  _HeroParticle({
-    required this.x,
-    required this.y,
-    required this.vx,
-    required this.vy,
-    required this.radius,
-    required this.alpha,
-  });
-
-  double x;
-  double y;
-  double vx;
-  double vy;
-  double radius;
-  double alpha;
-}
-
-class _HeroParticlePainter extends CustomPainter {
-  _HeroParticlePainter({required this.particles});
-
-  final List<_HeroParticle> particles;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    const dt = 0.016;
-
-    for (final p in particles) {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-
-      if (p.x < 0) p.x = size.width;
-      if (p.x > size.width) p.x = 0;
-      if (p.y < 0) p.y = size.height;
-      if (p.y > size.height) p.y = 0;
-
-      paint.color = Gs3dTokens.accent.withValues(alpha: p.alpha);
-      canvas.drawCircle(Offset(p.x, p.y), p.radius, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

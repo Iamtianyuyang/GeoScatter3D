@@ -8,6 +8,7 @@ import 'new_project_dialog.dart';
 import 'open_project_dialog.dart';
 import 'recent_projects_card.dart';
 import 'welcome_action_cards.dart';
+import 'welcome_hero.dart';
 import 'welcome_sidebar.dart';
 import 'welcome_ui_keys.dart';
 
@@ -192,18 +193,18 @@ class _WelcomePageState extends State<WelcomePage> {
                             },
                           ),
 
-                          // 内容滚动区（最大宽度 960，杜绝超宽屏拉伸）。
+                          // 内容滚动区（最大宽度 1080 并居中，杜绝超宽屏拉伸）。
                           Expanded(
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 44,
-                                vertical: 34,
+                                horizontal: 48,
+                                vertical: 40,
                               ),
                               child: Align(
-                                alignment: Alignment.topLeft,
+                                alignment: Alignment.topCenter,
                                 child: ConstrainedBox(
                                   constraints: const BoxConstraints(
-                                    maxWidth: 960,
+                                    maxWidth: 1080,
                                   ),
                                   child: _buildSelectedTabView(),
                                 ),
@@ -244,10 +245,10 @@ class _WelcomePageState extends State<WelcomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('文件', style: Gs3dType.title1),
-        const SizedBox(height: Gs3dTokens.space20),
+        const WelcomeHero(),
+        const SizedBox(height: Gs3dTokens.space24),
         WelcomeActionCards(service: widget.service),
-        const SizedBox(height: Gs3dTokens.space24 + 4),
+        const SizedBox(height: Gs3dTokens.space24 + 8),
         RecentProjectsCard(service: widget.service),
       ],
     );
