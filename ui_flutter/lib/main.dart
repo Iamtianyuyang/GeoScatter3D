@@ -9,6 +9,7 @@ import 'src/panels/performance_panel.dart';
 import 'src/panels/tile_inspector_dialog.dart';
 import 'src/panels/top_menu_bar.dart';
 import 'src/theme/app_theme.dart';
+import 'src/theme/gs3d_tokens.dart';
 import 'src/welcome/welcome_page.dart';
 import 'src/widgets/command_palette.dart';
 import 'src/widgets/shortcut_overlay.dart';
@@ -61,6 +62,12 @@ class _GeoScatter3dAppState extends State<GeoScatter3dApp> {
       title: 'GeoScatter3D 三维散点系统 (Flutter)',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(),
+      // 注入无障碍偏好（减弱动效 / 降低透明度 / 高对比），
+      // 供全应用通过 context.gs3dA11y 统一读取。
+      builder: (context, child) => Gs3dA11yScope(
+        a11y: Gs3dA11y.fromContext(context),
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: ListenableBuilder(
         listenable: service,
         builder: (context, _) {

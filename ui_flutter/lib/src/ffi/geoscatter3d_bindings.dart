@@ -260,6 +260,33 @@ typedef _c_engine_create_simple =
     ffi.Pointer<ffi.Void> Function(ffi.Uint32 width, ffi.Uint32 height);
 typedef _dart_engine_create_simple =
     ffi.Pointer<ffi.Void> Function(int width, int height);
+
+/// `gs3d_engine_config` 原生结构体。
+/// 字段顺序/宽度必须与 `include/ffi/geoscatter3d_ffi.h` §20 严格一致。
+final class Gs3dEngineConfig extends ffi.Struct {
+  /// 首选 GPU UUID；可空或 "auto"。
+  external ffi.Pointer<Utf8> preferred_gpu_uuid;
+
+  @ffi.Uint32()
+  external int viewport_width;
+
+  @ffi.Uint32()
+  external int viewport_height;
+
+  /// 含 point.vert.spv / point.frag.spv 的着色器目录；可空。
+  external ffi.Pointer<Utf8> shader_dir;
+
+  @ffi.Int32()
+  external int enable_validation;
+}
+
+typedef _c_engine_create =
+    ffi.Pointer<ffi.Void> Function(ffi.Pointer<Gs3dEngineConfig> cfg);
+typedef _dart_engine_create =
+    ffi.Pointer<ffi.Void> Function(ffi.Pointer<Gs3dEngineConfig> cfg);
+
+typedef _c_engine_unload = ffi.Int32 Function(ffi.Pointer<ffi.Void>);
+typedef _dart_engine_unload = int Function(ffi.Pointer<ffi.Void>);
 typedef _c_engine_ptr = ffi.Void Function(ffi.Pointer<ffi.Void>);
 typedef _dart_engine_ptr = void Function(ffi.Pointer<ffi.Void>);
 typedef _c_engine_ptr_ret = ffi.Int32 Function(ffi.Pointer<ffi.Void>);
@@ -463,10 +490,19 @@ class GeoScatter3dBindings {
   late final _dart_get_nav_map_thumbnail get_nav_map_thumbnail;
   late final _dart_export_dataset export_dataset;
 
-  bool get hasEngineApi => engine_create_simple_opt != null;
+  /// 引擎交互内核是否可用：create/load/render/camera 四项必须齐全，
+  /// 否则视为不具备单进程渲染能力（R3：不静默降级为 Dart 预览）。
+  bool get hasEngineApi =>
+      engine_create_simple_opt != null &&
+      engine_load_dataset_opt != null &&
+      engine_render_rgba_opt != null &&
+      engine_camera_input_opt != null;
 
   _dart_engine_cstr_ret? engine_last_global_error_opt;
   _dart_engine_create_simple? engine_create_simple_opt;
+  _dart_engine_create? engine_create_opt;
+  _dart_engine_unload? engine_unload_dataset_opt;
+
   _dart_engine_ptr? engine_destroy_opt;
   _dart_engine_load? engine_load_dataset_opt;
   _dart_engine_resize? engine_resize_opt;
@@ -699,6 +735,15 @@ class GeoScatter3dBindings {
         n,
       ),
     );
+    engine_create_opt = optLookup(
+      'gs3d_engine_create',
+      (lib, n) =>
+          lib.lookupFunction<_c_engine_create, _dart_engine_create>(n),
+    );
+    engine_unload_dataset_opt = optLookup(
+      'gs3d_engine_unload_dataset',
+      (lib, n) => lib.lookupFunction<_c_engine_unload, _dart_engine_unload>(n),
+    );
     engine_destroy_opt = optLookup(
       'gs3d_engine_destroy',
       (lib, n) => lib.lookupFunction<_c_engine_ptr, _dart_engine_ptr>(n),
@@ -821,21 +866,26 @@ class GeoScatter3dBindings {
 
   /// Windows：LoadLibrary 默认不搜索 DLL 同目录依赖（glfw3 等）。
   /// 打开前调用 SetDllDirectoryA，使依赖与 gs3d_ffi.dll 同目录可被找到。
+  ///
+  /// 注意：`SetDllDirectoryA` 会把**相对路径**的解析基准重定向到该目录，
+  /// 因此必须先把待加载路径规范化为绝对路径再打开，否则含 `..` 的相对路径
+  /// 会解析失败（Windows error 126）。
   static ffi.DynamicLibrary _openWithLocalDeps(String path) {
+    final absolutePath = File(path).absolute.path;
     if (Platform.isWindows) {
       final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
       final setDllDirA = kernel32.lookupFunction<
         ffi.Int32 Function(ffi.Pointer<Utf8>),
         int Function(ffi.Pointer<Utf8>)
       >('SetDllDirectoryA');
-      final dir = File(path).absolute.parent.path.toNativeUtf8();
+      final dir = File(absolutePath).parent.path.toNativeUtf8();
       try {
         setDllDirA(dir);
       } finally {
         calloc.free(dir);
       }
     }
-    return ffi.DynamicLibrary.open(path);
+    return ffi.DynamicLibrary.open(absolutePath);
   }
 
   /// 自动探测并加载动态库

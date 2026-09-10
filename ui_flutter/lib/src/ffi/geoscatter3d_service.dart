@@ -210,6 +210,9 @@ class GeoScatter3dService extends ChangeNotifier {
   // 截图通知回调
   VoidCallback? onScreenshotRequested;
 
+  /// 引擎帧截图落盘完成回调（携带绝对路径），用于视口弹出提示。
+  void Function(String path)? onScreenshotSaved;
+
   bool get isInitialized => _initialized;
   bool _welcomeBusy = false;
   String? _welcomeError;
@@ -408,9 +411,8 @@ class GeoScatter3dService extends ChangeNotifier {
       // 相机重置是轻量数学，在 UI isolate 直接调用；随后异步拉一帧。
       _bindings?.engine_reset_camera_opt?.call(engine);
       unawaited(_renderEngineFrame());
-    } else {
-      _queueNativeCommand('canvas.viewport', 'reset_camera');
     }
+    // 无 engine 时相机由 Dart 状态持有并直接生效，无需后端调用（R3）。
     notifyListeners();
   }
 
@@ -422,9 +424,6 @@ class GeoScatter3dService extends ChangeNotifier {
     double? panY,
     String? preset,
   }) {
-    final previousAzimuth = _cameraAzimuth;
-    final previousElevation = _cameraElevation;
-    final previousZoom = _cameraZoom;
     final previousPanX = _cameraPanX;
     final previousPanY = _cameraPanY;
     if (preset != null) {
@@ -453,42 +452,45 @@ class GeoScatter3dService extends ChangeNotifier {
     if (zoom != null) _cameraZoom = zoom.clamp(0.05, 50.0);
     if (panX != null) _cameraPanX = panX;
     if (panY != null) _cameraPanY = panY;
-    final nativeAxis = _nativeAxisForPreset(preset);
+
     if (isEngineNative) {
-      // engine：预设视角用 look_at；增量旋转/平移仍走 camera_input
-      if (preset != null) {
-        _syncEngineCameraFromAzElZoom();
-      } else if (nativeAxis != null) {
-        _syncEngineCameraFromAzElZoom();
-      } else if (azimuth != null || elevation != null || zoom != null) {
-        _syncEngineCameraFromAzElZoom();
-      } else if (panX != null || panY != null) {
-        _queueNativeCamera({
-          'pan_delta_x': _cameraPanX - previousPanX,
-          'pan_delta_y': _cameraPanY - previousPanY,
-        });
-      }
-    } else if (nativeAxis != null) {
-      _queueNativeCommand('gizmo.navigation', 'click', {'axis': nativeAxis});
-    } else if (preset == null) {
-      if (azimuth != null || elevation != null) {
-        _queueNativeCamera({
-          'rotate_delta_x': (_cameraAzimuth - previousAzimuth) / 0.4,
-          'rotate_delta_y': (previousElevation - _cameraElevation) / 0.4,
-        });
-      } else if (panX != null || panY != null) {
-        _queueNativeCamera({
-          'pan_delta_x': _cameraPanX - previousPanX,
-          'pan_delta_y': _cameraPanY - previousPanY,
-        });
-      } else if (zoom != null && previousZoom > 0.0 && _cameraZoom > 0.0) {
-        _queueNativeCamera({
-          'scroll_y': math.log(_cameraZoom / previousZoom) / math.log(1.15),
-        });
+      final axis = preset == null ? null : _nativeAxisForPreset(preset);
+      if (axis != null) {
+        // 轴对齐预设（顶 / 前 / 侧）：走引擎自带 gizmo 预设，由内核按其真实
+        // 包围盒重算 look_at 与 up（顶/底视已做防奇异处理）。
+        final gizmoFn = _bindings?.engine_gizmo_axis_opt;
+        final eng = _engineHandle;
+        final rc = (gizmoFn != null && eng != null) ? gizmoFn(eng, axis) : -1;
+        if (rc == 0) {
+          _scheduleEngineRender();
+        } else {
+          // 引擎 gizmo 不可用：退回 Dart 姿态推导，避免预设视角失效。
+          _syncEngineCameraFromAzElZoom();
+        }
+      } else {
+        final hasAbsolutePose =
+            preset != null ||
+            azimuth != null ||
+            elevation != null ||
+            zoom != null;
+        if (hasAbsolutePose) {
+          // 等轴测 / 自由角度：look_at 一次性同步。
+          _syncEngineCameraFromAzElZoom();
+        } else if (panX != null || panY != null) {
+          // 纯平移增量：走增量相机通道，避免覆盖绝对姿态。
+          _queueNativeCamera({
+            'pan_delta_x': _cameraPanX - previousPanX,
+            'pan_delta_y': _cameraPanY - previousPanY,
+          });
+        }
       }
     }
-    // 原生渲染模式下画面由截图驱动；Dart 相机状态无需每帧整树 rebuild。
-    if (!isNativeRendererActive || nativeAxis != null || preset != null) {
+    // 无 engine 时相机完全由 Dart 状态持有，不产生无后端的伪动作（R3）。
+    if (!isNativeRendererActive ||
+        preset != null ||
+        azimuth != null ||
+        elevation != null ||
+        zoom != null) {
       notifyListeners();
     }
   }
@@ -518,11 +520,8 @@ class GeoScatter3dService extends ChangeNotifier {
     }
     if (_pointShape != normalized) {
       _pointShape = normalized;
-      final nativeShape = _nativePointShape(normalized);
-      if (nativeShape != null) {
-        _queueNativeRenderSettings({'point_shape': nativeShape});
-        _applyEngineRenderSettings();
-      }
+      // 点形状 / 高度 / 着色源统一由 _applyEngineRenderSettings 全量下发。
+      _applyEngineRenderSettings();
       notifyListeners();
     }
   }
@@ -531,7 +530,6 @@ class GeoScatter3dService extends ChangeNotifier {
     final clamped = scale.clamp(0.1, 10.0);
     if (_heightScale != clamped) {
       _heightScale = clamped;
-      _queueNativeRenderSettings({'height_exaggeration': clamped});
       _applyEngineRenderSettings();
       notifyListeners();
     }
@@ -540,7 +538,6 @@ class GeoScatter3dService extends ChangeNotifier {
   void setHeightSource(String source) {
     if (_heightSource != source) {
       _heightSource = source;
-      _queueNativeRenderSettings({'height_attribute': source});
       _applyEngineRenderSettings();
       notifyListeners();
     }
@@ -549,7 +546,6 @@ class GeoScatter3dService extends ChangeNotifier {
   void setColorAttribute(String attr) {
     if (_colorAttribute != attr) {
       _colorAttribute = attr;
-      _queueNativeRenderSettings({'color_attribute': attr});
       _applyEngineRenderSettings();
       notifyListeners();
     }
@@ -684,7 +680,72 @@ class GeoScatter3dService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 全局属性统计。
+  ///
+  /// 优先走原生 `gs3d_ffi_calculate_region_stats`：以数据集包围盒为选区，
+  /// 对**全量**点集求真实总体统计量。原生不可用（未载入 / 无 DLL）时退回
+  /// Dart 有界预览样本重算，并以 `source` 字段显式标注，避免把 64K 采样值
+  /// 当作总体值对外声称「统计完成」。
   Map<String, dynamic> calculateStats() {
+    final native = _nativeGlobalStats();
+    if (native != null) return native;
+    return _dartSampleStats();
+  }
+
+  /// 原生全量统计：返回 null 表示原生路径不可用。
+  Map<String, dynamic>? _nativeGlobalStats() {
+    final b = _bindings;
+    if (b == null || !_initialized) return null;
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    if (bmin.length < 3 || bmax.length < 3) return null;
+
+    final pCount = calloc<ffi.Uint64>();
+    final pMean = calloc<ffi.Float>();
+    final pMin = calloc<ffi.Float>();
+    final pMax = calloc<ffi.Float>();
+    final pStdDev = calloc<ffi.Float>();
+    final pHist = calloc<ffi.Int32>(5);
+    try {
+      final res = b.calculate_region_stats(
+        bmin[0],
+        bmax[0],
+        bmin[1],
+        bmax[1],
+        pCount,
+        pMean,
+        pMin,
+        pMax,
+        pStdDev,
+        pHist,
+      );
+      if (res != 1 || pCount.value == 0) return null;
+      final minV = pMin.value;
+      final maxV = pMax.value;
+      return {
+        'source': 'native_region_stats',
+        'count': pCount.value,
+        'mean': pMean.value,
+        'min': minV,
+        'max': maxV,
+        'range': maxV - minV,
+        'std_dev': pStdDev.value,
+        'histogram': [pHist[0], pHist[1], pHist[2], pHist[3], pHist[4]],
+      };
+    } catch (_) {
+      return null;
+    } finally {
+      calloc.free(pCount);
+      calloc.free(pMean);
+      calloc.free(pMin);
+      calloc.free(pMax);
+      calloc.free(pStdDev);
+      calloc.free(pHist);
+    }
+  }
+
+  /// Dart 有界采样兜底（最多 64K 预览点）。仅当原生路径不可用时使用。
+  Map<String, dynamic> _dartSampleStats() {
     final count = _points.length;
     final bins = [0, 0, 0, 0, 0];
     if (count > 0 && _scalarMax > _scalarMin) {
@@ -697,6 +758,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
     if (count == 0) {
       return {
+        'source': 'dart_sample',
         'count': 0,
         'mean': 0.0,
         'min': _scalarMin,
@@ -717,6 +779,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
     final stdDev = math.sqrt(varSum / count);
     return {
+      'source': 'dart_sample',
       'count': count,
       'mean': mean,
       'min': _scalarMin,
@@ -825,13 +888,84 @@ class GeoScatter3dService extends ChangeNotifier {
     };
   }
 
+  /// 视口截图。
+  ///
+  /// - engine 激活：读取引擎当前 RGBA 帧并由后端编码 PNG，Dart 仅负责落盘
+  ///   （真实后端路径，不含 Dart 叠加层）。
+  /// - 无 engine：回退 `RepaintBoundary` 内存回读（含叠加层），由视口组件写入
+  ///   `tmp/`。
   void requestScreenshot() {
-    if (isNativeRendererActive) {
-      unawaited(refreshNativeViewport());
+    if (isEngineNative) {
+      unawaited(_captureEngineScreenshot());
+      return;
     }
-    if (onScreenshotRequested != null) {
-      onScreenshotRequested!();
+    onScreenshotRequested?.call();
+  }
+
+  Future<void> _captureEngineScreenshot() async {
+    final path = await captureEngineFramePng();
+    if (path == null) {
+      _nativeViewerError = '引擎帧尚未就绪，无法编码 PNG 截图';
+      notifyListeners();
+      return;
     }
+    onScreenshotSaved?.call(path);
+  }
+
+  /// 读取引擎当前帧 → PNG → 写入 `tmp/`（或指定路径）。
+  ///
+  /// 返回落盘的绝对路径；engine 未激活 / 尚未渲染过返回 null。
+  Future<String?> captureEngineFramePng({String? outputPath}) async {
+    final e = _engineHandle;
+    final b = _bindings;
+    if (e == null || b == null) return null;
+    if (b.engine_read_frame_png_opt == null) return null;
+    final w = _engineW;
+    final h = _engineH;
+    if (w <= 0 || h <= 0) return null;
+    final addr = e.address;
+    try {
+      final bytes = await Isolate.run(() {
+        final lib = GeoScatter3dBindings.openLibrary();
+        final enc = lib.engine_read_frame_png_opt;
+        if (enc == null) return null;
+        final eng = Pointer<Void>.fromAddress(addr);
+        final maxBytes = w * h * 4 + 4096;
+        final buf = calloc<Uint8>(maxBytes);
+        final outLen = calloc<Uint32>();
+        try {
+          final rc = enc(eng, buf, maxBytes, outLen);
+          if (rc != 0) return null;
+          final len = outLen.value;
+          if (len == 0) return null;
+          return Uint8List.fromList(buf.asTypedList(len));
+        } finally {
+          calloc.free(buf);
+          calloc.free(outLen);
+        }
+      });
+      if (bytes == null || bytes.isEmpty) return null;
+      final target = outputPath ?? defaultScreenshotPath();
+      final file = File(target);
+      final parent = file.parent;
+      if (!parent.existsSync()) parent.createSync(recursive: true);
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path.replaceAll('\\', '/');
+    } catch (error) {
+      _nativeViewerError = 'engine 截图失败: $error';
+      return null;
+    }
+  }
+
+  /// 截图默认落盘路径：仓库/运行目录下 `tmp/screenshot_<时间戳>.png`
+  /// （遵守 R4：临时产物统一收敛于 `tmp/`）。
+  static String defaultScreenshotPath() {
+    final stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+    return '${Directory.current.path}${Platform.pathSeparator}tmp'
+        '${Platform.pathSeparator}screenshot_$stamp.png';
   }
 
   /// 启动原生渲染：仅 `gs3d_engine_*`；失败返回 false 并设置错误（无 Dart 回退）。
@@ -864,7 +998,8 @@ class GeoScatter3dService extends ChangeNotifier {
   Future<bool> _startEngineRenderer(String datasetPath) async {
     final outer = _bindings;
     if (outer == null ||
-        outer.engine_create_simple_opt == null ||
+        (outer.engine_create_opt == null &&
+            outer.engine_create_simple_opt == null) ||
         outer.engine_load_dataset_opt == null ||
         outer.engine_render_rgba_opt == null ||
         outer.engine_camera_input_opt == null) {
@@ -876,11 +1011,32 @@ class GeoScatter3dService extends ChangeNotifier {
       // create/load 可能阻塞；Isolate 内重新打开库，避免跨 isolate 捕获 FFI 对象。
       final addr = await Isolate.run(() {
         final b = GeoScatter3dBindings.openLibrary();
-        final create = b.engine_create_simple_opt;
         final load = b.engine_load_dataset_opt;
-        if (create == null || load == null) return 0;
-        final e = create(w, h);
+        if (load == null) return 0;
+
+        // 优先走完整 gs3d_engine_create：可携带视口尺寸 / GPU 偏好 /
+        // 着色器目录 / validation 开关；旧 DLL 缺符号时回退 create_simple。
+        Pointer<Void> e;
+        final fullCreate = b.engine_create_opt;
+        if (fullCreate != null) {
+          final cfg = calloc<Gs3dEngineConfig>();
+          try {
+            cfg.ref.preferred_gpu_uuid = nullptr; // 空 = auto，由内核解析偏好
+            cfg.ref.viewport_width = w;
+            cfg.ref.viewport_height = h;
+            cfg.ref.shader_dir = nullptr; // 相对默认着色器目录
+            cfg.ref.enable_validation = 0;
+            e = fullCreate(cfg);
+          } finally {
+            calloc.free(cfg);
+          }
+        } else {
+          final simpleCreate = b.engine_create_simple_opt;
+          if (simpleCreate == null) return 0;
+          e = simpleCreate(w, h);
+        }
         if (e.address == 0) return 0;
+
         final pathPtr = datasetPath.toNativeUtf8();
         try {
           final rc = load(e, pathPtr);
@@ -1113,7 +1269,10 @@ class GeoScatter3dService extends ChangeNotifier {
       try {
         await Isolate.run(() {
           final b = GeoScatter3dBindings.openLibrary();
-          b.engine_destroy_opt?.call(Pointer<Void>.fromAddress(addr));
+          final e = Pointer<Void>.fromAddress(addr);
+          // 先显式卸载数据集（释放 CPU 点缓存 / GPU 上传水位），再销毁内核。
+          b.engine_unload_dataset_opt?.call(e);
+          b.engine_destroy_opt?.call(e);
         });
       } catch (error) {
         // destroy 失败不阻断后续重启；句柄已从服务层摘除。
@@ -1121,10 +1280,6 @@ class GeoScatter3dService extends ChangeNotifier {
       }
     }
     notifyListeners();
-  }
-
-  void _queueNativeRenderSettings(Map<String, dynamic> params) {
-    _queueNativeCommand('runtime.render_settings', 'set', params);
   }
 
   void _queueNativeCamera(Map<String, dynamic> params) {
@@ -1189,12 +1344,8 @@ class GeoScatter3dService extends ChangeNotifier {
       _engineH = height;
       _bindings?.engine_resize_opt?.call(engine, width, height);
       unawaited(_renderEngineFrame());
-      return;
     }
-    _queueNativeCommand('runtime.viewport', 'resize', {
-      'width': width,
-      'height': height,
-    });
+    // 无 engine：仅记录目标尺寸，待引擎创建时按此分辨率初始化（R3）。
   }
 
   void queueNativePick(
@@ -1243,34 +1394,22 @@ class GeoScatter3dService extends ChangeNotifier {
     });
   }
 
-  void _synchronizeNativeMeasurementMode(bool enabled) {
-    // 测量线为 Dart 本地状态；无需原生同步。
-  }
-
-  void _queueNativeCommand(
-    String component,
-    String command, [
-    Map<String, dynamic> params = const {},
-    bool refresh = true,
-  ]) {
-    // 双进程控制面已删除；engine 渲染设置走 _applyEngineRenderSettings。
-  }
-
   String _readFfiCstr(Pointer<Utf8> ptr) {
     if (ptr == nullptr) return '';
     return ptr.toDartString();
   }
 
+  /// 预设视角 → engine gizmo 轴索引（0=-X, 1=+X, 2=-Y, 3=+Y, 4=+Z, 5=-Z）。
   static int? _nativeAxisForPreset(String? preset) {
     switch (preset?.toLowerCase()) {
       case 'top':
-        return 4; // +Z
+        return 4; // +Z 俯视
       case 'front':
-        return 1; // -X
+        return 1; // +X 正视
       case 'side':
-        return 2; // +Y
+        return 2; // -Y 侧视
       default:
-        return null;
+        return null; // iso 等自由角度走 look_at
     }
   }
 
@@ -1548,7 +1687,6 @@ class GeoScatter3dService extends ChangeNotifier {
       }
       notifyListeners();
     }
-    _synchronizeNativeMeasurementMode(enabled);
   }
 
   void toggleMeasurementMode() {
@@ -3993,7 +4131,6 @@ class GeoScatter3dService extends ChangeNotifier {
       _bindings!.set_point_size(size);
     }
     _pointSize = size;
-    _queueNativeRenderSettings({'point_size': size});
     _applyEngineRenderSettings();
     notifyListeners();
   }
@@ -4008,10 +4145,6 @@ class GeoScatter3dService extends ChangeNotifier {
       }
     }
     _colormap = name;
-    final nativeColormap = _nativeColormapIndex(name);
-    if (nativeColormap != null) {
-      _queueNativeRenderSettings({'colormap_index': nativeColormap});
-    }
     _applyEngineRenderSettings();
     notifyListeners();
   }
@@ -4022,17 +4155,14 @@ class GeoScatter3dService extends ChangeNotifier {
     }
     _scalarMin = minVal;
     _scalarMax = maxVal;
-    _queueNativeRenderSettings({
-      'value_clip_enabled': true,
-      'value_clip_min': minVal,
-      'value_clip_max': maxVal,
-    });
     _applyEngineRenderSettings();
     notifyListeners();
   }
 
-  /// 将当前 UI 渲染参数写入单进程 engine。
-  /// engine 模式下双进程控制面命令是空操作，必须走这套同步路径。
+  /// 将当前 UI 渲染参数**全量**写入单进程 engine。
+  ///
+  /// 这是渲染设置唯一的后端同步路径（旧双进程控制面已删除）：
+  /// 点大小 / 色带 / 点形状 / 值域裁切 / 高度源 / 着色源 / 高度夸张 / 背景。
   /// [scheduleRender]=false 仅写参数（启动路径会自己 await 首帧，避免竞态）。
   void _applyEngineRenderSettings({bool scheduleRender = true}) {
     final e = _engineHandle;

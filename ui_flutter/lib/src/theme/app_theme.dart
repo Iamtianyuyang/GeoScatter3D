@@ -1,55 +1,149 @@
 import 'package:flutter/material.dart';
 
+import 'gs3d_tokens.dart';
+
+/// 应用主题装配层。
+///
+/// 常量已全部代理到 [Gs3dTokens]，本文件**不再持有独立色值**。
+/// 旧的 `AppTheme.xxx` 命名保留用于兼容存量组件；新代码请直接引用
+/// `Gs3dTokens` / `Gs3dType` / `Gs3dMaterial` / `Gs3dMotion`。
 class AppTheme {
-  static const Color background = Color(0xFFF8FAFC); // Slate-50
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceMuted = Color(0xFFF1F5F9); // Slate-100
-  static const Color border = Color(0xFFE2E8F0); // Slate-200
-  static const Color borderSubtle = Color(0xFFCBD5E1); // Slate-300
+  const AppTheme._();
 
-  static const Color textTitle = Color(0xFF0F172A); // Slate-900
-  static const Color textBody = Color(0xFF334155); // Slate-700
-  static const Color textDim = Color(0xFF64748B); // Slate-500
+  // ---- 语义色（代理至统一令牌）----------------------------------------------
+  static const Color background = Gs3dTokens.windowBg;
+  static const Color surface = Gs3dTokens.surface;
+  static const Color surfaceMuted = Gs3dTokens.surfaceSunken;
+  static const Color border = Gs3dTokens.border;
+  static const Color borderSubtle = Gs3dTokens.borderStrong;
 
-  static const Color primaryBlue = Color(0xFF2563EB); // Blue-600
-  static const Color primaryBlueLight = Color(0xFF3B82F6); // Blue-500
-  static const Color primaryBlueHover = Color(0xFF1D4ED8); // Blue-700
-  static const Color primaryBlueBg = Color(0xFFEFF6FF); // Blue-50
-  static const Color accentBlue = Color(0xFF3B82F6); // Accent blue
-  static const Color statusGreen = Color(0xFF10B981); // Emerald-500
+  static const Color textTitle = Gs3dTokens.textPrimary;
+  static const Color textBody = Gs3dTokens.textBody;
+  static const Color textDim = Gs3dTokens.textSecondary;
 
-  static const double cardRadius = 8.0;
-  static const double controlRadius = 6.0;
+  static const Color primaryBlue = Gs3dTokens.accent;
+  static const Color primaryBlueLight = Color(0xFF3B82F6);
+  static const Color primaryBlueHover = Gs3dTokens.accentHover;
+  static const Color primaryBlueBg = Gs3dTokens.accentSubtle;
+  static const Color accentBlue = Gs3dTokens.accent;
+  static const Color statusGreen = Gs3dTokens.quoteDown;
 
-  static const List<BoxShadow> cardShadow = [
-    BoxShadow(
-      color: Color(0x06000000),
-      blurRadius: 4,
-      offset: Offset(0, 1),
-    ),
-    BoxShadow(
-      color: Color(0x04000000),
-      blurRadius: 1,
-      offset: Offset(0, 0),
-    ),
-  ];
+  // ---- 形状与阴影 -----------------------------------------------------------
+  static const double cardRadius = Gs3dTokens.radiusLg;
+  static const double controlRadius = Gs3dTokens.radiusSm;
+  static const List<BoxShadow> cardShadow = Gs3dTokens.elevation1;
 
+  /// 浅色主题（默认）。
   static ThemeData lightTheme() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: Gs3dTokens.accent,
+      brightness: Brightness.light,
+      surface: Gs3dTokens.surface,
+      surfaceContainerLow: Gs3dTokens.surfaceSunken,
+      error: Gs3dTokens.danger,
+    );
+
+    return _base(scheme).copyWith(
+      scaffoldBackgroundColor: Gs3dTokens.windowBg,
+    );
+  }
+
+  /// 深色主题（分析舱 / 沉浸模式）。
+  static ThemeData darkTheme() {
+    const scheme = ColorScheme.dark(
+      primary: Color(0xFF4C9AFF),
+      onPrimary: Colors.white,
+      secondary: Color(0xFF7DD3FC),
+      surface: Color(0xFF12161F),
+      surfaceContainerLow: Color(0xFF0C0F16),
+      onSurface: Color(0xFFE6EAF2),
+      error: Color(0xFFFF6B6B),
+    );
+    return _base(scheme).copyWith(
+      scaffoldBackgroundColor: const Color(0xFF0C0F16),
+    );
+  }
+
+  /// 由令牌统一装配的 `ThemeData` 基座。
+  static ThemeData _base(ColorScheme scheme) {
     return ThemeData(
       useMaterial3: true,
-      scaffoldBackgroundColor: background,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryBlue,
-        surface: surface,
-        surfaceContainerLow: surfaceMuted,
+      colorScheme: scheme,
+      fontFamily: Gs3dType.fontFamily,
+      fontFamilyFallback: Gs3dType.fontFallback,
+      visualDensity: VisualDensity.compact,
+      splashFactory: InkSparkle.splashFactory,
+      dividerTheme: const DividerThemeData(
+        color: Gs3dTokens.hairline,
+        thickness: 1,
+        space: 1,
       ),
-      fontFamily: 'NotoSansCJKsc',
-      fontFamilyFallback: const [
-        'Segoe UI',
-        'Microsoft YaHei',
-        'PingFang SC',
-        'sans-serif',
-      ],
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: Gs3dTokens.surface,
+        surfaceTintColor: Colors.transparent,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Gs3dTokens.radiusLg),
+          side: const BorderSide(color: Gs3dTokens.border),
+        ),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: const Color(0xF21D1D1F),
+          borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+        ),
+        textStyle: const TextStyle(
+          fontSize: 11.5,
+          color: Colors.white,
+          letterSpacing: 0.1,
+        ),
+        waitDuration: const Duration(milliseconds: 420),
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: const WidgetStatePropertyAll<double>(8),
+        radius: const Radius.circular(4),
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.hovered)) {
+            return const Color(0x4D000000);
+          }
+          return const Color(0x26000000);
+        }),
+        crossAxisMargin: 2,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Gs3dTokens.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
+        ),
+      ),
+      // 统一控件反馈：按压即时收缩由各组件按 Gs3dMotion.feedback 实现。
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: Gs3dTokens.accent,
+          foregroundColor: Gs3dTokens.textOnAccent,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gs3dTokens.space16,
+            vertical: Gs3dTokens.space8,
+          ),
+          textStyle: Gs3dType.bodyStrong,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Gs3dTokens.accent,
+          textStyle: Gs3dType.bodyStrong,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+          ),
+        ),
+      ),
     );
   }
 }

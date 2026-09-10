@@ -48,6 +48,9 @@ tmp_*
 *.ply
 build_env.cmd
 rebuild.cmd
+# Flutter 工具运行时状态（flutter analyze/test 生成）
+.flutter_tool_state
+**/.flutter_tool_state
 
 # Agent & platform context
 /.agent_context/
