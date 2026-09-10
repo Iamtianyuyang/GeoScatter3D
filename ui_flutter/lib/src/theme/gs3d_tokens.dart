@@ -639,10 +639,11 @@ class Gs3dA11yScope extends InheritedWidget {
   final Gs3dA11y a11y;
 
   static Gs3dA11y of(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<Gs3dA11yScope>()
-          ?.a11y ??
-      Gs3dA11y.standard;
+      maybeOf(context) ?? Gs3dA11y.standard;
+
+  /// 允许在无 scope 的上下文（如独立测试）中安全读取。
+  static Gs3dA11y? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<Gs3dA11yScope>()?.a11y;
 
   @override
   bool updateShouldNotify(Gs3dA11yScope oldWidget) => a11y != oldWidget.a11y;

@@ -114,10 +114,6 @@ void main() {
         }
         try {
           final res = service.executeAction(action.id, arg);
-          if (res == null) {
-            crashed.add('${action.id}: 返回 null');
-            continue;
-          }
           if (!res.containsKey('success')) {
             badShape.add('${action.id}: 缺少 success 字段');
           }

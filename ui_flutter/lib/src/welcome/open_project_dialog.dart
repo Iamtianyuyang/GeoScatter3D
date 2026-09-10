@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 import 'welcome_ui_keys.dart';
 
+/// 打开已有点云工程对话框。
 class OpenProjectDialog extends StatefulWidget {
+  const OpenProjectDialog({super.key, required this.service, this.initialPath});
+
   final GeoScatter3dService service;
   final String? initialPath;
-
-  const OpenProjectDialog({super.key, required this.service, this.initialPath});
 
   @override
   State<OpenProjectDialog> createState() => _OpenProjectDialogState();
@@ -65,9 +67,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
       return;
     }
 
-    setState(() {
-      _errorMessage = null;
-    });
+    setState(() => _errorMessage = null);
     final res = await widget.service.executeActionAsync(
       'welcome.open_project',
       {'path': path},
@@ -85,47 +85,30 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
     return PopScope(
       canPop: !_isLoading,
       child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
+        ),
+        backgroundColor: Gs3dTokens.surface,
         surfaceTintColor: Colors.transparent,
         child: Container(
           width: 520,
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(Gs3dTokens.space24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 标题
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryBlueBg,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.folder_open_rounded,
-                      color: AppTheme.primaryBlue,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    '打开工程数据包',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textTitle,
-                    ),
-                  ),
+                  const _DialogIcon(icon: Icons.folder_open_rounded),
+                  const SizedBox(width: Gs3dTokens.space12),
+                  const Text('打开工程数据包', style: Gs3dType.title2),
                   const Spacer(),
                   IconButton(
                     key: WelcomeUiKeys.openProjectDialogCloseButton,
                     icon: const Icon(
                       Icons.close,
                       size: 18,
-                      color: AppTheme.textDim,
+                      color: Gs3dTokens.textSecondary,
                     ),
                     onPressed: _isLoading
                         ? null
@@ -133,52 +116,38 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              const Text(
+              const SizedBox(height: Gs3dTokens.space16),
+              Text(
                 '支持 GS3D v2 单体二进制文件 (.gs3d) 或金字塔多分辨率工区包 (.gs3d.bundle 目录)：',
-                style: TextStyle(fontSize: 13, color: AppTheme.textDim),
+                style: Gs3dType.body.copyWith(color: Gs3dTokens.textSecondary),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Gs3dTokens.space16),
 
-              // 路径输入框
               TextField(
                 key: WelcomeUiKeys.openProjectDialogPathInput,
                 controller: _pathController,
+                style: Gs3dType.mono,
                 decoration: InputDecoration(
                   labelText: '数据集路径 (文件或 Bundle 文件夹)',
                   labelStyle: const TextStyle(
                     fontSize: 13,
-                    color: AppTheme.textDim,
+                    color: Gs3dTokens.textSecondary,
                   ),
                   hintText: '例如: data/sample-points.gs3d.bundle 或 sample.gs3d',
                   prefixIcon: const Icon(
                     Icons.description_outlined,
                     size: 18,
-                    color: AppTheme.textDim,
+                    color: Gs3dTokens.textTertiary,
                   ),
                   filled: true,
-                  fillColor: AppTheme.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: AppTheme.primaryBlue,
-                      width: 1.5,
-                    ),
-                  ),
+                  fillColor: Gs3dTokens.surfaceSunken,
+                  border: _inputBorder(Gs3dTokens.border),
+                  enabledBorder: _inputBorder(Gs3dTokens.border),
+                  focusedBorder: _inputBorder(Gs3dTokens.accent, width: 1.5),
                 ),
-                style: const TextStyle(fontSize: 13, fontFamily: 'Consolas'),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: Gs3dTokens.space12),
 
-              // 浏览选择文件与文件夹操作按钮
               Row(
                 children: [
                   Expanded(
@@ -187,7 +156,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                       icon: const Icon(
                         Icons.file_open_outlined,
                         size: 15,
-                        color: AppTheme.primaryBlue,
+                        color: Gs3dTokens.accent,
                       ),
                       label: const Text(
                         '选择文件 (.gs3d)',
@@ -195,23 +164,19 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                        side: const BorderSide(color: AppTheme.border),
+                        side: const BorderSide(color: Gs3dTokens.border),
                       ),
                       onPressed: _browseFile,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Gs3dTokens.space8),
                   Expanded(
                     child: OutlinedButton.icon(
                       key: WelcomeUiKeys.openProjectDialogBrowseFolderButton,
                       icon: const Icon(
                         Icons.folder_open_rounded,
                         size: 15,
-                        color: AppTheme.primaryBlue,
+                        color: Gs3dTokens.accent,
                       ),
                       label: const Text(
                         '选择工区包 (.gs3d.bundle)',
@@ -219,40 +184,35 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                        side: const BorderSide(color: AppTheme.border),
+                        side: const BorderSide(color: Gs3dTokens.border),
                       ),
                       onPressed: _browseFolder,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: Gs3dTokens.space12),
 
-              // 快捷填充 Chip
               Row(
                 children: [
-                  const Text(
+                  Text(
                     '快捷填充:',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+                    style: Gs3dType.caption,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Gs3dTokens.space8),
                   ActionChip(
                     key: WelcomeUiKeys.openProjectDialogSampleChip,
                     avatar: const Icon(
                       Icons.auto_awesome,
                       size: 14,
-                      color: AppTheme.primaryBlue,
+                      color: Gs3dTokens.accent,
                     ),
                     label: const Text(
                       'sample-points.gs3d.bundle',
                       style: TextStyle(fontSize: 12),
                     ),
-                    backgroundColor: AppTheme.surfaceMuted,
-                    side: const BorderSide(color: AppTheme.border),
+                    backgroundColor: Gs3dTokens.surfaceSunken,
+                    side: const BorderSide(color: Gs3dTokens.border),
                     onPressed: () {
                       _pathController.text = 'data/sample-points.gs3d.bundle';
                       setState(() => _errorMessage = null);
@@ -262,40 +222,11 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               ),
 
               if (_errorMessage != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFCA5A5)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 16,
-                        color: Color(0xFFDC2626),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFDC2626),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: Gs3dTokens.space12),
+                _InlineError(message: _errorMessage!),
               ],
 
-              const SizedBox(height: 20),
+              const SizedBox(height: Gs3dTokens.space20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -305,20 +236,13 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                         ? null
                         : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.textDim,
-                      side: const BorderSide(color: AppTheme.border),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 12,
-                      ),
+                      foregroundColor: Gs3dTokens.textSecondary,
+                      side: const BorderSide(color: Gs3dTokens.border),
                     ),
                     child: const Text('取消'),
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
+                  const SizedBox(width: Gs3dTokens.space12),
+                  FilledButton.icon(
                     key: WelcomeUiKeys.openProjectDialogSubmitButton,
                     onPressed: _isLoading ? null : _submit,
                     icon: _isLoading
@@ -332,24 +256,74 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                           )
                         : const Icon(Icons.check, size: 16),
                     label: Text(_isLoading ? '正在转换构建...' : '立即载入'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  OutlineInputBorder _inputBorder(Color color, {double width = 1}) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+        borderSide: BorderSide(color: color, width: width),
+      );
+}
+
+/// 对话框标题图标底衬。
+class _DialogIcon extends StatelessWidget {
+  const _DialogIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(Gs3dTokens.space8),
+      decoration: BoxDecoration(
+        color: Gs3dTokens.accentSubtle,
+        borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+      ),
+      child: Icon(icon, color: Gs3dTokens.accent, size: 20),
+    );
+  }
+}
+
+class _InlineError extends StatelessWidget {
+  const _InlineError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Gs3dTokens.space12,
+        vertical: Gs3dTokens.space8,
+      ),
+      decoration: BoxDecoration(
+        color: Gs3dTokens.dangerSubtle,
+        borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline,
+            size: 16,
+            color: Gs3dTokens.danger,
+          ),
+          const SizedBox(width: Gs3dTokens.space8),
+          Expanded(
+            child: Text(
+              message,
+              style: Gs3dType.caption.copyWith(color: Gs3dTokens.danger),
+            ),
+          ),
+        ],
       ),
     );
   }

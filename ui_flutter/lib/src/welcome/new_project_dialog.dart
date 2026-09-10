@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 import 'welcome_ui_keys.dart';
 
+/// 新建三维散点工程对话框（含高级预处理参数与流式构建进度）。
 class NewProjectDialog extends StatefulWidget {
+  const NewProjectDialog({super.key, required this.service, this.initialPath});
+
   final GeoScatter3dService service;
   final String? initialPath;
-
-  const NewProjectDialog({super.key, required this.service, this.initialPath});
 
   @override
   State<NewProjectDialog> createState() => _NewProjectDialogState();
@@ -102,51 +104,48 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     return PopScope(
       canPop: !_isBuilding,
       child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
+        ),
+        backgroundColor: Gs3dTokens.surface,
         surfaceTintColor: Colors.transparent,
         child: Container(
           width: 540,
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height * 0.88,
           ),
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(Gs3dTokens.space24),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 标题
+                // 标题。
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(Gs3dTokens.space8),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryBlueBg,
-                        borderRadius: BorderRadius.circular(8),
+                        color: Gs3dTokens.accentSubtle,
+                        borderRadius: BorderRadius.circular(
+                          Gs3dTokens.radiusMd,
+                        ),
                       ),
                       child: const Icon(
                         Icons.add_chart_rounded,
-                        color: AppTheme.primaryBlue,
+                        color: Gs3dTokens.accent,
                         size: 20,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      '新建三维散点工程',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textTitle,
-                      ),
-                    ),
+                    const SizedBox(width: Gs3dTokens.space12),
+                    const Text('新建三维散点工程', style: Gs3dType.title2),
                     const Spacer(),
                     IconButton(
                       key: WelcomeUiKeys.newProjectDialogCloseButton,
                       icon: const Icon(
                         Icons.close,
                         size: 18,
-                        color: AppTheme.textDim,
+                        color: Gs3dTokens.textSecondary,
                       ),
                       onPressed: _isBuilding
                           ? null
@@ -154,17 +153,10 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: Gs3dTokens.space16 + 2),
 
-                // 数据源路径
-                const Text(
-                  '散点数据源路径 (CSV / DAT / GS3D / Bundle)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textBody,
-                  ),
-                ),
+                // 数据源路径。
+                const _FieldLabel('散点数据源路径 (CSV / DAT / GS3D / Bundle)'),
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -174,85 +166,54 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                         controller: _pathController,
                         onChanged: _onPathChanged,
                         enabled: !_isBuilding,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'Consolas',
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '例如: examples/sample-points.csv',
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          isDense: true,
+                        style: Gs3dType.mono,
+                        decoration: _denseInput(
+                          hint: '例如: examples/sample-points.csv',
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: Gs3dTokens.space8),
                     OutlinedButton.icon(
                       key: WelcomeUiKeys.newProjectDialogBrowseButton,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
                       icon: const Icon(Icons.folder_open, size: 16),
                       label: const Text('浏览'),
                       onPressed: _isBuilding ? null : _onBrowse,
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Gs3dTokens.space8),
 
-                // 快捷填充 Chip
+                // 快捷示例 Chip。
                 Row(
                   children: [
-                    const Text(
-                      '快捷示例:',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textDim),
-                    ),
-                    const SizedBox(width: 8),
+                    Text('快捷示例:', style: Gs3dType.caption),
+                    const SizedBox(width: Gs3dTokens.space8),
                     ActionChip(
                       key: WelcomeUiKeys.newProjectDialogSampleChip,
                       avatar: const Icon(
                         Icons.auto_awesome,
                         size: 14,
-                        color: AppTheme.primaryBlue,
+                        color: Gs3dTokens.accent,
                       ),
                       label: const Text(
                         'sample-points.csv',
                         style: TextStyle(fontSize: 12),
                       ),
-                      backgroundColor: AppTheme.surfaceMuted,
-                      side: const BorderSide(color: AppTheme.border),
+                      backgroundColor: Gs3dTokens.surfaceSunken,
+                      side: const BorderSide(color: Gs3dTokens.border),
                       onPressed: _isBuilding
                           ? null
                           : () {
-                              _pathController.text =
-                                  'examples/sample-points.csv';
+                              _pathController.text = 'examples/sample-points.csv';
                               _onPathChanged(_pathController.text);
                             },
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: Gs3dTokens.space12 + 2),
 
-                // 工程名称
-                const Text(
-                  '工程名称',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textBody,
-                  ),
-                ),
+                // 工程名称。
+                const _FieldLabel('工程名称'),
                 const SizedBox(height: 6),
                 TextField(
                   key: WelcomeUiKeys.newProjectDialogNameInput,
@@ -260,37 +221,19 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   onChanged: (v) => setState(() {}),
                   enabled: !_isBuilding,
                   style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    isDense: true,
-                  ),
+                  decoration: _denseInput(),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: Gs3dTokens.space16),
 
-                // 预处理线程数
+                // 预处理线程数。
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      '预处理构建线程数',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textBody,
-                      ),
-                    ),
+                    const _FieldLabel('预处理构建线程数'),
                     Text(
                       '${_threads.toInt()} 线程',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryBlue,
+                      style: Gs3dType.bodyStrong.copyWith(
+                        color: Gs3dTokens.accent,
                       ),
                     ),
                   ],
@@ -301,22 +244,24 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   min: 1,
                   max: 32,
                   divisions: 31,
-                  activeColor: AppTheme.primaryBlue,
+                  activeColor: Gs3dTokens.accent,
                   onChanged: _isBuilding
                       ? null
                       : (v) => setState(() => _threads = v),
                 ),
                 const SizedBox(height: 6),
 
-                // 高级参数折叠面板
+                // 高级参数折叠面板。
                 InkWell(
                   key: WelcomeUiKeys.newProjectDialogAdvancedToggle,
                   onTap: _isBuilding
                       ? null
                       : () => setState(() => _showAdvanced = !_showAdvanced),
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: Gs3dTokens.space4,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -325,16 +270,14 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                               ? Icons.keyboard_arrow_down
                               : Icons.keyboard_arrow_right,
                           size: 18,
-                          color: AppTheme.textDim,
+                          color: Gs3dTokens.textSecondary,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: Gs3dTokens.space4),
                         Text(
                           _showAdvanced
                               ? '收起高级预处理参数'
                               : '展开高级预处理参数 (体素模式/LOD 点数)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textDim,
+                          style: Gs3dType.caption.copyWith(
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -343,13 +286,13 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   ),
                 ),
                 if (_showAdvanced) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: Gs3dTokens.space8),
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(Gs3dTokens.space12),
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceMuted,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
+                      color: Gs3dTokens.surfaceSunken,
+                      borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+                      border: Border.all(color: Gs3dTokens.border),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,7 +305,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: AppTheme.textBody,
+                                  color: Gs3dTokens.textBody,
                                 ),
                               ),
                             ),
@@ -371,10 +314,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                                   .newProjectDialogVoxelModeDropdown,
                               value: _voxelMode,
                               isDense: true,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.textBody,
-                              ),
+                              style: Gs3dType.body.copyWith(fontSize: 12),
                               underline: const SizedBox(),
                               items: const [
                                 DropdownMenuItem(
@@ -396,7 +336,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: Gs3dTokens.space8 + 2),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -405,7 +345,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.textBody,
+                                color: Gs3dTokens.textBody,
                               ),
                             ),
                             Text(
@@ -413,19 +353,19 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.primaryBlue,
+                                color: Gs3dTokens.accent,
                               ),
                             ),
                           ],
                         ),
                         Slider(
-                          key:
-                              WelcomeUiKeys.newProjectDialogPointsPerTileSlider,
+                          key: WelcomeUiKeys
+                              .newProjectDialogPointsPerTileSlider,
                           value: _finestTargetPoints,
                           min: 10000,
                           max: 200000,
                           divisions: 19,
-                          activeColor: AppTheme.primaryBlue,
+                          activeColor: Gs3dTokens.accent,
                           onChanged: _isBuilding
                               ? null
                               : (v) => setState(() => _finestTargetPoints = v),
@@ -435,18 +375,16 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   ),
                 ],
 
-                // 流式进度卡片
+                // 流式进度卡片。
                 if (_isBuilding && _progressInfo != null) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: Gs3dTokens.space12 + 2),
                   Container(
                     key: WelcomeUiKeys.newProjectDialogProgressIndicator,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(Gs3dTokens.space12),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryBlueBg.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppTheme.primaryBlue.withValues(alpha: 0.2),
-                      ),
+                      color: Gs3dTokens.accentSubtle,
+                      borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+                      border: Border.all(color: Gs3dTokens.accentBorder),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -461,16 +399,16 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                                   height: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: AppTheme.primaryBlue,
+                                    color: Gs3dTokens.accent,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: Gs3dTokens.space8),
                                 Text(
                                   _progressInfo!.stage,
                                   style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: AppTheme.primaryBlue,
+                                    color: Gs3dTokens.accent,
                                   ),
                                 ),
                               ],
@@ -480,47 +418,43 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: AppTheme.primaryBlue,
+                                color: Gs3dTokens.accent,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Gs3dTokens.space8),
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(
+                            Gs3dTokens.radiusXs,
+                          ),
                           child: LinearProgressIndicator(
                             value: _progressInfo!.progress > 0
                                 ? _progressInfo!.progress
                                 : null,
-                            backgroundColor: AppTheme.border,
+                            backgroundColor: Gs3dTokens.border,
                             valueColor: const AlwaysStoppedAnimation<Color>(
-                              AppTheme.primaryBlue,
+                              Gs3dTokens.accent,
                             ),
                             minHeight: 6,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Gs3dTokens.space8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Expanded(
                               child: Text(
                                 _progressInfo!.detail,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppTheme.textDim,
-                                ),
+                                style: Gs3dType.caption.copyWith(fontSize: 11),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Gs3dTokens.space8),
                             Text(
                               '已耗时: ${_progressInfo!.elapsedSeconds}s',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textDim,
-                              ),
+                              style: Gs3dType.caption.copyWith(fontSize: 11),
                             ),
                           ],
                         ),
@@ -528,18 +462,20 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: Gs3dTokens.space12 + 2),
 
                 if (_errorMessage != null)
                   Container(
-                    margin: const EdgeInsets.only(bottom: 12),
+                    margin: const EdgeInsets.only(
+                      bottom: Gs3dTokens.space12,
+                    ),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: Gs3dTokens.space12,
+                      vertical: Gs3dTokens.space8,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(6),
+                      color: Gs3dTokens.dangerSubtle,
+                      borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
                       border: Border.all(color: const Color(0xFFFCA5A5)),
                     ),
                     child: Row(
@@ -547,15 +483,14 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                         const Icon(
                           Icons.error_outline,
                           size: 16,
-                          color: Color(0xFFDC2626),
+                          color: Gs3dTokens.danger,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: Gs3dTokens.space8),
                         Expanded(
                           child: Text(
                             _errorMessage!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFFDC2626),
+                            style: Gs3dType.caption.copyWith(
+                              color: Gs3dTokens.danger,
                             ),
                           ),
                         ),
@@ -563,7 +498,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                     ),
                   ),
 
-                // 底部操作按钮
+                // 底部操作按钮。
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -571,15 +506,8 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                       OutlinedButton.icon(
                         key: WelcomeUiKeys.newProjectDialogCancelBuildButton,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFDC2626),
+                          foregroundColor: Gs3dTokens.danger,
                           side: const BorderSide(color: Color(0xFFFCA5A5)),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
                         ),
                         icon: const Icon(Icons.stop_circle_outlined, size: 16),
                         label: const Text('取消构建'),
@@ -589,25 +517,11 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                       TextButton(
                         key: WelcomeUiKeys.newProjectDialogCancelButton,
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(color: AppTheme.textDim),
-                        ),
+                        child: const Text('取消'),
                       ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
+                    const SizedBox(width: Gs3dTokens.space8 + 2),
+                    FilledButton.icon(
                       key: WelcomeUiKeys.newProjectDialogSubmitButton,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
                       icon: _isBuilding
                           ? const SizedBox(
                               width: 14,
@@ -627,6 +541,36 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _denseInput({String? hint}) => InputDecoration(
+    hintText: hint,
+    contentPadding: const EdgeInsets.symmetric(
+      horizontal: Gs3dTokens.space12,
+      vertical: 10,
+    ),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+    ),
+    isDense: true,
+  );
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: Gs3dTokens.textBody,
       ),
     );
   }

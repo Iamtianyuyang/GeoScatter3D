@@ -1,9 +1,14 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import '../theme/macos_tokens.dart';
+
+import '../theme/gs3d_tokens.dart';
 import 'welcome_ui_keys.dart';
 
+/// 欢迎页品牌头图。
+///
+/// 视觉取自统一令牌 [Gs3dTokens] / [Gs3dType]；粒子流为纯装饰，遵循
+/// 「减弱动效」无障碍偏好而自动静止。
 class WelcomeHero extends StatefulWidget {
   const WelcomeHero({super.key});
 
@@ -11,7 +16,8 @@ class WelcomeHero extends StatefulWidget {
   State<WelcomeHero> createState() => _WelcomeHeroState();
 }
 
-class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStateMixin {
+class _WelcomeHeroState extends State<WelcomeHero>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   final List<_HeroParticle> _particles = [];
   final math.Random _random = math.Random(42);
@@ -25,14 +31,28 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
     )..repeat();
 
     for (int i = 0; i < 48; i++) {
-      _particles.add(_HeroParticle(
-        x: _random.nextDouble() * 800,
-        y: _random.nextDouble() * 180,
-        vx: (_random.nextDouble() - 0.5) * 24,
-        vy: (_random.nextDouble() - 0.5) * 16,
-        radius: _random.nextDouble() * 2.5 + 1.2,
-        alpha: _random.nextDouble() * 0.45 + 0.15,
-      ));
+      _particles.add(
+        _HeroParticle(
+          x: _random.nextDouble() * 800,
+          y: _random.nextDouble() * 180,
+          vx: (_random.nextDouble() - 0.5) * 24,
+          vy: (_random.nextDouble() - 0.5) * 16,
+          radius: _random.nextDouble() * 2.5 + 1.2,
+          alpha: _random.nextDouble() * 0.45 + 0.15,
+        ),
+      );
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 尊重「减弱动效」：停用装饰性粒子流。
+    final reduce = context.gs3dA11y.reduceMotion;
+    if (reduce && _controller.isAnimating) {
+      _controller.stop();
+    } else if (!reduce && !_controller.isAnimating) {
+      _controller.repeat();
     }
   }
 
@@ -46,31 +66,27 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.only(bottom: Gs3dTokens.space24),
+      padding: const EdgeInsets.symmetric(vertical: Gs3dTokens.space8),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 粒子流动态画布 (Apple 蓝紫粒子流)
+          // 粒子流动态画布（装饰层，置于内容之下）。
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _controller,
-              builder: (context, _) {
-                return CustomPaint(
-                  painter: _HeroParticlePainter(
-                    particles: _particles,
-                  ),
-                );
-              },
+              builder: (context, _) => CustomPaint(
+                painter: _HeroParticlePainter(particles: _particles),
+              ),
             ),
           ),
 
-          // 核心 Brand 标题与 Logo
+          // 品牌标识 + 名称 + 版本徽章 + 特性胶囊。
           Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // macOS 连续曲率 Squircle 渐变 App Icon (符合 Apple HIG 设计规范)
+              // 连续曲率 Squircle 渐变 App Icon（Apple HIG）。
               Container(
                 key: WelcomeUiKeys.heroLogo,
                 width: 76,
@@ -78,19 +94,19 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [
-                      Color(0xFF0F62FE),
-                      MacOsTokens.systemBlue,
-                      MacOsTokens.systemIndigo,
+                      Gs3dPalette.systemBluePressed,
+                      Gs3dTokens.accent,
+                      Gs3dPalette.systemIndigo,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(MacOsTokens.radiusIcon),
+                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.4),
                     width: 1.2,
                   ),
-                  boxShadow: MacOsTokens.heroIconShadow,
+                  boxShadow: Gs3dTokens.accentGlow(alpha: 0.25, blur: 28),
                 ),
                 alignment: Alignment.center,
                 child: const Text(
@@ -105,7 +121,7 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
               ),
               const SizedBox(width: 22),
 
-              // 品牌字样、版本与副标题
+              // 品牌字样、版本与副标题。
               Flexible(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -113,58 +129,48 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                   children: [
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 12,
-                      runSpacing: 4,
+                      spacing: Gs3dTokens.space12,
+                      runSpacing: Gs3dTokens.space4,
                       children: [
-                        RichText(
-                          text: const TextSpan(
+                        Text.rich(
+                          const TextSpan(
                             children: [
                               TextSpan(
                                 text: 'Geo',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  color: MacOsTokens.textPrimary,
-                                  letterSpacing: -0.5,
-                                ),
+                                style: TextStyle(color: Gs3dTokens.textPrimary),
                               ),
                               TextSpan(
                                 text: 'Scatter',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  color: MacOsTokens.systemBlue,
-                                  letterSpacing: -0.5,
-                                ),
+                                style: TextStyle(color: Gs3dTokens.accent),
                               ),
                               TextSpan(
                                 text: ' 3D',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  color: MacOsTokens.textPrimary,
-                                  letterSpacing: -0.5,
-                                ),
+                                style: TextStyle(color: Gs3dTokens.textPrimary),
                               ),
                             ],
                           ),
-                        ),
-                        // macOS 胶囊版本徽章
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
-                          decoration: BoxDecoration(
-                            color: MacOsTokens.systemBlueLight,
-                            borderRadius: BorderRadius.circular(MacOsTokens.radiusPill),
-                            border: Border.all(
-                              color: MacOsTokens.systemBlue.withValues(alpha: 0.25),
-                            ),
+                          style: Gs3dType.display.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
                           ),
-                          child: const Text(
-                            'v2.0 · Mac Edition',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: MacOsTokens.systemBlue,
+                        ),
+                        // 胶囊版本徽章。
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Gs3dTokens.space8 + 2,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Gs3dTokens.accentSubtle,
+                            borderRadius: BorderRadius.circular(
+                              Gs3dTokens.radiusPill,
+                            ),
+                            border: Border.all(color: Gs3dTokens.accentBorder),
+                          ),
+                          child: Text(
+                            'v2.0 · Windows Edition',
+                            style: Gs3dType.micro.copyWith(
+                              color: Gs3dTokens.accent,
                               letterSpacing: 0.2,
                             ),
                           ),
@@ -172,26 +178,30 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      '高精度大规模三维散点时空流式渲染系统 · macOS 现代图形工坊',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w400,
-                        color: MacOsTokens.textSecondary,
-                        letterSpacing: -0.1,
-                      ),
+                    Text(
+                      '高精度大规模三维散点时空流式渲染系统 · 现代图形工坊',
+                      style: Gs3dType.body.copyWith(fontSize: 13.5),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
-                    const SizedBox(height: 10),
-                    // macOS 风格技术特性微标签
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: const [
-                        _FeaturePill(text: '八叉树 LOD 金字塔', color: MacOsTokens.systemBlue),
-                        _FeaturePill(text: '纯 C-ABI 跨语言引擎', color: MacOsTokens.systemPurple),
-                        _FeaturePill(text: '毫秒级亿级点云裁剪', color: MacOsTokens.systemGreen),
+                    const SizedBox(height: Gs3dTokens.space8 + 2),
+                    // 技术特性微标签。
+                    const Wrap(
+                      spacing: Gs3dTokens.space8,
+                      runSpacing: Gs3dTokens.space4,
+                      children: [
+                        _FeaturePill(
+                          text: '八叉树 LOD 金字塔',
+                          color: Gs3dPalette.systemBlue,
+                        ),
+                        _FeaturePill(
+                          text: '纯 C-ABI 跨语言引擎',
+                          color: Gs3dPalette.systemPurple,
+                        ),
+                        _FeaturePill(
+                          text: '毫秒级亿级点云裁剪',
+                          color: Gs3dPalette.systemGreen,
+                        ),
                       ],
                     ),
                   ],
@@ -206,26 +216,29 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
 }
 
 class _FeaturePill extends StatelessWidget {
+  const _FeaturePill({required this.text, required this.color});
+
   final String text;
   final Color color;
-
-  const _FeaturePill({required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Gs3dTokens.space8,
+        vertical: 2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(MacOsTokens.radiusPill),
+        borderRadius: BorderRadius.circular(Gs3dTokens.radiusPill),
         border: Border.all(color: color.withValues(alpha: 0.15)),
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w500,
+        style: Gs3dType.micro.copyWith(
           color: color,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -233,13 +246,6 @@ class _FeaturePill extends StatelessWidget {
 }
 
 class _HeroParticle {
-  double x;
-  double y;
-  double vx;
-  double vy;
-  double radius;
-  double alpha;
-
   _HeroParticle({
     required this.x,
     required this.y,
@@ -248,12 +254,19 @@ class _HeroParticle {
     required this.radius,
     required this.alpha,
   });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  double radius;
+  double alpha;
 }
 
 class _HeroParticlePainter extends CustomPainter {
-  final List<_HeroParticle> particles;
-
   _HeroParticlePainter({required this.particles});
+
+  final List<_HeroParticle> particles;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -269,7 +282,7 @@ class _HeroParticlePainter extends CustomPainter {
       if (p.y < 0) p.y = size.height;
       if (p.y > size.height) p.y = 0;
 
-      paint.color = MacOsTokens.systemBlue.withValues(alpha: p.alpha);
+      paint.color = Gs3dTokens.accent.withValues(alpha: p.alpha);
       canvas.drawCircle(Offset(p.x, p.y), p.radius, paint);
     }
   }
