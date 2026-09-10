@@ -202,11 +202,15 @@ class TopMenuBar extends StatelessWidget {
                   const Icon(Icons.home_outlined, size: 17, color: Gs3dTokens.accent),
                   const SizedBox(width: 6),
                   RichText(
+                    // `RichText` 不像 `Text` 那样合并环境的 `DefaultTextStyle`，
+                    // 因此每个 span 都要显式带上设计字体族（否则品牌字标会退回
+                    // 系统默认字体，预览中直接渲染成方块）。
                     text: const TextSpan(
                       children: [
                         TextSpan(
                           text: 'GeoScatter ',
                           style: TextStyle(
+                            fontFamily: Gs3dType.fontFamily,
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                             color: Gs3dTokens.textPrimary,
@@ -215,6 +219,7 @@ class TopMenuBar extends StatelessWidget {
                         TextSpan(
                           text: '3D',
                           style: TextStyle(
+                            fontFamily: Gs3dType.fontFamily,
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                             color: Gs3dTokens.accent,

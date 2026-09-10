@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../theme/gs3d_tokens.dart';
+
 /// 绘制原生相机投影后的纯像素几何，与 PNG 使用同一 contain 变换。
 class NativeOverlayPainter extends CustomPainter {
   final Map<String, dynamic> state;
@@ -38,6 +40,9 @@ class NativeOverlayPainter extends CustomPainter {
         text: TextSpan(
           text: text,
           style: const TextStyle(
+            // `TextPainter` 不参与 `DefaultTextStyle` 继承，必须显式指定字体族，
+            // 否则会退回系统默认字体，与全站排版不一致。
+            fontFamily: Gs3dType.fontFamily,
             color: Colors.white,
             fontSize: 11,
             backgroundColor: Color(0xb3000000),

@@ -1490,6 +1490,8 @@ class ViewportCanvasPainter extends CustomPainter {
         text: TextSpan(
           text: label,
           style: const TextStyle(
+            // `TextPainter` 不继承 `DefaultTextStyle`，需显式指定设计字体族。
+            fontFamily: Gs3dType.fontFamily,
             color: Colors.white,
             fontSize: 10,
             fontWeight: FontWeight.w600,
@@ -1641,6 +1643,8 @@ class NavigationBallGizmoPainter extends CustomPainter {
       final textSpan = TextSpan(
         text: label,
         style: const TextStyle(
+          // `TextPainter` 不继承 `DefaultTextStyle`，需显式指定设计字体族。
+          fontFamily: Gs3dType.fontFamily,
           color: Colors.white,
           fontSize: 8.5,
           fontWeight: FontWeight.bold,

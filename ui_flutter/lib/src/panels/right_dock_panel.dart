@@ -392,7 +392,13 @@ class RightDockPanel extends StatelessWidget {
           isExpanded: true,
           value: items.contains(value) ? value : items.first,
           icon: const Icon(Icons.keyboard_arrow_down, size: 16, color: Gs3dTokens.textSecondary),
-          style: const TextStyle(fontSize: 12.5, color: Gs3dTokens.textPrimary),
+          // `DropdownButton.style` 会**整体替换**环境的 DefaultTextStyle（而不是
+          // 与之合并），所以这里必须显式带上设计字体族；否则在真机上会退回系统
+          // 默认字体，与全站 Gs3dType 不一致（预览里直接渲染成方块）。
+          style: Gs3dType.body.copyWith(
+            fontSize: 12.5,
+            color: Gs3dTokens.textPrimary,
+          ),
           items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: onChanged,
         ),
