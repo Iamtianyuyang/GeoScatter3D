@@ -1,8 +1,8 @@
 import 'dart:ui';
+import '../theme/gs3d_tokens.dart';
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../panels/center_viewport.dart';
-import '../theme/app_theme.dart';
 
 enum FloatingDockPanelType {
   dataset,
@@ -202,7 +202,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           ),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppTheme.accentBlue
+                ? Gs3dTokens.accent
                 : Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(22),
           ),
@@ -265,7 +265,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                 ),
                 child: Row(
                   children: [
-                    Icon(type.icon, size: 18, color: AppTheme.accentBlue),
+                    Icon(type.icon, size: 18, color: Gs3dTokens.accent),
                     const SizedBox(width: 8),
                     Text(
                       type.title,
@@ -402,7 +402,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
               value: widget.service.pointSize,
               min: 1.0,
               max: 10.0,
-              activeColor: AppTheme.accentBlue,
+              activeColor: Gs3dTokens.accent,
               inactiveColor: Colors.white.withValues(alpha: 0.1),
               onChanged: (val) => widget.service.setPointSize(val),
             ),
@@ -467,7 +467,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           width: 28,
           height: 50 * fraction,
           decoration: BoxDecoration(
-            color: AppTheme.accentBlue.withValues(alpha: 0.85),
+            color: Gs3dTokens.accent.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(4),
           ),
         ),
@@ -499,7 +499,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                 width: 6,
                 height: 6,
                 decoration: const BoxDecoration(
-                  color: AppTheme.statusGreen,
+                  color: Gs3dTokens.success,
                   shape: BoxShape.circle,
                 ),
               ),

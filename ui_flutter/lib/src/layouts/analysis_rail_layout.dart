@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import '../theme/gs3d_tokens.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../panels/center_viewport.dart';
 import '../panels/left_dock_panel.dart';
 import '../panels/right_dock_panel.dart';
-import '../theme/app_theme.dart';
 
 enum RailTabType {
   dataset,
@@ -174,17 +174,17 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           height: 42,
           decoration: BoxDecoration(
             color: isSelected
-                ? AppTheme.accentBlue.withValues(alpha: 0.2)
+                ? Gs3dTokens.accent.withValues(alpha: 0.2)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: isSelected ? AppTheme.accentBlue : Colors.transparent,
+              color: isSelected ? Gs3dTokens.accent : Colors.transparent,
               width: 1.5,
             ),
           ),
           child: Icon(
             tab.icon,
-            color: isSelected ? AppTheme.accentBlue : Colors.white60,
+            color: isSelected ? Gs3dTokens.accent : Colors.white60,
             size: 20,
           ),
         ),
@@ -214,7 +214,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
             ),
             child: Row(
               children: [
-                Icon(tab.icon, size: 16, color: AppTheme.accentBlue),
+                Icon(tab.icon, size: 16, color: Gs3dTokens.accent),
                 const SizedBox(width: 8),
                 Text(
                   tab.title,

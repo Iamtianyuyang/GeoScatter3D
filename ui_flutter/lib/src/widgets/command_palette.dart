@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 /// 全局交互式命令面板 (Command Palette - Ctrl+P)
 class CommandPalette extends StatefulWidget {
@@ -166,9 +166,9 @@ class _CommandPaletteState extends State<CommandPalette> {
               constraints: const BoxConstraints(maxHeight: 460),
               margin: const EdgeInsets.symmetric(horizontal: 20),
               decoration: BoxDecoration(
-                color: AppTheme.surface,
+                color: Gs3dTokens.surface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.border, width: 1),
+                border: Border.all(color: Gs3dTokens.border, width: 1),
                 boxShadow: const [
                   BoxShadow(
                     color: Colors.black45,
@@ -190,16 +190,16 @@ class _CommandPaletteState extends State<CommandPalette> {
                       ),
                       decoration: const BoxDecoration(
                         border: Border(
-                          bottom: BorderSide(color: AppTheme.border, width: 1),
+                          bottom: BorderSide(color: Gs3dTokens.border, width: 1),
                         ),
-                        color: AppTheme.surfaceMuted,
+                        color: Gs3dTokens.surfaceSunken,
                       ),
                       child: Row(
                         children: [
                           const Icon(
                             Icons.search_rounded,
                             size: 20,
-                            color: AppTheme.primaryBlue,
+                            color: Gs3dTokens.accent,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -211,14 +211,14 @@ class _CommandPaletteState extends State<CommandPalette> {
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
-                                color: AppTheme.textTitle,
+                                color: Gs3dTokens.textPrimary,
                               ),
                               decoration: const InputDecoration(
                                 hintText:
                                     '输入指令名称、动作 ID 或关键词 (如: 测距, 截图, 视角, 统计)...',
                                 hintStyle: TextStyle(
                                   fontSize: 13,
-                                  color: AppTheme.textDim,
+                                  color: Gs3dTokens.textSecondary,
                                 ),
                                 border: InputBorder.none,
                                 isDense: true,
@@ -231,7 +231,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                               icon: const Icon(
                                 Icons.close,
                                 size: 16,
-                                color: AppTheme.textDim,
+                                color: Gs3dTokens.textSecondary,
                               ),
                               onPressed: () => _searchController.clear(),
                               splashRadius: 14,
@@ -245,14 +245,14 @@ class _CommandPaletteState extends State<CommandPalette> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: AppTheme.borderSubtle.withAlpha(60),
+                              color: Gs3dTokens.borderStrong.withAlpha(60),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
                               'ESC 退出',
                               style: TextStyle(
                                 fontSize: 10,
-                                color: AppTheme.textDim,
+                                color: Gs3dTokens.textSecondary,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -273,14 +273,14 @@ class _CommandPaletteState extends State<CommandPalette> {
                                   Icon(
                                     Icons.search_off_rounded,
                                     size: 32,
-                                    color: AppTheme.textDim,
+                                    color: Gs3dTokens.textSecondary,
                                   ),
                                   SizedBox(height: 8),
                                   Text(
                                     '未找到匹配的指令',
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: AppTheme.textDim,
+                                      color: Gs3dTokens.textSecondary,
                                     ),
                                   ),
                                 ],
@@ -312,12 +312,12 @@ class _CommandPaletteState extends State<CommandPalette> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: isSelected
-                                          ? AppTheme.primaryBlue.withAlpha(30)
+                                          ? Gs3dTokens.accent.withAlpha(30)
                                           : Colors.transparent,
                                       border: Border(
                                         left: BorderSide(
                                           color: isSelected
-                                              ? AppTheme.primaryBlue
+                                              ? Gs3dTokens.accent
                                               : Colors.transparent,
                                           width: 3,
                                         ),
@@ -342,8 +342,8 @@ class _CommandPaletteState extends State<CommandPalette> {
                                                           ? FontWeight.w700
                                                           : FontWeight.w600,
                                                       color: isSelected
-                                                          ? AppTheme.primaryBlue
-                                                          : AppTheme.textTitle,
+                                                          ? Gs3dTokens.accent
+                                                          : Gs3dTokens.textPrimary,
                                                     ),
                                                   ),
                                                   const Spacer(),
@@ -351,7 +351,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                                                     action.id,
                                                     style: const TextStyle(
                                                       fontSize: 10.5,
-                                                      color: AppTheme.textDim,
+                                                      color: Gs3dTokens.textSecondary,
                                                       fontFamily: 'monospace',
                                                     ),
                                                   ),
@@ -364,7 +364,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
                                                   fontSize: 11.5,
-                                                  color: AppTheme.textBody,
+                                                  color: Gs3dTokens.textBody,
                                                 ),
                                               ),
                                             ],
@@ -375,7 +375,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                                           const Icon(
                                             Icons.keyboard_return,
                                             size: 14,
-                                            color: AppTheme.primaryBlue,
+                                            color: Gs3dTokens.accent,
                                           ),
                                         ],
                                       ],
@@ -393,9 +393,9 @@ class _CommandPaletteState extends State<CommandPalette> {
                         vertical: 6,
                       ),
                       decoration: const BoxDecoration(
-                        color: AppTheme.surfaceMuted,
+                        color: Gs3dTokens.surfaceSunken,
                         border: Border(
-                          top: BorderSide(color: AppTheme.border, width: 1),
+                          top: BorderSide(color: Gs3dTokens.border, width: 1),
                         ),
                       ),
                       child: Row(
@@ -410,7 +410,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                             '共 ${_filteredActions.length} 项可用动作',
                             style: const TextStyle(
                               fontSize: 10.5,
-                              color: AppTheme.textDim,
+                              color: Gs3dTokens.textSecondary,
                             ),
                           ),
                         ],
@@ -427,7 +427,7 @@ class _CommandPaletteState extends State<CommandPalette> {
   }
 
   Widget _buildCategoryBadge(String category) {
-    Color color = AppTheme.primaryBlue;
+    Color color = Gs3dTokens.accent;
     String label = '全局';
 
     if (category.contains('camera') || category.contains('viewport')) {
@@ -476,16 +476,16 @@ class _CommandPaletteState extends State<CommandPalette> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
           decoration: BoxDecoration(
-            color: AppTheme.surface,
+            color: Gs3dTokens.surface,
             borderRadius: BorderRadius.circular(3),
-            border: Border.all(color: AppTheme.border),
+            border: Border.all(color: Gs3dTokens.border),
           ),
           child: Text(
             keyLabel,
             style: const TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textTitle,
+              color: Gs3dTokens.textPrimary,
               fontFamily: 'monospace',
             ),
           ),
@@ -493,7 +493,7 @@ class _CommandPaletteState extends State<CommandPalette> {
         const SizedBox(width: 4),
         Text(
           actionLabel,
-          style: const TextStyle(fontSize: 10.5, color: AppTheme.textDim),
+          style: const TextStyle(fontSize: 10.5, color: Gs3dTokens.textSecondary),
         ),
       ],
     );

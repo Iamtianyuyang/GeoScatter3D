@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 /// 全局键盘与鼠标快捷操作速查指南 (Shortcut Overlay - F1)
 class ShortcutOverlay extends StatelessWidget {
@@ -41,9 +41,9 @@ class ShortcutOverlay extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 620),
               margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               decoration: BoxDecoration(
-                color: AppTheme.surface,
+                color: Gs3dTokens.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border, width: 1),
+                border: Border.all(color: Gs3dTokens.border, width: 1),
                 boxShadow: const [
                   BoxShadow(
                     color: Colors.black54,
@@ -61,18 +61,18 @@ class ShortcutOverlay extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                       decoration: const BoxDecoration(
-                        color: AppTheme.surfaceMuted,
-                        border: Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+                        color: Gs3dTokens.surfaceSunken,
+                        border: Border(bottom: BorderSide(color: Gs3dTokens.border, width: 1)),
                       ),
                       child: Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: AppTheme.primaryBlue.withAlpha(30),
+                              color: Gs3dTokens.accent.withAlpha(30),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Icon(Icons.keyboard_outlined, size: 20, color: AppTheme.primaryBlue),
+                            child: const Icon(Icons.keyboard_outlined, size: 20, color: Gs3dTokens.accent),
                           ),
                           const SizedBox(width: 12),
                           Column(
@@ -83,19 +83,19 @@ class ShortcutOverlay extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: AppTheme.textTitle,
+                                  color: Gs3dTokens.textPrimary,
                                 ),
                               ),
                               SizedBox(height: 2),
                               Text(
                                 'Keyboard & Mouse Shortcuts Reference',
-                                style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                                style: TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary),
                               ),
                             ],
                           ),
                           const Spacer(),
                           IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.textDim),
+                            icon: const Icon(Icons.close_rounded, size: 20, color: Gs3dTokens.textSecondary),
                             onPressed: () => service.toggleShortcutOverlay(false),
                             tooltip: '关闭 (ESC)',
                             splashRadius: 18,
@@ -151,19 +151,19 @@ class ShortcutOverlay extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: const BoxDecoration(
-                        color: AppTheme.surfaceMuted,
-                        border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
+                        color: Gs3dTokens.surfaceSunken,
+                        border: Border(top: BorderSide(color: Gs3dTokens.border, width: 1)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
                             '按 ESC 键或点击卡片外部任意处即可关闭',
-                            style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+                            style: TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary),
                           ),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryBlue,
+                              backgroundColor: Gs3dTokens.accent,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -187,14 +187,14 @@ class ShortcutOverlay extends StatelessWidget {
   Widget _buildSectionTitle(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppTheme.primaryBlue),
+        Icon(icon, size: 16, color: Gs3dTokens.accent),
         const SizedBox(width: 8),
         Text(
           title,
           style: const TextStyle(
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
-            color: AppTheme.textTitle,
+            color: Gs3dTokens.textPrimary,
           ),
         ),
       ],
@@ -217,9 +217,9 @@ class ShortcutOverlay extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: AppTheme.surfaceMuted,
+            color: Gs3dTokens.surfaceSunken,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: AppTheme.border.withAlpha(100)),
+            border: Border.all(color: Gs3dTokens.border.withAlpha(100)),
           ),
           child: Row(
             children: [
@@ -230,9 +230,9 @@ class ShortcutOverlay extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppTheme.surface,
+                        color: Gs3dTokens.surface,
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: Gs3dTokens.border),
                         boxShadow: const [
                           BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
                         ],
@@ -242,7 +242,7 @@ class ShortcutOverlay extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.textTitle,
+                          color: Gs3dTokens.textPrimary,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -250,7 +250,7 @@ class ShortcutOverlay extends StatelessWidget {
                     if (i < item.keys.length - 1)
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 3),
-                        child: Text('+', style: TextStyle(fontSize: 11, color: AppTheme.textDim)),
+                        child: Text('+', style: TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary)),
                       ),
                   ],
                 ],
@@ -263,7 +263,7 @@ class ShortcutOverlay extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 11.5,
-                    color: AppTheme.textBody,
+                    color: Gs3dTokens.textBody,
                   ),
                 ),
               ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/gs3d_tokens.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
 import '../welcome/welcome_ui_keys.dart';
 import '../widgets/modern_card.dart';
 
@@ -18,9 +18,9 @@ class RightDockPanel extends StatelessWidget {
       key: WorkbenchUiKeys.rightDockPanel,
       width: 290,
       decoration: const BoxDecoration(
-        color: AppTheme.background,
+        color: Gs3dTokens.windowBg,
         border: Border(
-          left: BorderSide(color: AppTheme.border, width: 1),
+          left: BorderSide(color: Gs3dTokens.border, width: 1),
         ),
       ),
       child: Column(
@@ -37,12 +37,12 @@ class RightDockPanel extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.textTitle,
+                    color: Gs3dTokens.textPrimary,
                   ),
                 ),
                 IconButton(
                   key: WorkbenchUiKeys.rightDockCloseButton,
-                  icon: const Icon(Icons.close, size: 16, color: AppTheme.textDim),
+                  icon: const Icon(Icons.close, size: 16, color: Gs3dTokens.textSecondary),
                   onPressed: () => service.toggleRightDock(false),
                   splashRadius: 16,
                 ),
@@ -80,15 +80,15 @@ class RightDockPanel extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('点大小', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                              const Text('点大小', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                               Text(pointSize.toStringAsFixed(1),
                                   style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                             ],
                           ),
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: AppTheme.primaryBlue,
-                              thumbColor: AppTheme.primaryBlue,
+                              activeTrackColor: Gs3dTokens.accent,
+                              thumbColor: Gs3dTokens.accent,
                               trackHeight: 3,
                               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             ),
@@ -103,7 +103,7 @@ class RightDockPanel extends StatelessWidget {
                           const SizedBox(height: 8),
 
                           // 形状
-                          const Text('形状', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('形状', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockShapeDropdown,
@@ -116,7 +116,7 @@ class RightDockPanel extends StatelessWidget {
                           const SizedBox(height: 10),
 
                           // 高度来源
-                          const Text('高度来源', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('高度来源', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockHeightSourceDropdown,
@@ -132,15 +132,15 @@ class RightDockPanel extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('高度缩放', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                              const Text('高度缩放', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                               Text('${heightScale.toStringAsFixed(2)}x',
                                   style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                             ],
                           ),
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: AppTheme.primaryBlue,
-                              thumbColor: AppTheme.primaryBlue,
+                              activeTrackColor: Gs3dTokens.accent,
+                              thumbColor: Gs3dTokens.accent,
                               trackHeight: 3,
                               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             ),
@@ -155,7 +155,7 @@ class RightDockPanel extends StatelessWidget {
                           const SizedBox(height: 10),
 
                           // 着色字段
-                          const Text('着色字段', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('着色字段', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockColorAttrDropdown,
@@ -176,7 +176,7 @@ class RightDockPanel extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('色标方案', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('色标方案', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockColormapDropdown,
@@ -217,7 +217,7 @@ class RightDockPanel extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   '区间: ${scalarMin.toStringAsFixed(1)} ~ ${scalarMax.toStringAsFixed(1)}',
-                                  style: const TextStyle(fontSize: 11.5, color: AppTheme.textDim, fontFamily: 'Consolas'),
+                                  style: const TextStyle(fontSize: 11.5, color: Gs3dTokens.textSecondary, fontFamily: 'Consolas'),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -229,7 +229,7 @@ class RightDockPanel extends StatelessWidget {
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 onPressed: () => service.resetScalarRange(),
-                                child: const Text('复位', style: TextStyle(fontSize: 11, color: AppTheme.primaryBlue)),
+                                child: const Text('复位', style: TextStyle(fontSize: 11, color: Gs3dTokens.accent)),
                               ),
                             ],
                           ),
@@ -244,7 +244,7 @@ class RightDockPanel extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('视口底色', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('视口底色', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockBgColorDropdown,
@@ -271,7 +271,7 @@ class RightDockPanel extends StatelessWidget {
                             },
                           ),
                           const SizedBox(height: 10),
-                          const Text('界面主题', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const Text('界面主题', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: const ValueKey('workbench.right_dock.theme_dropdown'),
@@ -291,7 +291,7 @@ class RightDockPanel extends StatelessWidget {
                                 '相机联动',
                                 style: TextStyle(
                                   fontSize: 12.5,
-                                  color: AppTheme.textBody,
+                                  color: Gs3dTokens.textBody,
                                 ),
                               ),
                               Switch(
@@ -383,16 +383,16 @@ class RightDockPanel extends StatelessWidget {
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
-        border: Border.all(color: AppTheme.border),
+        color: Gs3dTokens.surface,
+        borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
+        border: Border.all(color: Gs3dTokens.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isExpanded: true,
           value: items.contains(value) ? value : items.first,
-          icon: const Icon(Icons.keyboard_arrow_down, size: 16, color: AppTheme.textDim),
-          style: const TextStyle(fontSize: 12.5, color: AppTheme.textTitle),
+          icon: const Icon(Icons.keyboard_arrow_down, size: 16, color: Gs3dTokens.textSecondary),
+          style: const TextStyle(fontSize: 12.5, color: Gs3dTokens.textPrimary),
           items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: onChanged,
         ),

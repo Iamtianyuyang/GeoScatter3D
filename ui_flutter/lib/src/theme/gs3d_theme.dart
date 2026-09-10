@@ -2,39 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'gs3d_tokens.dart';
 
-/// 应用主题装配层。
+/// 主题装配层（`ThemeData` 组装）。
 ///
-/// 常量已全部代理到 [Gs3dTokens]，本文件**不再持有独立色值**。
-/// 旧的 `AppTheme.xxx` 命名保留用于兼容存量组件；新代码请直接引用
-/// `Gs3dTokens` / `Gs3dType` / `Gs3dMaterial` / `Gs3dMotion`。
-class AppTheme {
-  const AppTheme._();
-
-  // ---- 语义色（代理至统一令牌）----------------------------------------------
-  static const Color background = Gs3dTokens.windowBg;
-  static const Color surface = Gs3dTokens.surface;
-  static const Color surfaceMuted = Gs3dTokens.surfaceSunken;
-  static const Color border = Gs3dTokens.border;
-  static const Color borderSubtle = Gs3dTokens.borderStrong;
-
-  static const Color textTitle = Gs3dTokens.textPrimary;
-  static const Color textBody = Gs3dTokens.textBody;
-  static const Color textDim = Gs3dTokens.textSecondary;
-
-  static const Color primaryBlue = Gs3dTokens.accent;
-  static const Color primaryBlueLight = Color(0xFF3B82F6);
-  static const Color primaryBlueHover = Gs3dTokens.accentHover;
-  static const Color primaryBlueBg = Gs3dTokens.accentSubtle;
-  static const Color accentBlue = Gs3dTokens.accent;
-  static const Color statusGreen = Gs3dTokens.quoteDown;
-
-  // ---- 形状与阴影 -----------------------------------------------------------
-  static const double cardRadius = Gs3dTokens.radiusLg;
-  static const double controlRadius = Gs3dTokens.radiusSm;
-  static const List<BoxShadow> cardShadow = Gs3dTokens.elevation1;
+/// 本文件**只**负责把 [Gs3dTokens] / [Gs3dType] / [Gs3dMotion] 装配成
+/// Material `ThemeData`，不持有任何独立色值。业务组件请直接引用 `Gs3dTokens`。
+abstract final class Gs3dTheme {
+  const Gs3dTheme._();
 
   /// 浅色主题（默认）。
-  static ThemeData lightTheme() {
+  static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
       seedColor: Gs3dTokens.accent,
       brightness: Brightness.light,
@@ -43,13 +19,11 @@ class AppTheme {
       error: Gs3dTokens.danger,
     );
 
-    return _base(scheme).copyWith(
-      scaffoldBackgroundColor: Gs3dTokens.windowBg,
-    );
+    return _base(scheme).copyWith(scaffoldBackgroundColor: Gs3dTokens.windowBg);
   }
 
   /// 深色主题（分析舱 / 沉浸模式）。
-  static ThemeData darkTheme() {
+  static ThemeData dark() {
     const scheme = ColorScheme.dark(
       primary: Color(0xFF4C9AFF),
       onPrimary: Colors.white,
@@ -119,7 +93,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
         ),
       ),
-      // 统一控件反馈：按压即时收缩由各组件按 Gs3dMotion.feedback 实现。
+      // 控件反馈：按压即时收缩由各组件按 Gs3dMotion.feedback 实现。
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: Gs3dTokens.accent,
@@ -132,6 +106,20 @@ class AppTheme {
           textStyle: Gs3dType.bodyStrong,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Gs3dTokens.textBody,
+          side: const BorderSide(color: Gs3dTokens.border),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gs3dTokens.space12 + 2,
+            vertical: 10,
+          ),
+          textStyle: Gs3dType.body.copyWith(fontWeight: FontWeight.w500),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
           ),
         ),
       ),

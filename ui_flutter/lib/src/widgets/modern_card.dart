@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 class ModernCard extends StatelessWidget {
   final Widget child;
@@ -17,10 +17,10 @@ class ModernCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-        border: Border.all(color: AppTheme.border, width: 1),
-        boxShadow: AppTheme.cardShadow,
+        color: Gs3dTokens.surface,
+        borderRadius: BorderRadius.circular(Gs3dTokens.cardRadius),
+        border: Border.all(color: Gs3dTokens.border, width: 1),
+        boxShadow: Gs3dTokens.elevation1,
       ),
       child: child,
     );
@@ -59,16 +59,16 @@ class _CollapsibleCardState extends State<CollapsibleCard> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-        border: Border.all(color: AppTheme.border, width: 1),
-        boxShadow: AppTheme.cardShadow,
+        color: Gs3dTokens.surface,
+        borderRadius: BorderRadius.circular(Gs3dTokens.cardRadius),
+        border: Border.all(color: Gs3dTokens.border, width: 1),
+        boxShadow: Gs3dTokens.elevation1,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+            borderRadius: BorderRadius.circular(Gs3dTokens.cardRadius),
             onTap: () {
               setState(() {
                 _isOpen = !_isOpen;
@@ -82,7 +82,7 @@ class _CollapsibleCardState extends State<CollapsibleCard> {
                     _isOpen
                         ? Icons.keyboard_arrow_down_rounded
                         : Icons.keyboard_arrow_right_rounded,
-                    color: AppTheme.primaryBlue,
+                    color: Gs3dTokens.accent,
                     size: 20,
                   ),
                   const SizedBox(width: 6),
@@ -94,7 +94,7 @@ class _CollapsibleCardState extends State<CollapsibleCard> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.textTitle,
+                        color: Gs3dTokens.textPrimary,
                       ),
                     ),
                   ),

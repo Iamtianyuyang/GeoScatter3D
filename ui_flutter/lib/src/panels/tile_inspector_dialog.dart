@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 /// 八叉树瓦片与多级 LOD 流式加载视察器 (Octree Tile & LOD Streaming Inspector)
 class TileInspectorDialog extends StatelessWidget {
@@ -48,9 +48,9 @@ class TileInspectorDialog extends StatelessWidget {
                 constraints: const BoxConstraints(maxHeight: 620),
                 margin: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppTheme.surface,
+                  color: Gs3dTokens.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border, width: 1),
+                  border: Border.all(color: Gs3dTokens.border, width: 1),
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black45,
@@ -71,10 +71,10 @@ class TileInspectorDialog extends StatelessWidget {
                           vertical: 14,
                         ),
                         decoration: const BoxDecoration(
-                          color: AppTheme.surfaceMuted,
+                          color: Gs3dTokens.surfaceSunken,
                           border: Border(
                             bottom: BorderSide(
-                              color: AppTheme.border,
+                              color: Gs3dTokens.border,
                               width: 1,
                             ),
                           ),
@@ -84,13 +84,13 @@ class TileInspectorDialog extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryBlue.withAlpha(30),
+                                color: Gs3dTokens.accent.withAlpha(30),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: const Icon(
                                 Icons.grid_view_rounded,
                                 size: 20,
-                                color: AppTheme.primaryBlue,
+                                color: Gs3dTokens.accent,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -103,7 +103,7 @@ class TileInspectorDialog extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
-                                      color: AppTheme.textTitle,
+                                      color: Gs3dTokens.textPrimary,
                                     ),
                                   ),
                                   SizedBox(height: 2),
@@ -111,7 +111,7 @@ class TileInspectorDialog extends StatelessWidget {
                                     'Octree Tile Pyramid & LOD Streaming Pipeline Inspector',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: AppTheme.textDim,
+                                      color: Gs3dTokens.textSecondary,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -123,7 +123,7 @@ class TileInspectorDialog extends StatelessWidget {
                               icon: const Icon(
                                 Icons.close_rounded,
                                 size: 20,
-                                color: AppTheme.textDim,
+                                color: Gs3dTokens.textSecondary,
                               ),
                               onPressed: () =>
                                   service.toggleTileInspector(false),
@@ -149,10 +149,10 @@ class TileInspectorDialog extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: AppTheme.surfaceMuted,
+                                color: Gs3dTokens.surfaceSunken,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AppTheme.border.withAlpha(100),
+                                  color: Gs3dTokens.border.withAlpha(100),
                                 ),
                               ),
                               child: Column(
@@ -192,10 +192,10 @@ class TileInspectorDialog extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: AppTheme.surfaceMuted,
+                                color: Gs3dTokens.surfaceSunken,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AppTheme.border.withAlpha(100),
+                                  color: Gs3dTokens.border.withAlpha(100),
                                 ),
                               ),
                               child: Column(
@@ -213,15 +213,15 @@ class TileInspectorDialog extends StatelessWidget {
                                     ),
                                     decoration: BoxDecoration(
                                       color: isBase
-                                          ? AppTheme.primaryBlue.withAlpha(20)
-                                          : AppTheme.surface,
+                                          ? Gs3dTokens.accent.withAlpha(20)
+                                          : Gs3dTokens.surface,
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
                                         color: isBase
-                                            ? AppTheme.primaryBlue.withAlpha(
+                                            ? Gs3dTokens.accent.withAlpha(
                                                 100,
                                               )
-                                            : AppTheme.border,
+                                            : Gs3dTokens.border,
                                       ),
                                     ),
                                     child: Row(
@@ -233,8 +233,8 @@ class TileInspectorDialog extends StatelessWidget {
                                           ),
                                           decoration: BoxDecoration(
                                             color: isBase
-                                                ? AppTheme.primaryBlue
-                                                : AppTheme.textDim,
+                                                ? Gs3dTokens.accent
+                                                : Gs3dTokens.textSecondary,
                                             borderRadius: BorderRadius.circular(
                                               4,
                                             ),
@@ -254,7 +254,7 @@ class TileInspectorDialog extends StatelessWidget {
                                             detail,
                                             style: const TextStyle(
                                               fontSize: 12,
-                                              color: AppTheme.textTitle,
+                                              color: Gs3dTokens.textPrimary,
                                             ),
                                           ),
                                         ),
@@ -263,7 +263,7 @@ class TileInspectorDialog extends StatelessWidget {
                                           size: 15,
                                           color: isBase
                                               ? const Color(0xFF10B981)
-                                              : AppTheme.textDim,
+                                              : Gs3dTokens.textSecondary,
                                         ),
                                       ],
                                     ),
@@ -282,10 +282,10 @@ class TileInspectorDialog extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: AppTheme.surfaceMuted,
+                                color: Gs3dTokens.surfaceSunken,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AppTheme.border.withAlpha(100),
+                                  color: Gs3dTokens.border.withAlpha(100),
                                 ),
                               ),
                               child: Row(
@@ -294,7 +294,7 @@ class TileInspectorDialog extends StatelessWidget {
                                     child: _buildTileStatCard(
                                       '已装载瓦片',
                                       '$loadedTiles',
-                                      AppTheme.primaryBlue,
+                                      Gs3dTokens.accent,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -327,9 +327,9 @@ class TileInspectorDialog extends StatelessWidget {
                           vertical: 12,
                         ),
                         decoration: const BoxDecoration(
-                          color: AppTheme.surfaceMuted,
+                          color: Gs3dTokens.surfaceSunken,
                           border: Border(
-                            top: BorderSide(color: AppTheme.border, width: 1),
+                            top: BorderSide(color: Gs3dTokens.border, width: 1),
                           ),
                         ),
                         child: Row(
@@ -337,8 +337,8 @@ class TileInspectorDialog extends StatelessWidget {
                             OutlinedButton.icon(
                               key: const ValueKey('btn_tile_inspector_clear'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.textTitle,
-                                side: const BorderSide(color: AppTheme.border),
+                                foregroundColor: Gs3dTokens.textPrimary,
+                                side: const BorderSide(color: Gs3dTokens.border),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 8,
@@ -363,7 +363,7 @@ class TileInspectorDialog extends StatelessWidget {
                             const Spacer(),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryBlue,
+                                backgroundColor: Gs3dTokens.accent,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
                                 padding: const EdgeInsets.symmetric(
@@ -395,14 +395,14 @@ class TileInspectorDialog extends StatelessWidget {
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 15, color: AppTheme.primaryBlue),
+        Icon(icon, size: 15, color: Gs3dTokens.accent),
         const SizedBox(width: 6),
         Text(
           title,
           style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: AppTheme.textTitle,
+            color: Gs3dTokens.textPrimary,
           ),
         ),
       ],
@@ -415,14 +415,14 @@ class TileInspectorDialog extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+          style: const TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary),
         ),
         Text(
           value,
           style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: AppTheme.textTitle,
+            color: Gs3dTokens.textPrimary,
             fontFamily: 'Consolas',
           ),
         ),
@@ -434,15 +434,15 @@ class TileInspectorDialog extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: Gs3dTokens.surface,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: Gs3dTokens.border),
       ),
       child: Column(
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+            style: const TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary),
           ),
           const SizedBox(height: 4),
           Text(

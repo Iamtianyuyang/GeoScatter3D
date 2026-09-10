@@ -1,8 +1,8 @@
 /// GeoScatter3D 统一设计令牌 (Single Source of Truth)
 ///
 /// 设计依据：Apple Human Interface Guidelines + WWDC 流体交互设计。
-/// 本文件是**唯一**的视觉常量来源；`app_theme.dart` 与 `macos_tokens.dart`
-/// 均为其兼容适配层，禁止再引入第二套硬编码色值。
+/// 本文件是**唯一**的视觉常量来源；业务组件一律直接引用本文件，
+/// 禁止再引入第二套硬编码色值。`ThemeData` 装配见 `gs3d_theme.dart`。
 ///
 /// 分层结构：
 ///   1. [Gs3dPalette]  原始色板（不直接使用）

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 /// 性能指标与显存实时诊断面板 (Performance & Memory Diagnostic Panel)
 class PerformancePanel extends StatelessWidget {
@@ -51,9 +51,9 @@ class PerformancePanel extends StatelessWidget {
                 constraints: const BoxConstraints(maxHeight: 580),
                 margin: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppTheme.surface,
+                  color: Gs3dTokens.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border, width: 1),
+                  border: Border.all(color: Gs3dTokens.border, width: 1),
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black45,
@@ -71,18 +71,18 @@ class PerformancePanel extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                         decoration: const BoxDecoration(
-                          color: AppTheme.surfaceMuted,
-                          border: Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+                          color: Gs3dTokens.surfaceSunken,
+                          border: Border(bottom: BorderSide(color: Gs3dTokens.border, width: 1)),
                         ),
                         child: Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryBlue.withAlpha(30),
+                                color: Gs3dTokens.accent.withAlpha(30),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.speed_rounded, size: 20, color: AppTheme.primaryBlue),
+                              child: const Icon(Icons.speed_rounded, size: 20, color: Gs3dTokens.accent),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -94,13 +94,13 @@ class PerformancePanel extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
-                                      color: AppTheme.textTitle,
+                                      color: Gs3dTokens.textPrimary,
                                     ),
                                   ),
                                   SizedBox(height: 2),
                                   Text(
                                     'Real-time Rendering & Tile Streaming Profiler',
-                                    style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                                    style: TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -108,7 +108,7 @@ class PerformancePanel extends StatelessWidget {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.textDim),
+                              icon: const Icon(Icons.close_rounded, size: 20, color: Gs3dTokens.textSecondary),
                               onPressed: () => service.togglePerformancePanel(false),
                               splashRadius: 18,
                               tooltip: '关闭',
@@ -130,14 +130,14 @@ class PerformancePanel extends StatelessWidget {
                                   child: Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.surfaceMuted,
+                                      color: Gs3dTokens.surfaceSunken,
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppTheme.border.withAlpha(120)),
+                                      border: Border.all(color: Gs3dTokens.border.withAlpha(120)),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text('渲染帧率 (FPS)', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                                        const Text('渲染帧率 (FPS)', style: TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary)),
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
@@ -151,7 +151,7 @@ class PerformancePanel extends StatelessWidget {
                                               ),
                                             ),
                                             const SizedBox(width: 6),
-                                            const Text('FPS', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                                            const Text('FPS', style: TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary)),
                                           ],
                                         ),
                                       ],
@@ -163,14 +163,14 @@ class PerformancePanel extends StatelessWidget {
                                   child: Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.surfaceMuted,
+                                      color: Gs3dTokens.surfaceSunken,
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppTheme.border.withAlpha(120)),
+                                      border: Border.all(color: Gs3dTokens.border.withAlpha(120)),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text('单帧耗时 (Frame Time)', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                                        const Text('单帧耗时 (Frame Time)', style: TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary)),
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
@@ -179,12 +179,12 @@ class PerformancePanel extends StatelessWidget {
                                               style: const TextStyle(
                                                 fontSize: 26,
                                                 fontWeight: FontWeight.w800,
-                                                color: AppTheme.primaryBlue,
+                                                color: Gs3dTokens.accent,
                                                 fontFamily: 'monospace',
                                               ),
                                             ),
                                             const SizedBox(width: 6),
-                                            const Text('ms', style: TextStyle(fontSize: 12, color: AppTheme.textDim)),
+                                            const Text('ms', style: TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary)),
                                           ],
                                         ),
                                       ],
@@ -199,9 +199,9 @@ class PerformancePanel extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: AppTheme.surfaceMuted,
+                                color: Gs3dTokens.surfaceSunken,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border.withAlpha(120)),
+                                border: Border.all(color: Gs3dTokens.border.withAlpha(120)),
                               ),
                               child: Column(
                                 children: [
@@ -216,7 +216,7 @@ class PerformancePanel extends StatelessWidget {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text('瓦片缓存命中率', style: TextStyle(fontSize: 12.5, color: AppTheme.textDim)),
+                                      const Text('瓦片缓存命中率', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textSecondary)),
                                       Text(
                                         '${hitRate.toStringAsFixed(1)}%',
                                         style: const TextStyle(
@@ -233,7 +233,7 @@ class PerformancePanel extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(4),
                                     child: LinearProgressIndicator(
                                       value: (hitRate / 100.0).clamp(0.0, 1.0),
-                                      backgroundColor: AppTheme.borderSubtle.withAlpha(80),
+                                      backgroundColor: Gs3dTokens.borderStrong.withAlpha(80),
                                       valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
                                       minHeight: 6,
                                     ),
@@ -248,21 +248,21 @@ class PerformancePanel extends StatelessWidget {
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: AppTheme.surfaceMuted,
+                                color: Gs3dTokens.surfaceSunken,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: AppTheme.border.withAlpha(80)),
+                                border: Border.all(color: Gs3dTokens.border.withAlpha(80)),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.videocam_outlined, size: 15, color: AppTheme.textDim),
+                                  const Icon(Icons.videocam_outlined, size: 15, color: Gs3dTokens.textSecondary),
                                   const SizedBox(width: 8),
-                                  const Text('相机参考坐标: ', style: TextStyle(fontSize: 11.5, color: AppTheme.textDim)),
+                                  const Text('相机参考坐标: ', style: TextStyle(fontSize: 11.5, color: Gs3dTokens.textSecondary)),
                                   Expanded(
                                     child: Text(
                                       coords,
                                       style: const TextStyle(
                                         fontSize: 11.5,
-                                        color: AppTheme.textTitle,
+                                        color: Gs3dTokens.textPrimary,
                                         fontFamily: 'monospace',
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -279,8 +279,8 @@ class PerformancePanel extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                         decoration: const BoxDecoration(
-                          color: AppTheme.surfaceMuted,
-                          border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
+                          color: Gs3dTokens.surfaceSunken,
+                          border: Border(top: BorderSide(color: Gs3dTokens.border, width: 1)),
                         ),
                         child: Row(
                           children: [
@@ -307,7 +307,7 @@ class PerformancePanel extends StatelessWidget {
                             const Spacer(),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryBlue,
+                                backgroundColor: Gs3dTokens.accent,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -333,13 +333,13 @@ class PerformancePanel extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12.5, color: AppTheme.textDim)),
+        Text(label, style: const TextStyle(fontSize: 12.5, color: Gs3dTokens.textSecondary)),
         Text(
           value,
           style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: AppTheme.textTitle,
+            color: Gs3dTokens.textPrimary,
             fontFamily: 'monospace',
           ),
         ),

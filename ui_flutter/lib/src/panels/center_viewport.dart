@@ -9,7 +9,7 @@ import '../ffi/geoscatter3d_service.dart';
 import '../models/measurement_line_model.dart';
 import '../models/point_cloud_model.dart';
 import '../native/native_overlay_painter.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 import '../welcome/welcome_ui_keys.dart';
 
 class CenterViewport extends StatefulWidget {
@@ -149,9 +149,9 @@ class _CenterViewportState extends State<CenterViewport> {
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: const BoxDecoration(
-            color: AppTheme.surfaceMuted,
+            color: Gs3dTokens.surfaceSunken,
             border: Border(
-              bottom: BorderSide(color: AppTheme.border, width: 1),
+              bottom: BorderSide(color: Gs3dTokens.border, width: 1),
             ),
           ),
           child: Row(
@@ -160,11 +160,11 @@ class _CenterViewportState extends State<CenterViewport> {
                 height: 26,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: AppTheme.surface,
+                  color: Gs3dTokens.surface,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(4),
                   ),
-                  border: Border.all(color: AppTheme.border),
+                  border: Border.all(color: Gs3dTokens.border),
                 ),
                 child: Row(
                   children: const [
@@ -173,11 +173,11 @@ class _CenterViewportState extends State<CenterViewport> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
-                        color: AppTheme.textTitle,
+                        color: Gs3dTokens.textPrimary,
                       ),
                     ),
                     SizedBox(width: 8),
-                    Icon(Icons.close, size: 14, color: AppTheme.textDim),
+                    Icon(Icons.close, size: 14, color: Gs3dTokens.textSecondary),
                   ],
                 ),
               ),
@@ -190,8 +190,8 @@ class _CenterViewportState extends State<CenterViewport> {
                       : Icons.videogame_asset_rounded,
                   size: 16,
                   color: widget.service.isNativeRendererActive
-                      ? AppTheme.primaryBlue
-                      : AppTheme.textDim,
+                      ? Gs3dTokens.accent
+                      : Gs3dTokens.textSecondary,
                 ),
                 tooltip: widget.service.isNativeRendererActive
                     ? '刷新原生 Vulkan 渲染帧'
@@ -210,14 +210,14 @@ class _CenterViewportState extends State<CenterViewport> {
                 icon: const Icon(
                   Icons.refresh_rounded,
                   size: 16,
-                  color: AppTheme.textDim,
+                  color: Gs3dTokens.textSecondary,
                 ),
                 tooltip: '复位视口',
                 onPressed: () => widget.service.resetCamera(),
                 splashRadius: 16,
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.fullscreen, size: 18, color: AppTheme.textDim),
+              const Icon(Icons.fullscreen, size: 18, color: Gs3dTokens.textSecondary),
             ],
           ),
         ),
@@ -228,7 +228,6 @@ class _CenterViewportState extends State<CenterViewport> {
             listenable: widget.service,
             builder: (context, _) {
               final points = widget.service.points;
-              final pointSize = widget.service.pointSize;
               final colormap = widget.service.colormap;
               final scalarMin = widget.service.scalarMin;
               final scalarMax = widget.service.scalarMax;
@@ -236,14 +235,11 @@ class _CenterViewportState extends State<CenterViewport> {
               final azimuth = widget.service.cameraAzimuth;
               final elevation = widget.service.cameraElevation;
               final zoom = widget.service.cameraZoom;
-              final panX = widget.service.cameraPanX;
-              final panY = widget.service.cameraPanY;
               final isPanning = widget.service.isPanning;
 
               final mapAxis = widget.service.showMapAxis;
               final worldAxis = widget.service.showWorldAxis;
               final crosshair = widget.service.showCrosshair;
-              final pointShape = widget.service.pointShape;
               final colorAttr = widget.service.colorAttribute;
               final bgColor = widget.service.viewportBackgroundColor;
               final nativeViewportPng = widget.service.nativeViewportPng;
@@ -533,7 +529,7 @@ class _CenterViewportState extends State<CenterViewport> {
                                                       'gs3d_engine 未就绪：请确认已部署 gs3d_ffi.dll 并成功载入工程',
                                                   textAlign: TextAlign.center,
                                                   style: const TextStyle(
-                                                    color: AppTheme.textDim,
+                                                    color: Gs3dTokens.textSecondary,
                                                     fontSize: 13,
                                                     height: 1.5,
                                                   ),
@@ -568,7 +564,7 @@ class _CenterViewportState extends State<CenterViewport> {
                             color: const Color(0xEE1A1E29),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: AppTheme.primaryBlue.withAlpha(180),
+                              color: Gs3dTokens.accent.withAlpha(180),
                               width: 1,
                             ),
                             boxShadow: const [
@@ -616,7 +612,7 @@ class _CenterViewportState extends State<CenterViewport> {
                               const Text(
                                 '[C] 复制坐标   [双击] 设为旋转焦点',
                                 style: TextStyle(
-                                  color: AppTheme.textDim,
+                                  color: Gs3dTokens.textSecondary,
                                   fontSize: 9.5,
                                 ),
                               ),
@@ -707,10 +703,10 @@ class _CenterViewportState extends State<CenterViewport> {
                             height: 28,
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             decoration: BoxDecoration(
-                              color: AppTheme.surface.withAlpha(235),
+                              color: Gs3dTokens.surface.withAlpha(235),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppTheme.border),
-                              boxShadow: AppTheme.cardShadow,
+                              border: Border.all(color: Gs3dTokens.border),
+                              boxShadow: Gs3dTokens.elevation1,
                             ),
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
@@ -718,7 +714,7 @@ class _CenterViewportState extends State<CenterViewport> {
                                 Icon(
                                   Icons.view_in_ar_rounded,
                                   size: 14,
-                                  color: AppTheme.primaryBlue,
+                                  color: Gs3dTokens.accent,
                                 ),
                                 SizedBox(width: 4),
                                 Text(
@@ -726,13 +722,13 @@ class _CenterViewportState extends State<CenterViewport> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
-                                    color: AppTheme.textBody,
+                                    color: Gs3dTokens.textBody,
                                   ),
                                 ),
                                 Icon(
                                   Icons.arrow_drop_down,
                                   size: 16,
-                                  color: AppTheme.textDim,
+                                  color: Gs3dTokens.textSecondary,
                                 ),
                               ],
                             ),
@@ -855,8 +851,8 @@ class _CenterViewportState extends State<CenterViewport> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF1E222A).withAlpha(220),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppTheme.border),
-                          boxShadow: AppTheme.cardShadow,
+                          border: Border.all(color: Gs3dTokens.border),
+                          boxShadow: Gs3dTokens.elevation1,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -864,7 +860,7 @@ class _CenterViewportState extends State<CenterViewport> {
                             const Icon(
                               Icons.scatter_plot_rounded,
                               size: 36,
-                              color: AppTheme.primaryBlue,
+                              color: Gs3dTokens.accent,
                             ),
                             const SizedBox(height: 10),
                             const Text(
@@ -887,7 +883,7 @@ class _CenterViewportState extends State<CenterViewport> {
                             ElevatedButton.icon(
                               key: WorkbenchUiKeys.viewportEmptyGuideLoadButton,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryBlue,
+                                backgroundColor: Gs3dTokens.accent,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
@@ -1191,10 +1187,10 @@ class _CenterViewportState extends State<CenterViewport> {
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: AppTheme.surface.withAlpha(235),
+          color: Gs3dTokens.surface.withAlpha(235),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.border),
-          boxShadow: AppTheme.cardShadow,
+          border: Border.all(color: Gs3dTokens.border),
+          boxShadow: Gs3dTokens.elevation1,
         ),
         alignment: Alignment.center,
         child: Text(
@@ -1202,7 +1198,7 @@ class _CenterViewportState extends State<CenterViewport> {
           style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
-            color: AppTheme.textBody,
+            color: Gs3dTokens.textBody,
           ),
         ),
       ),
@@ -1225,13 +1221,13 @@ class _CenterViewportState extends State<CenterViewport> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: AppTheme.surface.withAlpha(235),
+            color: Gs3dTokens.surface.withAlpha(235),
             shape: BoxShape.circle,
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.cardShadow,
+            border: Border.all(color: Gs3dTokens.border),
+            boxShadow: Gs3dTokens.elevation1,
           ),
           alignment: Alignment.center,
-          child: Icon(icon, size: 15, color: AppTheme.textBody),
+          child: Icon(icon, size: 15, color: Gs3dTokens.textBody),
         ),
       ),
     );
@@ -1252,14 +1248,14 @@ class _CenterViewportState extends State<CenterViewport> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: active
-              ? AppTheme.primaryBlueBg
-              : AppTheme.surface.withAlpha(235),
+              ? Gs3dTokens.accentSubtle
+              : Gs3dTokens.surface.withAlpha(235),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: active ? AppTheme.primaryBlue : AppTheme.border,
+            color: active ? Gs3dTokens.accent : Gs3dTokens.border,
             width: active ? 1.2 : 1.0,
           ),
-          boxShadow: AppTheme.cardShadow,
+          boxShadow: Gs3dTokens.elevation1,
         ),
         alignment: Alignment.center,
         child: Text(
@@ -1267,7 +1263,7 @@ class _CenterViewportState extends State<CenterViewport> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            color: active ? AppTheme.primaryBlue : AppTheme.textBody,
+            color: active ? Gs3dTokens.accent : Gs3dTokens.textBody,
           ),
         ),
       ),
@@ -1566,7 +1562,7 @@ class ViewportCanvasPainter extends CustomPainter {
     // 十字准星
     if (showCrosshair) {
       final crosshairPaint = Paint()
-        ..color = AppTheme.primaryBlue.withAlpha(140)
+        ..color = Gs3dTokens.accent.withAlpha(140)
         ..strokeWidth = 1.2;
       canvas.drawLine(Offset(cx - 10, cy), Offset(cx + 10, cy), crosshairPaint);
       canvas.drawLine(Offset(cx, cy - 10), Offset(cx, cy + 10), crosshairPaint);

@@ -1,10 +1,10 @@
 import 'dart:math' as math;
+import '../theme/gs3d_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/dataset_model.dart';
 import '../models/point_cloud_model.dart';
-import '../theme/app_theme.dart';
 import '../welcome/welcome_ui_keys.dart';
 import '../widgets/modern_card.dart';
 import '../widgets/segmented_tabs.dart';
@@ -30,9 +30,9 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
       key: WorkbenchUiKeys.leftDockPanel,
       width: 320,
       decoration: const BoxDecoration(
-        color: AppTheme.background,
+        color: Gs3dTokens.windowBg,
         border: Border(
-          right: BorderSide(color: AppTheme.border, width: 1),
+          right: BorderSide(color: Gs3dTokens.border, width: 1),
         ),
       ),
       child: Column(
@@ -93,7 +93,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: Gs3dTokens.textPrimary,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -105,7 +105,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
-                      color: AppTheme.textDim,
+                      color: Gs3dTokens.textSecondary,
                     ),
                   ),
                   Padding(
@@ -114,7 +114,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                       '|',
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.borderSubtle,
+                        color: Gs3dTokens.borderStrong,
                       ),
                     ),
                   ),
@@ -123,7 +123,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
-                      color: AppTheme.textDim,
+                      color: Gs3dTokens.textSecondary,
                     ),
                   ),
                 ],
@@ -143,7 +143,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
-              color: AppTheme.textTitle,
+              color: Gs3dTokens.textPrimary,
             ),
           ),
         ),
@@ -162,7 +162,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppTheme.textBody,
+                  color: Gs3dTokens.textBody,
                 ),
               ),
               const SizedBox(height: 3),
@@ -172,7 +172,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     : '状态: 未启用',
                 style: const TextStyle(
                   fontSize: 12,
-                  color: AppTheme.textDim,
+                  color: Gs3dTokens.textSecondary,
                 ),
               ),
               if (summary.lodEnabled && summary.lodDetails.isNotEmpty) ...[
@@ -184,7 +184,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                         style: const TextStyle(
                           fontSize: 12,
                           fontFamily: 'Consolas',
-                          color: AppTheme.textBody,
+                          color: Gs3dTokens.textBody,
                         ),
                       ),
                     )),
@@ -208,7 +208,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w500,
-                  color: AppTheme.textDim,
+                  color: Gs3dTokens.textSecondary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -221,7 +221,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                           height: 6,
                           margin: const EdgeInsets.only(left: 4, right: 10),
                           decoration: const BoxDecoration(
-                            color: AppTheme.primaryBlue,
+                            color: Gs3dTokens.accent,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -230,7 +230,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: AppTheme.textBody,
+                            color: Gs3dTokens.textBody,
                           ),
                         ),
                       ],
@@ -257,7 +257,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppTheme.textTitle,
+                      color: Gs3dTokens.textPrimary,
                     ),
                   ),
                   InkWell(
@@ -274,7 +274,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                       padding: const EdgeInsets.all(3.0),
                       child: CustomPaint(
                         size: const Size(14, 14),
-                        painter: ViewfinderCornerPainter(color: AppTheme.textDim),
+                        painter: ViewfinderCornerPainter(color: Gs3dTokens.textSecondary),
                       ),
                     ),
                   ),
@@ -284,7 +284,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
 
               // 导航图 2D 鸟瞰图画布：优先原生缩略图 + 视锥体框
               ClipRRect(
-                borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+                borderRadius: BorderRadius.circular(Gs3dTokens.cardRadius),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final mapW = constraints.maxWidth;
@@ -340,9 +340,9 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                               height: boxH,
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: AppTheme.primaryBlue.withAlpha(45),
+                                  color: Gs3dTokens.accent.withAlpha(45),
                                   border: Border.all(
-                                    color: AppTheme.primaryBlue,
+                                    color: Gs3dTokens.accent,
                                     width: 1.5,
                                   ),
                                   borderRadius: BorderRadius.circular(2),
@@ -393,16 +393,16 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppTheme.textTitle,
+                      color: Gs3dTokens.textPrimary,
                     ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isMeasuring ? const Color(0x3300E5FF) : AppTheme.surfaceMuted,
+                      color: isMeasuring ? const Color(0x3300E5FF) : Gs3dTokens.surfaceSunken,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: isMeasuring ? const Color(0xFF00E5FF) : AppTheme.border,
+                        color: isMeasuring ? const Color(0xFF00E5FF) : Gs3dTokens.border,
                       ),
                     ),
                     child: Text(
@@ -410,7 +410,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: isMeasuring ? const Color(0xFF00E5FF) : AppTheme.textDim,
+                        color: isMeasuring ? const Color(0xFF00E5FF) : Gs3dTokens.textSecondary,
                       ),
                     ),
                   ),
@@ -430,7 +430,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                   const SizedBox(width: 6),
                   IconButton(
                     tooltip: '清空所有测量线',
-                    icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: AppTheme.textDim),
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: Gs3dTokens.textSecondary),
                     onPressed: lines.isNotEmpty ? () => widget.service.clearMeasurementLines() : null,
                   ),
                 ],
@@ -438,7 +438,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Text('标签显示: ', style: TextStyle(fontSize: 11, color: AppTheme.textDim)),
+                  const Text('标签显示: ', style: TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary)),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Wrap(
@@ -468,11 +468,11 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                   children: [
                     Text(
                       '已测线段 (${lines.length})',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textTitle),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Gs3dTokens.textPrimary),
                     ),
                     Text(
                       '累计长: ${lines.fold<double>(0, (sum, l) => sum + l.distance3D).toStringAsFixed(2)}m',
-                      style: const TextStyle(fontSize: 11, color: AppTheme.primaryBlue, fontFamily: 'monospace'),
+                      style: const TextStyle(fontSize: 11, color: Gs3dTokens.accent, fontFamily: 'monospace'),
                     ),
                   ],
                 ),
@@ -481,9 +481,9 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: AppTheme.surfaceMuted,
-                    borderRadius: BorderRadius.circular(AppTheme.controlRadius),
-                    border: Border.all(color: AppTheme.border.withAlpha(80)),
+                    color: Gs3dTokens.surfaceSunken,
+                    borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
+                    border: Border.all(color: Gs3dTokens.border.withAlpha(80)),
                   ),
                   child: Row(
                     children: [
@@ -502,12 +502,12 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                           children: [
                             Text(
                               '3D: ${line.distance3D.toStringAsFixed(2)} m (ΔZ: ${line.deltaZ.toStringAsFixed(2)} m)',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textTitle, fontFamily: 'monospace'),
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Gs3dTokens.textPrimary, fontFamily: 'monospace'),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               '(${line.start.x.toStringAsFixed(1)}, ${line.start.y.toStringAsFixed(1)}) → (${line.end.x.toStringAsFixed(1)}, ${line.end.y.toStringAsFixed(1)})',
-                              style: const TextStyle(fontSize: 10, color: AppTheme.textDim, fontFamily: 'monospace'),
+                              style: const TextStyle(fontSize: 10, color: Gs3dTokens.textSecondary, fontFamily: 'monospace'),
                             ),
                           ],
                         ),
@@ -516,14 +516,14 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                         icon: Icon(
                           line.isFixed ? Icons.push_pin : Icons.push_pin_outlined,
                           size: 14,
-                          color: line.isFixed ? const Color(0xFF00E5FF) : AppTheme.textDim,
+                          color: line.isFixed ? const Color(0xFF00E5FF) : Gs3dTokens.textSecondary,
                         ),
                         tooltip: line.isFixed ? '已固定' : '固定线段',
                         onPressed: () => widget.service.toggleMeasurementLineFixed(line.id),
                         splashRadius: 14,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, size: 14, color: AppTheme.textDim),
+                        icon: const Icon(Icons.close, size: 14, color: Gs3dTokens.textSecondary),
                         tooltip: '删除此测量线',
                         onPressed: () => widget.service.removeMeasurementLine(line.id),
                         splashRadius: 14,
@@ -546,15 +546,15 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: Gs3dTokens.textPrimary,
                 ),
               ),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppTheme.surfaceMuted,
-                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                  color: Gs3dTokens.surfaceSunken,
+                  borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
                 ),
                 child: Column(
                   children: [
@@ -633,15 +633,15 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: active ? AppTheme.primaryBlue.withAlpha(40) : AppTheme.surfaceMuted,
+          color: active ? Gs3dTokens.accent.withAlpha(40) : Gs3dTokens.surfaceSunken,
           borderRadius: BorderRadius.circular(3),
-          border: Border.all(color: active ? AppTheme.primaryBlue : AppTheme.border),
+          border: Border.all(color: active ? Gs3dTokens.accent : Gs3dTokens.border),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 10,
-            color: active ? AppTheme.primaryBlue : AppTheme.textDim,
+            color: active ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
             fontWeight: active ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -653,8 +653,8 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: isBold ? AppTheme.textTitle : AppTheme.textDim, fontWeight: isBold ? FontWeight.w600 : FontWeight.normal)),
-        Text(value, style: TextStyle(fontSize: 12, color: isBold ? AppTheme.primaryBlue : AppTheme.textBody, fontWeight: isBold ? FontWeight.w700 : FontWeight.w500, fontFamily: 'Consolas')),
+        Text(label, style: TextStyle(fontSize: 12, color: isBold ? Gs3dTokens.textPrimary : Gs3dTokens.textSecondary, fontWeight: isBold ? FontWeight.w600 : FontWeight.normal)),
+        Text(value, style: TextStyle(fontSize: 12, color: isBold ? Gs3dTokens.accent : Gs3dTokens.textBody, fontWeight: isBold ? FontWeight.w700 : FontWeight.w500, fontFamily: 'Consolas')),
       ],
     );
   }
@@ -729,18 +729,18 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: AppTheme.surfaceMuted,
+              color: Gs3dTokens.surfaceSunken,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Gs3dTokens.border),
             ),
             child: const Row(
               children: [
-                Icon(Icons.info_outline, size: 14, color: AppTheme.textDim),
+                Icon(Icons.info_outline, size: 14, color: Gs3dTokens.textSecondary),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     '提示：在三维视口中按住 Shift 并拖拽鼠标即可框选任意局部区域进行即时统计。',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                    style: TextStyle(fontSize: 11, color: Gs3dTokens.textSecondary),
                   ),
                 ),
               ],
@@ -756,15 +756,15 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: Gs3dTokens.textPrimary,
                 ),
               ),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppTheme.surfaceMuted,
-                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                  color: Gs3dTokens.surfaceSunken,
+                  borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
                 ),
                 child: Column(
                   children: [
@@ -779,7 +779,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text('数值直方图分布 (5 Bins)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textTitle)),
+              const Text('数值直方图分布 (5 Bins)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Gs3dTokens.textPrimary)),
               const SizedBox(height: 8),
 
               // 直方图 5 根柱子
@@ -795,12 +795,12 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Text('${bins[i]}', style: const TextStyle(fontSize: 9.5, color: AppTheme.textDim)),
+                            Text('${bins[i]}', style: const TextStyle(fontSize: 9.5, color: Gs3dTokens.textSecondary)),
                             const SizedBox(height: 2),
                             Container(
                               height: (60 * fraction).clamp(4.0, 60.0),
                               decoration: BoxDecoration(
-                                color: (activeBoxStats != null ? const Color(0xFF3B82F6) : AppTheme.primaryBlue)
+                                color: (activeBoxStats != null ? const Color(0xFF3B82F6) : Gs3dTokens.accent)
                                     .withAlpha((100 + i * 35).clamp(0, 255)),
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
                               ),
@@ -816,9 +816,9 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(minVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
-                  Text(((minVal + maxVal) * 0.5).toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
-                  Text(maxVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppTheme.textDim)),
+                  Text(minVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: Gs3dTokens.textSecondary)),
+                  Text(((minVal + maxVal) * 0.5).toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: Gs3dTokens.textSecondary)),
+                  Text(maxVal.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: Gs3dTokens.textSecondary)),
                 ],
               ),
               const SizedBox(height: 12),
@@ -857,18 +857,18 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
       key: key,
       style: OutlinedButton.styleFrom(
         alignment: Alignment.centerLeft,
-        side: const BorderSide(color: AppTheme.border),
+        side: const BorderSide(color: Gs3dTokens.border),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+          borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
         ),
       ),
-      icon: Icon(icon, size: 16, color: AppTheme.primaryBlue),
+      icon: Icon(icon, size: 16, color: Gs3dTokens.accent),
       label: Text(
         label,
         style: const TextStyle(
           fontSize: 12.5,
-          color: AppTheme.textBody,
+          color: Gs3dTokens.textBody,
           fontWeight: FontWeight.w500,
         ),
       ),

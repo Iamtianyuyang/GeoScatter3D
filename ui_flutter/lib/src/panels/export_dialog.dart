@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 /// 点云数据导出对话框 (Export Point Cloud Dialog)
 class ExportPointCloudDialog extends StatefulWidget {
@@ -73,12 +73,12 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
     return AlertDialog(
       key: const ValueKey('export_point_cloud_dialog'),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      backgroundColor: AppTheme.surface,
+      backgroundColor: Gs3dTokens.surface,
       title: const Row(
         children: [
           Icon(
             Icons.file_download_outlined,
-            color: AppTheme.primaryBlue,
+            color: Gs3dTokens.accent,
             size: 22,
           ),
           SizedBox(width: 10),
@@ -96,7 +96,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
           children: [
             const Text(
               '选择目标文件导出格式与存储路径：',
-              style: TextStyle(fontSize: 12.5, color: AppTheme.textBody),
+              style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody),
             ),
             const SizedBox(height: 14),
 
@@ -120,7 +120,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textTitle,
+                color: Gs3dTokens.textPrimary,
               ),
             ),
             const SizedBox(height: 6),
@@ -131,7 +131,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
                 isDense: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: const BorderSide(color: AppTheme.border),
+                  borderSide: const BorderSide(color: Gs3dTokens.border),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -142,7 +142,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
             const SizedBox(height: 10),
             Text(
               '当前待导出有效点数: ${widget.service.points.isNotEmpty ? widget.service.points.length : widget.service.summary.pointCount} 个点',
-              style: const TextStyle(fontSize: 11.5, color: AppTheme.textDim),
+              style: const TextStyle(fontSize: 11.5, color: Gs3dTokens.textSecondary),
             ),
           ],
         ),
@@ -160,7 +160,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
                   _doExport();
                 },
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primaryBlue,
+            backgroundColor: Gs3dTokens.accent,
             foregroundColor: Colors.white,
             elevation: 0,
           ),
@@ -180,11 +180,11 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: active
-                ? AppTheme.primaryBlue.withAlpha(25)
-                : AppTheme.surfaceMuted,
+                ? Gs3dTokens.accent.withAlpha(25)
+                : Gs3dTokens.surfaceSunken,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: active ? AppTheme.primaryBlue : AppTheme.border,
+              color: active ? Gs3dTokens.accent : Gs3dTokens.border,
             ),
           ),
           child: Column(
@@ -195,13 +195,13 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: active ? AppTheme.primaryBlue : AppTheme.textTitle,
+                  color: active ? Gs3dTokens.accent : Gs3dTokens.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
+                style: const TextStyle(fontSize: 10, color: Gs3dTokens.textSecondary),
               ),
             ],
           ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../theme/gs3d_tokens.dart';
 
 class ModernSegmentedTabs extends StatelessWidget {
   final List<String> tabs;
@@ -21,9 +21,9 @@ class ModernSegmentedTabs extends StatelessWidget {
       height: 36,
       padding: const EdgeInsets.all(2.5),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceMuted,
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-        border: Border.all(color: AppTheme.border, width: 1),
+        color: Gs3dTokens.surfaceSunken,
+        borderRadius: BorderRadius.circular(Gs3dTokens.radiusLg),
+        border: Border.all(color: Gs3dTokens.border, width: 1),
       ),
       child: Row(
         children: List.generate(tabs.length, (index) {
@@ -44,19 +44,19 @@ class ModernSegmentedTabs extends StatelessWidget {
                       curve: Curves.easeOut,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.surface : Colors.transparent,
-                        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                        color: isSelected ? Gs3dTokens.surface : Colors.transparent,
+                        borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
                         border: isSelected
-                            ? Border.all(color: AppTheme.primaryBlue, width: 1.2)
+                            ? Border.all(color: Gs3dTokens.accent, width: 1.2)
                             : null,
-                        boxShadow: isSelected ? AppTheme.cardShadow : null,
+                        boxShadow: isSelected ? Gs3dTokens.elevation1 : null,
                       ),
                       child: Text(
                         tabs[index],
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected ? AppTheme.primaryBlue : AppTheme.textDim,
+                          color: isSelected ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
                         ),
                       ),
                     ),
@@ -66,7 +66,7 @@ class ModernSegmentedTabs extends StatelessWidget {
                   Container(
                     width: 1,
                     height: 16,
-                    color: AppTheme.border,
+                    color: Gs3dTokens.border,
                   ),
               ],
             ),
