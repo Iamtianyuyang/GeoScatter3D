@@ -104,10 +104,29 @@ ViewerFrameRenderMeasurements ViewerFrameRenderer::render(
                 viewport_renderer_.record(command_buffer, viewport_context);
             },
             .post_pass = [&](VkCommandBuffer command_buffer,
-                             const std::uint32_t image_index) {
+                             const std::uint32_t /*image_index*/) {
+                // Flutter/headless：截图必须读离屏点云，而不是只有清屏色的 swapchain。
+                const auto& app_state = frame_context.app_state;
+                const int active = gs3d::app::resolve_viewport_index(
+                    app_state, app_state.active_viewport_index);
+                if (active >= 0 &&
+                    active < frame_context.viewport_manager.viewport_count()) {
+                    auto& fb =
+                        frame_context.viewport_manager.framebuffer(active);
+                    if (fb.valid()) {
+                        screenshot_service_.record_copy_offscreen(
+                            command_buffer,
+                            context_,
+                            fb.color_image(),
+                            fb.extent(),
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                        );
+                        return;
+                    }
+                }
                 screenshot_service_.record_copy(
                     command_buffer,
-                    image_index,
+                    0,
                     context_,
                     swapchain_
                 );

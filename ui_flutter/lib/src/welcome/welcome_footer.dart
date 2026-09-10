@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/macos_tokens.dart';
 import 'gpu_selection_dialog.dart';
 import 'welcome_ui_keys.dart';
 
@@ -21,19 +22,25 @@ class WelcomeFooter extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(MacOsTokens.radiusCard),
+        ),
+        backgroundColor: Colors.white,
         title: const Row(
           children: [
             Icon(
               Icons.menu_book_rounded,
-              color: AppTheme.primaryBlue,
+              color: MacOsTokens.systemBlue,
               size: 22,
             ),
             SizedBox(width: 10),
             Text(
               '操作指南与技术标准',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: MacOsTokens.textPrimary,
+              ),
             ),
           ],
         ),
@@ -48,7 +55,7 @@ class WelcomeFooter extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: MacOsTokens.textPrimary,
                 ),
               ),
               SizedBox(height: 4),
@@ -57,7 +64,7 @@ class WelcomeFooter extends StatelessWidget {
                 '• 数据块严格按 point_stride 校验内存对齐区间，杜绝格式损坏与静默容忍。',
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: AppTheme.textBody,
+                  color: MacOsTokens.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -67,7 +74,7 @@ class WelcomeFooter extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: MacOsTokens.textPrimary,
                 ),
               ),
               SizedBox(height: 4),
@@ -75,7 +82,7 @@ class WelcomeFooter extends StatelessWidget {
                 '• 采用动态多级八叉树 LOD 金字塔，按需流式加载与视锥裁剪，毫秒级响应上亿散点。',
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: AppTheme.textBody,
+                  color: MacOsTokens.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -85,7 +92,7 @@ class WelcomeFooter extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textTitle,
+                  color: MacOsTokens.textPrimary,
                 ),
               ),
               SizedBox(height: 4),
@@ -96,7 +103,7 @@ class WelcomeFooter extends StatelessWidget {
                 '• 复位视角：工作台顶部工具栏「视角复位」按钮',
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: AppTheme.textBody,
+                  color: MacOsTokens.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -108,9 +115,12 @@ class WelcomeFooter extends StatelessWidget {
             key: WelcomeUiKeys.docsDialogCloseButton,
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryBlue,
+              backgroundColor: MacOsTokens.systemBlue,
               foregroundColor: Colors.white,
               elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(MacOsTokens.radiusSm),
+              ),
             ),
             child: const Text('我知道了'),
           ),
@@ -123,19 +133,25 @@ class WelcomeFooter extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(MacOsTokens.radiusCard),
+        ),
+        backgroundColor: Colors.white,
         title: const Row(
           children: [
             Icon(
               Icons.scatter_plot_rounded,
-              color: AppTheme.primaryBlue,
+              color: MacOsTokens.systemBlue,
               size: 24,
             ),
             SizedBox(width: 10),
             Text(
               '关于 GeoScatter3D',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: MacOsTokens.textPrimary,
+              ),
             ),
           ],
         ),
@@ -148,25 +164,28 @@ class WelcomeFooter extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textTitle,
+                color: MacOsTokens.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              '• 跨平台 Flutter + Vulkan 1.3 现代桌面/移动架构\n'
+              '• 跨平台 Flutter + Vulkan 1.3 现代桌面架构\n'
               '• GS3D v2 显式小端标准与八叉树 LOD 金字塔\n'
               '• C-ABI 高性能 FFI 桥接，亿级点云零开销流式加载\n'
               '• 全异步多线程解耦与 JSON-RPC 控制面',
               style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textBody,
+                color: MacOsTokens.textSecondary,
                 height: 1.6,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               '引擎内核版本: ${service.engineVersion}',
-              style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+              style: const TextStyle(
+                fontSize: 12,
+                color: MacOsTokens.textTertiary,
+              ),
             ),
           ],
         ),
@@ -175,9 +194,12 @@ class WelcomeFooter extends StatelessWidget {
             key: WelcomeUiKeys.aboutDialogCloseButton,
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryBlue,
+              backgroundColor: MacOsTokens.systemBlue,
               foregroundColor: Colors.white,
               elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(MacOsTokens.radiusSm),
+              ),
             ),
             child: const Text('我知道了'),
           ),
@@ -198,45 +220,45 @@ class WelcomeFooter extends StatelessWidget {
             : '默认图形适配器';
 
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: const BoxDecoration(
-            color: AppTheme.surface,
-            border: Border(top: BorderSide(color: AppTheme.border)),
+            color: MacOsTokens.frostedFooter,
+            border: Border(top: BorderSide(color: MacOsTokens.hairlineBorder)),
           ),
           child: Row(
             children: [
-              // GPU 选择 Chip (自适应最大宽度，防止溢出)
+              // GPU 选择 Chip (macOS 胶囊按钮)
               InkWell(
                 key: WelcomeUiKeys.footerGpuButton,
                 onTap: () => _showGpuDialog(context),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(MacOsTokens.radiusSm),
                 child: Container(
                   constraints: const BoxConstraints(maxWidth: 320),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
-                    vertical: 6,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: AppTheme.surfaceMuted,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppTheme.border),
+                    color: Colors.black.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(MacOsTokens.radiusSm),
+                    border: Border.all(color: MacOsTokens.hairlineBorder),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
                         Icons.memory_rounded,
-                        size: 16,
-                        color: AppTheme.primaryBlue,
+                        size: 15,
+                        color: MacOsTokens.systemBlue,
                       ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           '设备: $activeGpuName',
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w500,
-                            color: AppTheme.textBody,
+                            color: MacOsTokens.textPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
@@ -246,7 +268,7 @@ class WelcomeFooter extends StatelessWidget {
                       const Icon(
                         Icons.arrow_drop_down,
                         size: 16,
-                        color: AppTheme.textDim,
+                        color: MacOsTokens.textTertiary,
                       ),
                     ],
                   ),
@@ -254,22 +276,30 @@ class WelcomeFooter extends StatelessWidget {
               ),
               const SizedBox(width: 12),
 
-              // 运行就绪状态
+              // 运行就绪指示灯
               Container(
                 width: 7,
                 height: 7,
                 decoration: BoxDecoration(
                   color: service.isInitialized
-                      ? const Color(0xFF10B981)
+                      ? MacOsTokens.systemGreen
                       : const Color(0xFFD97706),
                   shape: BoxShape.circle,
+                  boxShadow: service.isInitialized
+                      ? [
+                          BoxShadow(
+                            color: MacOsTokens.systemGreen.withValues(alpha: 0.45),
+                            blurRadius: 4,
+                          ),
+                        ]
+                      : null,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 7),
               Expanded(
                 child: Text(
                   service.backendStatus,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+                  style: const TextStyle(fontSize: 11.5, color: MacOsTokens.textSecondary),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -281,13 +311,13 @@ class WelcomeFooter extends StatelessWidget {
               TextButton.icon(
                 key: WelcomeUiKeys.footerDocsButton,
                 onPressed: () => _showDocsDialog(context),
-                icon: const Icon(Icons.menu_book_rounded, size: 15),
-                label: const Text('技术指南', style: TextStyle(fontSize: 12)),
+                icon: const Icon(Icons.menu_book_rounded, size: 14),
+                label: const Text('技术指南', style: TextStyle(fontSize: 11.5)),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.textDim,
+                  foregroundColor: MacOsTokens.textSecondary,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
-                    vertical: 6,
+                    vertical: 5,
                   ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -299,13 +329,13 @@ class WelcomeFooter extends StatelessWidget {
               TextButton.icon(
                 key: WelcomeUiKeys.footerAboutButton,
                 onPressed: () => _showAboutDialog(context),
-                icon: const Icon(Icons.info_outline_rounded, size: 15),
-                label: const Text('关于系统', style: TextStyle(fontSize: 12)),
+                icon: const Icon(Icons.info_outline_rounded, size: 14),
+                label: const Text('关于系统', style: TextStyle(fontSize: 11.5)),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.textDim,
+                  foregroundColor: MacOsTokens.textSecondary,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
-                    vertical: 6,
+                    vertical: 5,
                   ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,

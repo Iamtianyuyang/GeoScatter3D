@@ -36,6 +36,14 @@ void ViewportInteractionState::apply_rotation_gate(
     }
 
     const auto index = static_cast<std::size_t>(frame.index);
+    if (frame.from_control_plane) {
+        // Flutter/控制面：GestureDetector 只在真实拖动时发帧，
+        // 直接应用增量，不再走 ImGui 的“首帧忽略 + 5px 激活”。
+        rotation_origin_valid_[index] = true;
+        rotation_activated_[index] = true;
+        previous_rotate_[index] = frame.rotate;
+        return;
+    }
     const bool pressed = frame.rotate && !previous_rotate_[index];
     if (pressed) {
         rotation_origin_valid_[index] = frame.mouse_on_image;

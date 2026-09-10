@@ -221,8 +221,10 @@ include/ & src/
   可折叠侧边栏（TIA-111 方向 B）。
 - **前端现状**：C++ 侧只保留原生渲染与控制面；`ui` 层仅保留控制面/应用
   依赖的纯逻辑组件（面板/布局/主题注册表、工作区、视口几何）。前端界面全部由
-  `ui_flutter/`（Flutter Windows 桌面）承担，经 TCP + JSON-RPC 控制面交互，
-  视口图像经 screenshot PNG 回读。
+  `ui_flutter/`（Flutter Windows 桌面）承担。Flutter **不直接持有 TCP socket**：
+  经 `gs3d_ffi.dll` 的 C-ABI（本地引擎 API + `ViewerBridge` 进程/TCP 封装）调用；
+  视口图像经帧同步 PNG 回读。契约见 `include/ffi/geoscatter3d_ffi.h` 与
+  `docs/compose/spec/ffi-backend-bridge.md`。
 - **主题现状**：5 套（`include/ui/Theme.hpp`），代码默认 `kCarbonBlueDark`
   （深色），`config/viewer.toml` 默认 `carbon-blue`（浅色）覆盖；运行期菜单
   视图→主题 五套齐全，写入用户偏好 `[ui] theme`。

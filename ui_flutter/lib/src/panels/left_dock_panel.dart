@@ -565,14 +565,52 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 key: WorkbenchUiKeys.leftDockMeasureAreaButton,
                 icon: Icons.square_foot_rounded,
                 label: '计算投影底面积',
-                onPressed: () => widget.service.calculateMeasurement('area'),
+                onPressed: () {
+                  final r = widget.service.calculateMeasurement('area');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '投影面积: ${(r['metric_value'] as num? ?? 0).toStringAsFixed(2)} m² '
+                        '(来源: ${r['source']})',
+                      ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 6),
               _buildToolButton(
                 key: WorkbenchUiKeys.leftDockMeasureStrikeDipButton,
                 icon: Icons.rotate_90_degrees_cw,
                 label: '地层产状分析 (走向/倾向/倾角)',
-                onPressed: () => widget.service.calculateMeasurement('strike_dip'),
+                onPressed: () {
+                  final r = widget.service.calculateMeasurement('strike_dip');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '走向 ${(r['strike'] as num? ?? 0).toStringAsFixed(1)}° / '
+                        '倾角 ${(r['dip'] as num? ?? 0).toStringAsFixed(1)}° '
+                        '(来源: ${r['source']})',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
+              _buildToolButton(
+                key: const ValueKey('workbench.left_dock.measure_distance'),
+                icon: Icons.straighten_rounded,
+                label: '计算三维距离',
+                onPressed: () {
+                  final r = widget.service.calculateMeasurement('distance');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '3D 距离: ${(r['distance_3d'] as num? ?? 0).toStringAsFixed(2)} m '
+                        '(来源: ${r['source']})',
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),

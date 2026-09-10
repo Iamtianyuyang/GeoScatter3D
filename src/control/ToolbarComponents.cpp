@@ -446,6 +446,10 @@ public:
         frame.index = active;
         frame.active = true;
         frame.hovered = true;
+        // Flutter 视口已在手势中，必须视为“指针在图像上”，
+        // 否则旋转门控会把 orbit 增量全部清零。
+        frame.mouse_on_image = true;
+        frame.from_control_plane = true;
         if (active >= 0 && active < static_cast<int>(app_state_.render_views.size())) {
             const auto& view = app_state_.render_views[static_cast<std::size_t>(active)];
             frame.width = std::max(view.image_width, 1u);
@@ -737,6 +741,86 @@ private:
     };
 };
 
+// ── 原生视口尺寸（Flutter 画布同步） ─────────────────────────────
+
+class RuntimeViewportComponent final : public Component {
+public:
+    explicit RuntimeViewportComponent(gs3d::app::AppState& app_state)
+        : app_state_(app_state) {}
+
+    [[nodiscard]] const ComponentInfo& info() const noexcept override {
+        return info_;
+    }
+    [[nodiscard]] const std::vector<CommandSpec>& capabilities() const noexcept override {
+        return capabilities_;
+    }
+
+    [[nodiscard]] nlohmann::json get_state() override {
+        const int active = gs3d::app::resolve_viewport_index(
+            app_state_, app_state_.active_viewport_index);
+        std::uint32_t w = 1, h = 1;
+        if (active >= 0 &&
+            active < static_cast<int>(app_state_.render_views.size())) {
+            const auto& view =
+                app_state_.render_views[static_cast<std::size_t>(active)];
+            w = std::max(view.image_width, 1u);
+            h = std::max(view.image_height, 1u);
+        }
+        return {{"id", info_.id},
+                {"width", w},
+                {"height", h},
+                {"active_viewport_index", active}};
+    }
+
+    [[nodiscard]] nlohmann::json execute(
+        const std::string& command,
+        const nlohmann::json& params
+    ) override {
+        if (command == "get_state") return get_state();
+        if (command != "resize") {
+            throw ComponentError(-32601, "unknown command: " + command);
+        }
+        if (!params.is_object() || !params.contains("width") ||
+            !params.contains("height")) {
+            throw ComponentError(-32602, "resize requires width and height");
+        }
+        const int width = params.at("width").get<int>();
+        const int height = params.at("height").get<int>();
+        if (width < 16 || height < 16 || width > 8192 || height > 8192) {
+            throw ComponentError(-32602, "viewport size out of range");
+        }
+        const int active = gs3d::app::resolve_viewport_index(
+            app_state_, app_state_.active_viewport_index);
+        if (active < 0) {
+            throw ComponentError(-32602, "no active viewport");
+        }
+        gs3d::app::ViewportFrameCmd frame;
+        frame.index = active;
+        frame.active = true;
+        frame.width = static_cast<std::uint32_t>(width);
+        frame.height = static_cast<std::uint32_t>(height);
+        app_state_.control_actions.viewport_frames.push_back(frame);
+        return {{"id", info_.id},
+                {"queued", true},
+                {"width", width},
+                {"height", height}};
+    }
+
+private:
+    gs3d::app::AppState& app_state_;
+    ComponentInfo info_{
+        "runtime.viewport",
+        "原生视口尺寸",
+        "将 Flutter 画布像素尺寸同步到离屏点云分辨率",
+        ComponentType::kViewport,
+        false
+    };
+    std::vector<CommandSpec> capabilities_{
+        {"resize", "设置离屏视口宽高", true},
+        {"get_state", "查询当前离屏尺寸", false}
+    };
+};
+
 // ── 状态栏组件（只读） ──────────────────────────────────────────
 
 class StatusBarComponent final : public ReadOnlyComponentBase {
@@ -941,6 +1025,7 @@ std::vector<std::unique_ptr<Component>> make_toolbar_components(
     result.push_back(std::make_unique<RuntimePickComponent>(app_state));
     result.push_back(std::make_unique<RuntimeDiagnosticsComponent>(app_state));
     result.push_back(std::make_unique<RuntimeDatasetExportComponent>(app_state));
+    result.push_back(std::make_unique<RuntimeViewportComponent>(app_state));
     return result;
 }
 

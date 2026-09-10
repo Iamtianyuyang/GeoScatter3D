@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800">
+  <defs>
+    <!-- macOS System Typography -->
+    <style>
+      .font-sans { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .font-mono { font-family: "SF Mono", Menlo, Monaco, Consolas, monospace; }
+    </style>
+
+    <!-- Subtle Clean Shadows -->
+    <filter id="cleanCardShadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#000000" flood-opacity="0.04"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.02"/>
+    </filter>
+
+    <filter id="primaryBtnShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#007AFF" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1280" height="800" fill="#FFFFFF"/>
+
+  <!-- ==================== UNIFIED macOS WINDOW TITLEBAR (Height 40px) ==================== -->
+  <g id="macos-window-titlebar">
+    <rect x="0" y="0" width="1280" height="40" fill="#F8F9FA"/>
+    <line x1="0" y1="40" x2="1280" y2="40" stroke="#E5E7EB" stroke-width="1"/>
+
+    <!-- Traffic Lights (16px from left) -->
+    <g id="window-traffic-lights" transform="translate(16, 20)">
+      <circle cx="0" cy="0" r="5.5" fill="#FF5F56" stroke="#E0443E" stroke-width="0.8"/>
+      <circle cx="18" cy="0" r="5.5" fill="#FFBD2E" stroke="#DEA123" stroke-width="0.8"/>
+      <circle cx="36" cy="0" r="5.5" fill="#27C93F" stroke="#1AAB29" stroke-width="0.8"/>
+    </g>
+
+    <!-- Centered Window Title -->
+    <text class="font-sans" x="640" y="25" text-anchor="middle" font-size="12.5" font-weight="600" fill="#374151" letter-spacing="-0.2">GeoScatter3D · v0.1.0</text>
+  </g>
+
+  <!-- ==================== LEFT COLLAPSIBLE DRAWER / SIDEBAR (Width 220px) ==================== -->
+  <g id="macos-sidebar-drawer" transform="translate(0, 40)">
+    <!-- Sidebar background & right divider -->
+    <rect x="0" y="0" width="220" height="760" fill="#F8F9FA"/>
+    <line x1="220" y1="0" x2="220" y2="760" stroke="#E5E7EB" stroke-width="1"/>
+
+    <!-- App Brand & Version (v0.1.0) -->
+    <g id="sidebar-brand-header" transform="translate(16, 16)">
+      <!-- Squircle App Icon with 'G' -->
+      <rect width="32" height="32" rx="8" fill="#007AFF"/>
+      <text class="font-sans" x="16" y="22" text-anchor="middle" font-size="18" font-weight="800" fill="#FFFFFF">G</text>
+      <!-- Title and Subtitle -->
+      <text class="font-sans" x="42" y="15" font-size="15.5" font-weight="700" fill="#111827" letter-spacing="-0.2">GeoScatter3D</text>
+      <text class="font-sans" x="42" y="29" font-size="10.5" font-weight="400" fill="#9CA3AF">v0.1.0</text>
+    </g>
+
+    <!-- Category Label -->
+    <text class="font-sans" x="16" y="74" font-size="10.5" font-weight="600" fill="#9CA3AF" letter-spacing="0.5">工作台与资源</text>
+
+    <!-- Drawer Navigation Menu List (5 Options) -->
+    <g id="sidebar-nav-menu" transform="translate(10, 84)">
+      <!-- 1. 文件 (Active Pill) -->
+      <g id="nav-file">
+        <rect width="200" height="38" rx="8" fill="#EBF5FF"/>
+        <path d="M 2 8 C 2 6.5 3 6 4 6 L 4 32 C 3 32 2 31.5 2 30 Z" fill="#007AFF"/>
+        <!-- Folder Icon -->
+        <path d="M 22 14 L 27 14 L 29 16 L 38 16 C 39 16 40 17 40 18 L 40 25 C 40 26 39 27 38 27 L 22 27 C 21 27 20 26 20 25 L 20 16 C 20 15 21 14 22 14 Z" fill="none" stroke="#007AFF" stroke-width="1.8"/>
+        <text class="font-sans" x="50" y="24" font-size="13.5" font-weight="600" fill="#007AFF">文件</text>
+      </g>
+
+      <!-- 2. 最近项目 -->
+      <g id="nav-recents" transform="translate(0, 42)">
+        <rect width="200" height="38" rx="8" fill="transparent"/>
+        <circle cx="30" cy="19" r="8" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+        <polyline points="30,15 30,19 33.5,21" fill="none" stroke="#4B5563" stroke-width="1.6" stroke-linecap="round"/>
+        <text class="font-sans" x="50" y="24" font-size="13.5" font-weight="500" fill="#374151">最近项目</text>
+      </g>
+
+      <!-- 3. 示例 -->
+      <g id="nav-samples" transform="translate(0, 84)">
+        <rect width="200" height="38" rx="8" fill="transparent"/>
+        <!-- 3D Cube Icon -->
+        <rect x="22" y="11" width="16" height="16" rx="3" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+        <circle cx="30" cy="19" r="3" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+        <text class="font-sans" x="50" y="24" font-size="13.5" font-weight="500" fill="#374151">示例</text>
+      </g>
+
+      <!-- 4. 帮助 -->
+      <g id="nav-help" transform="translate(0, 126)">
+        <rect width="200" height="38" rx="8" fill="transparent"/>
+        <circle cx="30" cy="19" r="8" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+        <path d="M 28 17 C 28 15.8 28.8 15 30 15 C 31.2 15 32 15.8 32 16.8 C 32 17.8 31.2 18.4 30 19 L 30 20.2" fill="none" stroke="#4B5563" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="30" cy="22.5" r="0.8" fill="#4B5563"/>
+        <text class="font-sans" x="50" y="24" font-size="13.5" font-weight="500" fill="#374151">帮助</text>
+      </g>
+
+      <!-- 5. 关于 -->
+      <g id="nav-about" transform="translate(0, 168)">
+        <rect width="200" height="38" rx="8" fill="transparent"/>
+        <circle cx="30" cy="19" r="8" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+        <line x1="30" y1="18" x2="30" y2="23" stroke="#4B5563" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="30" cy="15.5" r="0.8" fill="#4B5563"/>
+        <text class="font-sans" x="50" y="24" font-size="13.5" font-weight="500" fill="#374151">关于</text>
+      </g>
+    </g>
+
+    <!-- Sidebar Bottom: GPU Hardware Card (RTX 4070 - Single concise line) -->
+    <g id="sidebar-gpu-status-card" transform="translate(10, 706)">
+      <rect width="200" height="38" rx="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1"/>
+      <!-- Online Status Green Dot -->
+      <circle cx="22" cy="19" r="3.5" fill="#10B981"/>
+      <!-- GPU Text Details -->
+      <text class="font-sans" x="34" y="23" font-size="11.5" font-weight="600" fill="#111827">NVIDIA GeForce RTX 4070</text>
+      <!-- Dropdown Chevron -->
+      <polyline points="186,16 190,20 194,16" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- ==================== MAIN CONTENT AREA (Bounded Max-Width 960px) ==================== -->
+  <g id="macos-main-viewport" transform="translate(264, 74)">
+    <!-- Header -->
+    <text class="font-sans" x="0" y="30" font-size="26" font-weight="700" fill="#111827" letter-spacing="-0.5">文件</text>
+
+    <!-- Section: 新建或打开项目 -->
+    <text class="font-sans" x="0" y="76" font-size="14.5" font-weight="700" fill="#111827">新建或打开项目</text>
+
+    <!-- 3 Clean Minimalist Cards -->
+    <g id="clean-action-cards" transform="translate(0, 92)">
+      <!-- Card 1: 新建工程 -->
+      <g id="card-new-project" filter="url(#cleanCardShadow)">
+        <rect width="308" height="106" rx="10" fill="#FFFFFF"/>
+        <rect width="308" height="106" rx="10" fill="none" stroke="#E5E7EB" stroke-width="1"/>
+        <!-- Icon Container -->
+        <rect x="20" y="20" width="38" height="38" rx="8" fill="#F3F4F6"/>
+        <path d="M 31 39 L 45 39 M 38 32 L 38 46" stroke="#111827" stroke-width="2" stroke-linecap="round"/>
+        <!-- Title & Subtitle -->
+        <text class="font-sans" x="70" y="44" font-size="15" font-weight="700" fill="#111827">新建工程</text>
+        <text class="font-sans" x="20" y="82" font-size="12" font-weight="400" fill="#6B7280">从 CSV / DAT 点云导入并构建 LOD 金字塔</text>
+      </g>
+
+      <!-- Card 2: 打开工程 -->
+      <g id="card-open-project" transform="translate(324, 0)" filter="url(#cleanCardShadow)">
+        <rect width="308" height="106" rx="10" fill="#FFFFFF"/>
+        <rect width="308" height="106" rx="10" fill="none" stroke="#E5E7EB" stroke-width="1"/>
+        <rect x="20" y="20" width="38" height="38" rx="8" fill="#F3F4F6"/>
+        <!-- Folder Icon -->
+        <path d="M 31 34 L 35 34 L 37 36 L 47 36 C 48 36 49 37 49 38 L 49 45 C 49 46 48 47 47 47 L 31 47 C 30 47 29 46 29 45 L 29 36 C 29 35 30 34 31 34 Z" fill="none" stroke="#111827" stroke-width="1.8"/>
+        <text class="font-sans" x="70" y="44" font-size="15" font-weight="700" fill="#111827">打开工程</text>
+        <text class="font-sans" x="20" y="82" font-size="12" font-weight="400" fill="#6B7280">载入已有的 .gs3d 文件或 .gs3d.bundle 空间包</text>
+      </g>
+
+      <!-- Card 3: 快速体验示例 -->
+      <g id="card-quick-demo" transform="translate(648, 0)" filter="url(#cleanCardShadow)">
+        <rect width="308" height="106" rx="10" fill="#FFFFFF"/>
+        <rect width="308" height="106" rx="10" fill="none" stroke="#E5E7EB" stroke-width="1"/>
+        <rect x="20" y="20" width="38" height="38" rx="8" fill="#F3F4F6"/>
+        <!-- Play Icon -->
+        <polygon points="35,32 45,39 35,46" fill="none" stroke="#111827" stroke-width="1.8" stroke-linejoin="round"/>
+        <text class="font-sans" x="70" y="44" font-size="15" font-weight="700" fill="#111827">快速体验示例</text>
+        <text class="font-sans" x="20" y="82" font-size="12" font-weight="400" fill="#6B7280">构建并载入内置散点示例，直接进入三维视口</text>
+      </g>
+    </g>
+
+    <!-- Primary Action Button: "打开文件…" -->
+    <g id="btn-open-file" transform="translate(0, 224)" filter="url(#primaryBtnShadow)">
+      <rect width="108" height="34" rx="6" fill="#007AFF"/>
+      <text class="font-sans" x="54" y="21.5" text-anchor="middle" font-size="13" font-weight="600" fill="#FFFFFF">打开文件…</text>
+    </g>
+
+    <!-- Section: 最近打开的项目 -->
+    <g id="recent-projects-table-section" transform="translate(0, 288)">
+      <text class="font-sans" x="0" y="0" font-size="14.5" font-weight="700" fill="#111827">最近打开的项目</text>
+      <text class="font-sans" x="956" y="0" text-anchor="end" font-size="12" font-weight="400" fill="#9CA3AF">清除</text>
+
+      <!-- Table Header -->
+      <g transform="translate(0, 20)">
+        <text class="font-sans" x="44" y="0" font-size="11" font-weight="500" fill="#9CA3AF">项目名称</text>
+        <text class="font-sans" x="260" y="0" font-size="11" font-weight="500" fill="#9CA3AF">路径</text>
+        <text class="font-sans" x="680" y="0" font-size="11" font-weight="500" fill="#9CA3AF">最后打开时间</text>
+        <line x1="0" y1="10" x2="956" y2="10" stroke="#F3F4F6" stroke-width="1"/>
+      </g>
+
+      <!-- Table Rows -->
+      <g id="recents-list" transform="translate(0, 36)">
+        <!-- Row 1 -->
+        <g id="row-1" transform="translate(0, 0)">
+          <rect x="0" y="8" width="30" height="30" rx="6" fill="#F3F4F6"/>
+          <path d="M 6 28 Q 13 18 19 22 T 26 25" fill="none" stroke="#94A3B8" stroke-width="1.4"/>
+          <text class="font-sans" x="44" y="27" font-size="13" font-weight="500" fill="#111827">sample-points</text>
+          <text class="font-mono" x="260" y="27" font-size="12" font-weight="400" fill="#4B5563">C:/Users/tianyy/code/GeoScatter3D/data/sample-points.gs3d.bundle</text>
+          <text class="font-sans" x="680" y="27" font-size="11.5" font-weight="400" fill="#9CA3AF">1 分钟前</text>
+          <text class="font-sans" x="945" y="25" font-size="14" font-weight="700" fill="#9CA3AF">···</text>
+          <line x1="0" y1="46" x2="956" y2="46" stroke="#F3F4F6" stroke-width="1"/>
+        </g>
+
+        <!-- Row 2 -->
+        <g id="row-2" transform="translate(0, 48)">
+          <rect x="0" y="8" width="30" height="30" rx="6" fill="#F3F4F6"/>
+          <path d="M 6 28 Q 13 18 19 22 T 26 25" fill="none" stroke="#94A3B8" stroke-width="1.4"/>
+          <text class="font-sans" x="44" y="27" font-size="13" font-weight="500" fill="#111827">east_china_region.gs3d</text>
+          <text class="font-mono" x="260" y="27" font-size="12" font-weight="400" fill="#4B5563">D:/Project/GeoData/</text>
+          <text class="font-sans" x="680" y="27" font-size="11.5" font-weight="400" fill="#9CA3AF">昨天 14:21</text>
+          <text class="font-sans" x="945" y="25" font-size="14" font-weight="700" fill="#9CA3AF">···</text>
+          <line x1="0" y1="46" x2="956" y2="46" stroke="#F3F4F6" stroke-width="1"/>
+        </g>
+
+        <!-- Row 3 -->
+        <g id="row-3" transform="translate(0, 96)">
+          <rect x="0" y="8" width="30" height="30" rx="6" fill="#F3F4F6"/>
+          <path d="M 6 28 Q 13 18 19 22 T 26 25" fill="none" stroke="#94A3B8" stroke-width="1.4"/>
+          <text class="font-sans" x="44" y="27" font-size="13" font-weight="500" fill="#111827">well_points.gs3d</text>
+          <text class="font-mono" x="260" y="27" font-size="12" font-weight="400" fill="#4B5563">C:/Users/tianyy/Desktop/</text>
+          <text class="font-sans" x="680" y="27" font-size="11.5" font-weight="400" fill="#9CA3AF">3 天前</text>
+          <text class="font-sans" x="945" y="25" font-size="14" font-weight="700" fill="#9CA3AF">···</text>
+          <line x1="0" y1="46" x2="956" y2="46" stroke="#F3F4F6" stroke-width="1"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

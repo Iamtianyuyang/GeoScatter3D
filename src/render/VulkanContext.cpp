@@ -35,9 +35,26 @@ VulkanContext::VulkanContext(
 #else
     config_.enable_validation_layers = false;
 #endif
+    config_.headless = false;
 
     create_instance();
     create_surface(window);
+    pick_physical_device();
+    create_logical_device();
+}
+
+VulkanContext::VulkanContext(VulkanContextConfig config)
+    : config_(std::move(config))
+{
+#ifndef NDEBUG
+    config_.enable_validation_layers = config_.enable_validation_layers;
+#else
+    config_.enable_validation_layers = false;
+#endif
+    config_.headless = true;
+
+    create_instance();
+    // 无 surface：不调用 create_surface
     pick_physical_device();
     create_logical_device();
 }
@@ -272,7 +289,7 @@ void VulkanContext::create_logical_device() {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
     dynamic_rendering_features.dynamicRendering = VK_TRUE;
 
-    const auto device_extensions = required_device_extensions();
+    const auto device_extensions = required_device_extensions(config_.headless);
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -309,6 +326,11 @@ void VulkanContext::create_logical_device() {
 }
 
 std::vector<const char*> VulkanContext::required_instance_extensions() const {
+    if (config_.headless) {
+        // 离屏内核：不依赖窗口系统扩展。
+        return {};
+    }
+
     std::uint32_t glfw_extension_count = 0;
     const char** glfw_extensions =
         glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -373,18 +395,24 @@ QueueFamilyIndices VulkanContext::find_queue_families(
 
         if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphics_family = i;
+            if (config_.headless || surface_ == VK_NULL_HANDLE) {
+                // 无 surface：呈现队列与图形队列共用。
+                indices.present_family = i;
+            }
         }
 
-        VkBool32 present_supported = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(
-            device,
-            i,
-            surface_,
-            &present_supported
-        );
+        if (!config_.headless && surface_ != VK_NULL_HANDLE) {
+            VkBool32 present_supported = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(
+                device,
+                i,
+                surface_,
+                &present_supported
+            );
 
-        if (present_supported == VK_TRUE) {
-            indices.present_family = i;
+            if (present_supported == VK_TRUE) {
+                indices.present_family = i;
+            }
         }
 
         if (indices.complete()) {
@@ -395,7 +423,12 @@ QueueFamilyIndices VulkanContext::find_queue_families(
     return indices;
 }
 
-std::vector<const char*> VulkanContext::required_device_extensions() {
+std::vector<const char*> VulkanContext::required_device_extensions(bool headless) {
+    if (headless) {
+        return {
+            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
+        };
+    }
     return {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
@@ -404,7 +437,7 @@ std::vector<const char*> VulkanContext::required_device_extensions() {
 
 bool VulkanContext::device_extensions_supported(
     VkPhysicalDevice device
-) {
+) const {
     std::uint32_t extension_count = 0;
     vkEnumerateDeviceExtensionProperties(
         device,
@@ -426,7 +459,7 @@ bool VulkanContext::device_extensions_supported(
 
     std::set<std::string> required_extensions;
 
-    for (const auto* extension : required_device_extensions()) {
+    for (const auto* extension : required_device_extensions(config_.headless)) {
         required_extensions.insert(extension);
     }
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/macos_tokens.dart';
 import 'new_project_dialog.dart';
 import 'open_project_dialog.dart';
 import 'welcome_ui_keys.dart';
@@ -44,221 +44,194 @@ class WelcomeActionCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 760;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '新建或打开项目',
+          style: TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 14),
 
-        final cards = [
-          _ActionCardItem(
-            key: WelcomeUiKeys.newProjectAction,
-            icon: Icons.add_rounded,
-            iconColor: AppTheme.primaryBlue,
-            iconBg: AppTheme.primaryBlueBg,
-            title: '新建工程',
-            subtitle: '从原始 CSV / DAT 点云导入并构建 LOD 金字塔',
-            tag: '向导模式',
-            highlighted: false,
-            onTap: () => _onNewProject(context),
-          ),
-          _ActionCardItem(
-            key: WelcomeUiKeys.openProjectAction,
-            icon: Icons.folder_open_rounded,
-            iconColor: const Color(0xFF0284C7), // Sky-600
-            iconBg: const Color(0xFFF0F9FF), // Sky-50
-            title: '打开工程',
-            subtitle: '载入已就绪的 .gs3d 文件或 .gs3d.bundle 空间包',
-            tag: '快捷载入',
-            highlighted: false,
-            onTap: () => _onOpenProject(context),
-          ),
-          _ActionCardItem(
-            key: WelcomeUiKeys.quickDemoAction,
-            icon: Icons.rocket_launch_rounded,
-            iconColor: const Color(0xFF7C3AED), // Purple-600
-            iconBg: const Color(0xFFF5F3FF), // Purple-50
-            title: '快速体验示例',
-            subtitle: '构建并载入内置散点示例，启动原生三维视口',
-            tag: '即开即看',
-            highlighted: true,
-            onTap: () => _onQuickDemo(context),
-          ),
-        ];
+        // 三联极简现代化卡片 (纯黑白灰高级质感，无花哨色彩与过多描述)
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 720;
 
-        if (isWide) {
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (int i = 0; i < cards.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 14),
-                  Expanded(child: cards[i]),
+            final card1 = _CleanActionCard(
+              key: WelcomeUiKeys.newProjectAction,
+              icon: Icons.add,
+              title: '新建工程',
+              subtitle: '从 CSV / DAT 点云导入并构建 LOD 金字塔',
+              onTap: () => _onNewProject(context),
+            );
+
+            final card2 = _CleanActionCard(
+              key: WelcomeUiKeys.openProjectAction,
+              icon: Icons.folder_open_rounded,
+              title: '打开工程',
+              subtitle: '载入已有的 .gs3d 文件或 .gs3d.bundle 空间包',
+              onTap: () => _onOpenProject(context),
+            );
+
+            final card3 = _CleanActionCard(
+              key: WelcomeUiKeys.quickDemoAction,
+              icon: Icons.play_arrow_outlined,
+              title: '快速体验示例',
+              subtitle: '构建并载入内置散点示例，直接进入三维视口',
+              onTap: () => _onQuickDemo(context),
+            );
+
+            if (isWide) {
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: card1),
+                    const SizedBox(width: 14),
+                    Expanded(child: card2),
+                    const SizedBox(width: 14),
+                    Expanded(child: card3),
+                  ],
+                ),
+              );
+            } else {
+              return Column(
+                children: [
+                  card1,
+                  const SizedBox(height: 12),
+                  card2,
+                  const SizedBox(height: 12),
+                  card3,
                 ],
-              ],
+              );
+            }
+          },
+        ),
+
+        const SizedBox(height: 18),
+
+        // 经典 Apple 蓝「打开文件…」主功能按钮
+        ElevatedButton(
+          onPressed: () => _onOpenProject(context),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: MacOsTokens.systemBlue,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
             ),
-          );
-        } else {
-          return Column(
-            children: [
-              for (int i = 0; i < cards.length; i++) ...[
-                if (i > 0) const SizedBox(height: 12),
-                cards[i],
-              ],
-            ],
-          );
-        }
-      },
+          ),
+          child: const Text(
+            '打开文件…',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _ActionCardItem extends StatefulWidget {
+class _CleanActionCard extends StatefulWidget {
   final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
   final String title;
   final String subtitle;
-  final String tag;
-  final bool highlighted;
   final VoidCallback onTap;
 
-  const _ActionCardItem({
+  const _CleanActionCard({
     super.key,
     required this.icon,
-    required this.iconColor,
-    required this.iconBg,
     required this.title,
     required this.subtitle,
-    required this.tag,
-    required this.highlighted,
     required this.onTap,
   });
 
   @override
-  State<_ActionCardItem> createState() => _ActionCardItemState();
+  State<_CleanActionCard> createState() => _CleanActionCardState();
 }
 
-class _ActionCardItemState extends State<_ActionCardItem> {
+class _CleanActionCardState extends State<_CleanActionCard> {
   bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = _isHovered
-        ? AppTheme.primaryBlue
-        : (widget.highlighted
-              ? AppTheme.primaryBlue.withValues(alpha: 0.35)
-              : AppTheme.border);
-
     return MouseRegion(
-      opaque: true,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        decoration: BoxDecoration(
-          color: _isHovered ? const Color(0xFFFAFCFF) : AppTheme.surface,
-          borderRadius: BorderRadius.circular(10),
-          // 保持恒定 1.0 像素线宽，仅在 hover 时平滑过渡边框颜色与背景，彻底杜绝几何变形与抖动
-          border: Border.all(color: borderColor, width: 1.0),
-          boxShadow: _isHovered
-              ? [
-                  BoxShadow(
-                    color: AppTheme.primaryBlue.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : AppTheme.cardShadow,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(10),
-            onTap: widget.onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: widget.iconBg,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          widget.icon,
-                          color: widget.iconColor,
-                          size: 22,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: widget.highlighted
-                              ? AppTheme.primaryBlueBg
-                              : AppTheme.surfaceMuted,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          widget.tag,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: widget.highlighted
-                                ? AppTheme.primaryBlue
-                                : AppTheme.textDim,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Text(
-                        widget.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textTitle,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      AnimatedSlide(
-                        offset: _isHovered ? const Offset(0.2, 0) : Offset.zero,
-                        duration: const Duration(milliseconds: 140),
-                        child: const Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 16,
-                          color: AppTheme.primaryBlue,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.subtitle,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: AppTheme.textDim,
-                      height: 1.4,
+            border: Border.all(
+              color: _isHovered ? const Color(0xFFCBD5E1) : const Color(0xFFE5E7EB),
+              width: 1,
+            ),
+            boxShadow: _isHovered
+                ? const [
+                    BoxShadow(
+                      color: Color(0x0C000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Color(0x04000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 20,
+                    color: const Color(0xFF111827),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 12),
+              Text(
+                widget.subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  height: 1.45,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),

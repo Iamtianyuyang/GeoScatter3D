@@ -473,6 +473,136 @@ void ScreenshotService::record_copy(
     }
 }
 
+void ScreenshotService::record_copy_offscreen(
+    VkCommandBuffer cmd,
+    gs3d::render::VulkanContext& context,
+    VkImage color_image,
+    VkExtent2D color_extent,
+    VkImageLayout color_layout
+) {
+    if (!pending_ || color_image == VK_NULL_HANDLE) return;
+    if (color_extent.width == 0 || color_extent.height == 0) return;
+
+    // 离屏整幅拷贝：offset 归零，extent 对齐离屏尺寸。
+    offset_ = {0, 0};
+    extent_ = color_extent;
+
+    const VkDeviceSize buf_size =
+        static_cast<VkDeviceSize>(extent_.width) *
+        static_cast<VkDeviceSize>(extent_.height) * 4;
+
+    // 尺寸变化时重建 staging
+    if (staging_buffer_ != VK_NULL_HANDLE) {
+        VkMemoryRequirements existing{};
+        vkGetBufferMemoryRequirements(context.device(), staging_buffer_,
+                                      &existing);
+        if (existing.size < buf_size) {
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            vkFreeMemory(context.device(), staging_memory_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            staging_memory_ = VK_NULL_HANDLE;
+        }
+    }
+
+    if (staging_buffer_ == VK_NULL_HANDLE) {
+        VkBufferCreateInfo buf_info{};
+        buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buf_info.size = buf_size;
+        buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(context.device(), &buf_info,
+                           nullptr, &staging_buffer_) != VK_SUCCESS) {
+            capture_error_ = "无法创建截图读回缓冲区";
+            pending_ = false;
+            return;
+        }
+        VkMemoryRequirements mem_req{};
+        vkGetBufferMemoryRequirements(context.device(),
+                                      staging_buffer_, &mem_req);
+        VkPhysicalDeviceMemoryProperties mem_props{};
+        vkGetPhysicalDeviceMemoryProperties(context.physical_device(),
+                                            &mem_props);
+        std::uint32_t mem_type_idx = 0;
+        for (; mem_type_idx < mem_props.memoryTypeCount; ++mem_type_idx) {
+            if ((mem_req.memoryTypeBits & (1u << mem_type_idx)) &&
+                (mem_props.memoryTypes[mem_type_idx].propertyFlags &
+                 (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                    (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                break;
+            }
+        }
+        if (mem_type_idx == mem_props.memoryTypeCount) {
+            capture_error_ = "GPU 不支持截图读回内存";
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            pending_ = false;
+            return;
+        }
+        VkMemoryAllocateInfo alloc_info{};
+        alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        alloc_info.allocationSize = mem_req.size;
+        alloc_info.memoryTypeIndex = mem_type_idx;
+        if (vkAllocateMemory(context.device(), &alloc_info, nullptr,
+                             &staging_memory_) != VK_SUCCESS ||
+            vkBindBufferMemory(context.device(), staging_buffer_,
+                               staging_memory_, 0) != VK_SUCCESS) {
+            capture_error_ = "无法分配截图读回内存";
+            vkDestroyBuffer(context.device(), staging_buffer_, nullptr);
+            staging_buffer_ = VK_NULL_HANDLE;
+            staging_memory_ = VK_NULL_HANDLE;
+            pending_ = false;
+            return;
+        }
+    }
+
+    // SHADER_READ_ONLY (或其它) → TRANSFER_SRC
+    {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.oldLayout = color_layout;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = color_image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
+
+    {
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {extent_.width, extent_.height, 1};
+        vkCmdCopyImageToBuffer(cmd, color_image,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            staging_buffer_, 1, &region);
+    }
+
+    // 恢复 SHADER_READ_ONLY，供后续帧使用
+    {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = color_image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
+}
+
 // Reads the staged pixels back, releases the Vulkan resources immediately,
 // then encodes the PNG on a worker so the render loop never waits on a native
 // file dialog or PNG compression.

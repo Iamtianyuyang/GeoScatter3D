@@ -18,7 +18,7 @@ constexpr const char* kRequiredDeviceExtensions[] = {
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
 };
 
-bool has_required_extensions(VkPhysicalDevice device)
+bool has_required_extensions(VkPhysicalDevice device, bool headless)
 {
     std::uint32_t count = 0;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
@@ -27,6 +27,10 @@ bool has_required_extensions(VkPhysicalDevice device)
         device, nullptr, &count, available.data());
 
     for (const char* required : kRequiredDeviceExtensions) {
+        if (headless &&
+            std::strcmp(required, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+            continue;
+        }
         bool found = false;
         for (const auto& ext : available) {
             if (std::strcmp(ext.extensionName, required) == 0) {
@@ -52,16 +56,21 @@ bool has_graphics_and_present_queue(
         device, &count, families.data());
 
     bool graphics = false;
-    bool present = false;
+    bool present = surface == VK_NULL_HANDLE;
     for (std::uint32_t i = 0; i < count; ++i) {
         if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             graphics = true;
+            if (surface == VK_NULL_HANDLE) {
+                present = true;
+            }
         }
-        VkBool32 supported = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(
-            device, i, surface, &supported);
-        if (supported == VK_TRUE) {
-            present = true;
+        if (surface != VK_NULL_HANDLE) {
+            VkBool32 supported = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(
+                device, i, surface, &supported);
+            if (supported == VK_TRUE) {
+                present = true;
+            }
         }
         if (graphics && present) {
             return true;
@@ -234,16 +243,17 @@ std::vector<VulkanGpuInfo> enumerate_gpus(
 
         // Suitability check
         info.suitable = true;
+        const bool headless = surface == VK_NULL_HANDLE;
         if (props2.properties.apiVersion < VK_API_VERSION_1_2) {
             info.suitable = false;
             info.rejection_reason = "需要 Vulkan 1.2 或更高版本";
         } else if (!has_graphics_and_present_queue(device, surface)) {
             info.suitable = false;
             info.rejection_reason = "缺少图形或呈现队列支持";
-        } else if (!has_required_extensions(device)) {
+        } else if (!has_required_extensions(device, headless)) {
             info.suitable = false;
             info.rejection_reason = "缺少所需设备扩展 (swapchain, dynamic rendering)";
-        } else if (!has_swapchain_support(device, surface)) {
+        } else if (!headless && !has_swapchain_support(device, surface)) {
             info.suitable = false;
             info.rejection_reason = "交换链格式或呈现模式不兼容";
         }

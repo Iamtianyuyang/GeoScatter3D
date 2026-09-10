@@ -255,6 +255,198 @@ typedef _c_export_dataset =
 typedef _dart_export_dataset =
     int Function(ffi.Pointer<Utf8> target_path, ffi.Pointer<Utf8> format_type);
 
+// ── Viewer 进程桥 ─────────────────────────────────────────────────
+typedef _c_viewer_start =
+    ffi.Int32 Function(
+      ffi.Pointer<Utf8> executable_path,
+      ffi.Pointer<Utf8> dataset_path,
+    );
+typedef _dart_viewer_start =
+    int Function(ffi.Pointer<Utf8> executable_path, ffi.Pointer<Utf8> dataset_path);
+
+typedef _c_viewer_stop = ffi.Void Function();
+typedef _dart_viewer_stop = void Function();
+
+typedef _c_viewer_is_connected = ffi.Int32 Function();
+typedef _dart_viewer_is_connected = int Function();
+
+typedef _c_viewer_capture_dim = ffi.Int32 Function();
+typedef _dart_viewer_capture_dim = int Function();
+
+typedef _c_viewer_cstr = ffi.Pointer<Utf8> Function();
+typedef _dart_viewer_cstr = ffi.Pointer<Utf8> Function();
+
+typedef _c_viewer_rpc =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> json_request_line);
+typedef _dart_viewer_rpc =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> json_request_line);
+
+typedef _c_viewer_execute =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8> component,
+      ffi.Pointer<Utf8> command,
+      ffi.Pointer<Utf8> params_json,
+    );
+typedef _dart_viewer_execute =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8> component,
+      ffi.Pointer<Utf8> command,
+      ffi.Pointer<Utf8> params_json,
+    );
+
+typedef _c_viewer_get_state =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> component);
+typedef _dart_viewer_get_state =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8> component);
+
+typedef _c_set_theme = ffi.Int32 Function(ffi.Int32 theme_index);
+typedef _dart_set_theme = int Function(int theme_index);
+
+typedef _c_set_camera_linked = ffi.Int32 Function(ffi.Int32 linked);
+typedef _dart_set_camera_linked = int Function(int linked);
+
+typedef _c_void_action = ffi.Int32 Function();
+typedef _dart_void_action = int Function();
+
+typedef _c_set_panel_visible =
+    ffi.Int32 Function(ffi.Pointer<Utf8> panel_id, ffi.Int32 visible);
+typedef _dart_set_panel_visible =
+    int Function(ffi.Pointer<Utf8> panel_id, int visible);
+
+typedef _c_set_render_settings_json =
+    ffi.Int32 Function(ffi.Pointer<Utf8> params_json);
+typedef _dart_set_render_settings_json =
+    int Function(ffi.Pointer<Utf8> params_json);
+
+typedef _c_camera_input =
+    ffi.Int32 Function(
+      ffi.Float rotate_dx,
+      ffi.Float rotate_dy,
+      ffi.Float pan_dx,
+      ffi.Float pan_dy,
+      ffi.Float scroll_y,
+    );
+typedef _dart_camera_input =
+    int Function(
+      double rotate_dx,
+      double rotate_dy,
+      double pan_dx,
+      double pan_dy,
+      double scroll_y,
+    );
+
+typedef _c_gizmo_axis = ffi.Int32 Function(ffi.Int32 axis);
+typedef _dart_gizmo_axis = int Function(int axis);
+
+typedef _c_pick_input =
+    ffi.Int32 Function(
+      ffi.Pointer<Utf8> kind,
+      ffi.Pointer<Utf8> params_json,
+    );
+typedef _dart_pick_input =
+    int Function(ffi.Pointer<Utf8> kind, ffi.Pointer<Utf8> params_json);
+
+typedef _c_measurement_op =
+    ffi.Int32 Function(
+      ffi.Pointer<Utf8> op,
+      ffi.Pointer<Utf8> params_json,
+    );
+typedef _dart_measurement_op =
+    int Function(ffi.Pointer<Utf8> op, ffi.Pointer<Utf8> params_json);
+
+typedef _c_export_via_viewer =
+    ffi.Int32 Function(
+      ffi.Pointer<Utf8> output_path,
+      ffi.Pointer<Utf8> format,
+    );
+typedef _dart_export_via_viewer =
+    int Function(ffi.Pointer<Utf8> output_path, ffi.Pointer<Utf8> format);
+
+// ── 单进程渲染内核 ─────────────────────────────────────────────────
+typedef _c_engine_create_simple =
+    ffi.Pointer<ffi.Void> Function(ffi.Uint32 width, ffi.Uint32 height);
+typedef _dart_engine_create_simple =
+    ffi.Pointer<ffi.Void> Function(int width, int height);
+typedef _c_engine_ptr = ffi.Void Function(ffi.Pointer<ffi.Void>);
+typedef _dart_engine_ptr = void Function(ffi.Pointer<ffi.Void>);
+typedef _c_engine_ptr_ret = ffi.Int32 Function(ffi.Pointer<ffi.Void>);
+typedef _dart_engine_ptr_ret = int Function(ffi.Pointer<ffi.Void>);
+typedef _c_engine_load =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>);
+typedef _dart_engine_load =
+    int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>);
+typedef _c_engine_resize =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Uint32, ffi.Uint32);
+typedef _dart_engine_resize = int Function(ffi.Pointer<ffi.Void>, int, int);
+typedef _c_engine_set_point_size =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Float);
+typedef _dart_engine_set_point_size = int Function(ffi.Pointer<ffi.Void>, double);
+typedef _c_engine_set_int =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Int32);
+typedef _dart_engine_set_int = int Function(ffi.Pointer<ffi.Void>, int);
+typedef _c_engine_render_rgba =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Uint32,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+    );
+typedef _dart_engine_render_rgba =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+    );
+typedef _c_engine_set_camera_look_at =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+    );
+typedef _dart_engine_set_camera_look_at =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      double,
+      double,
+      double,
+      double,
+      double,
+      double,
+      double,
+      double,
+      double,
+    );
+typedef _c_engine_camera_input =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+      ffi.Float,
+    );
+typedef _dart_engine_camera_input =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      double,
+      double,
+      double,
+      double,
+      double,
+    );
+typedef _c_engine_cstr = ffi.Pointer<Utf8> Function(ffi.Pointer<ffi.Void>);
+typedef _dart_engine_cstr = ffi.Pointer<Utf8> Function(ffi.Pointer<ffi.Void>);
+
 /// 底层 C-ABI 动态链接库直接绑定
 class GeoScatter3dBindings {
   final ffi.DynamicLibrary dylib;
@@ -310,6 +502,61 @@ class GeoScatter3dBindings {
   late final _dart_calculate_region_stats calculate_region_stats;
   late final _dart_get_nav_map_thumbnail get_nav_map_thumbnail;
   late final _dart_export_dataset export_dataset;
+
+  // 可空的 Viewer 桥 API（旧 DLL 时为 null）
+  _dart_viewer_start? viewer_start_opt;
+  _dart_viewer_stop? viewer_stop_opt;
+  _dart_viewer_is_connected? viewer_is_connected_opt;
+  _dart_viewer_capture_dim? viewer_last_capture_width_opt;
+  _dart_viewer_capture_dim? viewer_last_capture_height_opt;
+  _dart_viewer_cstr? viewer_last_error_opt;
+  _dart_viewer_cstr? viewer_startup_log_opt;
+  _dart_viewer_rpc? viewer_rpc_opt;
+  _dart_viewer_cstr? viewer_screenshot_json_opt;
+  _dart_viewer_execute? viewer_execute_opt;
+  _dart_viewer_get_state? viewer_get_state_opt;
+  _dart_set_theme? set_theme_opt;
+  _dart_void_action? cycle_theme_opt;
+  _dart_set_camera_linked? set_camera_linked_opt;
+  _dart_void_action? request_new_view_opt;
+  _dart_void_action? request_new_workspace_opt;
+  _dart_void_action? restore_workspace_opt;
+  _dart_set_panel_visible? set_panel_visible_opt;
+  _dart_void_action? open_native_file_dialog_opt;
+  _dart_void_action? open_native_bundle_dialog_opt;
+  _dart_void_action? request_native_screenshot_opt;
+  _dart_viewer_cstr? get_status_bar_json_opt;
+  _dart_viewer_cstr? get_interaction_snapshot_json_opt;
+  _dart_viewer_cstr? get_runtime_diagnostics_json_opt;
+  _dart_viewer_cstr? get_render_settings_json_opt;
+  _dart_set_render_settings_json? set_render_settings_json_opt;
+  _dart_camera_input? camera_input_opt;
+  _dart_void_action? reset_camera_opt;
+  _dart_gizmo_axis? gizmo_axis_opt;
+  _dart_pick_input? pick_input_opt;
+  _dart_measurement_op? measurement_op_opt;
+  _dart_void_action? clear_tile_cache_opt;
+  _dart_export_via_viewer? export_via_viewer_opt;
+  _dart_viewer_cstr? list_components_json_opt;
+  _dart_void_action? quit_viewer_opt;
+
+  bool get hasViewerBridge => viewer_start_opt != null;
+  bool get hasEngineApi => engine_create_simple_opt != null;
+
+  _dart_viewer_cstr? engine_last_global_error_opt;
+  _dart_engine_create_simple? engine_create_simple_opt;
+  _dart_engine_ptr? engine_destroy_opt;
+  _dart_engine_load? engine_load_dataset_opt;
+  _dart_engine_resize? engine_resize_opt;
+  _dart_engine_set_point_size? engine_set_point_size_opt;
+  _dart_engine_set_int? engine_set_colormap_index_opt;
+  _dart_engine_set_int? engine_set_point_shape_opt;
+  _dart_engine_ptr_ret? engine_reset_camera_opt;
+  _dart_engine_camera_input? engine_camera_input_opt;
+  _dart_engine_set_camera_look_at? engine_set_camera_look_at_opt;
+  _dart_engine_render_rgba? engine_render_rgba_opt;
+  _dart_engine_cstr? engine_get_snapshot_json_opt;
+  _dart_engine_cstr? engine_last_error_opt;
 
   GeoScatter3dBindings(this.dylib) {
     init = dylib.lookupFunction<_c_init, _dart_init>('gs3d_ffi_init');
@@ -494,12 +741,266 @@ class GeoScatter3dBindings {
         .lookupFunction<_c_export_dataset, _dart_export_dataset>(
           'gs3d_ffi_export_dataset',
         );
+
+    T? optLookup<T extends Function>(
+      String name,
+      T Function(ffi.DynamicLibrary lib, String symbol) resolve,
+    ) {
+      try {
+        return resolve(dylib, name);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    viewer_start_opt = optLookup(
+      'gs3d_ffi_viewer_start',
+      (lib, n) => lib.lookupFunction<_c_viewer_start, _dart_viewer_start>(n),
+    );
+    viewer_stop_opt = optLookup(
+      'gs3d_ffi_viewer_stop',
+      (lib, n) => lib.lookupFunction<_c_viewer_stop, _dart_viewer_stop>(n),
+    );
+    viewer_is_connected_opt = optLookup(
+      'gs3d_ffi_viewer_is_connected',
+      (lib, n) =>
+          lib.lookupFunction<_c_viewer_is_connected, _dart_viewer_is_connected>(n),
+    );
+    viewer_last_capture_width_opt = optLookup(
+      'gs3d_ffi_viewer_last_capture_width',
+      (lib, n) =>
+          lib.lookupFunction<_c_viewer_capture_dim, _dart_viewer_capture_dim>(n),
+    );
+    viewer_last_capture_height_opt = optLookup(
+      'gs3d_ffi_viewer_last_capture_height',
+      (lib, n) =>
+          lib.lookupFunction<_c_viewer_capture_dim, _dart_viewer_capture_dim>(n),
+    );
+    viewer_last_error_opt = optLookup(
+      'gs3d_ffi_viewer_last_error',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    viewer_startup_log_opt = optLookup(
+      'gs3d_ffi_viewer_startup_log',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    viewer_rpc_opt = optLookup(
+      'gs3d_ffi_viewer_rpc',
+      (lib, n) => lib.lookupFunction<_c_viewer_rpc, _dart_viewer_rpc>(n),
+    );
+    viewer_screenshot_json_opt = optLookup(
+      'gs3d_ffi_viewer_screenshot_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    viewer_execute_opt = optLookup(
+      'gs3d_ffi_viewer_execute',
+      (lib, n) => lib.lookupFunction<_c_viewer_execute, _dart_viewer_execute>(n),
+    );
+    viewer_get_state_opt = optLookup(
+      'gs3d_ffi_viewer_get_state',
+      (lib, n) =>
+          lib.lookupFunction<_c_viewer_get_state, _dart_viewer_get_state>(n),
+    );
+    set_theme_opt = optLookup(
+      'gs3d_ffi_set_theme',
+      (lib, n) => lib.lookupFunction<_c_set_theme, _dart_set_theme>(n),
+    );
+    cycle_theme_opt = optLookup(
+      'gs3d_ffi_cycle_theme',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    set_camera_linked_opt = optLookup(
+      'gs3d_ffi_set_camera_linked',
+      (lib, n) =>
+          lib.lookupFunction<_c_set_camera_linked, _dart_set_camera_linked>(n),
+    );
+    request_new_view_opt = optLookup(
+      'gs3d_ffi_request_new_view',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    request_new_workspace_opt = optLookup(
+      'gs3d_ffi_request_new_workspace',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    restore_workspace_opt = optLookup(
+      'gs3d_ffi_restore_workspace',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    set_panel_visible_opt = optLookup(
+      'gs3d_ffi_set_panel_visible',
+      (lib, n) =>
+          lib.lookupFunction<_c_set_panel_visible, _dart_set_panel_visible>(n),
+    );
+    open_native_file_dialog_opt = optLookup(
+      'gs3d_ffi_open_native_file_dialog',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    open_native_bundle_dialog_opt = optLookup(
+      'gs3d_ffi_open_native_bundle_dialog',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    request_native_screenshot_opt = optLookup(
+      'gs3d_ffi_request_native_screenshot',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    get_status_bar_json_opt = optLookup(
+      'gs3d_ffi_get_status_bar_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    get_interaction_snapshot_json_opt = optLookup(
+      'gs3d_ffi_get_interaction_snapshot_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    get_runtime_diagnostics_json_opt = optLookup(
+      'gs3d_ffi_get_runtime_diagnostics_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    get_render_settings_json_opt = optLookup(
+      'gs3d_ffi_get_render_settings_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    set_render_settings_json_opt = optLookup(
+      'gs3d_ffi_set_render_settings_json',
+      (lib, n) => lib.lookupFunction<
+        _c_set_render_settings_json,
+        _dart_set_render_settings_json
+      >(n),
+    );
+    camera_input_opt = optLookup(
+      'gs3d_ffi_camera_input',
+      (lib, n) => lib.lookupFunction<_c_camera_input, _dart_camera_input>(n),
+    );
+    reset_camera_opt = optLookup(
+      'gs3d_ffi_reset_camera',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    gizmo_axis_opt = optLookup(
+      'gs3d_ffi_gizmo_axis',
+      (lib, n) => lib.lookupFunction<_c_gizmo_axis, _dart_gizmo_axis>(n),
+    );
+    pick_input_opt = optLookup(
+      'gs3d_ffi_pick_input',
+      (lib, n) => lib.lookupFunction<_c_pick_input, _dart_pick_input>(n),
+    );
+    measurement_op_opt = optLookup(
+      'gs3d_ffi_measurement_op',
+      (lib, n) => lib.lookupFunction<_c_measurement_op, _dart_measurement_op>(n),
+    );
+    clear_tile_cache_opt = optLookup(
+      'gs3d_ffi_clear_tile_cache',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+    export_via_viewer_opt = optLookup(
+      'gs3d_ffi_export_via_viewer',
+      (lib, n) =>
+          lib.lookupFunction<_c_export_via_viewer, _dart_export_via_viewer>(n),
+    );
+    list_components_json_opt = optLookup(
+      'gs3d_ffi_list_components_json',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    quit_viewer_opt = optLookup(
+      'gs3d_ffi_quit_viewer',
+      (lib, n) => lib.lookupFunction<_c_void_action, _dart_void_action>(n),
+    );
+
+    // 单进程渲染内核（可选；旧 DLL 缺失时 hasEngineApi=false）
+    engine_last_global_error_opt = optLookup(
+      'gs3d_engine_last_global_error',
+      (lib, n) => lib.lookupFunction<_c_viewer_cstr, _dart_viewer_cstr>(n),
+    );
+    engine_create_simple_opt = optLookup(
+      'gs3d_engine_create_simple',
+      (lib, n) => lib
+          .lookupFunction<_c_engine_create_simple, _dart_engine_create_simple>(
+        n,
+      ),
+    );
+    engine_destroy_opt = optLookup(
+      'gs3d_engine_destroy',
+      (lib, n) => lib.lookupFunction<_c_engine_ptr, _dart_engine_ptr>(n),
+    );
+    engine_load_dataset_opt = optLookup(
+      'gs3d_engine_load_dataset',
+      (lib, n) => lib
+          .lookupFunction<_c_engine_load, _dart_engine_load>(n),
+    );
+    engine_resize_opt = optLookup(
+      'gs3d_engine_resize',
+      (lib, n) => lib.lookupFunction<_c_engine_resize, _dart_engine_resize>(n),
+    );
+    engine_set_point_size_opt = optLookup(
+      'gs3d_engine_set_point_size',
+      (lib, n) => lib
+          .lookupFunction<_c_engine_set_point_size, _dart_engine_set_point_size>(
+        n,
+      ),
+    );
+    engine_set_colormap_index_opt = optLookup(
+      'gs3d_engine_set_colormap_index',
+      (lib, n) => lib.lookupFunction<_c_engine_set_int, _dart_engine_set_int>(n),
+    );
+    engine_set_point_shape_opt = optLookup(
+      'gs3d_engine_set_point_shape',
+      (lib, n) => lib.lookupFunction<_c_engine_set_int, _dart_engine_set_int>(n),
+    );
+    engine_reset_camera_opt = optLookup(
+      'gs3d_engine_reset_camera',
+      (lib, n) => lib.lookupFunction<_c_engine_ptr_ret, _dart_engine_ptr_ret>(n),
+    );
+    engine_camera_input_opt = optLookup(
+      'gs3d_engine_camera_input',
+      (lib, n) =>
+          lib.lookupFunction<_c_engine_camera_input, _dart_engine_camera_input>(
+            n,
+          ),
+    );
+    engine_set_camera_look_at_opt = optLookup(
+      'gs3d_engine_set_camera_look_at',
+      (lib, n) => lib.lookupFunction<
+        _c_engine_set_camera_look_at,
+        _dart_engine_set_camera_look_at
+      >(n),
+    );
+    engine_render_rgba_opt = optLookup(
+      'gs3d_engine_render_rgba',
+      (lib, n) =>
+          lib.lookupFunction<_c_engine_render_rgba, _dart_engine_render_rgba>(n),
+    );
+    engine_get_snapshot_json_opt = optLookup(
+      'gs3d_engine_get_snapshot_json',
+      (lib, n) =>
+          lib.lookupFunction<_c_engine_cstr, _dart_engine_cstr>(n),
+    );
+    engine_last_error_opt = optLookup(
+      'gs3d_engine_last_error',
+      (lib, n) => lib.lookupFunction<_c_engine_cstr, _dart_engine_cstr>(n),
+    );
+  }
+
+  /// Windows：LoadLibrary 默认不搜索 DLL 同目录依赖（glfw3 等）。
+  /// 打开前调用 SetDllDirectoryA，使依赖与 gs3d_ffi.dll 同目录可被找到。
+  static ffi.DynamicLibrary _openWithLocalDeps(String path) {
+    if (Platform.isWindows) {
+      final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
+      final setDllDirA = kernel32.lookupFunction<
+        ffi.Int32 Function(ffi.Pointer<Utf8>),
+        int Function(ffi.Pointer<Utf8>)
+      >('SetDllDirectoryA');
+      final dir = File(path).absolute.parent.path.toNativeUtf8();
+      try {
+        setDllDirA(dir);
+      } finally {
+        calloc.free(dir);
+      }
+    }
+    return ffi.DynamicLibrary.open(path);
   }
 
   /// 自动探测并加载动态库
   static GeoScatter3dBindings openLibrary([String? customPath]) {
     if (customPath != null && File(customPath).existsSync()) {
-      return GeoScatter3dBindings(ffi.DynamicLibrary.open(customPath));
+      return GeoScatter3dBindings(_openWithLocalDeps(customPath));
     }
 
     if (Platform.isWindows) {
@@ -507,17 +1008,23 @@ class GeoScatter3dBindings {
       final candidates = [
         if (Platform.environment['GS3D_RUNTIME_DIR'] != null)
           '${Platform.environment['GS3D_RUNTIME_DIR']}/gs3d_ffi.dll',
+        // 优先使用仓库内最新构建产物，避免误载旧部署副本。
+        '${Directory.current.path}/../tmp/build-win/src/ffi/Release/gs3d_ffi.dll',
+        '${Directory.current.path}/../tmp/build-win/Release/gs3d_ffi.dll',
+        '${Directory.current.path}/gs3d_ffi.dll',
         '$exeDir/gs3d_ffi.dll',
         'gs3d_ffi.dll',
         '../tmp/build-win/src/ffi/Release/gs3d_ffi.dll',
+        '../tmp/build-win/Release/gs3d_ffi.dll',
         'tmp/build-win/src/ffi/Release/gs3d_ffi.dll',
+        'tmp/build-win/Release/gs3d_ffi.dll',
       ];
       for (final p in candidates) {
         if (File(p).existsSync()) {
-          return GeoScatter3dBindings(ffi.DynamicLibrary.open(p));
+          return GeoScatter3dBindings(_openWithLocalDeps(p));
         }
       }
-      return GeoScatter3dBindings(ffi.DynamicLibrary.open('gs3d_ffi.dll'));
+      return GeoScatter3dBindings(_openWithLocalDeps('gs3d_ffi.dll'));
     } else if (Platform.isAndroid || Platform.isLinux) {
       return GeoScatter3dBindings(ffi.DynamicLibrary.open('libgs3d_ffi.so'));
     } else if (Platform.isMacOS || Platform.isIOS) {

@@ -1,0 +1,454 @@
+#include "ffi/HeadlessRenderKernel.hpp"
+
+#include "camera/CameraController.hpp"
+#include "data/PointDataAdapters.hpp"
+#include "util/Log.hpp"
+
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+
+namespace gs3d::ffi {
+
+namespace {
+
+void check_vk(VkResult result, const char* message) {
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error(std::string(message) + " (" +
+                                 std::to_string(static_cast<int>(result)) + ")");
+    }
+}
+
+}  // namespace
+
+HeadlessRenderKernel::~HeadlessRenderKernel() {
+    destroy();
+}
+
+void HeadlessRenderKernel::set_error(const std::string& message) {
+    last_error_ = message;
+    gs3d::util::log::error() << "[HeadlessRenderKernel] " << message << '\n';
+}
+
+int HeadlessRenderKernel::create(const Config& config) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    try {
+        destroy_gpu_resources();
+        config_ = config;
+        if (config_.width == 0 || config_.height == 0) {
+            set_error("invalid viewport size");
+            return -1;
+        }
+
+        gs3d::render::VulkanContextConfig ctx_cfg;
+        ctx_cfg.headless = true;
+        ctx_cfg.preferred_gpu = config_.preferred_gpu;
+        ctx_cfg.enable_validation_layers = config_.enable_validation;
+        ctx_cfg.application_name = "GeoScatter3D.FFI.Engine";
+        context_ = std::make_unique<gs3d::render::VulkanContext>(ctx_cfg);
+
+        VkCommandPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        pool_info.queueFamilyIndex =
+            context_->queue_family_indices().graphics_family.value();
+        check_vk(
+            vkCreateCommandPool(context_->device(), &pool_info, nullptr,
+                                &command_pool_),
+            "create command pool"
+        );
+
+        framebuffer_.create(
+            *context_,
+            VkExtent2D{config_.width, config_.height},
+            VK_FORMAT_R8G8B8A8_UNORM
+        );
+        create_pipeline();
+
+        camera_.set_viewport(config_.width, config_.height);
+        camera_.set_perspective(45.0f, 1.0f, 100000.0f);
+        last_error_.clear();
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        destroy_gpu_resources();
+        return -3;
+    }
+}
+
+void HeadlessRenderKernel::create_pipeline() {
+    gs3d::render::PointPipelineConfig pipe_cfg;
+    if (!config_.shader_dir.empty()) {
+        pipe_cfg.vertex_shader_path =
+            std::filesystem::path(config_.shader_dir) / "point.vert.spv";
+        pipe_cfg.fragment_shader_path =
+            std::filesystem::path(config_.shader_dir) / "point.frag.spv";
+    }
+    pipeline_ = std::make_unique<gs3d::render::PointPipeline>(
+        *context_, framebuffer_.render_pass(), pipe_cfg
+    );
+}
+
+void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
+    if (context_) {
+        vkDeviceWaitIdle(context_->device());
+    }
+    cloud_ = gs3d::render::PointCloudGpu{};
+    pipeline_.reset();
+    framebuffer_.destroy();
+    if (context_ && command_pool_ != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(context_->device(), command_pool_, nullptr);
+        command_pool_ = VK_NULL_HANDLE;
+    }
+    context_.reset();
+}
+
+void HeadlessRenderKernel::destroy() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    destroy_gpu_resources();
+    dataset_ = {};
+    has_dataset_ = false;
+    point_count_ = 0;
+    last_rgba_.clear();
+    last_w_ = last_h_ = 0;
+}
+
+int HeadlessRenderKernel::load_dataset(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_) {
+        set_error("engine not created");
+        return -2;
+    }
+    try {
+        auto fs_path = std::filesystem::u8path(path);
+        if (!std::filesystem::exists(fs_path)) {
+            set_error("dataset not found: " + path);
+            return -2;
+        }
+        // bundle 目录 → source.gs3d
+        if (std::filesystem::is_directory(fs_path)) {
+            fs_path = fs_path / "source.gs3d";
+            if (!std::filesystem::exists(fs_path)) {
+                set_error("bundle missing source.gs3d");
+                return -2;
+            }
+        }
+
+        auto loaded = gs3d::data::Gs3dDatasetLoader::load(fs_path);
+        if (!loaded.has_point_data() || loaded.empty()) {
+            set_error("dataset has no point data");
+            return -3;
+        }
+        dataset_ = std::move(loaded);
+        point_count_ = dataset_.point_count();
+        has_dataset_ = true;
+
+        const auto view = gs3d::data::make_point_data_view(dataset_.points());
+        cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
+
+        reset_camera_to_bounds_locked();
+        last_error_.clear();
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        has_dataset_ = false;
+        return -3;
+    }
+}
+
+void HeadlessRenderKernel::unload_dataset() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (context_) {
+        vkDeviceWaitIdle(context_->device());
+        cloud_ = gs3d::render::PointCloudGpu{};
+    }
+    dataset_ = {};
+    has_dataset_ = false;
+    point_count_ = 0;
+}
+
+int HeadlessRenderKernel::resize(std::uint32_t width, std::uint32_t height) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_ || width == 0 || height == 0) return -1;
+    if (width == config_.width && height == config_.height) return 0;
+    try {
+        vkDeviceWaitIdle(context_->device());
+        framebuffer_.resize_after_device_idle(VkExtent2D{width, height});
+        config_.width = width;
+        config_.height = height;
+        camera_.set_viewport(width, height);
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        return -3;
+    }
+}
+
+void HeadlessRenderKernel::set_camera_look_at(
+    float pos_x, float pos_y, float pos_z,
+    float tgt_x, float tgt_y, float tgt_z,
+    float up_x, float up_y, float up_z
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    camera_.set_position({pos_x, pos_y, pos_z});
+    camera_.set_target({tgt_x, tgt_y, tgt_z});
+    camera_.set_up({up_x, up_y, up_z});
+    camera_.look_at({pos_x, pos_y, pos_z}, {tgt_x, tgt_y, tgt_z}, {up_x, up_y, up_z});
+}
+
+void HeadlessRenderKernel::reset_camera_to_bounds() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    reset_camera_to_bounds_locked();
+}
+
+void HeadlessRenderKernel::reset_camera_to_bounds_locked() {
+    // 调用方需已持有 mutex_（由 load_dataset 等路径调用）
+    if (!has_dataset_) return;
+    const gs3d::camera::CameraBounds bounds{
+        {dataset_.bbox_min_x(), dataset_.bbox_min_y(), dataset_.bbox_min_z()},
+        {dataset_.bbox_max_x(), dataset_.bbox_max_y(), dataset_.bbox_max_z()},
+    };
+    camera_controller_.set_bounds(bounds);
+    camera_controller_.clear_orbit_pivot();
+    camera_.set_viewport(config_.width, config_.height);
+    camera_.set_perspective(45.0f, 1.0f, 100000.0f);
+    camera_.fit_bounds(bounds);
+    update_push_from_camera();
+}
+
+int HeadlessRenderKernel::camera_input(
+    float rotate_dx, float rotate_dy,
+    float pan_dx, float pan_dy, float scroll_y
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_ || !has_dataset_) {
+        set_error("camera_input: no dataset");
+        return -3;
+    }
+    const bool rotate = (rotate_dx != 0.0f || rotate_dy != 0.0f);
+    const bool pan = (pan_dx != 0.0f || pan_dy != 0.0f);
+    if (rotate && pan) {
+        set_error("camera_input: rotate and pan are exclusive");
+        return -2;
+    }
+    gs3d::camera::CameraInput input{};
+    input.viewport_width = config_.width;
+    input.viewport_height = config_.height;
+    if (rotate) {
+        input.rotate = true;
+        input.delta_x = rotate_dx;
+        input.delta_y = rotate_dy;
+    } else if (pan) {
+        input.pan = true;
+        input.delta_x = pan_dx;
+        input.delta_y = pan_dy;
+    }
+    input.scroll_y = scroll_y;
+    input.mouse_position_valid = false;
+    camera_controller_.update(camera_, input);
+    update_push_from_camera();
+    return 0;
+}
+
+void HeadlessRenderKernel::update_push_from_camera() {
+    const auto mvp = camera_.view_projection_matrix();
+    std::memcpy(push_.mvp, mvp.data(), sizeof(float) * 16);
+}
+
+void HeadlessRenderKernel::set_point_size(float size) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    push_.point_size = std::max(0.5f, size);
+}
+
+void HeadlessRenderKernel::set_colormap_index(int index) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto clamped = static_cast<std::uint32_t>(std::clamp(index, 0, 8));
+    push_.flags = (push_.flags & ~gs3d::render::PointFlags::kColormapMask) |
+                  ((clamped & 0x7Fu) << 1);
+}
+
+void HeadlessRenderKernel::set_value_clip(bool enabled, float min_v, float max_v) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (enabled) {
+        push_.flags |= gs3d::render::PointFlags::kValueClip;
+    } else {
+        push_.flags &= ~gs3d::render::PointFlags::kValueClip;
+    }
+    // value 通道在 shader 中按 color_min/range 归一；clip 用归一区间。
+    const float range = (max_v > min_v) ? (max_v - min_v) : 1.0f;
+    // 与 Viewer 对齐：clip_min.w / clip_max.w 存归一后的 value clip
+    push_.clip_min[3] = 0.0f;
+    push_.clip_max[3] = 1.0f;
+    push_.color_min = min_v;
+    push_.color_range = range;
+}
+
+void HeadlessRenderKernel::set_point_shape(int shape) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto s = static_cast<std::uint32_t>(std::clamp(shape, 0, 3));
+    push_.flags = (push_.flags & ~gs3d::render::PointFlags::kPointShapeMask) |
+                  (s << gs3d::render::PointFlags::kPointShapeShift);
+}
+
+int HeadlessRenderKernel::render_rgba(
+    std::uint8_t* out_rgba,
+    std::uint32_t max_bytes,
+    std::uint32_t* out_w,
+    std::uint32_t* out_h
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_ || !pipeline_ || !has_dataset_) {
+        set_error("render prerequisites missing");
+        return -2;
+    }
+    try {
+        const auto extent = framebuffer_.extent();
+        const std::uint32_t w = extent.width;
+        const std::uint32_t h = extent.height;
+        const std::size_t bytes = static_cast<std::size_t>(w) * h * 4u;
+        if (out_w) *out_w = w;
+        if (out_h) *out_h = h;
+        if (out_rgba == nullptr || max_bytes < bytes) {
+            set_error("output buffer too small");
+            return -1;
+        }
+
+        update_push_from_camera();
+
+        VkCommandBufferAllocateInfo alloc{};
+        alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        alloc.commandPool = command_pool_;
+        alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        alloc.commandBufferCount = 1;
+        VkCommandBuffer cmd = VK_NULL_HANDLE;
+        check_vk(vkAllocateCommandBuffers(context_->device(), &alloc, &cmd),
+                 "alloc cmd");
+
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        check_vk(vkBeginCommandBuffer(cmd, &begin), "begin cmd");
+
+        framebuffer_.render(cmd, [&](VkCommandBuffer c) {
+            pipeline_->draw(c, cloud_, extent, push_);
+        });
+
+        // color image → staging (注意 layout：Offscreen 结束后为 SHADER_READ_ONLY)
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(
+            cmd,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 1, &barrier, 0, nullptr, 0, nullptr
+        );
+
+        // 临时 staging buffer
+        VkBufferCreateInfo buf_info{};
+        buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buf_info.size = bytes;
+        buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VkBuffer staging = VK_NULL_HANDLE;
+        check_vk(vkCreateBuffer(context_->device(), &buf_info, nullptr, &staging),
+                 "create staging");
+
+        VkMemoryRequirements req{};
+        vkGetBufferMemoryRequirements(context_->device(), staging, &req);
+        VkPhysicalDeviceMemoryProperties mem_props{};
+        vkGetPhysicalDeviceMemoryProperties(context_->physical_device(), &mem_props);
+        std::uint32_t mem_type = UINT32_MAX;
+        for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+            if ((req.memoryTypeBits & (1u << i)) &&
+                (mem_props.memoryTypes[i].propertyFlags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+                (mem_props.memoryTypes[i].propertyFlags &
+                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                mem_type = i;
+                break;
+            }
+        }
+        if (mem_type == UINT32_MAX) {
+            vkDestroyBuffer(context_->device(), staging, nullptr);
+            set_error("no host-visible memory for staging");
+            vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
+            return -3;
+        }
+        VkMemoryAllocateInfo mem_alloc{};
+        mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        mem_alloc.allocationSize = req.size;
+        mem_alloc.memoryTypeIndex = mem_type;
+        VkDeviceMemory staging_mem = VK_NULL_HANDLE;
+        if (vkAllocateMemory(context_->device(), &mem_alloc, nullptr, &staging_mem) !=
+            VK_SUCCESS) {
+            vkDestroyBuffer(context_->device(), staging, nullptr);
+            vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
+            set_error("staging alloc failed");
+            return -3;
+        }
+        vkBindBufferMemory(context_->device(), staging, staging_mem, 0);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent = VkExtent3D{w, h, 1};
+        vkCmdCopyImageToBuffer(
+            cmd,
+            framebuffer_.color_image(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            staging,
+            1,
+            &region
+        );
+
+        check_vk(vkEndCommandBuffer(cmd), "end cmd");
+
+        VkFenceCreateInfo fence_info{};
+        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VkFence fence = VK_NULL_HANDLE;
+        check_vk(vkCreateFence(context_->device(), &fence_info, nullptr, &fence),
+                 "fence");
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &cmd;
+        check_vk(vkQueueSubmit(context_->graphics_queue(), 1, &submit, fence),
+                 "submit");
+        vkWaitForFences(context_->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(context_->device(), fence, nullptr);
+
+        void* mapped = nullptr;
+        check_vk(vkMapMemory(context_->device(), staging_mem, 0, bytes, 0, &mapped),
+                 "map");
+        std::memcpy(out_rgba, mapped, bytes);
+        vkUnmapMemory(context_->device(), staging_mem);
+
+        last_rgba_.assign(out_rgba, out_rgba + bytes);
+        last_w_ = w;
+        last_h_ = h;
+
+        vkDestroyBuffer(context_->device(), staging, nullptr);
+        vkFreeMemory(context_->device(), staging_mem, nullptr);
+        vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
+
+        last_error_.clear();
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        return -3;
+    }
+}
+
+int HeadlessRenderKernel::encode_last_frame_png(
+    std::uint8_t* /*out*/,
+    std::uint32_t /*max_bytes*/,
+    std::uint32_t* /*out_len*/
+) {
+    // 内核不引入 STB 实现（与 ViewerAppScreenshot 冲突）；请用 render_rgba。
+    set_error("png encode not implemented in kernel; use render_rgba");
+    return -4;
+}
+
+}  // namespace gs3d::ffi

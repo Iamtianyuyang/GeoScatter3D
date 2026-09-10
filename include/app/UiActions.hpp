@@ -25,6 +25,9 @@ struct ViewportFrameCmd {
     float mouse_local_y = 0.0f;
     bool mouse_on_image = false;
 
+    // 控制面/Flutter 远程相机：增量已是明确拖拽，跳过点击-vs-拖拽门控。
+    bool from_control_plane = false;
+
     bool rotate = false;
     bool pan = false;
     bool point_double_clicked = false;

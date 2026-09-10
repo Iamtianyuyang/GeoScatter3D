@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../theme/macos_tokens.dart';
 import 'welcome_ui_keys.dart';
 
 class WelcomeHero extends StatefulWidget {
@@ -45,12 +46,12 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: 180,
       margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 粒子流动态画布 (对应 C++ draw_hero_particles)
+          // 粒子流动态画布 (Apple 蓝紫粒子流)
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _controller,
@@ -69,35 +70,34 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 渐变 Logo 方块 (对应 C++ draw_brand Logo)
+              // macOS 连续曲率 Squircle 渐变 App Icon (符合 Apple HIG 设计规范)
               Container(
                 key: WelcomeUiKeys.heroLogo,
-                width: 68,
-                height: 68,
+                width: 76,
+                height: 76,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [
                       Color(0xFF0F62FE),
-                      Color(0xFF6B9BFF),
+                      MacOsTokens.systemBlue,
+                      MacOsTokens.systemIndigo,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primaryBlue.withValues(alpha: 0.3),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(MacOsTokens.radiusIcon),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    width: 1.2,
+                  ),
+                  boxShadow: MacOsTokens.heroIconShadow,
                 ),
                 alignment: Alignment.center,
                 child: const Text(
                   'G',
                   style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w900,
+                    fontSize: 38,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                     letterSpacing: -1,
                   ),
@@ -105,7 +105,7 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
               ),
               const SizedBox(width: 22),
 
-              // 品牌字样与副标题
+              // 品牌字样、版本与副标题
               Flexible(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -122,46 +122,50 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                               TextSpan(
                                 text: 'Geo',
                                 style: TextStyle(
-                                  fontSize: 34,
+                                  fontSize: 32,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.textTitle,
+                                  color: MacOsTokens.textPrimary,
                                   letterSpacing: -0.5,
                                 ),
                               ),
                               TextSpan(
                                 text: 'Scatter',
                                 style: TextStyle(
-                                  fontSize: 34,
+                                  fontSize: 32,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.primaryBlue,
+                                  color: MacOsTokens.systemBlue,
                                   letterSpacing: -0.5,
                                 ),
                               ),
                               TextSpan(
                                 text: ' 3D',
                                 style: TextStyle(
-                                  fontSize: 34,
+                                  fontSize: 32,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.textTitle,
+                                  color: MacOsTokens.textPrimary,
                                   letterSpacing: -0.5,
                                 ),
                               ),
                             ],
                           ),
                         ),
+                        // macOS 胶囊版本徽章
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryBlueBg,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.25)),
+                            color: MacOsTokens.systemBlueLight,
+                            borderRadius: BorderRadius.circular(MacOsTokens.radiusPill),
+                            border: Border.all(
+                              color: MacOsTokens.systemBlue.withValues(alpha: 0.25),
+                            ),
                           ),
                           child: const Text(
-                            'v0.1.0 · Multiplatform',
+                            'v2.0 · Mac Edition',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: AppTheme.primaryBlue,
+                              color: MacOsTokens.systemBlue,
+                              letterSpacing: 0.2,
                             ),
                           ),
                         ),
@@ -169,14 +173,26 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      '三维散点数据工作台 · 大规模地理空间与地质勘探可视化引擎',
+                      '高精度大规模三维散点时空流式渲染系统 · macOS 现代图形工坊',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textDim,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w400,
+                        color: MacOsTokens.textSecondary,
+                        letterSpacing: -0.1,
                       ),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
+                    ),
+                    const SizedBox(height: 10),
+                    // macOS 风格技术特性微标签
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: const [
+                        _FeaturePill(text: '八叉树 LOD 金字塔', color: MacOsTokens.systemBlue),
+                        _FeaturePill(text: '纯 C-ABI 跨语言引擎', color: MacOsTokens.systemPurple),
+                        _FeaturePill(text: '毫秒级亿级点云裁剪', color: MacOsTokens.systemGreen),
+                      ],
                     ),
                   ],
                 ),
@@ -184,6 +200,33 @@ class _WelcomeHeroState extends State<WelcomeHero> with SingleTickerProviderStat
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FeaturePill extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _FeaturePill({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(MacOsTokens.radiusPill),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w500,
+          color: color,
+        ),
       ),
     );
   }
@@ -226,7 +269,7 @@ class _HeroParticlePainter extends CustomPainter {
       if (p.y < 0) p.y = size.height;
       if (p.y > size.height) p.y = 0;
 
-      paint.color = AppTheme.primaryBlue.withValues(alpha: p.alpha);
+      paint.color = MacOsTokens.systemBlue.withValues(alpha: p.alpha);
       canvas.drawCircle(Offset(p.x, p.y), p.radius, paint);
     }
   }

@@ -44,6 +44,146 @@ void main() {
       ]));
     });
 
+    test('backend parity actions: theme, camera link, workspace, panels', () {
+      final catalog = service.getAvailableActions().map((a) => a.id).toSet();
+      expect(
+        catalog,
+        containsAll([
+          'workbench.theme.set',
+          'workbench.theme.cycle',
+          'workbench.camera.link',
+          'workbench.view.new',
+          'workbench.workspace.new_window',
+          'workbench.workspace.restore',
+          'workbench.panel.toggle',
+          'workbench.file.open_native',
+          'workbench.file.open_bundle_native',
+          'workbench.screenshot.native',
+          'workbench.diagnostics.refresh',
+          'workbench.measure.display_mode',
+          'workbench.measure.remove',
+          'workbench.measure.toggle_fixed',
+          'workbench.camera.focus_point',
+          'workbench.gizmo.axis',
+        ]),
+      );
+
+      final themeRes = service.executeAction('workbench.theme.set', {'index': 2});
+      expect(themeRes['success'], isTrue);
+      expect(service.themeIndex, equals(2));
+
+      final cycleRes = service.executeAction('workbench.theme.cycle');
+      expect(cycleRes['success'], isTrue);
+      expect(service.themeIndex, equals(3));
+
+      final linkRes = service.executeAction('workbench.camera.link', {'linked': true});
+      expect(linkRes['success'], isTrue);
+      expect(service.cameraLinked, isTrue);
+
+      final unlinkRes = service.executeAction('workbench.camera.link');
+      expect(unlinkRes['success'], isTrue);
+      expect(service.cameraLinked, isFalse);
+
+      final newView = service.executeAction('workbench.view.new');
+      expect(newView['success'], isTrue);
+
+      final newWs = service.executeAction('workbench.workspace.new_window');
+      expect(newWs['success'], isTrue);
+
+      final panel = service.executeAction('workbench.panel.toggle', {
+        'panel': 'panel.performance',
+        'visible': true,
+      });
+      expect(panel['success'], isTrue);
+      expect(service.nativePanelVisible['panel.performance'], isTrue);
+
+      final restore = service.executeAction('workbench.workspace.restore');
+      expect(restore['success'], isTrue);
+      expect(service.layoutMode, equals(WorkbenchLayoutMode.standard));
+      expect(service.leftDockVisible, isTrue);
+      expect(service.rightDockVisible, isTrue);
+
+      final display = service.executeAction('workbench.measure.display_mode', {
+        'mode': '2d',
+      });
+      expect(display['success'], isTrue);
+      expect(service.measurementDisplayMode, equals('2d'));
+
+      final badDisplay = service.executeAction('workbench.measure.display_mode', {
+        'mode': 'xxx',
+      });
+      expect(badDisplay['success'], isFalse);
+
+      final focus = service.executeAction('workbench.camera.focus_point', {
+        'x': 10.0,
+        'y': 20.0,
+        'z': 30.0,
+      });
+      expect(focus['success'], isTrue);
+      expect(service.selectedPoint?.x, equals(10.0));
+
+      final gizmo = service.executeAction('workbench.gizmo.axis', {'axis': 4});
+      expect(gizmo['success'], isTrue);
+
+      final badGizmo = service.executeAction('workbench.gizmo.axis', {'axis': 9});
+      expect(badGizmo['success'], isFalse);
+
+      final openNative = service.executeAction('workbench.file.open_native');
+      expect(openNative['success'], isTrue);
+
+      final shotNative = service.executeAction('workbench.screenshot.native');
+      expect(shotNative['success'], isTrue);
+
+      final diag = service.executeAction('workbench.diagnostics.refresh');
+      expect(diag['success'], isTrue);
+    });
+
+    test('measure.calculate uses real measurement lines when present', () {
+      service.executeAction('workbench.measure.add_point', {
+        'x': 0.0,
+        'y': 0.0,
+        'z': 0.0,
+        'value': 1.0,
+      });
+      service.executeAction('workbench.measure.add_point', {
+        'x': 3.0,
+        'y': 4.0,
+        'z': 0.0,
+        'value': 2.0,
+      });
+      final res = service.executeAction('workbench.measure.calculate', {
+        'type': 'distance',
+      });
+      expect(res['success'], isTrue);
+      final data = Map<String, dynamic>.from(res['data'] as Map);
+      expect(data['source'], equals('measurement_lines'));
+      expect((data['distance_3d'] as num).toDouble(), closeTo(5.0, 0.001));
+      expect(data['line_count'], equals(1));
+
+      final removeRes = service.executeAction('workbench.measure.remove', {
+        'index': 0,
+      });
+      expect(removeRes['success'], isTrue);
+      expect(service.measurementLines, isEmpty);
+
+      final clear = service.executeAction('workbench.measure.clear');
+      expect(clear['success'], isTrue);
+    });
+
+    test('colormap and shape cover full backend option set', () {
+      final cm = service.executeAction('workbench.render.set_colormap', {
+        'colormap': 'rainbow256',
+      });
+      expect(cm['success'], isTrue);
+      expect(service.colormap.toLowerCase(), equals('rainbow256'));
+
+      final shape = service.executeAction('workbench.render.set_shape', {
+        'shape': 'diamond',
+      });
+      expect(shape['success'], isTrue);
+      expect(service.pointShape, equals('菱形'));
+    });
+
     test('workbench.camera.reset and set_view actions', () {
       // 1. Preset top view
       final topRes = service.executeAction('workbench.camera.set_view', {'preset': 'top'});

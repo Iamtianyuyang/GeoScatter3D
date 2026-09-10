@@ -23,9 +23,9 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all registered actions (15 welcome + 30 workbench)', () {
+    test('getAvailableActions returns all registered actions (15 welcome + 46 workbench)', () {
       final actions = service.getAvailableActions();
-      expect(actions.length, equals(45));
+      expect(actions.length, equals(61));
       final ids = actions.map((a) => a.id).toSet();
       expect(ids, containsAll([
         'welcome.quick_demo',
@@ -178,7 +178,7 @@ void main() {
       });
       final listRes = jsonDecode(service.executeJsonRpc(listRpc));
       expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(45));
+      expect((listRes['result'] as List).length, equals(61));
 
       final actionRpc = jsonEncode({
         'jsonrpc': '2.0',
@@ -523,6 +523,68 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton), findsOneWidget);
       await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogCloseButton));
       await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('WelcomePage drawer toggles smoothly and tab switching renders all 5 views', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WelcomePage(service: service),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 1. 验证默认处于「文件」视图
+      expect(find.text('新建工程'), findsOneWidget);
+
+      // 2. 切换至「最近项目」视图
+      await tester.tap(find.text('最近项目'));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('最近项目管理'), findsOneWidget);
+      expect(find.text('全部工程'), findsOneWidget);
+
+      // 3. 切换至「示例」视图并验证卡片与按钮
+      await tester.tap(find.text('示例'));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('示例工程库'), findsOneWidget);
+      expect(find.text('高斯散点示范包 (Gaussian Point Cloud Bundle)'), findsOneWidget);
+      expect(find.text('城市建筑激光雷达机载点云 (Urban LiDAR Survey)'), findsOneWidget);
+      expect(find.text('深层地质断层带结构散点 (Fault Line Structural Model)'), findsOneWidget);
+      expect(find.text('载入视口'), findsNWidgets(3));
+
+      // 4. 测试抽屉折叠 (快捷键 Ctrl+B)
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      // 验证处于折叠态且无任何布局溢出
+      expect(tester.takeException(), isNull);
+
+      // 5. 再次触发 Ctrl+B 重新展开抽屉
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // 6. 切换至「帮助」与「关于」
+      await tester.tap(find.byKey(WelcomeUiKeys.footerDocsButton));
+      await tester.pumpAndSettle();
+      expect(find.text('帮助与技术规范'), findsOneWidget);
+
+      await tester.tap(find.byKey(WelcomeUiKeys.footerAboutButton));
+      await tester.pumpAndSettle();
+      expect(find.text('GeoScatter3D Studio'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

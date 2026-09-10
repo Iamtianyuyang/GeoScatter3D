@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import '../models/dataset_model.dart';
@@ -113,10 +115,24 @@ class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
   NativeViewerControlClient? _nativeViewer;
+  // 单进程离屏引擎（优先路径；双进程 Viewer 为兼容回退）
+  Pointer<Void>? _engineHandle;
+  int _engineW = 0;
+  int _engineH = 0;
+  ui.Image? _nativeFrameImage;
   Timer? _nativeFrameTimer;
   bool _nativeFrameBusy = false;
   Future<void> _nativeCommandTail = Future<void>.value();
   Map<String, dynamic> _nativeSnapshot = const {};
+  // 相机增量合并：拖拽时高频 onPanUpdate 合成一帧再送原生。
+  double _camAccRotX = 0;
+  double _camAccRotY = 0;
+  double _camAccPanX = 0;
+  double _camAccPanY = 0;
+  double _camAccScroll = 0;
+  Timer? _camFlushTimer;
+  bool _nativeInteracting = false;
+  bool _engineRenderQueued = false;
   Map<String, dynamic> get nativeSnapshot => _nativeSnapshot;
   bool get isRegionComputing => _nativeSnapshot['region_computing'] == true;
   List<String> get nativeTileDetails => List<String>.from(
@@ -164,6 +180,40 @@ class GeoScatter3dService extends ChangeNotifier {
   // 面板停靠显隐状态
   bool _leftDockVisible = true;
   bool _rightDockVisible = true;
+
+  // 主题 / 相机联动 / 原生面板（对齐 C++ ComponentRegistry）
+  int _themeIndex = 0;
+  bool _cameraLinked = false;
+  final Map<String, bool> _nativePanelVisible = {
+    'panel.dataset': true,
+    'panel.render_settings': true,
+    'panel.performance': false,
+    'panel.navigation_map': true,
+    'panel.measurement': true,
+    'panel.region_stats': true,
+    'panel.tile_inspector': false,
+    'panel.lod_view': false,
+  };
+
+  static const List<String> kColormapOptions = [
+    'geo',
+    'viridis',
+    'jet',
+    'gray',
+    'thermal',
+    'coolwarm',
+    'turbo',
+    'plasma',
+    'rainbow256',
+  ];
+  static const List<String> kPointShapeOptions = ['方形', '圆形', '菱形', '三角形'];
+  static const List<String> kThemeNames = [
+    'Carbon Blue Dark',
+    'Carbon Blue Light',
+    'High Contrast',
+    'Midnight',
+    'Paper',
+  ];
 
   // 截图通知回调
   VoidCallback? onScreenshotRequested;
@@ -259,6 +309,20 @@ class GeoScatter3dService extends ChangeNotifier {
   String get colorAttribute => _colorAttribute;
   Color get viewportBackgroundColor => _viewportBackgroundColor;
 
+  int get themeIndex => _themeIndex;
+  String get themeName =>
+      kThemeNames[_themeIndex.clamp(0, kThemeNames.length - 1)];
+  bool get cameraLinked => _cameraLinked;
+  Map<String, bool> get nativePanelVisible =>
+      Map.unmodifiable(_nativePanelVisible);
+  List<String> get measurementLineSummaries => _measurementLines
+      .map(
+        (l) =>
+            '${l.id}: (${l.start.x.toStringAsFixed(2)}, ${l.start.y.toStringAsFixed(2)}, ${l.start.z.toStringAsFixed(2)}) → '
+            '(${l.end.x.toStringAsFixed(2)}, ${l.end.y.toStringAsFixed(2)}, ${l.end.z.toStringAsFixed(2)})',
+      )
+      .toList();
+
   // 动态性能与流式加载指标
   double _fps = 0.0;
   double _frameTimeMs = 0.0;
@@ -321,8 +385,13 @@ class GeoScatter3dService extends ChangeNotifier {
 
   bool get leftDockVisible => _leftDockVisible;
   bool get rightDockVisible => _rightDockVisible;
-  bool get isNativeRendererActive => _nativeViewer?.isConnected ?? false;
+  bool get isDualProcessNative => _nativeViewer?.isConnected ?? false;
+  bool get isEngineNative => _engineHandle != null;
+  bool get isNativeRendererActive => isEngineNative || isDualProcessNative;
   Uint8List? get nativeViewportPng => _nativeViewportPng;
+  ui.Image? get nativeFrameImage => _nativeFrameImage;
+  int get nativeFrameWidth => _engineW > 0 ? _engineW : (_nativeViewer?.lastCaptureWidth ?? 0);
+  int get nativeFrameHeight => _engineH > 0 ? _engineH : (_nativeViewer?.lastCaptureHeight ?? 0);
   String? get nativeViewerError => _nativeViewerError;
 
   void setPanning(bool panning) {
@@ -339,7 +408,14 @@ class GeoScatter3dService extends ChangeNotifier {
     _cameraPanX = 0.0;
     _cameraPanY = 0.0;
     _isPanning = false;
-    _queueNativeCommand('canvas.viewport', 'reset_camera');
+    final engine = _engineHandle;
+    if (engine != null) {
+      // 相机重置是轻量数学，在 UI isolate 直接调用；随后异步拉一帧。
+      _bindings?.engine_reset_camera_opt?.call(engine);
+      unawaited(_renderEngineFrame());
+    } else {
+      _queueNativeCommand('canvas.viewport', 'reset_camera');
+    }
     notifyListeners();
   }
 
@@ -402,7 +478,10 @@ class GeoScatter3dService extends ChangeNotifier {
         });
       }
     }
-    notifyListeners();
+    // 原生渲染模式下画面由截图驱动；Dart 相机状态无需每帧整树 rebuild。
+    if (!isNativeRendererActive || nativeAxis != null || preset != null) {
+      notifyListeners();
+    }
   }
 
   void setViewportOverlays({bool? mapAxis, bool? worldAxis, bool? crosshair}) {
@@ -413,9 +492,24 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void setPointShape(String shape) {
-    if (_pointShape != shape) {
-      _pointShape = shape;
-      final nativeShape = _nativePointShape(shape);
+    String normalized = shape;
+    switch (shape.toLowerCase()) {
+      case 'square':
+        normalized = '方形';
+        break;
+      case 'circle':
+        normalized = '圆形';
+        break;
+      case 'diamond':
+        normalized = '菱形';
+        break;
+      case 'triangle':
+        normalized = '三角形';
+        break;
+    }
+    if (_pointShape != normalized) {
+      _pointShape = normalized;
+      final nativeShape = _nativePointShape(normalized);
       if (nativeShape != null) {
         _queueNativeRenderSettings({'point_shape': nativeShape});
       }
@@ -451,8 +545,128 @@ class GeoScatter3dService extends ChangeNotifier {
   void setViewportBackgroundColor(Color color) {
     if (_viewportBackgroundColor != color) {
       _viewportBackgroundColor = color;
+      // 原生渲染背景由 clear_color 控制；此处在 Flutter 侧绘制，仅保持本地状态。
       notifyListeners();
     }
+  }
+
+  void setTheme(int index) {
+    final clamped = index.clamp(0, kThemeNames.length - 1);
+    if (_themeIndex != clamped) {
+      _themeIndex = clamped;
+      if (clamped < 4) {
+        _queueNativeCommand('menu.view.theme', 'set_value', {'value': clamped});
+      }
+      notifyListeners();
+    }
+  }
+
+  void cycleTheme() => setTheme((_themeIndex + 1) % kThemeNames.length);
+
+  void setCameraLinked(bool linked) {
+    if (_cameraLinked == linked) return;
+    _cameraLinked = linked;
+    _queueNativeCommand('toolbar.link_camera', 'click');
+    notifyListeners();
+  }
+
+  void toggleCameraLinked() => setCameraLinked(!_cameraLinked);
+
+  void requestNewView() {
+    _queueNativeCommand('menu.view.new_view', 'click');
+    notifyListeners();
+  }
+
+  void requestNewWorkspaceWindow() {
+    _queueNativeCommand('menu.window.new_workspace', 'click');
+    notifyListeners();
+  }
+
+  void restoreWorkspace() {
+    _leftDockVisible = true;
+    _rightDockVisible = true;
+    _layoutMode = WorkbenchLayoutMode.standard;
+    _showMapAxis = true;
+    _showWorldAxis = false;
+    _showCrosshair = true;
+    _isCommandPaletteOpen = false;
+    _isShortcutOverlayOpen = false;
+    _isPerformancePanelOpen = false;
+    _isTileInspectorOpen = false;
+    _queueNativeCommand('menu.view.restore_workspace', 'click');
+    notifyListeners();
+  }
+
+  void setNativePanelVisible(String panelId, bool visible) {
+    if (!_nativePanelVisible.containsKey(panelId)) return;
+    _nativePanelVisible[panelId] = visible;
+    _queueNativeCommand(panelId, 'set_visible', {'visible': visible});
+    notifyListeners();
+  }
+
+  void toggleNativePanel(String panelId) {
+    final current = _nativePanelVisible[panelId] ?? false;
+    setNativePanelVisible(panelId, !current);
+  }
+
+  void openViaNativeFileMenu() {
+    _queueNativeCommand('menu.file.open', 'click');
+    notifyListeners();
+  }
+
+  void openViaNativeBundleMenu() {
+    _queueNativeCommand('menu.file.open_bundle', 'click');
+    notifyListeners();
+  }
+
+  void requestNativeMenuScreenshot() {
+    _queueNativeCommand('menu.file.screenshot', 'click');
+    notifyListeners();
+  }
+
+  void rememberRecentProject(String path) {
+    if (_bindings == null || path.isEmpty) return;
+    final nativePath = path.toNativeUtf8();
+    try {
+      _bindings!.remember_recent_project(nativePath);
+      _refreshRecentProjects();
+    } catch (_) {
+    } finally {
+      calloc.free(nativePath);
+    }
+  }
+
+  /// 查询原生 status.bar / runtime.diagnostics，补齐状态栏只读信息。
+  Future<void> refreshNativeStatusBar() async {
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) return;
+    try {
+      final response = await client.request('get_state', {
+        'component': 'status.bar',
+      });
+      final result = response['result'];
+      if (result is Map<String, dynamic>) {
+        _nativeSnapshot = Map<String, dynamic>.from({
+          ..._nativeSnapshot,
+          'status_bar': result,
+        });
+        final cam = result['camera_position'];
+        if (cam is String && cam.isNotEmpty) {
+          _cameraCoordsString = cam;
+        }
+        final fps = result['fps'];
+        if (fps is num) _fps = fps.toDouble();
+        final visible = result['visible_points'];
+        if (visible is num) _visiblePoints = visible.toInt();
+        final loaded = result['loaded_tiles'];
+        if (loaded is num) _loadedTiles = loaded.toInt();
+        final pending = result['pending_tiles'];
+        if (pending is num) _pendingTiles = pending.toInt();
+        final gpuMem = result['gpu_memory_bytes'];
+        if (gpuMem is num) _gpuMemoryBytes = gpuMem.toInt();
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   void resetScalarRange() {
@@ -515,6 +729,64 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   Map<String, dynamic> calculateMeasurement([String type = 'distance']) {
+    // 优先使用真实测量线；无测量线时回退包围盒对角线（兼容离线演示）。
+    if (_measurementLines.isNotEmpty) {
+      final line = _measurementLines.last;
+      final dx = (line.end.x - line.start.x).abs();
+      final dy = (line.end.y - line.start.y).abs();
+      final dz = (line.end.z - line.start.z).abs();
+      final diagonal = math.sqrt(dx * dx + dy * dy + dz * dz);
+      final area2d = dx * dy;
+      final strike = (dx > 0 || dy > 0)
+          ? (math.atan2(dy, dx) * 180 / math.pi).abs()
+          : 0.0;
+      final dip = (diagonal > 0)
+          ? (math.asin((dz / diagonal).clamp(-1.0, 1.0)) * 180 / math.pi)
+          : 0.0;
+      String metric = '3d_distance';
+      double metricValue = diagonal;
+      if (type == 'area') {
+        metric = 'projected_area';
+        metricValue = area2d;
+      } else if (type == 'strike_dip') {
+        metric = 'strike_dip';
+        metricValue = dip;
+      }
+      return {
+        'type': type,
+        'source': 'measurement_lines',
+        'line_count': _measurementLines.length,
+        'line_id': line.id,
+        'metric': metric,
+        'metric_value': metricValue,
+        'dx': dx,
+        'dy': dy,
+        'dz': dz,
+        'distance_3d': diagonal,
+        'distance_2d': math.sqrt(dx * dx + dy * dy),
+        'area_2d': area2d,
+        'strike': strike,
+        'dip': dip,
+        'dip_direction': (strike + 90.0) % 360.0,
+        'start': [line.start.x, line.start.y, line.start.z],
+        'end': [line.end.x, line.end.y, line.end.z],
+      };
+    }
+    if (_pendingMeasureStart != null) {
+      return {
+        'type': type,
+        'source': 'pending_start',
+        'line_count': 0,
+        'metric': 'awaiting_end_point',
+        'metric_value': 0.0,
+        'start': [
+          _pendingMeasureStart!.x,
+          _pendingMeasureStart!.y,
+          _pendingMeasureStart!.z,
+        ],
+      };
+    }
+
     final bmin = _summary.bboxMin;
     final bmax = _summary.bboxMax;
     final dx = (bmax[0] - bmin[0]).abs();
@@ -539,6 +811,8 @@ class GeoScatter3dService extends ChangeNotifier {
 
     return {
       'type': type,
+      'source': 'dataset_bbox',
+      'line_count': 0,
       'metric': metric,
       'metric_value': metricValue,
       'dx': dx,
@@ -561,9 +835,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
-  /// 启动原生 ViewerApp，并通过其控制面取得真实 Vulkan 渲染帧。
-  ///
-  /// Flutter 仍负责界面组合；LOD、tile、GPU pick 和渲染生命周期由原生进程持有。
+  /// 启动原生渲染：优先单进程 engine（低延迟 RGBA），失败则回退双进程 Viewer。
   Future<bool> startNativeRenderer() async {
     final datasetPath = _loadedDatasetPath;
     if (datasetPath == null || datasetPath.isEmpty) {
@@ -573,6 +845,71 @@ class GeoScatter3dService extends ChangeNotifier {
     }
 
     await stopNativeRenderer();
+    if (_bindings?.hasEngineApi == true) {
+      final ok = await _startEngineRenderer(datasetPath);
+      if (ok) return true;
+      // engine 失败继续尝试双进程
+    }
+    return _startDualProcessRenderer(datasetPath);
+  }
+
+  Future<bool> _startEngineRenderer(String datasetPath) async {
+    final outer = _bindings;
+    if (outer == null ||
+        outer.engine_create_simple_opt == null ||
+        outer.engine_load_dataset_opt == null ||
+        outer.engine_render_rgba_opt == null ||
+        outer.engine_camera_input_opt == null) {
+      return false;
+    }
+    final w = (_lastSyncedNativeW ?? 1280).clamp(64, 4096);
+    final h = (_lastSyncedNativeH ?? 720).clamp(64, 4096);
+    try {
+      // create/load 可能阻塞；Isolate 内重新打开库，避免跨 isolate 捕获 FFI 对象。
+      final addr = await Isolate.run(() {
+        final b = GeoScatter3dBindings.openLibrary();
+        final create = b.engine_create_simple_opt;
+        final load = b.engine_load_dataset_opt;
+        if (create == null || load == null) return 0;
+        final e = create(w, h);
+        if (e.address == 0) return 0;
+        final pathPtr = datasetPath.toNativeUtf8();
+        try {
+          final rc = load(e, pathPtr);
+          if (rc != 0) {
+            b.engine_destroy_opt?.call(e);
+            return 0;
+          }
+        } finally {
+          calloc.free(pathPtr);
+        }
+        b.engine_reset_camera_opt?.call(e);
+        return e.address;
+      });
+      if (addr == 0) {
+        final err = outer.engine_last_global_error_opt
+            ?.call()
+            .toDartString();
+        _nativeViewerError = '单进程引擎启动失败: ${err ?? 'unknown'}';
+        return false;
+      }
+      _engineHandle = Pointer<Void>.fromAddress(addr);
+      _engineW = w;
+      _engineH = h;
+      _nativeViewerError = null;
+      _nativeSnapshot = {'ready': true, 'point_count': _summary.pointCount};
+      await _renderEngineFrame();
+      _restartNativeFrameTimer();
+      notifyListeners();
+      return _nativeFrameImage != null;
+    } catch (error) {
+      _nativeViewerError = '单进程引擎异常: $error';
+      _engineHandle = null;
+      return false;
+    }
+  }
+
+  Future<bool> _startDualProcessRenderer(String datasetPath) async {
     final executable = _resolveNativeViewerExecutable();
     if (executable == null) {
       _nativeViewerError = '未找到 GeoScatter3D.exe';
@@ -594,15 +931,13 @@ class GeoScatter3dService extends ChangeNotifier {
         return false;
       }
       _nativeViewerError = null;
+      // 确保相机取景到数据包围盒，避免首帧空场。
+      await client.executeComponent('canvas.viewport', 'reset_camera', const {});
       await refreshNativeViewport();
       if (_nativeViewportPng == null || _nativeSnapshot['ready'] != true) {
         throw StateError(_nativeViewerError ?? '原生视口尚未就绪');
       }
-      _nativeFrameTimer = Timer.periodic(const Duration(milliseconds: 100), (
-        _,
-      ) {
-        unawaited(refreshNativeViewport());
-      });
+      _restartNativeFrameTimer();
       return true;
     } catch (error) {
       await client.stop(force: true);
@@ -613,19 +948,131 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshNativeViewport() async {
+  /// 异步渲染一帧 engine RGBA → ui.Image（不阻塞 UI 超过必要拷贝）。
+  Future<void> _renderEngineFrame() async {
+    final e = _engineHandle;
+    if (e == null || _nativeFrameBusy) return;
+    _nativeFrameBusy = true;
+    final addr = e.address;
+    final w = _engineW;
+    final h = _engineH;
+    try {
+      final result = await Isolate.run(() {
+        final b = GeoScatter3dBindings.openLibrary();
+        final render = b.engine_render_rgba_opt;
+        if (render == null) return <Object>['error', 'render missing'];
+        final eng = Pointer<Void>.fromAddress(addr);
+        final maxBytes = w * h * 4;
+        final buf = calloc<Uint8>(maxBytes);
+        final outW = calloc<Uint32>();
+        final outH = calloc<Uint32>();
+        try {
+          final rc = render(eng, buf, maxBytes, outW, outH);
+          if (rc != 0) {
+            final err = b.engine_last_error_opt?.call(eng).toDartString();
+            return <Object>['error', err ?? 'render rc=$rc'];
+          }
+          final ow = outW.value;
+          final oh = outH.value;
+          final bytes = Uint8List.fromList(
+            buf.asTypedList(ow * oh * 4),
+          );
+          return <Object>['ok', ow, oh, bytes];
+        } finally {
+          calloc.free(buf);
+          calloc.free(outW);
+          calloc.free(outH);
+        }
+      });
+      if (!identical(e, _engineHandle)) return;
+      if (result[0] == 'error') {
+        _nativeViewerError = result[1].toString();
+        return;
+      }
+      final ow = result[1] as int;
+      final oh = result[2] as int;
+      final bytes = result[3] as Uint8List;
+      _engineW = ow;
+      _engineH = oh;
+      final image = await _decodeRgbaImage(bytes, ow, oh);
+      if (!identical(e, _engineHandle)) {
+        image.dispose();
+        return;
+      }
+      _nativeFrameImage?.dispose();
+      _nativeFrameImage = image;
+      _nativeViewerError = null;
+      notifyListeners();
+    } catch (error) {
+      if (identical(e, _engineHandle)) {
+        _nativeViewerError = 'engine 渲染失败: $error';
+      }
+    } finally {
+      _nativeFrameBusy = false;
+    }
+  }
+
+  static Future<ui.Image> _decodeRgbaImage(
+    Uint8List rgba,
+    int width,
+    int height,
+  ) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      rgba,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
+    );
+    return completer.future;
+  }
+
+  void _restartNativeFrameTimer() {
+    _nativeFrameTimer?.cancel();
+    // engine：空闲低频即可，交互由 camera flush 驱动；双进程交互 33ms。
+    final interval = isEngineNative
+        ? (_nativeInteracting
+              ? const Duration(milliseconds: 16)
+              : const Duration(milliseconds: 33))
+        : (_nativeInteracting
+              ? const Duration(milliseconds: 33)
+              : const Duration(milliseconds: 120));
+    _nativeFrameTimer = Timer.periodic(interval, (_) {
+      if (isEngineNative) {
+        if (!_nativeInteracting) unawaited(_renderEngineFrame());
+        return;
+      }
+      unawaited(refreshNativeViewport(includeState: !_nativeInteracting));
+    });
+  }
+
+  Future<void> refreshNativeViewport({bool includeState = true}) async {
+    if (isEngineNative) {
+      await _renderEngineFrame();
+      return;
+    }
     final client = _nativeViewer;
     if (client == null || !client.isConnected || _nativeFrameBusy) return;
+    // 拖拽中让相机合并帧优先，避免旧截图覆盖新视角。
+    if (_nativeInteracting && (_camFlushTimer != null || _camAccRotX != 0 || _camAccRotY != 0 || _camAccPanX != 0 || _camAccPanY != 0 || _camAccScroll != 0)) {
+      return;
+    }
     _nativeFrameBusy = true;
     try {
       final png = await client.capturePng();
-      final state = await client.request('get_state', {
-        'component': 'runtime.pick',
-      });
       if (!identical(client, _nativeViewer)) return;
       _nativeViewportPng = png;
       _nativeViewerError = null;
-      applyNativeSnapshot(Map<String, dynamic>.from(state['result'] as Map));
+      if (includeState) {
+        final state = await client.request('get_state', {
+          'component': 'runtime.pick',
+        });
+        if (!identical(client, _nativeViewer)) return;
+        applyNativeSnapshot(Map<String, dynamic>.from(state['result'] as Map));
+      } else {
+        notifyListeners();
+      }
     } catch (error) {
       if (identical(client, _nativeViewer)) {
         _nativeViewerError = '读取原生渲染帧失败: $error';
@@ -633,7 +1080,7 @@ class GeoScatter3dService extends ChangeNotifier {
     } finally {
       _nativeFrameBusy = false;
     }
-    notifyListeners();
+    if (includeState) notifyListeners();
   }
 
   /// 原生主线程产生的纯数据快照统一归并到状态中枢。
@@ -686,10 +1133,26 @@ class GeoScatter3dService extends ChangeNotifier {
   Future<void> stopNativeRenderer() async {
     _nativeFrameTimer?.cancel();
     _nativeFrameTimer = null;
+    _camFlushTimer?.cancel();
+    _camFlushTimer = null;
+    _pickFlushTimer?.cancel();
+    _pickFlushTimer = null;
+    _pendingPickParams = null;
+    _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
+    _nativeInteracting = false;
+    final engine = _engineHandle;
+    _engineHandle = null;
+    _nativeFrameImage?.dispose();
+    _nativeFrameImage = null;
     final client = _nativeViewer;
     _nativeViewer = null;
     _nativeViewportPng = null;
     _nativeSnapshot = const {};
+    if (engine != null) {
+      await Isolate.run(() {
+        _bindings?.engine_destroy_opt?.call(Pointer<Void>.fromAddress(engine.address));
+      });
+    }
     if (client != null) {
       await client.stop();
     }
@@ -701,12 +1164,227 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void _queueNativeCamera(Map<String, dynamic> params) {
-    final hasMovement = params.values.any(
-      (value) => value is num && value != 0.0,
-    );
-    if (hasMovement) {
-      _queueNativeCommand('runtime.camera', 'input', params);
+    final rx = (params['rotate_delta_x'] as num?)?.toDouble() ?? 0;
+    final ry = (params['rotate_delta_y'] as num?)?.toDouble() ?? 0;
+    final px = (params['pan_delta_x'] as num?)?.toDouble() ?? 0;
+    final py = (params['pan_delta_y'] as num?)?.toDouble() ?? 0;
+    final sy = (params['scroll_y'] as num?)?.toDouble() ?? 0;
+    if (rx == 0 && ry == 0 && px == 0 && py == 0 && sy == 0) return;
+
+    // 单进程：手势事件立刻改相机姿态（跟手），渲染异步跟上。
+    // 不能再走「合并 → 等上一帧渲染 → 再 camera_input」的串行队列。
+    final engine = _engineHandle;
+    if (engine != null) {
+      _setNativeInteracting(true);
+      final rc = _bindings?.engine_camera_input_opt?.call(
+        engine,
+        rx,
+        ry,
+        px,
+        py,
+        sy,
+      );
+      if (rc != null && rc != 0) {
+        _nativeViewerError = 'engine camera_input rc=$rc';
+      }
+      _scheduleEngineRender();
+      return;
     }
+
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) return;
+    _camAccRotX += rx;
+    _camAccRotY += ry;
+    _camAccPanX += px;
+    _camAccPanY += py;
+    _camAccScroll += sy;
+    _setNativeInteracting(true);
+    _camFlushTimer ??= Timer(
+      const Duration(milliseconds: 16),
+      _flushNativeCamera,
+    );
+  }
+
+  void _setNativeInteracting(bool value) {
+    if (_nativeInteracting == value) return;
+    _nativeInteracting = value;
+    _restartNativeFrameTimer();
+  }
+
+  /// engine 路径：同进程 camera_input + render，无 RPC/PNG。
+  Future<void> _flushEngineCamera(
+    double rotX,
+    double rotY,
+    double panX,
+    double panY,
+    double scroll,
+  ) async {
+    final e = _engineHandle;
+    if (e == null) return;
+    if (_nativeFrameBusy) return;
+    _nativeFrameBusy = true;
+    final addr = e.address;
+    final w = _engineW;
+    final h = _engineH;
+    try {
+      final result = await Isolate.run(() {
+        final b = GeoScatter3dBindings.openLibrary();
+        final cam = b.engine_camera_input_opt;
+        final render = b.engine_render_rgba_opt;
+        if (cam == null || render == null) {
+          return <Object>['error', 'engine camera/render missing'];
+        }
+        final eng = Pointer<Void>.fromAddress(addr);
+        final rc = cam(eng, rotX, rotY, panX, panY, scroll);
+        if (rc != 0) {
+          final err = b.engine_last_error_opt?.call(eng).toDartString();
+          return <Object>['error', err ?? 'camera_input rc=$rc'];
+        }
+        final maxBytes = w * h * 4;
+        final buf = calloc<Uint8>(maxBytes);
+        final outW = calloc<Uint32>();
+        final outH = calloc<Uint32>();
+        try {
+          final rrc = render(eng, buf, maxBytes, outW, outH);
+          if (rrc != 0) {
+            return <Object>['error', 'render rc=$rrc'];
+          }
+          final ow = outW.value;
+          final oh = outH.value;
+          return <Object>['ok', ow, oh, Uint8List.fromList(buf.asTypedList(ow * oh * 4))];
+        } finally {
+          calloc.free(buf);
+          calloc.free(outW);
+          calloc.free(outH);
+        }
+      });
+      if (!identical(e, _engineHandle)) return;
+      if (result[0] == 'error') {
+        _nativeViewerError = result[1].toString();
+        notifyListeners();
+        return;
+      }
+      final ow = result[1] as int;
+      final oh = result[2] as int;
+      final bytes = result[3] as Uint8List;
+      if (ow != _engineW || oh != _engineH) {
+        _engineW = ow;
+        _engineH = oh;
+      }
+      final image = await _decodeRgbaImage(bytes, ow, oh);
+      if (!identical(e, _engineHandle)) {
+        image.dispose();
+        return;
+      }
+      _nativeFrameImage?.dispose();
+      _nativeFrameImage = image;
+      _nativeViewerError = null;
+      notifyListeners();
+    } catch (error) {
+      if (identical(e, _engineHandle)) {
+        _nativeViewerError = 'engine 相机失败: $error';
+        notifyListeners();
+      }
+    } finally {
+      _nativeFrameBusy = false;
+    }
+  }
+
+  /// 相机已同步改完，只需排队出帧；在途渲染结束后补最新姿态。
+  void _scheduleEngineRender() {
+    if (_engineHandle == null) return;
+    if (_nativeFrameBusy) {
+      _engineRenderQueued = true;
+      return;
+    }
+    unawaited(_renderEngineFrame().then((_) {
+      if (_engineRenderQueued && _engineHandle != null) {
+        _engineRenderQueued = false;
+        _scheduleEngineRender();
+      }
+    }));
+  }
+
+  void _flushNativeCamera() {
+    _camFlushTimer = null;
+    final engine = _engineHandle;
+    if (engine != null) {
+      // engine 路径已在 _queueNativeCamera 同步应用，这里只兜底双进程。
+      _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
+      return;
+    }
+    final client = _nativeViewer;
+    if (client == null || !client.isConnected) {
+      _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
+      _setNativeInteracting(false);
+      return;
+    }
+    final rotX = _camAccRotX;
+    final rotY = _camAccRotY;
+    final panX = _camAccPanX;
+    final panY = _camAccPanY;
+    final scroll = _camAccScroll;
+    _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
+    _nativeCommandTail = _nativeCommandTail.then((_) async {
+      final c = _nativeViewer;
+      if (c == null || !identical(c, client)) return;
+      if (_nativeFrameBusy) return;
+      _nativeFrameBusy = true;
+      try {
+        final png = await c.cameraInputAndCapture(
+          rotateX: rotX,
+          rotateY: rotY,
+          panX: panX,
+          panY: panY,
+          scrollY: scroll,
+        );
+        if (!identical(c, _nativeViewer)) return;
+        _nativeViewportPng = png;
+        _nativeViewerError = null;
+        notifyListeners();
+      } catch (error) {
+        if (identical(c, _nativeViewer)) {
+          _nativeViewerError = '原生相机输入失败: $error';
+          notifyListeners();
+        }
+      } finally {
+        _nativeFrameBusy = false;
+      }
+    });
+    // 松手检测：若 120ms 内无新增量则退出交互态。
+    Timer(const Duration(milliseconds: 120), () {
+      if (_camFlushTimer == null &&
+          _camAccRotX == 0 &&
+          _camAccRotY == 0 &&
+          _camAccPanX == 0 &&
+          _camAccPanY == 0 &&
+          _camAccScroll == 0) {
+        _setNativeInteracting(false);
+      }
+    });
+  }
+
+  int? _lastSyncedNativeW;
+  int? _lastSyncedNativeH;
+
+  /// 将 Flutter 视口像素尺寸同步到原生离屏分辨率，避免前后端画布不一致。
+  void syncNativeViewportSize(int width, int height) {
+    if (width < 16 || height < 16) return;
+    if (_lastSyncedNativeW == width && _lastSyncedNativeH == height) return;
+    _lastSyncedNativeW = width;
+    _lastSyncedNativeH = height;
+    final engine = _engineHandle;
+    if (engine != null) {
+      _engineW = width;
+      _engineH = height;
+      _bindings?.engine_resize_opt?.call(engine, width, height);
+      unawaited(_renderEngineFrame());
+      return;
+    }
+    _queueNativeCommand('runtime.viewport', 'resize', {
+      'width': width,
+      'height': height,
+    });
   }
 
   void queueNativePick(
@@ -750,6 +1428,48 @@ class GeoScatter3dService extends ChangeNotifier {
     _queueNativeCommand('runtime.pick', 'input', params);
   }
 
+  /// 高频 hover 只保留最后一帧，避免每次 onHover 都打一发控制面。
+  Timer? _pickFlushTimer;
+  Map<String, dynamic>? _pendingPickParams;
+
+  void queueNativePickThrottled(
+    String kind, {
+    required double localX,
+    required double localY,
+    required double displayWidth,
+    required double displayHeight,
+  }) {
+    final client = _nativeViewer;
+    if (client == null ||
+        !client.isConnected ||
+        displayWidth <= 0 ||
+        displayHeight <= 0) {
+      return;
+    }
+    final sourceWidth = client.lastCaptureWidth;
+    final sourceHeight = client.lastCaptureHeight;
+    if (sourceWidth <= 0 || sourceHeight <= 0) return;
+    final scale = math.min(
+      displayWidth / sourceWidth,
+      displayHeight / sourceHeight,
+    );
+    final offsetX = (displayWidth - sourceWidth * scale) * 0.5;
+    final offsetY = (displayHeight - sourceHeight * scale) * 0.5;
+    _pendingPickParams = {
+      'kind': kind,
+      'screen_x': (localX - offsetX) / scale,
+      'screen_y': (localY - offsetY) / scale,
+    };
+    _pickFlushTimer ??= Timer(const Duration(milliseconds: 40), () {
+      _pickFlushTimer = null;
+      final params = _pendingPickParams;
+      _pendingPickParams = null;
+      if (params != null) {
+        _queueNativeCommand('runtime.pick', 'input', params, false);
+      }
+    });
+  }
+
   void _synchronizeNativeMeasurementMode(bool enabled) {
     final client = _nativeViewer;
     if (client == null || !client.isConnected) return;
@@ -769,11 +1489,7 @@ class GeoScatter3dService extends ChangeNotifier {
           ? result['measure_mode_active'] as bool?
           : null;
       if (nativeEnabled != enabled) {
-        await client.request('execute', {
-          'component': 'toolbar.measure',
-          'command': 'click',
-          'params': const {},
-        });
+        await client.executeComponent('toolbar.measure', 'click', const {});
         if (identical(client, _nativeViewer)) {
           await refreshNativeViewport();
         }
@@ -790,30 +1506,32 @@ class GeoScatter3dService extends ChangeNotifier {
     String component,
     String command, [
     Map<String, dynamic> params = const {},
+    bool refresh = true,
   ]) {
     final client = _nativeViewer;
     if (client == null || !client.isConnected) return;
     _nativeCommandTail = _nativeCommandTail.then((_) async {
-      if (identical(client, _nativeViewer)) {
-        await _sendNativeCommand(client, component, command, params);
-      }
+      if (!identical(client, _nativeViewer)) return;
+      await _sendNativeCommand(client, component, command, params, refresh: refresh);
     });
   }
 
+  /// 高频路径可传 refresh:false，由帧定时器统一拉图。
   Future<void> _sendNativeCommand(
     NativeViewerControlClient client,
     String component,
     String command,
-    Map<String, dynamic> params,
-  ) async {
+    Map<String, dynamic> params, {
+    bool refresh = true,
+  }) async {
     try {
-      await client.request('execute', {
-        'component': component,
-        'command': command,
-        'params': params,
-      });
-      if (identical(client, _nativeViewer)) {
-        await refreshNativeViewport();
+      // executeComponent 内部经 Isolate 执行阻塞 FFI，不卡 UI。
+      final resp = await client.executeComponent(component, command, params);
+      if (resp['error'] != null) {
+        throw StateError(resp['error'].toString());
+      }
+      if (refresh && identical(client, _nativeViewer)) {
+        await refreshNativeViewport(includeState: true);
       }
     } catch (error) {
       if (identical(client, _nativeViewer)) {
@@ -821,6 +1539,195 @@ class GeoScatter3dService extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// 返回 true 表示类型化 FFI 已成功处理（rc==0）。
+  /// 符号缺失或返回非 0 时返回 false，由调用方回退 RPC。
+  bool _tryTypedFfiCommand(
+    String component,
+    String command,
+    Map<String, dynamic> params,
+  ) {
+    final b = _bindings;
+    if (b == null) return false;
+    final jsonParams = jsonEncode(params);
+    try {
+      switch (component) {
+        case 'runtime.render_settings':
+          if (command == 'set') {
+            final fn = b.set_render_settings_json_opt;
+            if (fn == null) return false;
+            final ptr = jsonParams.toNativeUtf8();
+            try {
+              return fn(ptr) == 0;
+            } finally {
+              calloc.free(ptr);
+            }
+          }
+          return false;
+        case 'runtime.camera':
+          if (command == 'input') {
+            final fn = b.camera_input_opt;
+            if (fn == null) return false;
+            final rx = (params['rotate_delta_x'] as num?)?.toDouble() ?? 0;
+            final ry = (params['rotate_delta_y'] as num?)?.toDouble() ?? 0;
+            final px = (params['pan_delta_x'] as num?)?.toDouble() ?? 0;
+            final py = (params['pan_delta_y'] as num?)?.toDouble() ?? 0;
+            final sy = (params['scroll_y'] as num?)?.toDouble() ?? 0;
+            return fn(rx, ry, px, py, sy) == 0;
+          }
+          return false;
+        case 'runtime.pick':
+          if (command == 'input') {
+            final kind = params['kind'] as String?;
+            if (kind == null) return false;
+            if (kind == 'measurement') {
+              final op = params['operation'] as String?;
+              final opFn = b.measurement_op_opt;
+              if (op == null || opFn == null) return false;
+              final rest = Map<String, dynamic>.from(params)
+                ..remove('kind')
+                ..remove('operation');
+              final restPtr = jsonEncode(rest).toNativeUtf8();
+              final opPtr = op.toNativeUtf8();
+              try {
+                return opFn(opPtr, restPtr) == 0;
+              } finally {
+                calloc.free(opPtr);
+                calloc.free(restPtr);
+              }
+            }
+            final fn = b.pick_input_opt;
+            if (fn == null) return false;
+            final rest = Map<String, dynamic>.from(params)..remove('kind');
+            final kindPtr = kind.toNativeUtf8();
+            final restPtr = jsonEncode(rest).toNativeUtf8();
+            try {
+              return fn(kindPtr, restPtr) == 0;
+            } finally {
+              calloc.free(kindPtr);
+              calloc.free(restPtr);
+            }
+          }
+          return false;
+        case 'runtime.diagnostics':
+          if (command == 'clear_cache') {
+            final fn = b.clear_tile_cache_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'canvas.viewport':
+          if (command == 'reset_camera') {
+            final fn = b.reset_camera_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'gizmo.navigation':
+          if (command == 'click') {
+            final fn = b.gizmo_axis_opt;
+            final axis = (params['axis'] as num?)?.toInt();
+            if (fn == null || axis == null) return false;
+            return fn(axis) == 0;
+          }
+          return false;
+        case 'menu.view.theme':
+          if (command == 'set_value') {
+            final fn = b.set_theme_opt;
+            final value = (params['value'] as num?)?.toInt();
+            if (fn == null || value == null) return false;
+            return fn(value) == 0;
+          }
+          if (command == 'click') {
+            final fn = b.cycle_theme_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'toolbar.link_camera':
+          if (command == 'click') {
+            final fn = b.set_camera_linked_opt;
+            if (fn == null) return false;
+            return fn(_cameraLinked ? 1 : 0) == 0;
+          }
+          return false;
+        case 'menu.view.new_view':
+          if (command == 'click') {
+            final fn = b.request_new_view_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'menu.window.new_workspace':
+          if (command == 'click') {
+            final fn = b.request_new_workspace_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'menu.view.restore_workspace':
+          if (command == 'click') {
+            final fn = b.restore_workspace_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'menu.file.open':
+          if (command == 'click') {
+            final fn = b.open_native_file_dialog_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'menu.file.open_bundle':
+          if (command == 'click') {
+            final fn = b.open_native_bundle_dialog_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        case 'menu.file.screenshot':
+          if (command == 'click') {
+            final fn = b.request_native_screenshot_opt;
+            if (fn == null) return false;
+            return fn() == 0;
+          }
+          return false;
+        default:
+          if (component.startsWith('panel.') && command == 'set_visible') {
+            final fn = b.set_panel_visible_opt;
+            final visible = params['visible'] == true;
+            if (fn == null) return false;
+            final idPtr = component.toNativeUtf8();
+            try {
+              return fn(idPtr, visible ? 1 : 0) == 0;
+            } finally {
+              calloc.free(idPtr);
+            }
+          }
+          return false;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _readFfiCstr(Pointer<Utf8> ptr) {
+    if (ptr == nullptr) return '';
+    return ptr.toDartString();
+  }
+
+  Map<String, dynamic> _readFfiJsonObject(Pointer<Utf8> Function()? getter) {
+    if (getter == null) return const {};
+    try {
+      final raw = _readFfiCstr(getter());
+      if (raw.isEmpty) return const {};
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return const {};
   }
 
   static int? _nativeAxisForPreset(String? preset) {
@@ -856,11 +1763,15 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   String? _resolveNativeViewerExecutable() {
-    final candidates = <String>[
-      if (runtimeDirectory != null) '$runtimeDirectory/GeoScatter3D.exe',
-      '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}GeoScatter3D.exe',
-      '${Directory.current.path}${Platform.pathSeparator}GeoScatter3D.exe',
-      '${resolveRepoRoot()}${Platform.pathSeparator}tmp${Platform.pathSeparator}build-win${Platform.pathSeparator}Release${Platform.pathSeparator}GeoScatter3D.exe',
+    final sep = Platform.pathSeparator;
+    final root = resolveRepoRoot();
+    final candidates = [
+      if (runtimeDirectory != null) '$runtimeDirectory${sep}GeoScatter3D.exe',
+      // 优先完整原生运行时（含 config/shaders/exe/dll）
+      '$root${sep}tmp${sep}build-win${sep}Release${sep}GeoScatter3D.exe',
+      '$root${sep}tmp${sep}flutter-native${sep}Release${sep}GeoScatter3D.exe',
+      '${File(Platform.resolvedExecutable).parent.path}${sep}GeoScatter3D.exe',
+      '${Directory.current.path}${sep}GeoScatter3D.exe',
     ];
     for (final candidate in candidates) {
       if (File(candidate).existsSync()) return candidate;
@@ -1130,10 +2041,12 @@ class GeoScatter3dService extends ChangeNotifier {
 
   void removeMeasurementLine(String id) {
     if (isNativeRendererActive) {
+      final index = int.tryParse(id) ?? _measurementLines.indexWhere((e) => e.id == id);
+      if (index < 0) return;
       _queueNativeCommand('runtime.pick', 'input', {
         'kind': 'measurement',
         'operation': 'remove',
-        'index': int.parse(id),
+        'index': index,
       });
       return;
     }
@@ -1156,10 +2069,12 @@ class GeoScatter3dService extends ChangeNotifier {
 
   void toggleMeasurementLineFixed(String id) {
     if (isNativeRendererActive) {
+      final index = int.tryParse(id) ?? _measurementLines.indexWhere((e) => e.id == id);
+      if (index < 0) return;
       _queueNativeCommand('runtime.pick', 'input', {
         'kind': 'measurement',
         'operation': 'toggle_fixed',
-        'index': int.parse(id),
+        'index': index,
       });
       return;
     }
@@ -1481,7 +2396,9 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   /// 由运行中的 ViewerApp 从源 GS3D 全量导出，并等待原生任务完成。
-  /// 未连接原生查看器时，保留 FFI 的全量导出作为兼容路径。
+  ///
+  /// 使用异步 execute + get_state 轮询，**不在 UI isolate 上调用**
+  /// `export_via_viewer`（其内部可阻塞数分钟）。
   Future<bool> exportPointCloudThroughNativeViewer(
     String outputPath, {
     String format = 'ply',
@@ -1492,28 +2409,34 @@ class GeoScatter3dService extends ChangeNotifier {
     }
 
     try {
-      final response = await client.request('execute', {
-        'component': 'runtime.dataset_export',
-        'command': 'export',
-        'params': {'output_path': outputPath, 'format': format},
+      await client.executeComponent('runtime.dataset_export', 'export', {
+        'output_path': outputPath,
+        'format': format,
       });
-      final result = response['result'];
-      final requestId = result is Map<String, dynamic>
-          ? (result['request_id'] as num?)?.toInt()
+      final stateResponse = await client.request('get_state', {
+        'component': 'runtime.dataset_export',
+      });
+      final state = stateResponse['result'];
+      final requestId = state is Map<String, dynamic>
+          ? (state['request_id'] as num?)?.toInt()
           : null;
       if (requestId == null) return false;
 
       final deadline = DateTime.now().add(const Duration(minutes: 2));
       while (DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 150));
-        final stateResponse = await client.request('get_state', {
+        final poll = await client.request('get_state', {
           'component': 'runtime.dataset_export',
         });
-        final state = stateResponse['result'];
-        if (state is! Map<String, dynamic>) continue;
-        final completed = (state['completed_request_id'] as num?)?.toInt();
+        final s = poll['result'];
+        if (s is! Map<String, dynamic>) continue;
+        final completed = (s['completed_request_id'] as num?)?.toInt();
         if (completed != requestId) continue;
-        return state['success'] == true;
+        return s['success'] == true;
+      }
+      if (identical(client, _nativeViewer)) {
+        _nativeViewerError = '原生完整数据导出超时';
+        notifyListeners();
       }
       return false;
     } catch (error) {
@@ -1958,6 +2881,10 @@ class GeoScatter3dService extends ChangeNotifier {
         _updatePoints();
         _refreshRecentProjects();
         _isWorkbenchActive = activate;
+        try {
+          _bindings!.remember_recent_project(nativePath);
+          _refreshRecentProjects();
+        } catch (_) {}
         notifyListeners();
         if (activate &&
             (wasNativeRendererActive ||
@@ -2680,6 +3607,169 @@ class GeoScatter3dService extends ChangeNotifier {
         description: '释放当前已加载的瓦片内存并重置缓存命中率',
         category: 'workbench',
       ),
+      UiActionDescriptor(
+        id: 'workbench.theme.set',
+        name: '切换界面主题',
+        description: '切换 UI 主题（0-4，对齐原生 menu.view.theme）',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'minimum': 0, 'maximum': 4},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.theme.cycle',
+        name: '循环切换主题',
+        description: '按顺序切换到下一主题',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.camera.link',
+        name: '切换相机联动',
+        description: '开启或关闭多视口相机联动 (toolbar.link_camera)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'linked': {'type': 'boolean', 'description': '联动开关 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.view.new',
+        name: '新建原生视图',
+        description: '请求原生 Viewer 新建视口 (menu.view.new_view)',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.workspace.new_window',
+        name: '新建工作窗口',
+        description: '请求原生 Viewer 新建工作区窗口 (menu.window.new_workspace)',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.workspace.restore',
+        name: '恢复默认工作区',
+        description: '重置布局、停靠面板与 overlay 到默认状态',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.panel.toggle',
+        name: '切换原生面板显隐',
+        description: '切换 ComponentRegistry 中 8 张原生面板的显隐状态',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'panel': {
+              'type': 'string',
+              'description':
+                  '面板 ID: panel.dataset / render_settings / performance / navigation_map / measurement / region_stats / tile_inspector / lod_view',
+            },
+            'visible': {'type': 'boolean'},
+          },
+          'required': ['panel'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.file.open_native',
+        name: '原生打开数据文件',
+        description: '触发原生 menu.file.open 系统文件对话框',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.file.open_bundle_native',
+        name: '原生打开工区包',
+        description: '触发原生 menu.file.open_bundle 系统目录对话框',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.screenshot.native',
+        name: '原生截图保存',
+        description: '触发原生 menu.file.screenshot 显存截图保存流程',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.diagnostics.refresh',
+        name: '刷新原生诊断状态',
+        description: '从 status.bar 拉取 FPS/瓦片/显存/相机坐标等实时指标',
+        category: 'workbench',
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.display_mode',
+        name: '设置测量标签显示模式',
+        description: '设置测量线标签显示为 3d / 2d / both',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'mode': {'type': 'string', 'enum': ['3d', '2d', 'both']},
+          },
+          'required': ['mode'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.remove',
+        name: '删除测量线',
+        description: '按索引删除指定测量线段',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'minimum': 0},
+            'id': {'type': 'string'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.measure.toggle_fixed',
+        name: '固定/解除测量线',
+        description: '切换指定测量线的图钉固定状态',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'index': {'type': 'integer', 'minimum': 0},
+            'id': {'type': 'string'},
+          },
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.camera.focus_point',
+        name: '旋转中心对焦',
+        description: '将相机旋转中心对焦到指定三维物理点',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'x': {'type': 'number'},
+            'y': {'type': 'number'},
+            'z': {'type': 'number'},
+            'value': {'type': 'number'},
+          },
+          'required': ['x', 'y', 'z'],
+        },
+      ),
+      UiActionDescriptor(
+        id: 'workbench.gizmo.axis',
+        name: '导航球预设视角',
+        description: '通过 gizmo.navigation 切换 +X/-X/+Y/-Y/+Z/-Z 预设视角',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'axis': {
+              'type': 'integer',
+              'minimum': 0,
+              'maximum': 5,
+              'description': '0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z',
+            },
+          },
+          'required': ['axis'],
+        },
+      ),
     ];
   }
 
@@ -3288,6 +4378,170 @@ class GeoScatter3dService extends ChangeNotifier {
         clearCache();
         return {'success': true, 'message': '显存与瓦片缓存已清空'};
 
+      case 'workbench.theme.set':
+        final idx = (p['index'] as num?)?.toInt() ?? 0;
+        setTheme(idx);
+        return {
+          'success': true,
+          'message': '主题已切换为: $themeName',
+          'data': {'theme_index': _themeIndex, 'theme_name': themeName},
+        };
+
+      case 'workbench.theme.cycle':
+        cycleTheme();
+        return {
+          'success': true,
+          'message': '主题已切换为: $themeName',
+          'data': {'theme_index': _themeIndex, 'theme_name': themeName},
+        };
+
+      case 'workbench.camera.link':
+        if (p.containsKey('linked')) {
+          setCameraLinked(p['linked'] == true);
+        } else {
+          toggleCameraLinked();
+        }
+        return {
+          'success': true,
+          'message': '相机联动: ${_cameraLinked ? "已开启" : "已关闭"}',
+          'data': {'camera_linked': _cameraLinked},
+        };
+
+      case 'workbench.view.new':
+        requestNewView();
+        return {'success': true, 'message': '已请求原生新建视图'};
+
+      case 'workbench.workspace.new_window':
+        requestNewWorkspaceWindow();
+        return {'success': true, 'message': '已请求原生新建工作窗口'};
+
+      case 'workbench.workspace.restore':
+        restoreWorkspace();
+        return {'success': true, 'message': '工作区已恢复默认布局'};
+
+      case 'workbench.panel.toggle':
+        final panel = p['panel'] as String?;
+        if (panel == null || panel.isEmpty) {
+          return {'success': false, 'message': '缺少必要参数: panel'};
+        }
+        if (p.containsKey('visible')) {
+          setNativePanelVisible(panel, p['visible'] == true);
+        } else {
+          toggleNativePanel(panel);
+        }
+        return {
+          'success': true,
+          'message': '面板状态已更新: $panel',
+          'data': Map<String, dynamic>.from(_nativePanelVisible),
+        };
+
+      case 'workbench.file.open_native':
+        openViaNativeFileMenu();
+        return {'success': true, 'message': '已触发原生打开文件对话框'};
+
+      case 'workbench.file.open_bundle_native':
+        openViaNativeBundleMenu();
+        return {'success': true, 'message': '已触发原生打开工区包对话框'};
+
+      case 'workbench.screenshot.native':
+        requestNativeMenuScreenshot();
+        return {'success': true, 'message': '已触发原生截图保存'};
+
+      case 'workbench.diagnostics.refresh':
+        unawaited(refreshNativeStatusBar());
+        return {
+          'success': true,
+          'message': '已请求刷新原生诊断指标',
+          'data': {
+            'fps': _fps,
+            'visible_points': _visiblePoints,
+            'loaded_tiles': _loadedTiles,
+            'pending_tiles': _pendingTiles,
+            'gpu_memory_bytes': _gpuMemoryBytes,
+            'camera_coords': _cameraCoordsString,
+          },
+        };
+
+      case 'workbench.measure.display_mode':
+        final mode = (p['mode'] as String?) ?? '3d';
+        if (!const ['3d', '2d', 'both'].contains(mode)) {
+          return {'success': false, 'message': 'mode 必须是 3d/2d/both'};
+        }
+        setMeasurementDisplayMode(mode);
+        return {
+          'success': true,
+          'message': '测量标签显示模式: $mode',
+          'data': {'mode': mode},
+        };
+
+      case 'workbench.measure.remove':
+        String? id = p['id'] as String?;
+        if (id == null && p['index'] is num) {
+          final idx = (p['index'] as num).toInt();
+          if (idx >= 0 && idx < _measurementLines.length) {
+            id = _measurementLines[idx].id;
+          } else if (isNativeRendererActive) {
+            id = idx.toString();
+          }
+        }
+        if (id == null) {
+          return {'success': false, 'message': '缺少 index 或 id'};
+        }
+        removeMeasurementLine(id);
+        return {
+          'success': true,
+          'message': '已删除测量线',
+          'data': {'id': id, 'lines_count': _measurementLines.length},
+        };
+
+      case 'workbench.measure.toggle_fixed':
+        String? id = p['id'] as String?;
+        if (id == null && p['index'] is num) {
+          final idx = (p['index'] as num).toInt();
+          if (idx >= 0 && idx < _measurementLines.length) {
+            id = _measurementLines[idx].id;
+          } else if (isNativeRendererActive) {
+            id = idx.toString();
+          }
+        }
+        if (id == null) {
+          return {'success': false, 'message': '缺少 index 或 id'};
+        }
+        toggleMeasurementLineFixed(id);
+        return {'success': true, 'message': '已切换测量线固定状态', 'data': {'id': id}};
+
+      case 'workbench.camera.focus_point':
+        final x = (p['x'] as num?)?.toDouble();
+        final y = (p['y'] as num?)?.toDouble();
+        final z = (p['z'] as num?)?.toDouble();
+        if (x == null || y == null || z == null) {
+          return {'success': false, 'message': '缺少必要参数: x, y, z'};
+        }
+        final focus = Point3D(
+          x: x,
+          y: y,
+          z: z,
+          value: (p['value'] as num?)?.toDouble() ?? 0.0,
+        );
+        setOrbitPivot(focus);
+        return {
+          'success': true,
+          'message': '旋转中心已对焦',
+          'data': {'x': x, 'y': y, 'z': z},
+        };
+
+      case 'workbench.gizmo.axis':
+        final axis = (p['axis'] as num?)?.toInt();
+        if (axis == null || axis < 0 || axis > 5) {
+          return {'success': false, 'message': 'axis 必须是 0-5'};
+        }
+        _queueNativeCommand('gizmo.navigation', 'click', {'axis': axis});
+        return {
+          'success': true,
+          'message': '已切换导航球预设视角 axis=$axis',
+          'data': {'axis': axis},
+        };
+
       default:
         return {'success': false, 'message': '未知的动作 ID: $actionId'};
     }
@@ -3358,6 +4612,17 @@ class GeoScatter3dService extends ChangeNotifier {
     } catch (_) {}
 
     if (_bindings == null) return '{}';
+    // 同步接口禁止阻塞 Viewer RPC（会卡 UI）。已连接时请走 executeJsonRpcAsync。
+    if (isNativeRendererActive) {
+      return jsonEncode({
+        'jsonrpc': '2.0',
+        'id': null,
+        'error': {
+          'code': -32000,
+          'message': 'viewer connected: use executeJsonRpcAsync',
+        },
+      });
+    }
     final nativeReq = requestJson.toNativeUtf8();
     try {
       final resPtr = _bindings!.execute_command(nativeReq);

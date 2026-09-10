@@ -87,6 +87,16 @@ public:
         const gs3d::render::VulkanSwapchain& swapchain
     );
 
+    // 从离屏视口颜色附件拷贝（Flutter/headless 主路径：点云画在 offscreen，
+    // swapchain 仅有清屏色）。
+    void record_copy_offscreen(
+        VkCommandBuffer command_buffer,
+        gs3d::render::VulkanContext& context,
+        VkImage color_image,
+        VkExtent2D color_extent,
+        VkImageLayout color_layout
+    );
+
     void write_pending(
         gs3d::render::VulkanContext& context,
         const gs3d::render::VulkanSwapchain& swapchain

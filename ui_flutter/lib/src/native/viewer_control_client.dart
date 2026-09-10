@@ -1,239 +1,355 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
-/// Flutter 侧原生查看器控制客户端。
+import 'package:ffi/ffi.dart';
+
+import '../ffi/geoscatter3d_bindings.dart';
+
+/// 在隔离线程打开 gs3d_ffi 并执行阻塞 C-ABI。
+/// ViewerBridge 为进程级单例，跨 isolate 共享同一 C++ 状态。
+String _resolveDllPath() {
+  if (Platform.isWindows) {
+    final env = Platform.environment['GS3D_RUNTIME_DIR'];
+    if (env != null) {
+      final p = '$env${Platform.pathSeparator}gs3d_ffi.dll';
+      if (File(p).existsSync()) return p;
+    }
+    final candidates = [
+      '${Directory.current.path}${Platform.pathSeparator}..${Platform.pathSeparator}tmp${Platform.pathSeparator}build-win${Platform.pathSeparator}src${Platform.pathSeparator}ffi${Platform.pathSeparator}Release${Platform.pathSeparator}gs3d_ffi.dll',
+      '${Directory.current.path}${Platform.pathSeparator}..${Platform.pathSeparator}tmp${Platform.pathSeparator}build-win${Platform.pathSeparator}Release${Platform.pathSeparator}gs3d_ffi.dll',
+      '${Directory.current.path}${Platform.pathSeparator}gs3d_ffi.dll',
+      '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}gs3d_ffi.dll',
+    ];
+    for (final p in candidates) {
+      if (File(p).existsSync()) return File(p).absolute.path;
+    }
+  }
+  return 'gs3d_ffi.dll';
+}
+
+GeoScatter3dBindings _openInIsolate(String path) {
+  if (Platform.isWindows) {
+    final kernel32 = DynamicLibrary.open('kernel32.dll');
+    final setDllDirA = kernel32.lookupFunction<
+      Int32 Function(Pointer<Utf8>),
+      int Function(Pointer<Utf8>)
+    >('SetDllDirectoryA');
+    final dir = File(path).absolute.parent.path.toNativeUtf8();
+    try {
+      setDllDirA(dir);
+    } finally {
+      calloc.free(dir);
+    }
+  }
+  return GeoScatter3dBindings(DynamicLibrary.open(path));
+}
+
+/// 阻塞 viewer_start（最多约 10s）。
+@pragma('vm:entry-point')
+int _blockingStart(String dllPath, String exe, String dataset) {
+  final b = _openInIsolate(dllPath);
+  final fn = b.viewer_start_opt;
+  if (fn == null) return -100;
+  final e = exe.toNativeUtf8();
+  final d = dataset.toNativeUtf8();
+  try {
+    return fn(e, d);
+  } finally {
+    calloc.free(e);
+    calloc.free(d);
+  }
+}
+
+@pragma('vm:entry-point')
+String _blockingRpc(String dllPath, String payload) {
+  final b = _openInIsolate(dllPath);
+  final fn = b.viewer_rpc_opt;
+  if (fn == null) {
+    return jsonEncode({
+      'jsonrpc': '2.0',
+      'id': null,
+      'error': {'code': -32000, 'message': 'viewer_rpc missing'},
+    });
+  }
+  final req = payload.toNativeUtf8();
+  try {
+    return fn(req).toDartString();
+  } finally {
+    calloc.free(req);
+  }
+}
+
+@pragma('vm:entry-point')
+String _blockingScreenshot(String dllPath) {
+  final b = _openInIsolate(dllPath);
+  final fn = b.viewer_screenshot_json_opt;
+  if (fn == null) {
+    return jsonEncode({'error': 'screenshot bridge missing'});
+  }
+  return fn().toDartString();
+}
+
+@pragma('vm:entry-point')
+String _blockingExecute(
+  String dllPath,
+  String component,
+  String command,
+  String paramsJson,
+) {
+  final b = _openInIsolate(dllPath);
+  final fn = b.viewer_execute_opt;
+  if (fn == null) {
+    return jsonEncode({
+      'jsonrpc': '2.0',
+      'id': null,
+      'error': {'code': -32000, 'message': 'viewer_execute missing'},
+    });
+  }
+  final c = component.toNativeUtf8();
+  final cmd = command.toNativeUtf8();
+  final p = paramsJson.toNativeUtf8();
+  try {
+    return fn(c, cmd, p).toDartString();
+  } finally {
+    calloc.free(c);
+    calloc.free(cmd);
+    calloc.free(p);
+  }
+}
+
+@pragma('vm:entry-point')
+void _blockingStop(String dllPath, bool force) {
+  final b = _openInIsolate(dllPath);
+  try {
+    if (force) {
+      b.viewer_stop_opt?.call();
+    } else {
+      b.quit_viewer_opt?.call();
+    }
+  } catch (_) {
+    try {
+      b.viewer_stop_opt?.call();
+    } catch (_) {}
+  }
+}
+
+@pragma('vm:entry-point')
+List<int> _blockingCaptureDims(String dllPath) {
+  final b = _openInIsolate(dllPath);
+  return [
+    b.viewer_last_capture_width_opt?.call() ?? 0,
+    b.viewer_last_capture_height_opt?.call() ?? 0,
+  ];
+}
+
+/// 单 Isolate 内完成相机输入 + 截图，避免拖拽时两次 Isolate 启动。
+@pragma('vm:entry-point')
+String _blockingCameraAndShot(
+  String dllPath,
+  double rotX,
+  double rotY,
+  double panX,
+  double panY,
+  double scrollY,
+) {
+  final b = _openInIsolate(dllPath);
+  final camFn = b.camera_input_opt;
+  final shotFn = b.viewer_screenshot_json_opt;
+  if (camFn == null || shotFn == null) {
+    return jsonEncode({'error': 'camera_input/screenshot bridge missing'});
+  }
+  final rc = camFn(rotX, rotY, panX, panY, scrollY);
+  if (rc != 0) {
+    return jsonEncode({'error': 'camera_input rc=$rc'});
+  }
+  return shotFn().toDartString();
+}
+
+/// Flutter 侧原生查看器控制客户端（经 C-ABI ViewerBridge）。
 ///
-/// 该客户端只连接由当前进程启动、且仅监听 127.0.0.1 的 GeoScatter3D 实例。
-/// 所有渲染与业务命令仍由原生主线程的控制面执行，避免在 Dart 侧复制 Vulkan、
-/// LOD 与 tile 流式逻辑。
+/// **阻塞 C-ABI 全部在 Isolate 中执行**，避免 UI isolate 被截图/RPC 卡死。
 class NativeViewerControlClient {
   NativeViewerControlClient({this.port = 0});
 
   final int port;
-  final Map<int, Completer<Map<String, dynamic>>> _pending = {};
-  Socket? _socket;
-  Process? _process;
-  StreamSubscription<String>? _lines;
-  int _nextRequestId = 1;
-  int _lastCaptureWidth = 0;
-  int _lastCaptureHeight = 0;
+  GeoScatter3dBindings? _bindings;
+  String? _dllPath;
   String _startupLog = '';
-  int? _exitCode;
+  bool _connected = false;
+  int _lastW = 0;
+  int _lastH = 0;
+
+  bool get isConnected => _connected;
+  int get lastCaptureWidth => _lastW;
+  int get lastCaptureHeight => _lastH;
   String get startupDiagnostics => _startupLog;
 
-  bool get isConnected => _socket != null;
-  int get lastCaptureWidth => _lastCaptureWidth;
-  int get lastCaptureHeight => _lastCaptureHeight;
+  String get _path {
+    if (_dllPath != null) return _dllPath!;
+    _dllPath = _resolveDllPath();
+    return _dllPath!;
+  }
 
   Future<bool> start({
     required String executablePath,
     required String datasetPath,
   }) async {
-    if (isConnected) return true;
-
-    final executable = File(executablePath);
-    if (!await executable.exists()) return false;
-
-    // 每个前端实例分配独立端口，避免 F5 重启或多开时误连其他查看器。
-    final reservation = await ServerSocket.bind(
-      InternetAddress.loopbackIPv4,
-      port,
-    );
-    final controlPort = reservation.port;
-    await reservation.close();
-
-    final path = datasetPath.toLowerCase();
-    final inputFlag = path.endsWith('.gs3d.bundle') ? '--bundle' : '--input';
-    _startupLog = '';
-    _exitCode = null;
-    _process = await Process.start(
-      executable.path,
-      [
-        '--no-welcome',
-        '--headless',
-        '--control-plane=$controlPort',
-        if (inputFlag == '--input') ...['--no-tiles', '--no-lod'],
-        inputFlag,
-        datasetPath,
-      ],
-      mode: ProcessStartMode.normal,
-      workingDirectory: executable.parent.path,
-    );
-
-    // 持续排空日志管道，避免原生进程因管道写满停止渲染；normal 模式可等待退出。
-    void record(String text) {
-      _startupLog += text;
-      if (_startupLog.length > 8000) {
-        _startupLog = _startupLog.substring(_startupLog.length - 8000);
-      }
+    if (_connected) return true;
+    try {
+      _bindings ??= GeoScatter3dBindings.openLibrary();
+    } catch (error) {
+      _startupLog = '无法加载 gs3d_ffi: $error';
+      return false;
+    }
+    if (_bindings!.viewer_start_opt == null) {
+      _startupLog = '当前 gs3d_ffi.dll 未包含 Viewer 桥符号，请更新动态库';
+      return false;
     }
 
-    unawaited(
-      _process!.stdout
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .forEach(record),
-    );
-    unawaited(
-      _process!.stderr
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .forEach(record),
-    );
-    unawaited(
-      _process!.exitCode.then((code) {
-        _exitCode = code;
-      }),
-    );
-
-    final deadline = DateTime.now().add(const Duration(seconds: 10));
-    while (DateTime.now().isBefore(deadline)) {
-      if (_exitCode != null) {
-        await stop(force: true);
-        throw StateError('原生查看器退出（$_exitCode）: $_startupLog');
+    try {
+      final path = _path;
+      final code = await Isolate.run(
+        () => _blockingStart(path, executablePath, datasetPath),
+      );
+      if (code != 0) {
+        _startupLog =
+            _bindings!.viewer_last_error_opt?.call().toDartString() ?? '';
+        if (_startupLog.isEmpty) _startupLog = 'viewer_start failed: $code';
+        _connected = false;
+        return false;
       }
-      try {
-        final socket = await Socket.connect(
-          InternetAddress.loopbackIPv4,
-          controlPort,
-          timeout: const Duration(milliseconds: 500),
-        );
-        _attach(socket);
-        await getViewportState();
-        return true;
-      } on SocketException {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      } on TimeoutException {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
+      _connected = true;
+      _startupLog =
+          _bindings!.viewer_startup_log_opt?.call().toDartString() ?? '';
+      await getViewportState();
+      return true;
+    } catch (error) {
+      _startupLog = 'viewer_start 异常: $error';
+      _connected = false;
+      return false;
     }
-
-    await stop(force: true);
-    return false;
   }
 
   Future<Map<String, dynamic>> getViewportState() {
     return request('get_state', {'component': 'viewport.main'});
   }
 
-  Future<Uint8List> capturePng() async {
-    final response = await request('screenshot', const {});
-    final result = response['result'];
+  Future<Uint8List> capturePng({bool includeDims = true}) async {
+    final path = _path;
+    final raw = await Isolate.run(() => _blockingScreenshot(path));
+    final result = jsonDecode(raw);
     if (result is! Map<String, dynamic>) {
       throw StateError('原生查看器未返回截图结果');
+    }
+    if (result['error'] != null) {
+      throw StateError('截图失败: ${result['error']}');
     }
     final data = result['data'];
     if (data is! String || data.isEmpty) {
       throw StateError('原生查看器截图为空');
     }
-    _lastCaptureWidth = (result['width'] as num?)?.toInt() ?? 0;
-    _lastCaptureHeight = (result['height'] as num?)?.toInt() ?? 0;
+    if (includeDims) {
+      _lastW = (result['width'] as num?)?.toInt() ?? _lastW;
+      _lastH = (result['height'] as num?)?.toInt() ?? _lastH;
+    }
+    return base64Decode(data);
+  }
+
+  /// 合并相机增量后单次 Isolate：camera_input + screenshot。
+  Future<Uint8List> cameraInputAndCapture({
+    double rotateX = 0,
+    double rotateY = 0,
+    double panX = 0,
+    double panY = 0,
+    double scrollY = 0,
+  }) async {
+    if (!_connected) {
+      throw StateError('原生查看器控制面尚未连接');
+    }
+    final path = _path;
+    final raw = await Isolate.run(
+      () => _blockingCameraAndShot(
+        path,
+        rotateX,
+        rotateY,
+        panX,
+        panY,
+        scrollY,
+      ),
+    );
+    final result = jsonDecode(raw);
+    if (result is! Map<String, dynamic>) {
+      throw StateError('相机+截图响应格式错误');
+    }
+    if (result['error'] != null) {
+      throw StateError(result['error'].toString());
+    }
+    final data = result['data'];
+    if (data is! String || data.isEmpty) {
+      throw StateError('相机后截图为空');
+    }
+    _lastW = (result['width'] as num?)?.toInt() ?? _lastW;
+    _lastH = (result['height'] as num?)?.toInt() ?? _lastH;
     return base64Decode(data);
   }
 
   Future<Map<String, dynamic>> request(
     String method,
     Map<String, dynamic> params,
-  ) {
-    final socket = _socket;
-    if (socket == null) {
-      return Future<Map<String, dynamic>>.error(StateError('原生查看器控制面尚未连接'));
+  ) async {
+    if (!_connected) {
+      throw StateError('原生查看器控制面尚未连接');
     }
+    final payload = jsonEncode({
+      'jsonrpc': '2.0',
+      'id': DateTime.now().microsecondsSinceEpoch,
+      'method': method,
+      'params': params,
+    });
+    final path = _path;
+    final raw = await Isolate.run(() => _blockingRpc(path, payload));
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw StateError('控制面响应格式错误');
+    }
+    if (decoded['error'] != null) {
+      throw StateError(decoded['error'].toString());
+    }
+    return decoded;
+  }
 
-    final id = _nextRequestId++;
-    final completer = Completer<Map<String, dynamic>>();
-    _pending[id] = completer;
-    socket.write(
-      jsonEncode({
-        'jsonrpc': '2.0',
-        'id': id,
-        'method': method,
-        'params': params,
-      }),
+  /// 经 FFI 执行 ComponentRegistry 命令。
+  Future<Map<String, dynamic>> executeComponent(
+    String component,
+    String command, [
+    Map<String, dynamic> params = const {},
+  ]) async {
+    if (!_connected) {
+      throw StateError('原生查看器控制面尚未连接');
+    }
+    final path = _path;
+    final paramsJson = jsonEncode(params);
+    final raw = await Isolate.run(
+      () => _blockingExecute(path, component, command, paramsJson),
     );
-    socket.write('\n');
-    return completer.future.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        _pending.remove(id);
-        throw TimeoutException('原生查看器命令超时: $method');
-      },
-    );
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw StateError('execute 响应格式错误');
+    }
+    return decoded;
   }
 
   Future<void> stop({bool force = false}) async {
-    try {
-      if (!force && isConnected) {
-        await request('quit', const {}).timeout(const Duration(seconds: 2));
-      }
-    } catch (_) {
-      force = true;
+    if (_connected || force) {
+      try {
+        final path = _path;
+        await Isolate.run(() => _blockingStop(path, force || !_connected));
+      } catch (_) {}
     }
-
-    await _lines?.cancel();
-    _lines = null;
-    await _socket?.close();
-    _socket = null;
-    for (final pending in _pending.values) {
-      if (!pending.isCompleted) {
-        pending.completeError(StateError('原生查看器已停止'));
-      }
-    }
-    _pending.clear();
-
-    final process = _process;
-    _process = null;
-    if (process == null) return;
-
-    if (!force) {
-      final exitCode = await process.exitCode.timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => -1,
-      );
-      if (exitCode != -1) return;
-      force = true;
-    }
-    if (force) {
-      process.kill(ProcessSignal.sigterm);
-      await process.exitCode.timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => -1,
-      );
-    }
-  }
-
-  void _attach(Socket socket) {
-    _socket = socket;
-    _lines = socket
-        .cast<List<int>>()
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(
-          _handleLine,
-          onDone: _handleDisconnect,
-          onError: (Object error, StackTrace stackTrace) => _handleDisconnect(),
-        );
-  }
-
-  void _handleLine(String line) {
-    try {
-      final decoded = jsonDecode(line);
-      if (decoded is! Map<String, dynamic>) return;
-      final id = decoded['id'];
-      if (id is! int) return;
-      final pending = _pending.remove(id);
-      if (pending == null || pending.isCompleted) return;
-      if (decoded['error'] != null) {
-        pending.completeError(StateError(decoded['error'].toString()));
-      } else {
-        pending.complete(decoded);
-      }
-    } catch (_) {
-      // 无法解析的控制面消息不应终止现有命令序列。
-    }
-  }
-
-  void _handleDisconnect() {
-    _socket = null;
+    _connected = false;
   }
 }

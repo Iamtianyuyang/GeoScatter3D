@@ -27,6 +27,54 @@ class _CenterViewportState extends State<CenterViewport> {
   Offset? _hoverPos;
   Offset? _boxSelectStart;
   Offset? _boxSelectCurrent;
+  // 原始指针拖拽：绕过 GestureDetector 竞技场，降低轨道/平移输入延迟。
+  int? _dragPointer;
+  Offset? _dragLastLocal;
+  bool _dragIsBox = false;
+  Size _lastVpSize = Size.zero;
+
+  void _finishBoxSelect(Offset start, Offset current) {
+    final minX = math.min(start.dx, current.dx);
+    final maxX = math.max(start.dx, current.dx);
+    final minY = math.min(start.dy, current.dy);
+    final maxY = math.max(start.dy, current.dy);
+    final vp = _lastVpSize;
+    setState(() {
+      _boxSelectStart = null;
+      _boxSelectCurrent = null;
+    });
+    if ((maxX - minX) <= 5 || (maxY - minY) <= 5) return;
+    if (widget.service.isDualProcessNative) {
+      widget.service.queueNativePick(
+        'region',
+        localX: minX,
+        localY: minY,
+        localMaxX: maxX,
+        localMaxY: maxY,
+        displayWidth: vp.width,
+        displayHeight: vp.height,
+      );
+      return;
+    }
+    final stats = widget.service.calculateRegionBoxStats(
+      minX,
+      minY,
+      maxX,
+      maxY,
+      vp.width,
+      vp.height,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '选区统计完成: ${stats["count"]} 个样本, 均值: ${(stats["mean"] as num).toDouble().toStringAsFixed(2)}',
+        ),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -44,6 +92,7 @@ class _CenterViewportState extends State<CenterViewport> {
   }
 
   Future<void> _handleScreenshot() async {
+    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     try {
       final boundary =
           _viewportRepaintKey.currentContext?.findRenderObject()
@@ -53,17 +102,20 @@ class _CenterViewportState extends State<CenterViewport> {
         final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
         if (byteData != null) {
           final bytes = byteData.buffer.asUint8List();
-          final timestamp = DateTime.now().toIso8601String().replaceAll(
-            ':',
-            '-',
+          final dir = Directory(
+            '${Directory.current.path}${Platform.pathSeparator}tmp',
           );
-          final fileName = 'screenshot_$timestamp.png';
+          if (!dir.existsSync()) {
+            dir.createSync(recursive: true);
+          }
+          final fileName =
+              '${dir.path}${Platform.pathSeparator}screenshot_$timestamp.png';
           final file = File(fileName);
           await file.writeAsBytes(bytes);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('视口截图已成功捕获并保存至: $fileName'),
+                content: Text('视口截图已保存至: $fileName'),
                 duration: const Duration(seconds: 3),
                 behavior: SnackBarBehavior.floating,
               ),
@@ -75,9 +127,9 @@ class _CenterViewportState extends State<CenterViewport> {
     } catch (_) {}
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('视口截图已成功捕获 (4K 显存回读已保存)'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('视口截图失败或未取到帧 (timestamp: $timestamp)'),
+          duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -206,6 +258,7 @@ class _CenterViewportState extends State<CenterViewport> {
               final colorAttr = widget.service.colorAttribute;
               final bgColor = widget.service.viewportBackgroundColor;
               final nativeViewportPng = widget.service.nativeViewportPng;
+              final nativeFrameImage = widget.service.nativeFrameImage;
 
               return Stack(
                 children: [
@@ -262,6 +315,71 @@ class _CenterViewportState extends State<CenterViewport> {
                         return KeyEventResult.ignored;
                       },
                       child: Listener(
+                        onPointerDown: (event) {
+                          if (event.buttons != kPrimaryButton) return;
+                          _focusNode.requestFocus();
+                          _dragPointer = event.pointer;
+                          _dragLastLocal = event.localPosition;
+                          _dragIsBox = HardwareKeyboard.instance.isShiftPressed;
+                          if (_dragIsBox) {
+                            setState(() {
+                              _boxSelectStart = event.localPosition;
+                              _boxSelectCurrent = event.localPosition;
+                            });
+                          }
+                        },
+                        onPointerMove: (event) {
+                          if (event.pointer != _dragPointer ||
+                              _dragLastLocal == null) {
+                            return;
+                          }
+                          final dx =
+                              event.localPosition.dx - _dragLastLocal!.dx;
+                          final dy =
+                              event.localPosition.dy - _dragLastLocal!.dy;
+                          _dragLastLocal = event.localPosition;
+                          if (_dragIsBox) {
+                            setState(() {
+                              _boxSelectCurrent = event.localPosition;
+                            });
+                            return;
+                          }
+                          if (dx == 0 && dy == 0) return;
+                          final service = widget.service;
+                          if (service.isPanning) {
+                            service.setCameraView(
+                              panX: service.cameraPanX + dx,
+                              panY: service.cameraPanY + dy,
+                            );
+                          } else {
+                            service.setCameraView(
+                              azimuth: service.cameraAzimuth + dx * 0.4,
+                              elevation: (service.cameraElevation - dy * 0.4)
+                                  .clamp(-89.0, 89.0),
+                            );
+                          }
+                        },
+                        onPointerUp: (event) {
+                          if (event.pointer != _dragPointer) return;
+                          final wasBox = _dragIsBox;
+                          final start = _boxSelectStart;
+                          final current = _boxSelectCurrent;
+                          _dragPointer = null;
+                          _dragLastLocal = null;
+                          _dragIsBox = false;
+                          if (wasBox && start != null && current != null) {
+                            _finishBoxSelect(start, current);
+                          }
+                        },
+                        onPointerCancel: (_) {
+                          _dragPointer = null;
+                          _dragLastLocal = null;
+                          _dragIsBox = false;
+                          setState(() {
+                            _boxSelectStart = null;
+                            _boxSelectCurrent = null;
+                          });
+                        },
                         onPointerSignal: (pointerSignal) {
                           if (pointerSignal is PointerScrollEvent) {
                             final factor = pointerSignal.scrollDelta.dy < 0
@@ -281,13 +399,14 @@ class _CenterViewportState extends State<CenterViewport> {
                               constraints.maxWidth,
                               constraints.maxHeight,
                             );
+                            _lastVpSize = vpSize;
                             return MouseRegion(
                               onHover: (event) {
                                 setState(() {
                                   _hoverPos = event.localPosition;
                                 });
-                                if (widget.service.isNativeRendererActive) {
-                                  widget.service.queueNativePick(
+                                if (widget.service.isDualProcessNative) {
+                                  widget.service.queueNativePickThrottled(
                                     'hover',
                                     localX: event.localPosition.dx,
                                     localY: event.localPosition.dy,
@@ -314,7 +433,7 @@ class _CenterViewportState extends State<CenterViewport> {
                               child: GestureDetector(
                                 onTapUp: (details) {
                                   _focusNode.requestFocus();
-                                  if (widget.service.isNativeRendererActive) {
+                                  if (widget.service.isDualProcessNative) {
                                     widget.service.queueNativePick(
                                       widget.service.isMeasurementMode
                                           ? 'measure'
@@ -343,7 +462,7 @@ class _CenterViewportState extends State<CenterViewport> {
                                   }
                                 },
                                 onDoubleTapDown: (details) {
-                                  if (widget.service.isNativeRendererActive) {
+                                  if (widget.service.isDualProcessNative) {
                                     widget.service.queueNativePick(
                                       'focus',
                                       localX: details.localPosition.dx,
@@ -372,112 +491,48 @@ class _CenterViewportState extends State<CenterViewport> {
                                     );
                                   }
                                 },
-                                onPanStart: (details) {
-                                  if (HardwareKeyboard
-                                      .instance
-                                      .isShiftPressed) {
-                                    setState(() {
-                                      _boxSelectStart = details.localPosition;
-                                      _boxSelectCurrent = details.localPosition;
-                                    });
-                                  }
-                                },
-                                onPanUpdate: (details) {
-                                  if (_boxSelectStart != null) {
-                                    setState(() {
-                                      _boxSelectCurrent = details.localPosition;
-                                    });
-                                  } else if (widget.service.isPanning) {
-                                    widget.service.setCameraView(
-                                      panX:
-                                          widget.service.cameraPanX +
-                                          details.delta.dx,
-                                      panY:
-                                          widget.service.cameraPanY +
-                                          details.delta.dy,
-                                    );
-                                  } else {
-                                    widget.service.setCameraView(
-                                      azimuth:
-                                          widget.service.cameraAzimuth +
-                                          details.delta.dx * 0.4,
-                                      elevation:
-                                          (widget.service.cameraElevation -
-                                                  details.delta.dy * 0.4)
-                                              .clamp(-89.0, 89.0),
-                                    );
-                                  }
-                                },
-                                onPanEnd: (details) {
-                                  if (_boxSelectStart != null &&
-                                      _boxSelectCurrent != null) {
-                                    final minX = math.min(
-                                      _boxSelectStart!.dx,
-                                      _boxSelectCurrent!.dx,
-                                    );
-                                    final maxX = math.max(
-                                      _boxSelectStart!.dx,
-                                      _boxSelectCurrent!.dx,
-                                    );
-                                    final minY = math.min(
-                                      _boxSelectStart!.dy,
-                                      _boxSelectCurrent!.dy,
-                                    );
-                                    final maxY = math.max(
-                                      _boxSelectStart!.dy,
-                                      _boxSelectCurrent!.dy,
-                                    );
-                                    if ((maxX - minX) > 5 &&
-                                        (maxY - minY) > 5) {
-                                      if (widget
-                                          .service
-                                          .isNativeRendererActive) {
-                                        widget.service.queueNativePick(
-                                          'region',
-                                          localX: minX,
-                                          localY: minY,
-                                          localMaxX: maxX,
-                                          localMaxY: maxY,
-                                          displayWidth: vpSize.width,
-                                          displayHeight: vpSize.height,
-                                        );
-                                        setState(() {
-                                          _boxSelectStart = null;
-                                          _boxSelectCurrent = null;
-                                        });
-                                        return;
-                                      }
-                                      final stats = widget.service
-                                          .calculateRegionBoxStats(
-                                            minX,
-                                            minY,
-                                            maxX,
-                                            maxY,
-                                            vpSize.width,
-                                            vpSize.height,
-                                          );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '选区统计完成: ${stats["count"]} 个样本, 均值: ${(stats["mean"] as num).toDouble().toStringAsFixed(2)}',
-                                          ),
-                                          duration: const Duration(seconds: 2),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
+                                // 轨道/平移由外层 Listener 的 onPointerMove 处理；
+                                // GestureDetector 只负责点击/双击。
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final w = constraints.maxWidth.round();
+                                    final h = constraints.maxHeight.round();
+                                    if (w > 0 && h > 0) {
+                                      // 下一帧再同步，避免在 build 中直接入队命令
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                        if (mounted) {
+                                          widget.service
+                                              .syncNativeViewportSize(w, h);
+                                        }
+                                      });
                                     }
-                                    setState(() {
-                                      _boxSelectStart = null;
-                                      _boxSelectCurrent = null;
-                                    });
-                                  }
-                                },
-                                child: Container(
-                                  key: WorkbenchUiKeys.viewportCanvas,
-                                  color: bgColor,
-                                  child: nativeViewportPng != null
+                                    return Container(
+                                      key: WorkbenchUiKeys.viewportCanvas,
+                                      color: bgColor,
+                                      child: nativeFrameImage != null
+                                      ? RepaintBoundary(
+                                          key: _viewportRepaintKey,
+                                          child: CustomPaint(
+                                            foregroundPainter:
+                                                NativeOverlayPainter(
+                                                  widget.service.nativeSnapshot,
+                                                  worldAxis:
+                                                      worldAxis || mapAxis,
+                                                  crosshair: crosshair,
+                                                  selectionStart:
+                                                      _boxSelectStart,
+                                                  selectionEnd:
+                                                      _boxSelectCurrent,
+                                                ),
+                                            child: RawImage(
+                                              image: nativeFrameImage,
+                                              fit: BoxFit.fill,
+                                              filterQuality: FilterQuality.medium,
+                                            ),
+                                          ),
+                                        )
+                                      : nativeViewportPng != null
                                       ? RepaintBoundary(
                                           key: _viewportRepaintKey,
                                           child: CustomPaint(
@@ -494,8 +549,9 @@ class _CenterViewportState extends State<CenterViewport> {
                                                 ),
                                             child: Image.memory(
                                               nativeViewportPng,
-                                              fit: BoxFit.contain,
+                                              fit: BoxFit.fill,
                                               gaplessPlayback: true,
+                                              filterQuality: FilterQuality.medium,
                                             ),
                                           ),
                                         )
@@ -539,6 +595,8 @@ class _CenterViewportState extends State<CenterViewport> {
                                             ),
                                           ),
                                         ),
+                                    );
+                                  },
                                 ),
                               ),
                             );

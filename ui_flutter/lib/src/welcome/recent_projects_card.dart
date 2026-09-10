@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../models/recent_project_model.dart';
-import '../theme/app_theme.dart';
+import '../theme/macos_tokens.dart';
 import 'welcome_ui_keys.dart';
 
 class RecentProjectsCard extends StatelessWidget {
@@ -31,7 +31,7 @@ class RecentProjectsCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: AppTheme.surface,
+        backgroundColor: Colors.white,
         title: const Row(
           children: [
             Icon(
@@ -48,13 +48,13 @@ class RecentProjectsCard extends StatelessWidget {
         ),
         content: const Text(
           '确定要清空所有最近打开的项目记录吗？此操作不会删除磁盘上的任何实际数据文件。',
-          style: TextStyle(fontSize: 13, color: AppTheme.textDim),
+          style: TextStyle(fontSize: 13, color: Color(0xFF4B5563)),
         ),
         actions: [
           TextButton(
             key: WelcomeUiKeys.recentCancelClearButton,
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF6B7280))),
           ),
           ElevatedButton(
             key: WelcomeUiKeys.recentConfirmClearButton,
@@ -66,6 +66,7 @@ class RecentProjectsCard extends StatelessWidget {
               backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
               elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
             child: const Text('确认清空'),
           ),
@@ -81,186 +82,165 @@ class RecentProjectsCard extends StatelessWidget {
       builder: (context, _) {
         final recentList = service.recentProjects;
 
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部栏
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 14,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 表头标题与右侧「清除」
+            Row(
+              children: [
+                const Text(
+                  '最近打开的项目',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryBlue,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      '最近打开的项目',
+                const Spacer(),
+                if (recentList.isNotEmpty)
+                  InkWell(
+                    key: WelcomeUiKeys.recentClearButton,
+                    onTap: () => _onClearConfirm(context),
+                    child: const Text(
+                      '清除',
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textTitle,
+                        fontSize: 12,
+                        color: Color(0xFF9CA3AF),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1.5,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // 表头列标题
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 220,
+                    child: Text(
+                      '项目名称',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF9CA3AF),
                       ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceMuted,
-                        borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '路径',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF9CA3AF),
                       ),
-                      child: Text(
-                        '${recentList.length}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textDim,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    child: Text(
+                      '最后打开时间',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 48),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+
+            // 列表主体内容
+            if (recentList.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 36),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.folder_open_rounded,
+                      size: 36,
+                      color: Color(0xFFCBD5E1),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '暂无最近打开的项目记录',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '可使用上方卡片新建工区或打开已有 .gs3d 数据包',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF)),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      key: WelcomeUiKeys.recentEmptyDemoButton,
+                      onPressed: () =>
+                          service.executeActionAsync('welcome.quick_demo'),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                      label: const Text(
+                        '载入内置示例工区体验',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: MacOsTokens.systemBlue,
+                        side: const BorderSide(color: MacOsTokens.systemBlue),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    if (recentList.isNotEmpty)
-                      TextButton.icon(
-                        key: WelcomeUiKeys.recentClearButton,
-                        onPressed: () => _onClearConfirm(context),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 15,
-                        ),
-                        label: const Text(
-                          '清空记录',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.textDim,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
                   ],
                 ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: recentList.length,
+                separatorBuilder: (context, index) =>
+                    const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                itemBuilder: (context, index) {
+                  final item = recentList[index];
+                  return _RecentProjectRow(
+                    key: WelcomeUiKeys.recentItem(index),
+                    index: index,
+                    item: item,
+                    onTap: () => _onOpenItem(context, item),
+                    onRemove: () => service.removeRecentProject(item.path),
+                  );
+                },
               ),
-
-              const Divider(height: 1, color: AppTheme.border),
-
-              // 列表主体
-              if (recentList.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  alignment: Alignment.center,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: const BoxDecoration(
-                          color: AppTheme.surfaceMuted,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.folder_open_rounded,
-                          size: 32,
-                          color: AppTheme.textDim,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '暂无最近打开的项目记录',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textBody,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '可通过上方卡片新建工区或打开已有 .gs3d 数据包',
-                        style: TextStyle(fontSize: 12, color: AppTheme.textDim),
-                      ),
-                      const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        key: WelcomeUiKeys.recentEmptyDemoButton,
-                        onPressed: () =>
-                            service.executeActionAsync('welcome.quick_demo'),
-                        icon: const Icon(
-                          Icons.play_circle_outline_rounded,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          '一键载入内置示例工区体验',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primaryBlue,
-                          side: const BorderSide(color: AppTheme.primaryBlue),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: recentList.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1, color: AppTheme.border),
-                  itemBuilder: (context, index) {
-                    final item = recentList[index];
-                    return _RecentProjectTile(
-                      key: WelcomeUiKeys.recentItem(index),
-                      index: index,
-                      item: item,
-                      onTap: () => _onOpenItem(context, item),
-                      onRemove: () => service.removeRecentProject(item.path),
-                    );
-                  },
-                ),
-            ],
-          ),
+          ],
         );
       },
     );
   }
 }
 
-class _RecentProjectTile extends StatefulWidget {
+class _RecentProjectRow extends StatefulWidget {
   final int index;
   final RecentProjectItem item;
   final VoidCallback onTap;
   final VoidCallback onRemove;
 
-  const _RecentProjectTile({
+  const _RecentProjectRow({
     super.key,
     required this.index,
     required this.item,
@@ -269,157 +249,137 @@ class _RecentProjectTile extends StatefulWidget {
   });
 
   @override
-  State<_RecentProjectTile> createState() => _RecentProjectTileState();
+  State<_RecentProjectRow> createState() => _RecentProjectRowState();
 }
 
-class _RecentProjectTileState extends State<_RecentProjectTile> {
+class _RecentProjectRowState extends State<_RecentProjectRow> {
   bool _isHovered = false;
-
-  bool get _exists {
-    return widget.item.exists;
-  }
 
   @override
   Widget build(BuildContext context) {
-    final fileExists = _exists;
-
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        color: _isHovered ? const Color(0xFFF1F5F9) : Colors.transparent,
-        child: InkWell(
-          onTap: widget.onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            child: Row(
-              children: [
-                // 文件类型标识
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: !fileExists
-                        ? const Color(0xFFFEF2F2)
-                        : (_isHovered
-                              ? AppTheme.primaryBlueBg
-                              : AppTheme.surfaceMuted),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(
-                    !fileExists
-                        ? Icons.warning_amber_rounded
-                        : Icons.dataset_outlined,
-                    size: 20,
-                    color: !fileExists
-                        ? const Color(0xFFDC2626)
-                        : (_isHovered
-                              ? AppTheme.primaryBlue
-                              : AppTheme.textDim),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // 项目名与绝对路径
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              widget.item.displayName,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: _isHovered
-                                    ? AppTheme.primaryBlue
-                                    : AppTheme.textTitle,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (!fileExists) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEF2F2),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: const Color(0xFFFCA5A5),
-                                ),
-                              ),
-                              child: const Text(
-                                '文件已失效',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFFDC2626),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+      child: InkWell(
+        onTap: widget.onTap,
+        hoverColor: const Color(0xFFF9FAFB),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(
+            children: [
+              // 项目名称与徽标 (220px)
+              SizedBox(
+                width: 220,
+                child: Row(
+                  children: [
+                    // 波形微图标徽标 (30x30, #F3F4F6)
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.item.path,
+                      child: CustomPaint(
+                        painter: const _WaveBadgeIconPainter(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.item.displayName,
                         style: const TextStyle(
-                          fontSize: 11.5,
-                          fontFamily: 'Consolas',
-                          color: AppTheme.textDim,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF111827),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // 路径
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Text(
+                    widget.item.path,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      color: Color(0xFF4B5563),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 16),
+              ),
 
-                // 相对时间
-                Text(
+              // 最后打开时间
+              SizedBox(
+                width: 140,
+                child: Text(
                   widget.item.relativeTimeStr,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
-                ),
-                const SizedBox(width: 8),
-
-                // 移除单项按钮
-                IconButton(
-                  key: WelcomeUiKeys.recentItemRemove(widget.index),
-                  icon: const Icon(Icons.close_rounded, size: 16),
-                  tooltip: '从最近列表中移除',
-                  color: AppTheme.textDim,
-                  splashRadius: 14,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 28,
-                    minHeight: 28,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF9CA3AF),
                   ),
-                  onPressed: widget.onRemove,
                 ),
-                const SizedBox(width: 4),
+              ),
 
-                // 载入箭头
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: _isHovered
-                      ? AppTheme.primaryBlue
-                      : AppTheme.borderSubtle,
+              // 更多操作 ··· 与移除按钮
+              SizedBox(
+                width: 48,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      key: WelcomeUiKeys.recentItemRemove(widget.index),
+                      icon: Icon(
+                        _isHovered ? Icons.close_rounded : Icons.more_horiz_rounded,
+                        size: 15,
+                        color: _isHovered ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF),
+                      ),
+                      tooltip: '移除记录',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 26,
+                        minHeight: 26,
+                      ),
+                      onPressed: widget.onRemove,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+class _WaveBadgeIconPainter extends CustomPainter {
+  const _WaveBadgeIconPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(6, size.height - 8);
+    path.quadraticBezierTo(size.width * 0.4, size.height * 0.35, size.width * 0.6, size.height * 0.55);
+    path.quadraticBezierTo(size.width * 0.8, size.height * 0.75, size.width - 6, size.height * 0.45);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

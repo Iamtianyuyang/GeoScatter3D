@@ -107,7 +107,7 @@ class RightDockPanel extends StatelessWidget {
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockShapeDropdown,
-                            items: const ['方形', '圆形'],
+                            items: const ['方形', '圆形', '菱形', '三角形'],
                             value: pointShape,
                             onChanged: (v) {
                               if (v != null) service.setPointShape(v);
@@ -180,7 +180,17 @@ class RightDockPanel extends StatelessWidget {
                           const SizedBox(height: 4),
                           _buildDropdown(
                             key: WorkbenchUiKeys.rightDockColormapDropdown,
-                            items: const ['Viridis', 'Plasma', 'Turbo', 'Jet', 'Coolwarm'],
+                            items: const [
+                              'Viridis',
+                              'Plasma',
+                              'Turbo',
+                              'Jet',
+                              'Coolwarm',
+                              'Geo',
+                              'Gray',
+                              'Thermal',
+                              'Rainbow256',
+                            ],
                             value: _normalizeColormap(colormap),
                             onChanged: (v) {
                               if (v != null) service.setColormap(v);
@@ -260,6 +270,36 @@ class RightDockPanel extends StatelessWidget {
                               }
                             },
                           ),
+                          const SizedBox(height: 10),
+                          const Text('界面主题', style: TextStyle(fontSize: 12.5, color: AppTheme.textBody)),
+                          const SizedBox(height: 4),
+                          _buildDropdown(
+                            key: const ValueKey('workbench.right_dock.theme_dropdown'),
+                            items: GeoScatter3dService.kThemeNames,
+                            value: service.themeName,
+                            onChanged: (v) {
+                              if (v == null) return;
+                              final idx = GeoScatter3dService.kThemeNames.indexOf(v);
+                              if (idx >= 0) service.setTheme(idx);
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                '相机联动',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppTheme.textBody,
+                                ),
+                              ),
+                              Switch(
+                                value: service.cameraLinked,
+                                onChanged: (v) => service.setCameraLinked(v),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -282,9 +322,28 @@ class RightDockPanel extends StatelessWidget {
   }
 
   String _normalizeColormap(String name) {
-    const valid = ['Viridis', 'Plasma', 'Turbo', 'Jet', 'Coolwarm'];
+    const valid = [
+      'Viridis',
+      'Plasma',
+      'Turbo',
+      'Jet',
+      'Coolwarm',
+      'Geo',
+      'Gray',
+      'Thermal',
+      'Rainbow256',
+    ];
     for (final v in valid) {
       if (v.toLowerCase() == name.toLowerCase()) return v;
+      if (v.toLowerCase() == 'rainbow256' && name.toLowerCase() == 'rainbow') {
+        return v;
+      }
+      if (v.toLowerCase() == 'gray' && name.toLowerCase() == 'grey') {
+        return v;
+      }
+      if (v.toLowerCase() == 'coolwarm' && name.toLowerCase() == 'cool-warm') {
+        return v;
+      }
     }
     return 'Viridis';
   }
@@ -299,6 +358,14 @@ class RightDockPanel extends StatelessWidget {
         return const [Color(0xFF000080), Color(0xFF0000FF), Color(0xFF00FFFF), Color(0xFFFFFF00), Color(0xFFFF0000), Color(0xFF800000)];
       case 'coolwarm':
         return const [Color(0xFF3B4CC0), Color(0xFF8CBCF1), Color(0xFFDDDCDC), Color(0xFFF49A7B), Color(0xFFB40426)];
+      case 'geo':
+        return const [Color(0xFF1A9850), Color(0xFF91CF60), Color(0xFFD9EF8B), Color(0xFFFFEE66), Color(0xFFFC8D59), Color(0xFFD73027)];
+      case 'gray':
+        return const [Color(0xFF000000), Color(0xFFFFFFFF)];
+      case 'thermal':
+        return const [Color(0xFF000000), Color(0xFF3B0F70), Color(0xFF8C2981), Color(0xFFDE4968), Color(0xFFFE9F6D), Color(0xFFFCFDBF)];
+      case 'rainbow256':
+        return const [Color(0xFF0000FF), Color(0xFF00FFFF), Color(0xFF00FF00), Color(0xFFFFFF00), Color(0xFFFF0000)];
       case 'viridis':
       default:
         return const [Color(0xFF440154), Color(0xFF414487), Color(0xFF2A788E), Color(0xFF22A884), Color(0xFF7AD151), Color(0xFFFDE725)];

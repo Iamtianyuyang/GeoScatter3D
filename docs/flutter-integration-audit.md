@@ -1,6 +1,14 @@
 # Flutter 后端接入记录
 
-更新：2026-09-08。本轮验收范围是欢迎页，工作台其余功能不能据此视为全部验收完成。
+更新：2026-09-10。本轮验收范围是欢迎页 + FFI 统一通道 e2e；工作台其余功能不能据此视为全部验收完成。
+
+## C-ABI FFI 统一通道（2026-09-10）
+
+- Flutter 不再直接持有 socket/子进程；进程启停与 JSON-RPC 由 `gs3d_ffi.dll` 内 `ViewerBridge` 承担。
+- 类型化符号（§18–§19）覆盖：渲染参数、相机输入、拾取、测量、主题/面板/工作区、截图、导出、诊断、组件列表。
+- 服务层优先类型化 FFI，旧 DLL 回退 `viewer_execute` / `viewer_rpc`；无 Viewer 时纯 Dart 双轨。
+- 真实 Viewer e2e：`GS3D_FFI_E2E=1` + `GS3D_RUNTIME_DIR=<Release>`（需含 `config/` 与 `assets/shaders/`）。
+- 契约与任务：`docs/compose/spec/ffi-backend-bridge.md`。
 
 ## 欢迎页已验证流程
 

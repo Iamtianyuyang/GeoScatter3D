@@ -76,6 +76,10 @@ void ViewerApp::fill_render_views(
                 }
                 view.scale = format_scale_distance(scale_world);
 
+                // Flutter 去掉 ImGui 后不再有 UI 请求帧；可见视口每帧都请求
+                // 离屏渲染，否则相机交互后截到的是旧帧。
+                view.render_requested = view.visible;
+
                 // Z 轴范围 + 刻度标签同步当前高度属性 & 夸张系数。
                 // 几何：包围盒 Z 用 world-space 范围（含 exag）。
                 // 标签：逆映射回属性原始值。

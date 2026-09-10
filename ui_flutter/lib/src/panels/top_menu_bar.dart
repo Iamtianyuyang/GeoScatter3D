@@ -358,8 +358,17 @@ class TopMenuBar extends StatelessWidget {
           case 'load_sample':
             service.loadDataset('data/sample-points.gs3d.bundle');
             break;
+          case 'open_native':
+            service.openViaNativeFileMenu();
+            break;
+          case 'open_bundle_native':
+            service.openViaNativeBundleMenu();
+            break;
           case 'screenshot':
             service.requestScreenshot();
+            break;
+          case 'screenshot_native':
+            service.requestNativeMenuScreenshot();
             break;
           case 'export':
             _showExportDialog(context);
@@ -393,6 +402,28 @@ class TopMenuBar extends StatelessWidget {
           ),
         ),
         const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_open_native'),
+          value: 'open_native',
+          child: Row(
+            children: [
+              Icon(Icons.file_open_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生打开数据文件'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_open_bundle_native'),
+          value: 'open_bundle_native',
+          child: Row(
+            children: [
+              Icon(Icons.folder_zip_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生打开工区包'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
           key: WorkbenchUiKeys.menuItemQuickDemo,
           value: 'load_sample',
           child: Row(
@@ -412,6 +443,17 @@ class TopMenuBar extends StatelessWidget {
               Icon(Icons.camera_alt_outlined, size: 16, color: AppTheme.accentBlue),
               SizedBox(width: 8),
               Text('视口截图'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_screenshot_native'),
+          value: 'screenshot_native',
+          child: Row(
+            children: [
+              Icon(Icons.save_alt_rounded, size: 16, color: AppTheme.accentBlue),
+              SizedBox(width: 8),
+              Text('原生显存截图保存'),
             ],
           ),
         ),
@@ -474,6 +516,21 @@ class TopMenuBar extends StatelessWidget {
           case 'crosshair':
             service.setViewportOverlays(crosshair: !service.showCrosshair);
             break;
+          case 'camera_link':
+            service.toggleCameraLinked();
+            break;
+          case 'new_view':
+            service.requestNewView();
+            break;
+          case 'restore_workspace':
+            service.restoreWorkspace();
+            break;
+          case 'new_workspace':
+            service.requestNewWorkspaceWindow();
+            break;
+          case 'theme_next':
+            service.cycleTheme();
+            break;
         }
       },
       itemBuilder: (context) => [
@@ -485,6 +542,57 @@ class TopMenuBar extends StatelessWidget {
               Icon(Icons.refresh_rounded, size: 16, color: AppTheme.primaryBlue),
               SizedBox(width: 8),
               Text('复位视角 (Home / R)'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          key: const ValueKey('workbench.menu.item_camera_link'),
+          value: 'camera_link',
+          child: Row(
+            children: [
+              Icon(
+                service.cameraLinked
+                    ? Icons.link_rounded
+                    : Icons.link_off_rounded,
+                size: 16,
+                color: service.cameraLinked ? AppTheme.primaryBlue : AppTheme.textDim,
+              ),
+              const SizedBox(width: 8),
+              Text(service.cameraLinked ? '关闭相机联动' : '开启相机联动'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          key: const ValueKey('workbench.menu.item_new_view'),
+          value: 'new_view',
+          child: const Row(
+            children: [
+              Icon(Icons.add_to_photos_outlined, size: 16, color: AppTheme.accentBlue),
+              SizedBox(width: 8),
+              Text('新建原生视图'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          key: const ValueKey('workbench.menu.item_restore_workspace'),
+          value: 'restore_workspace',
+          child: const Row(
+            children: [
+              Icon(Icons.restore_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('恢复默认工作区'),
+            ],
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          key: const ValueKey('workbench.menu.item_theme_next'),
+          value: 'theme_next',
+          child: Row(
+            children: [
+              const Icon(Icons.palette_outlined, size: 16, color: AppTheme.primaryBlue),
+              const SizedBox(width: 8),
+              Text('切换主题 (${service.themeName})'),
             ],
           ),
         ),
@@ -600,6 +708,33 @@ class TopMenuBar extends StatelessWidget {
           case 'tile_inspector':
             service.toggleTileInspector(true);
             break;
+          case 'panel_dataset':
+            service.toggleNativePanel('panel.dataset');
+            break;
+          case 'panel_render':
+            service.toggleNativePanel('panel.render_settings');
+            break;
+          case 'panel_perf':
+            service.toggleNativePanel('panel.performance');
+            break;
+          case 'panel_nav':
+            service.toggleNativePanel('panel.navigation_map');
+            break;
+          case 'panel_measure':
+            service.toggleNativePanel('panel.measurement');
+            break;
+          case 'panel_stats':
+            service.toggleNativePanel('panel.region_stats');
+            break;
+          case 'panel_tile':
+            service.toggleNativePanel('panel.tile_inspector');
+            break;
+          case 'panel_lod':
+            service.toggleNativePanel('panel.lod_view');
+            break;
+          case 'refresh_diag':
+            service.executeAction('workbench.diagnostics.refresh');
+            break;
         }
       },
       itemBuilder: (context) => [
@@ -636,6 +771,107 @@ class TopMenuBar extends StatelessWidget {
             ],
           ),
         ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_refresh_diag'),
+          value: 'refresh_diag',
+          child: Row(
+            children: [
+              Icon(Icons.sync_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('刷新原生诊断状态'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_dataset'),
+          value: 'panel_dataset',
+          child: Row(
+            children: [
+              Icon(Icons.folder_shared_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 项目'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_render'),
+          value: 'panel_render',
+          child: Row(
+            children: [
+              Icon(Icons.tune_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 属性'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_perf'),
+          value: 'panel_perf',
+          child: Row(
+            children: [
+              Icon(Icons.monitor_heart_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 性能'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_nav'),
+          value: 'panel_nav',
+          child: Row(
+            children: [
+              Icon(Icons.map_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 导航图'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_measure'),
+          value: 'panel_measure',
+          child: Row(
+            children: [
+              Icon(Icons.straighten_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 测量'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_stats'),
+          value: 'panel_stats',
+          child: Row(
+            children: [
+              Icon(Icons.analytics_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 区域统计'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_tile'),
+          value: 'panel_tile',
+          child: Row(
+            children: [
+              Icon(Icons.view_module_outlined, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: 瓦片检查'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_panel_lod'),
+          value: 'panel_lod',
+          child: Row(
+            children: [
+              Icon(Icons.stacked_line_chart_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('原生面板: LOD 调试'),
+            ],
+          ),
+        ),
       ],
       child: _buildMenuLabel('工具'),
     );
@@ -662,6 +898,12 @@ class TopMenuBar extends StatelessWidget {
             break;
           case 'toggle_right':
             service.toggleRightDock();
+            break;
+          case 'new_workspace':
+            service.requestNewWorkspaceWindow();
+            break;
+          case 'restore_workspace':
+            service.restoreWorkspace();
             break;
         }
       },
@@ -727,6 +969,29 @@ class TopMenuBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               const Text('右侧属性面板'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_new_workspace'),
+          value: 'new_workspace',
+          child: Row(
+            children: [
+              Icon(Icons.add_business_outlined, size: 16, color: AppTheme.accentBlue),
+              SizedBox(width: 8),
+              Text('新建工作窗口'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('workbench.menu.item_restore_workspace_window'),
+          value: 'restore_workspace',
+          child: Row(
+            children: [
+              Icon(Icons.restore_rounded, size: 16, color: AppTheme.textBody),
+              SizedBox(width: 8),
+              Text('恢复默认工作区'),
             ],
           ),
         ),

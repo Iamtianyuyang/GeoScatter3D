@@ -29,6 +29,8 @@ struct VulkanContextConfig {
     std::uint32_t application_version = VK_MAKE_VERSION(0, 1, 0);
     // "auto" or "uuid:<32-char-hex>"
     std::string preferred_gpu = "auto";
+    // 无窗口离屏内核：不创建 surface / swapchain 扩展，present=graphics。
+    bool headless = false;
 };
 
 class VulkanContext {
@@ -37,6 +39,9 @@ public:
         const gs3d::platform::Window& window,
         VulkanContextConfig config = {}
     );
+
+    // 无 GLFW/surface 的离屏上下文（单进程 FFI 内核 / 多端）。
+    explicit VulkanContext(VulkanContextConfig config);
 
     ~VulkanContext();
 
@@ -133,10 +138,10 @@ private:
     QueueFamilyIndices find_queue_families(VkPhysicalDevice device) const;
 
     [[nodiscard]]
-    static std::vector<const char*> required_device_extensions();
+    static std::vector<const char*> required_device_extensions(bool headless);
 
     [[nodiscard]]
-    static bool device_extensions_supported(VkPhysicalDevice device);
+    bool device_extensions_supported(VkPhysicalDevice device) const;
 
     [[nodiscard]]
     static std::string device_name(VkPhysicalDevice device);

@@ -148,7 +148,10 @@ ViewportPresentationState::reconcile_runtime_viewports(
     int first_visible_viewport_index = 0;
     bool has_visible_viewport = false;
     for (const auto& view : app_state.render_views) {
-        if (view.render_requested) {
+        // ImGui 移除后 render_requested 由每帧 fill_render_views 置位；
+        // 兜底：可见且未脱离的视口必须进入离屏渲染列表。
+        if (view.render_requested ||
+            (view.visible && !view.detached)) {
             visible_viewports.push_back(view.viewport_index);
         }
         if (!view.visible) {
