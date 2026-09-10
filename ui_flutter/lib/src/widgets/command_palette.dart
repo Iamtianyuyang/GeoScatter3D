@@ -91,7 +91,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                     : Icons.info_outline,
                 size: 16,
                 color: res['success'] == true
-                    ? const Color(0xFF10B981)
+                    ? Gs3dTokens.success
                     : Colors.orangeAccent,
               ),
               const SizedBox(width: 8),
@@ -438,7 +438,7 @@ class _CommandPaletteState extends State<CommandPalette> {
       color = const Color(0xFF7C4DFF);
       label = '渲染';
     } else if (category.contains('measure')) {
-      color = const Color(0xFF00E5FF);
+      color = Gs3dTokens.measure;
       label = '测量';
     } else if (category.contains('stats')) {
       color = const Color(0xFFFF9100);

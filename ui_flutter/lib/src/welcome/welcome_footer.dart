@@ -145,9 +145,11 @@ class WelcomeFooter extends StatelessWidget {
             horizontal: Gs3dTokens.space20,
             vertical: Gs3dTokens.space8,
           ),
-          decoration: BoxDecoration(
-            color: Gs3dMaterial.bar.tint,
-            border: const Border(top: BorderSide(color: Gs3dTokens.hairline)),
+          decoration: const BoxDecoration(
+            color: Gs3dTokens.surfaceHeader,
+            border: Border(
+              top: BorderSide(color: Gs3dTokens.hairline),
+            ),
           ),
           child: Row(
             children: [

@@ -32,7 +32,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
       decoration: const BoxDecoration(
         color: Gs3dTokens.windowBg,
         border: Border(
-          right: BorderSide(color: Gs3dTokens.border, width: 1),
+          right: BorderSide(color: Gs3dTokens.hairline),
         ),
       ),
       child: Column(
@@ -399,10 +399,10 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isMeasuring ? const Color(0x3300E5FF) : Gs3dTokens.surfaceSunken,
+                      color: isMeasuring ? Gs3dTokens.measureSubtle : Gs3dTokens.surfaceSunken,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: isMeasuring ? const Color(0xFF00E5FF) : Gs3dTokens.border,
+                        color: isMeasuring ? Gs3dTokens.measure : Gs3dTokens.border,
                       ),
                     ),
                     child: Text(
@@ -410,7 +410,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: isMeasuring ? const Color(0xFF00E5FF) : Gs3dTokens.textSecondary,
+                        color: isMeasuring ? Gs3dTokens.measure : Gs3dTokens.textSecondary,
                       ),
                     ),
                   ),
@@ -516,7 +516,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                         icon: Icon(
                           line.isFixed ? Icons.push_pin : Icons.push_pin_outlined,
                           size: 14,
-                          color: line.isFixed ? const Color(0xFF00E5FF) : Gs3dTokens.textSecondary,
+                          color: line.isFixed ? Gs3dTokens.measure : Gs3dTokens.textSecondary,
                         ),
                         tooltip: line.isFixed ? '已固定' : '固定线段',
                         onPressed: () => widget.service.toggleMeasurementLineFixed(line.id),
@@ -703,18 +703,18 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0x333B82F6),
+              color: Gs3dTokens.accentBorder,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFF3B82F6)),
+              border: Border.all(color: Gs3dTokens.accent),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.crop_free, size: 14, color: Color(0xFF3B82F6)),
+                    Icon(Icons.crop_free, size: 14, color: Gs3dTokens.accent),
                     SizedBox(width: 6),
-                    Text('当前展示: 视口矩形选区统计', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF93C5FD))),
+                    Text('当前展示: 视口矩形选区统计', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Gs3dTokens.accent)),
                   ],
                 ),
                 InkWell(
@@ -800,7 +800,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                             Container(
                               height: (60 * fraction).clamp(4.0, 60.0),
                               decoration: BoxDecoration(
-                                color: (activeBoxStats != null ? const Color(0xFF3B82F6) : Gs3dTokens.accent)
+                                color: (activeBoxStats != null ? Gs3dTokens.accent : Gs3dTokens.accent)
                                     .withAlpha((100 + i * 35).clamp(0, 255)),
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
                               ),

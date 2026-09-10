@@ -5,6 +5,7 @@ import '../welcome/gpu_selection_dialog.dart';
 import '../welcome/new_project_dialog.dart';
 import '../welcome/open_project_dialog.dart';
 import '../welcome/welcome_ui_keys.dart';
+import '../widgets/fluid.dart';
 import 'export_dialog.dart';
 
 class TopMenuBar extends StatelessWidget {
@@ -174,20 +175,28 @@ class TopMenuBar extends StatelessWidget {
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: const BoxDecoration(
-        color: Gs3dTokens.surface,
+        color: Gs3dTokens.surfaceHeader,
         border: Border(
-          bottom: BorderSide(color: Gs3dTokens.border, width: 1),
+          bottom: BorderSide(color: Gs3dTokens.hairline),
         ),
       ),
       child: Row(
         children: [
           // Logo & 返回欢迎页
-          InkWell(
-            key: WorkbenchUiKeys.homeButton,
-            borderRadius: BorderRadius.circular(6),
+          Gs3dPressable(
             onTap: () => service.closeWorkbench(),
-            child: Padding(
+            hoverScale: 0,
+            key: WorkbenchUiKeys.homeButton,
+            builder: (context, state) => AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Gs3dMotion.standardCurve,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: state == Gs3dInteractionState.idle
+                    ? Colors.transparent
+                    : Gs3dTokens.surfaceHover,
+                borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.home_outlined, size: 17, color: Gs3dTokens.accent),
@@ -269,34 +278,28 @@ class TopMenuBar extends StatelessWidget {
               const PopupMenuItem(
                 key: WorkbenchUiKeys.menuItemLayoutStandard,
                 value: WorkbenchLayoutMode.standard,
-                child: Row(
-                  children: [
-                    Icon(Icons.dashboard_customize_outlined, size: 16, color: Gs3dTokens.accent),
-                    SizedBox(width: 8),
-                    Text('标准工作台 (Workbench)'),
-                  ],
+                child: Gs3dMenuItem(
+                  label: '标准工作台 (Workbench)',
+                  icon: Icons.dashboard_customize_outlined,
+                  iconColor: Gs3dTokens.accent,
                 ),
               ),
               const PopupMenuItem(
                 key: WorkbenchUiKeys.menuItemLayoutFloating,
                 value: WorkbenchLayoutMode.floatingDock,
-                child: Row(
-                  children: [
-                    Icon(Icons.layers_outlined, size: 16, color: Gs3dTokens.accent),
-                    SizedBox(width: 8),
-                    Text('悬浮胶囊 Dock (Floating Dock)'),
-                  ],
+                child: Gs3dMenuItem(
+                  label: '悬浮胶囊 Dock (Floating Dock)',
+                  icon: Icons.layers_outlined,
+                  iconColor: Gs3dTokens.accent,
                 ),
               ),
               const PopupMenuItem(
                 key: WorkbenchUiKeys.menuItemLayoutAnalysis,
                 value: WorkbenchLayoutMode.analysisRail,
-                child: Row(
-                  children: [
-                    Icon(Icons.view_sidebar_outlined, size: 16, color: Gs3dTokens.success),
-                    SizedBox(width: 8),
-                    Text('暗色分析舱 (Analysis Rail)'),
-                  ],
+                child: Gs3dMenuItem(
+                  label: '暗色分析舱 (Analysis Rail)',
+                  icon: Icons.view_sidebar_outlined,
+                  iconColor: Gs3dTokens.success,
                 ),
               ),
             ],
@@ -304,8 +307,8 @@ class TopMenuBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 border: Border.all(color: Gs3dTokens.border),
-                borderRadius: BorderRadius.circular(6),
-                color: Colors.white,
+                borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
+                color: Gs3dTokens.surface,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

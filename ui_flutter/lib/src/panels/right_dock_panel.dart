@@ -20,7 +20,7 @@ class RightDockPanel extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Gs3dTokens.windowBg,
         border: Border(
-          left: BorderSide(color: Gs3dTokens.border, width: 1),
+          left: BorderSide(color: Gs3dTokens.hairline),
         ),
       ),
       child: Column(
@@ -254,17 +254,17 @@ class RightDockPanel extends StatelessWidget {
                               if (v != null) {
                                 switch (v) {
                                   case '纯黑':
-                                    service.setViewportBackgroundColor(const Color(0xFF000000));
+                                    service.setViewportBackgroundColor(Gs3dTokens.viewportBlack);
                                     break;
                                   case '深灰':
-                                    service.setViewportBackgroundColor(const Color(0xFF1E222A));
+                                    service.setViewportBackgroundColor(Gs3dTokens.viewportSlate);
                                     break;
                                   case '浅灰':
-                                    service.setViewportBackgroundColor(const Color(0xFFF0F2F5));
+                                    service.setViewportBackgroundColor(Gs3dTokens.viewportLight);
                                     break;
                                   case '深黑蓝':
                                   default:
-                                    service.setViewportBackgroundColor(const Color(0xFF161A22));
+                                    service.setViewportBackgroundColor(Gs3dTokens.viewportMidnight);
                                     break;
                                 }
                               }
@@ -315,9 +315,9 @@ class RightDockPanel extends StatelessWidget {
 
   String _colorToName(Color color) {
     final argb = color.toARGB32();
-    if (argb == 0xFF000000) return '纯黑';
-    if (argb == 0xFF1E222A) return '深灰';
-    if (argb == 0xFFF0F2F5) return '浅灰';
+    if (argb == Gs3dTokens.viewportBlack.toARGB32()) return '纯黑';
+    if (argb == Gs3dTokens.viewportSlate.toARGB32()) return '深灰';
+    if (argb == Gs3dTokens.viewportLight.toARGB32()) return '浅灰';
     return '深黑蓝';
   }
 

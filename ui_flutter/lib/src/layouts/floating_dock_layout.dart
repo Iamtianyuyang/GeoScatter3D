@@ -1,8 +1,9 @@
-import 'dart:ui';
-import '../theme/gs3d_tokens.dart';
 import 'package:flutter/material.dart';
+
 import '../ffi/geoscatter3d_service.dart';
 import '../panels/center_viewport.dart';
+import '../theme/gs3d_tokens.dart';
+import '../widgets/fluid.dart';
 
 enum FloatingDockPanelType {
   dataset,
@@ -103,64 +104,50 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
   }
 
   Widget _buildCapsuleDock() {
-    return ClipRRect(
+    return Gs3dGlass(
+      spec: Gs3dMaterial.capsule,
       borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xE0181F2C),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDockItem(
+            type: FloatingDockPanelType.dataset,
+            tooltip: '工区数据集',
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDockItem(
-                type: FloatingDockPanelType.dataset,
-                tooltip: '工区数据集',
-              ),
-              const SizedBox(width: 6),
-              _buildDockItem(
-                type: FloatingDockPanelType.measurement,
-                tooltip: '几何测量',
-              ),
-              const SizedBox(width: 6),
-              _buildDockItem(
-                type: FloatingDockPanelType.stats,
-                tooltip: '标量统计',
-              ),
-              const SizedBox(width: 6),
-              _buildDockItem(
-                type: FloatingDockPanelType.rendering,
-                tooltip: '渲染着色',
-              ),
-              const SizedBox(width: 10),
-              Container(
-                width: 1,
-                height: 22,
-                color: Colors.white.withValues(alpha: 0.2),
-              ),
-              const SizedBox(width: 10),
-              // 快速重置视角
-              Tooltip(
-                message: '复位视角',
-                child: InkWell(
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('视角已重置为俯瞰默认姿态'),
-                        duration: Duration(milliseconds: 900),
-                      ),
-                    );
+          const SizedBox(width: 6),
+          _buildDockItem(
+            type: FloatingDockPanelType.measurement,
+            tooltip: '几何测量',
+          ),
+          const SizedBox(width: 6),
+          _buildDockItem(
+            type: FloatingDockPanelType.stats,
+            tooltip: '标量统计',
+          ),
+          const SizedBox(width: 6),
+          _buildDockItem(
+            type: FloatingDockPanelType.rendering,
+            tooltip: '渲染着色',
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 1,
+            height: 22,
+            color: Colors.white.withValues(alpha: 0.2),
+          ),
+          const SizedBox(width: 10),
+          // 快速重置视角
+          Tooltip(
+            message: '复位视角',
+            child: InkWell(
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('视角已重置为俯瞰默认姿态'),
+                    duration: Duration(milliseconds: 900),
+                  ),
+                );
                   },
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
@@ -171,15 +158,13 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                     ),
                     child: const Icon(
                       Icons.refresh_rounded,
-                      color: Colors.white70,
+                      color: Gs3dDark.textSecondary,
                       size: 18,
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -211,7 +196,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
             children: [
               Icon(
                 type.icon,
-                color: isSelected ? Colors.white : Colors.white70,
+                color: isSelected ? Gs3dDark.textPrimary : Gs3dDark.textSecondary,
                 size: 19,
               ),
               if (isSelected) ...[
@@ -219,7 +204,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                 Text(
                   type.title,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Gs3dDark.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -233,74 +218,60 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
   }
 
   Widget _buildFloatingCard(FloatingDockPanelType type) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          constraints: const BoxConstraints(maxHeight: 460),
-          decoration: BoxDecoration(
-            color: const Color(0xEB1C2331),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 460),
+      child: Gs3dGlass(
+        spec: Gs3dDark.panelGlass,
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 卡片头部
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                ),
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 卡片头部
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              child: Row(
+                children: [
+                  Icon(type.icon, size: 18, color: Gs3dTokens.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    type.title,
+                    style: const TextStyle(
+                      color: Gs3dDark.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(type.icon, size: 18, color: Gs3dTokens.accent),
-                    const SizedBox(width: 8),
-                    Text(
-                      type.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                  const Spacer(),
+                  InkWell(
+                    onTap: () => setState(() => _activePanel = null),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: 0.6),
                       ),
                     ),
-                    const Spacer(),
-                    InkWell(
-                      onTap: () => setState(() => _activePanel = null),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: 16,
-                          color: Colors.white.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
 
-              // 卡片内容区
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(14),
-                  child: _buildCardContent(type),
-                ),
+            // 卡片内容区
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(14),
+                child: _buildCardContent(type),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -334,24 +305,24 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('三维测距 (3D Distance)', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                      Text('184.62 m', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text('三维测距 (3D Distance)', style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12)),
+                      Text('184.62 m', style: TextStyle(color: Gs3dDark.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
                     ],
                   ),
                   SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('水平投影距 (Horizontal)', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                      Text('165.20 m', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text('水平投影距 (Horizontal)', style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12)),
+                      Text('165.20 m', style: TextStyle(color: Gs3dDark.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
                     ],
                   ),
                   SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('绝对高差 (Elevation ΔZ)', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                      Text('82.35 m', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text('绝对高差 (Elevation ΔZ)', style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12)),
+                      Text('82.35 m', style: TextStyle(color: Gs3dDark.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
                     ],
                   ),
                 ],
@@ -365,7 +336,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           children: [
             const Text(
               '标量分布直方图 (Histogram)',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 10),
             SizedBox(
@@ -394,8 +365,8 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('散点半径', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                Text('${widget.service.pointSize.toStringAsFixed(1)} px', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                const Text('散点半径', style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12)),
+                Text('${widget.service.pointSize.toStringAsFixed(1)} px', style: const TextStyle(color: Gs3dDark.textPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
               ],
             ),
             Slider(
@@ -407,12 +378,12 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
               onChanged: (val) => widget.service.setPointSize(val),
             ),
             const SizedBox(height: 10),
-            const Text('科学色表映射', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            const Text('科学色表映射', style: TextStyle(color: Gs3dDark.textSecondary, fontSize: 12)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               initialValue: widget.service.colormap,
-              dropdownColor: const Color(0xFF1E2533),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              dropdownColor: Gs3dDark.menuBg,
+              style: const TextStyle(color: Gs3dDark.textPrimary, fontSize: 12),
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 filled: true,
@@ -451,7 +422,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500),
+              style: const TextStyle(color: Gs3dDark.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -481,40 +452,31 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
   }
 
   Widget _buildMiniHud() {
-    return ClipRRect(
+    return Gs3dGlass(
+      spec: Gs3dDark.hudGlass,
       borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xB0121720),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: Gs3dTokens.success,
+              shape: BoxShape.circle,
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Gs3dTokens.success,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${widget.service.points.length} 测点 | 60 FPS | 沉浸 Dock',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
+          const SizedBox(width: 6),
+          Text(
+            '${widget.service.points.length} 测点 | 60 FPS | 沉浸 Dock',
+            style: const TextStyle(
+              color: Gs3dDark.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

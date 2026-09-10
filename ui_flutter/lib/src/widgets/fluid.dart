@@ -224,6 +224,7 @@ class Gs3dGlass extends StatelessWidget {
     this.margin,
     this.width,
     this.height,
+    this.border,
     this.clipBehavior = Clip.antiAlias,
   });
 
@@ -234,6 +235,10 @@ class Gs3dGlass extends StatelessWidget {
   final EdgeInsetsGeometry? margin;
   final double? width;
   final double? height;
+
+  /// 描边覆盖。用于贴着窗口边缘的条形（顶栏 / 状态栏）只保留单边细线。
+  final Border? border;
+
   final Clip clipBehavior;
 
   @override
@@ -267,10 +272,9 @@ class Gs3dGlass extends StatelessWidget {
       decoration: BoxDecoration(
         color: effective.tint,
         borderRadius: radius,
-        border: Border.all(
-          color: effective.borderColor,
-          width: effective.borderWidth,
-        ),
+        border:
+            border ??
+            Border.all(color: effective.borderColor, width: effective.borderWidth),
         boxShadow: effective.shadows,
       ),
       clipBehavior: hasBlur ? clipBehavior : Clip.none,

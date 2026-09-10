@@ -262,7 +262,7 @@ class TileInspectorDialog extends StatelessWidget {
                                           Icons.check_circle_rounded,
                                           size: 15,
                                           color: isBase
-                                              ? const Color(0xFF10B981)
+                                              ? Gs3dTokens.success
                                               : Gs3dTokens.textSecondary,
                                         ),
                                       ],
@@ -310,7 +310,7 @@ class TileInspectorDialog extends StatelessWidget {
                                     child: _buildTileStatCard(
                                       '缓存命中率',
                                       '${hitRate.toStringAsFixed(1)}%',
-                                      const Color(0xFF10B981),
+                                      Gs3dTokens.success,
                                     ),
                                   ),
                                 ],

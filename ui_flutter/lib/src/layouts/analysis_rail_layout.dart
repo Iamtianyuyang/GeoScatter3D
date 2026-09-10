@@ -4,6 +4,7 @@ import '../ffi/geoscatter3d_service.dart';
 import '../panels/center_viewport.dart';
 import '../panels/left_dock_panel.dart';
 import '../panels/right_dock_panel.dart';
+import '../widgets/fluid.dart';
 
 enum RailTabType {
   dataset,
@@ -99,9 +100,9 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
     return Container(
       width: 54,
       decoration: const BoxDecoration(
-        color: Color(0xFF161C26),
+        color: Gs3dDark.cabinBg,
         border: Border(
-          right: BorderSide(color: Color(0xFF232B3A)),
+          right: BorderSide(color: Gs3dDark.cabinBorder),
         ),
       ),
       child: Column(
@@ -113,13 +114,13 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
             height: 32,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF2563EB), Color(0xFF0D9488)],
+                colors: [Gs3dDark.accentFrom, Gs3dDark.accentTo],
               ),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
               Icons.scatter_plot_rounded,
-              color: Colors.white,
+              color: Gs3dDark.textPrimary,
               size: 20,
             ),
           ),
@@ -139,17 +140,23 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           // 右侧栏折叠开关
           Tooltip(
             message: _showRightPanel ? '收起右侧属性栏' : '展开右侧属性栏',
-            child: InkWell(
+            child: Gs3dPressable(
               onTap: () => setState(() => _showRightPanel = !_showRightPanel),
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
+              hoverScale: 0,
+              builder: (context, state) => Container(
                 padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: state == Gs3dInteractionState.idle
+                      ? Colors.transparent
+                      : Gs3dDark.hairline,
+                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+                ),
                 child: Icon(
                   _showRightPanel
                       ? Icons.dock_rounded
                       : Icons.arrow_back_ios_new_rounded,
                   size: 16,
-                  color: Colors.white54,
+                  color: Gs3dDark.textTertiary,
                 ),
               ),
             ),
@@ -162,29 +169,41 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
 
   Widget _buildRailItem(RailTabType tab) {
     final isSelected = _activeTab == tab;
+    final a11y = context.gs3dA11y;
+
     return Tooltip(
       message: tab.title,
-      waitDuration: const Duration(milliseconds: 300),
-      child: InkWell(
+      waitDuration: Gs3dMotion.micro,
+      child: Gs3dPressable(
         onTap: () => _onTabSelected(tab),
-        borderRadius: BorderRadius.circular(10),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: isSelected
-                ? Gs3dTokens.accent.withValues(alpha: 0.2)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected ? Gs3dTokens.accent : Colors.transparent,
-              width: 1.5,
+        hoverScale: 0,
+        // 选中 / 悬停 / 静止三态由同一弹簧驱动：颜色强度连续插值，
+        // 高频切换标签时从当前位置续接，不闪烁。
+        builder: (context, state) => Gs3dSpringValue(
+          value: isSelected
+              ? 1.0
+              : (state == Gs3dInteractionState.idle ? 0.0 : 0.45),
+          spring: a11y.resolveSpring(Gs3dMotion.feedback),
+          builder: (context, t, child) => Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Gs3dTokens.accent.withValues(alpha: 0.20 * t),
+              borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+              border: Border.all(
+                color: Gs3dTokens.accent.withValues(alpha: t),
+                width: 1.5,
+              ),
             ),
+            child: child,
           ),
           child: Icon(
             tab.icon,
-            color: isSelected ? Gs3dTokens.accent : Colors.white60,
+            color: Color.lerp(
+              Gs3dDark.textSecondary,
+              Gs3dTokens.accent,
+              isSelected ? 1.0 : 0.45,
+            ),
             size: 20,
           ),
         ),
@@ -196,9 +215,9 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
     return Container(
       width: 320,
       decoration: const BoxDecoration(
-        color: Color(0xFF1A2230),
+        color: Gs3dDark.railBg,
         border: Border(
-          right: BorderSide(color: Color(0xFF283344)),
+          right: BorderSide(color: Gs3dDark.railBorder),
         ),
       ),
       child: Column(
@@ -209,7 +228,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: const BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: Color(0xFF283344)),
+                bottom: BorderSide(color: Gs3dDark.railBorder),
               ),
             ),
             child: Row(
@@ -219,7 +238,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
                 Text(
                   tab.title,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Gs3dDark.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
@@ -233,7 +252,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
                     child: Icon(
                       Icons.close_rounded,
                       size: 16,
-                      color: Colors.white54,
+                      color: Gs3dDark.textTertiary,
                     ),
                   ),
                 ),
@@ -263,7 +282,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           children: [
             const Text(
               '首选项与运行环境',
-              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Gs3dDark.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             _buildSettingItem(
@@ -299,7 +318,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.white60),
+          Icon(icon, size: 18, color: Gs3dDark.textSecondary),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -312,7 +331,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500),
+                  style: const TextStyle(color: Gs3dDark.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
                 ),
               ],
             ),

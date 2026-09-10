@@ -585,7 +585,7 @@ class _CenterViewportState extends State<CenterViewport> {
                                   const Icon(
                                     Icons.location_on,
                                     size: 12,
-                                    color: Color(0xFF00E5FF),
+                                    color: Gs3dTokens.measure,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -1423,7 +1423,7 @@ class ViewportCanvasPainter extends CustomPainter {
     if (selectedPoint != null) {
       final sp = projectPoint(selectedPoint!);
       final reticlePaint = Paint()
-        ..color = const Color(0xFF00E5FF)
+        ..color = Gs3dTokens.measure
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
       canvas.drawCircle(sp, 6.0, reticlePaint);
@@ -1524,14 +1524,14 @@ class ViewportCanvasPainter extends CustomPainter {
         pp,
         5.0,
         Paint()
-          ..color = const Color(0xFF00E5FF)
+          ..color = Gs3dTokens.measure
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
         pp,
         9.0,
         Paint()
-          ..color = const Color(0xFF00E5FF)
+          ..color = Gs3dTokens.measure
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5,
       );
@@ -1539,7 +1539,7 @@ class ViewportCanvasPainter extends CustomPainter {
       if (hoveredPoint != null) {
         final hp = projectPoint(hoveredPoint!);
         final previewPaint = Paint()
-          ..color = const Color(0xFF00E5FF).withAlpha(180)
+          ..color = Gs3dTokens.measure.withAlpha(180)
           ..strokeWidth = 1.5
           ..style = PaintingStyle.stroke;
         canvas.drawLine(pp, hp, previewPaint);
@@ -1549,11 +1549,11 @@ class ViewportCanvasPainter extends CustomPainter {
     // 绘制 Shift 框选矩形选区 (Box Selection Rectangle)
     if (boxSelectStart != null && boxSelectCurrent != null) {
       final rect = Rect.fromPoints(boxSelectStart!, boxSelectCurrent!);
-      canvas.drawRect(rect, Paint()..color = const Color(0x333B82F6));
+      canvas.drawRect(rect, Paint()..color = Gs3dTokens.accentBorder);
       canvas.drawRect(
         rect,
         Paint()
-          ..color = const Color(0xFF3B82F6)
+          ..color = Gs3dTokens.accent
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2,
       );

@@ -26,8 +26,8 @@ class PerformancePanel extends StatelessWidget {
         final coords = service.cameraCoordsString;
 
         final fpsColor = fps >= 60
-            ? const Color(0xFF10B981)
-            : (fps >= 30 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444));
+            ? Gs3dTokens.success
+            : (fps >= 30 ? Gs3dTokens.warning : Gs3dTokens.danger);
 
         final gpuMb = (gpuBytes / (1024 * 1024)).toStringAsFixed(1);
 
@@ -222,7 +222,7 @@ class PerformancePanel extends StatelessWidget {
                                         style: const TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
-                                          color: Color(0xFF10B981),
+                                          color: Gs3dTokens.success,
                                           fontFamily: 'monospace',
                                         ),
                                       ),
@@ -234,7 +234,7 @@ class PerformancePanel extends StatelessWidget {
                                     child: LinearProgressIndicator(
                                       value: (hitRate / 100.0).clamp(0.0, 1.0),
                                       backgroundColor: Gs3dTokens.borderStrong.withAlpha(80),
-                                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                                      valueColor: const AlwaysStoppedAnimation<Color>(Gs3dTokens.success),
                                       minHeight: 6,
                                     ),
                                   ),

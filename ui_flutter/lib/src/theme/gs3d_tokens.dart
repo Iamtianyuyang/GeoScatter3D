@@ -226,6 +226,19 @@ abstract final class Gs3dTokens {
 
   /// 兼容旧命名。
   static const List<BoxShadow> cardShadow = elevation1;
+
+  // ---- 测量标注 / 视口 HUD -------------------------------------------------
+  /// 测量标注主色（青）：距离线、锚点、活动测量态。
+  static const Color measure = Color(0xFF00E5FF);
+
+  /// 测量强调底色（20% 青）。
+  static const Color measureSubtle = Color(0x3300E5FF);
+
+  /// 视口底色预设（用户可选）：纯黑 / 石板 / 浅雾 / 午夜。
+  static const Color viewportBlack = Color(0xFF000000);
+  static const Color viewportSlate = Color(0xFF1E222A);
+  static const Color viewportLight = Color(0xFFF0F2F5);
+  static const Color viewportMidnight = Color(0xFF161A22);
 }
 
 // ============================================================================
@@ -445,6 +458,75 @@ abstract final class Gs3dMaterial {
   /// 减弱透明度模式下的实心替代色。
   static Color opaqueFallback(Color tint) =>
       Color.lerp(tint, Gs3dTokens.surface, 0.92) ?? Gs3dTokens.surface;
+}
+
+// ============================================================================
+// 3b. 暗色分析舱色阶（Dark Analysis Cabin）
+// ============================================================================
+
+/// 暗色分析舱专用色阶。
+///
+/// 「暗色分析舱」是工作台三套布局中的沉浸式深色形态，其表面/描边与浅色
+/// 工作台是**并行**的两套色阶。集中在此以保证单一来源，避免布局文件里散落
+/// 十六进制字面量。
+abstract final class Gs3dDark {
+  const Gs3dDark._();
+
+  /// 舱体背景 / 描边。
+  static const Color cabinBg = Color(0xFF161C26);
+  static const Color cabinBorder = Color(0xFF232B3A);
+
+  /// 侧轨（Rail）背景 / 描边 / 分组分隔。
+  static const Color railBg = Color(0xFF1A2230);
+  static const Color railBorder = Color(0xFF283344);
+
+  /// 舱内下拉菜单底色。
+  static const Color menuBg = Color(0xFF1E2533);
+
+  /// 舱内悬浮面板（半透明）。
+  static const Color panelTint = Color(0xEB1C2331);
+
+  /// 舱内浮层 HUD（半透明）。
+  static const Color hudTint = Color(0xB0121720);
+
+  /// 舱内主文本 / 次文本 / 弱文本。
+  static const Color textPrimary = Color(0xFFE8EDF5);
+  static const Color textSecondary = Color(0xFF9AA7BC);
+  static const Color textTertiary = Color(0xFF6B7A91);
+
+  /// 舱内描边（发丝）。
+  static const Color hairline = Color(0x1FFFFFFF);
+
+  /// 强调渐变（蓝 → 青）端点。
+  static const Color accentFrom = Color(0xFF2563EB);
+  static const Color accentTo = Color(0xFF0D9488);
+
+  /// 侧轨玻璃。
+  static const Gs3dGlassSpec railGlass = Gs3dGlassSpec(
+    blurSigma: 24,
+    tint: Color(0xF21A2230),
+    borderColor: Color(0x1FFFFFFF),
+    borderWidth: 1,
+    shadows: Gs3dTokens.elevation3,
+  );
+
+  /// 浮动控制面板玻璃。
+  static const Gs3dGlassSpec panelGlass = Gs3dGlassSpec(
+    blurSigma: 22,
+    tint: panelTint,
+    borderColor: Color(0x1FFFFFFF),
+    borderWidth: 1,
+    shadows: Gs3dTokens.elevation4,
+  );
+
+  /// 微 HUD 玻璃（弱模糊、无阴影）。
+  static const Gs3dGlassSpec hudGlass = Gs3dGlassSpec(
+    blurSigma: 12,
+    tint: hudTint,
+    borderColor: Color(0x1FFFFFFF),
+    borderWidth: 1,
+    shadows: Gs3dTokens.elevation0,
+  );
 }
 
 // ============================================================================
