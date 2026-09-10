@@ -109,7 +109,7 @@ class TopMenuBar extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
               backgroundColor: Gs3dTokens.accent,
-              foregroundColor: Colors.white,
+              foregroundColor: Gs3dTokens.textOnAccent,
               elevation: 0,
             ),
             child: const Text('我知道了'),
@@ -158,7 +158,7 @@ class TopMenuBar extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
               backgroundColor: Gs3dTokens.accent,
-              foregroundColor: Colors.white,
+              foregroundColor: Gs3dTokens.textOnAccent,
               elevation: 0,
             ),
             child: const Text('我知道了'),

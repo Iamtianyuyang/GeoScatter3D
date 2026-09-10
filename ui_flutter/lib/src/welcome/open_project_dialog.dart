@@ -251,7 +251,7 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
                             height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: Gs3dTokens.textOnAccent,
                             ),
                           )
                         : const Icon(Icons.check, size: 16),

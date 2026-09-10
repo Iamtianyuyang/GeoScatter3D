@@ -161,7 +161,7 @@ class _ExportPointCloudDialogState extends State<ExportPointCloudDialog> {
                 },
           style: ElevatedButton.styleFrom(
             backgroundColor: Gs3dTokens.accent,
-            foregroundColor: Colors.white,
+            foregroundColor: Gs3dTokens.textOnAccent,
             elevation: 0,
           ),
           child: Text(_isExporting ? '导出中...' : '开始导出'),

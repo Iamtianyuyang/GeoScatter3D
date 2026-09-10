@@ -312,9 +312,9 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: Gs3dDark.fillFaint,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: Gs3dDark.fillHairline),
       ),
       child: Row(
         children: [
@@ -326,7 +326,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
               children: [
                 Text(
                   label,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10),
+                  style: TextStyle(color: Gs3dDark.fillStrong, fontSize: 10),
                 ),
                 const SizedBox(height: 2),
                 Text(

@@ -455,6 +455,9 @@ abstract final class Gs3dMaterial {
   /// 模态遮罩底色。
   static const Color scrim = Color(0x40000000);
 
+  /// 强模态遮罩（覆盖式面板 / 全屏视察器）。
+  static const Color scrimStrong = Color(0x78000000);
+
   /// 减弱透明度模式下的实心替代色。
   static Color opaqueFallback(Color tint) =>
       Color.lerp(tint, Gs3dTokens.surface, 0.92) ?? Gs3dTokens.surface;
@@ -496,6 +499,28 @@ abstract final class Gs3dDark {
 
   /// 舱内描边（发丝）。
   static const Color hairline = Color(0x1FFFFFFF);
+
+  // ---- 玻璃上的白色叠加层（按不透明度量级命名）------------------------------
+  /// 4%：极淡填充（图表轨道底）。
+  static const Color fillFaint = Color(0x0AFFFFFF);
+
+  /// 6%：弱填充（圆形按钮底）。
+  static const Color fillWeak = Color(0x0FFFFFFF);
+
+  /// 8%：弱描边 / 极淡分割。
+  static const Color fillHairline = Color(0x14FFFFFF);
+
+  /// 10%：滑块轨道 / 输入框底。
+  static const Color fillSubtle = Color(0x1AFFFFFF);
+
+  /// 20%：分隔条 / 中等填充。
+  static const Color fillMedium = Color(0x33FFFFFF);
+
+  /// 50%：次弱文本（坐标轴刻度）。
+  static const Color fillSoft = Color(0x80FFFFFF);
+
+  /// 60%：次级图标 / 弱化文本。
+  static const Color fillStrong = Color(0x99FFFFFF);
 
   /// 强调渐变（蓝 → 青）端点。
   static const Color accentFrom = Color(0xFF2563EB);

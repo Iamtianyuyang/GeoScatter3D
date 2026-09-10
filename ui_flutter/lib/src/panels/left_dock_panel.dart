@@ -1,11 +1,14 @@
 import 'dart:math' as math;
-import '../theme/gs3d_tokens.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../ffi/geoscatter3d_service.dart';
 import '../models/dataset_model.dart';
 import '../models/point_cloud_model.dart';
+import '../theme/gs3d_tokens.dart';
 import '../welcome/welcome_ui_keys.dart';
+import '../widgets/fluid.dart';
 import '../widgets/modern_card.dart';
 import '../widgets/segmented_tabs.dart';
 
@@ -717,9 +720,18 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     Text('当前展示: 视口矩形选区统计', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Gs3dTokens.accent)),
                   ],
                 ),
-                InkWell(
+                Gs3dPressable(
                   onTap: () => widget.service.clearRegionStats(),
-                  child: const Text('清除选区', style: TextStyle(fontSize: 11, color: Colors.white70, decoration: TextDecoration.underline)),
+                  hoverScale: 0,
+                  child: const Text(
+                    '清除选区',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Gs3dTokens.accent,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Gs3dTokens.accent,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -760,23 +772,70 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Gs3dTokens.surfaceSunken,
-                  borderRadius: BorderRadius.circular(Gs3dTokens.controlRadius),
-                ),
-                child: Column(
-                  children: [
-                    _buildCoordRow('有效样本数 N', '$count 点'),
-                    _buildCoordRow('标量均值 Mean', mean.toStringAsFixed(3)),
-                    _buildCoordRow('最小值 Min', minVal.toStringAsFixed(3)),
-                    _buildCoordRow('最大值 Max', maxVal.toStringAsFixed(3)),
-                    _buildCoordRow('极差 Range', (maxVal - minVal).toStringAsFixed(3)),
-                    if (activeBoxStats != null)
-                      _buildCoordRow('标准差 StdDev', stdDev.toStringAsFixed(3)),
-                  ],
-                ),
+              // 2 列指标磁贴：数值用等宽字体 + 表格数字，两两成组便于纵向扫读。
+              Row(
+                children: [
+                  Expanded(
+                    child: Gs3dMetricTile(
+                      label: '有效样本数 N',
+                      value: '$count',
+                      unit: '点',
+                      dense: true,
+                    ),
+                  ),
+                  const SizedBox(width: Gs3dTokens.space8),
+                  Expanded(
+                    child: Gs3dMetricTile(
+                      label: '标量均值 Mean',
+                      value: mean.toStringAsFixed(3),
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Gs3dTokens.space8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Gs3dMetricTile(
+                      label: '最小值 Min',
+                      value: minVal.toStringAsFixed(3),
+                      dense: true,
+                    ),
+                  ),
+                  const SizedBox(width: Gs3dTokens.space8),
+                  Expanded(
+                    child: Gs3dMetricTile(
+                      label: '最大值 Max',
+                      value: maxVal.toStringAsFixed(3),
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Gs3dTokens.space8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Gs3dMetricTile(
+                      label: '极差 Range',
+                      value: (maxVal - minVal).toStringAsFixed(3),
+                      dense: true,
+                    ),
+                  ),
+                  const SizedBox(width: Gs3dTokens.space8),
+                  // 标准差仅在存在矩形选区统计时可用。
+                  if (activeBoxStats == null)
+                    const Spacer()
+                  else
+                    Expanded(
+                      child: Gs3dMetricTile(
+                        label: '标准差 StdDev',
+                        value: stdDev.toStringAsFixed(3),
+                        dense: true,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 14),
               const Text('数值直方图分布 (5 Bins)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Gs3dTokens.textPrimary)),
@@ -800,9 +859,13 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                             Container(
                               height: (60 * fraction).clamp(4.0, 60.0),
                               decoration: BoxDecoration(
-                                color: (activeBoxStats != null ? Gs3dTokens.accent : Gs3dTokens.accent)
-                                    .withAlpha((100 + i * 35).clamp(0, 255)),
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                // 越靠右的区间颜色越深，强化分布方向感。
+                                color: Gs3dTokens.accent.withValues(
+                                  alpha: (0.40 + i * 0.135).clamp(0.0, 1.0),
+                                ),
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(3),
+                                ),
                               ),
                             ),
                           ],

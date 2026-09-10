@@ -28,7 +28,7 @@ class ShortcutOverlay extends StatelessWidget {
             child: GestureDetector(
               onTap: () => service.toggleShortcutOverlay(false),
               child: Container(
-                color: Colors.black.withAlpha(140),
+                color: Gs3dMaterial.scrimStrong,
               ),
             ),
           ),
@@ -44,13 +44,7 @@ class ShortcutOverlay extends StatelessWidget {
                 color: Gs3dTokens.surface,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Gs3dTokens.border, width: 1),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black54,
-                    blurRadius: 30,
-                    offset: Offset(0, 12),
-                  ),
-                ],
+                boxShadow: Gs3dTokens.elevation3,
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -164,7 +158,7 @@ class ShortcutOverlay extends StatelessWidget {
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Gs3dTokens.accent,
-                              foregroundColor: Colors.white,
+                              foregroundColor: Gs3dTokens.textOnAccent,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             ),
@@ -234,7 +228,11 @@ class ShortcutOverlay extends StatelessWidget {
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(color: Gs3dTokens.border),
                         boxShadow: const [
-                          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
+                          BoxShadow(
+                            color: Gs3dTokens.hairline,
+                            blurRadius: 2,
+                            offset: Offset(0, 1),
+                          ),
                         ],
                       ),
                       child: Text(

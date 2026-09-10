@@ -36,7 +36,7 @@ class TileInspectorDialog extends StatelessWidget {
             Positioned.fill(
               child: GestureDetector(
                 onTap: () => service.toggleTileInspector(false),
-                child: Container(color: Colors.black.withAlpha(120)),
+                child: Container(color: Gs3dMaterial.scrimStrong),
               ),
             ),
 
@@ -53,7 +53,7 @@ class TileInspectorDialog extends StatelessWidget {
                   border: Border.all(color: Gs3dTokens.border, width: 1),
                   boxShadow: const [
                     BoxShadow(
-                      color: Colors.black45,
+                      color: Gs3dMaterial.scrimStrong,
                       blurRadius: 24,
                       offset: Offset(0, 10),
                     ),
@@ -243,7 +243,7 @@ class TileInspectorDialog extends StatelessWidget {
                                             'LOD $idx',
                                             style: const TextStyle(
                                               fontSize: 10,
-                                              color: Colors.white,
+                                              color: Gs3dTokens.textOnAccent,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -364,7 +364,7 @@ class TileInspectorDialog extends StatelessWidget {
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Gs3dTokens.accent,
-                                foregroundColor: Colors.white,
+                                foregroundColor: Gs3dTokens.textOnAccent,
                                 elevation: 0,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 20,

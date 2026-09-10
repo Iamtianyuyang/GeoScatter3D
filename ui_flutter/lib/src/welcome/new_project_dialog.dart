@@ -528,7 +528,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                               height: 14,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: Gs3dTokens.textOnAccent,
                               ),
                             )
                           : const Icon(Icons.rocket_launch_rounded, size: 16),

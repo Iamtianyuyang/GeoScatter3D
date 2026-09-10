@@ -153,7 +153,7 @@ class _CommandPaletteState extends State<CommandPalette> {
           Positioned.fill(
             child: GestureDetector(
               onTap: () => widget.service.toggleCommandPalette(false),
-              child: Container(color: Colors.black.withAlpha(120)),
+              child: Container(color: Gs3dMaterial.scrimStrong),
             ),
           ),
 
@@ -171,7 +171,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                 border: Border.all(color: Gs3dTokens.border, width: 1),
                 boxShadow: const [
                   BoxShadow(
-                    color: Colors.black45,
+                    color: Gs3dMaterial.scrimStrong,
                     blurRadius: 24,
                     offset: Offset(0, 10),
                   ),

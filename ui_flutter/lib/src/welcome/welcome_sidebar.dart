@@ -327,7 +327,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
         style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: Gs3dTokens.textOnAccent,
         ),
       ),
     );

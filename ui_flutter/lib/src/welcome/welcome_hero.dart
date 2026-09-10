@@ -103,7 +103,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
                   ),
                   borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
+                    color: Gs3dTokens.textOnAccent.withValues(alpha: 0.4),
                     width: 1.2,
                   ),
                   boxShadow: Gs3dTokens.accentGlow(alpha: 0.25, blur: 28),
@@ -114,7 +114,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
                   style: TextStyle(
                     fontSize: 38,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: Gs3dTokens.textOnAccent,
                     letterSpacing: -1,
                   ),
                 ),

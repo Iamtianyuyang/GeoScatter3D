@@ -561,7 +561,7 @@ class _WelcomePageState extends State<WelcomePage> {
                             style: TextStyle(
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white,
+                              color: Gs3dTokens.textOnAccent,
                             ),
                           ),
                         ),

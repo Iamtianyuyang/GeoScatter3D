@@ -134,7 +134,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           Container(
             width: 1,
             height: 22,
-            color: Colors.white.withValues(alpha: 0.2),
+            color: Gs3dDark.fillMedium,
           ),
           const SizedBox(width: 10),
           // 快速重置视角
@@ -154,7 +154,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: Gs3dDark.fillWeak,
                     ),
                     child: const Icon(
                       Icons.refresh_rounded,
@@ -188,7 +188,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           decoration: BoxDecoration(
             color: isSelected
                 ? Gs3dTokens.accent
-                : Colors.white.withValues(alpha: 0.06),
+                : Gs3dDark.fillWeak,
             borderRadius: BorderRadius.circular(22),
           ),
           child: Row(
@@ -232,7 +232,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  bottom: BorderSide(color: Gs3dDark.fillSubtle),
                 ),
               ),
               child: Row(
@@ -256,7 +256,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
                       child: Icon(
                         Icons.close_rounded,
                         size: 16,
-                        color: Colors.white.withValues(alpha: 0.6),
+                        color: Gs3dDark.fillStrong,
                       ),
                     ),
                   ),
@@ -297,7 +297,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
+                color: Gs3dDark.fillFaint,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Column(
@@ -374,7 +374,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
               min: 1.0,
               max: 10.0,
               activeColor: Gs3dTokens.accent,
-              inactiveColor: Colors.white.withValues(alpha: 0.1),
+              inactiveColor: Gs3dDark.fillSubtle,
               onChanged: (val) => widget.service.setPointSize(val),
             ),
             const SizedBox(height: 10),
@@ -387,7 +387,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
+                fillColor: Gs3dDark.fillWeak,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
               items: const [
@@ -416,7 +416,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
             width: 80,
             child: Text(
               label,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
+              style: TextStyle(color: Gs3dDark.fillStrong, fontSize: 11),
             ),
           ),
           Expanded(
@@ -445,7 +445,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
         const SizedBox(height: 4),
         Text(
           label,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9),
+          style: TextStyle(color: Gs3dDark.fillSoft, fontSize: 9),
         ),
       ],
     );
