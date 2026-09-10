@@ -153,6 +153,60 @@ int32_t gs3d_engine_set_value_clip(
     return 0;
 }
 
+int32_t gs3d_engine_set_height_source(gs3d_engine* e, int32_t source) {
+    if (e == nullptr) return -1;
+    e->kernel.set_height_source(source);
+    return 0;
+}
+
+int32_t gs3d_engine_set_color_source(gs3d_engine* e, int32_t source) {
+    if (e == nullptr) return -1;
+    e->kernel.set_color_source(source);
+    return 0;
+}
+
+int32_t gs3d_engine_set_height_exaggeration(gs3d_engine* e, float mult) {
+    if (e == nullptr) return -1;
+    e->kernel.set_height_exaggeration(mult);
+    return 0;
+}
+
+int32_t gs3d_engine_set_background(
+    gs3d_engine* e, float r, float g, float b, float a) {
+    if (e == nullptr) return -1;
+    e->kernel.set_background(r, g, b, a);
+    return 0;
+}
+
+int32_t gs3d_engine_export(
+    gs3d_engine* e, const char* path, const char* format) {
+    if (e == nullptr || path == nullptr) return -1;
+    return e->kernel.export_dataset(path, format != nullptr ? format : "ply");
+}
+
+int32_t gs3d_engine_pick_point(
+    gs3d_engine* e, float screen_x, float screen_y,
+    float tolerance_px, float* out_point_xyzv) {
+    if (e == nullptr) return -1;
+    return e->kernel.pick_point(screen_x, screen_y, tolerance_px, out_point_xyzv);
+}
+
+int32_t gs3d_engine_gizmo_axis(gs3d_engine* e, int32_t axis) {
+    if (e == nullptr) return -1;
+    return e->kernel.gizmo_axis(axis);
+}
+
+int32_t gs3d_engine_clear_tile_cache(gs3d_engine* e) {
+    if (e == nullptr) return -1;
+    return e->kernel.clear_tile_cache();
+}
+
+int32_t gs3d_engine_read_frame_png(
+    gs3d_engine* e, uint8_t* out, uint32_t max_bytes, uint32_t* out_len) {
+    if (e == nullptr || out == nullptr || out_len == nullptr) return -1;
+    return e->kernel.encode_last_frame_png(out, max_bytes, out_len);
+}
+
 int32_t gs3d_engine_set_camera_look_at(
     gs3d_engine* e,
     float pos_x, float pos_y, float pos_z,
@@ -188,20 +242,54 @@ int32_t gs3d_engine_render_rgba(
 
 const char* gs3d_engine_get_snapshot_json(gs3d_engine* e) {
     if (e == nullptr) return retain_cstr("{}");
+    const auto cam = e->kernel.camera_state();
+    const auto ren = e->kernel.render_state();
+    const auto vp = e->kernel.viewport_state();
     nlohmann::json snap;
+    snap["id"] = "engine.snapshot";
     snap["ready"] = e->kernel.has_dataset();
     snap["point_count"] = e->kernel.point_count();
-    snap["id"] = "engine.snapshot";
+    snap["camera"] = {
+        {"azimuth", cam.azimuth_deg},
+        {"elevation", cam.elevation_deg},
+        {"zoom", cam.zoom},
+        {"pan", {cam.pan[0], cam.pan[1]}},
+        {"position", {cam.position[0], cam.position[1], cam.position[2]}},
+        {"target", {cam.target[0], cam.target[1], cam.target[2]}},
+        {"distance", cam.distance},
+    };
+    snap["render"] = {
+        {"point_size", ren.point_size},
+        {"colormap_index", ren.colormap_index},
+        {"point_shape", ren.point_shape},
+        {"height_source", ren.height_source},
+        {"color_source", ren.color_source},
+        {"height_mult", ren.height_mult},
+        {"value_clip", {
+            {"enabled", ren.value_clip_enabled != 0},
+            {"min", ren.value_clip_min},
+            {"max", ren.value_clip_max},
+        }},
+    };
+    snap["viewport"] = {
+        {"width", vp.width},
+        {"height", vp.height},
+        {"frame_ready", vp.frame_ready},
+    };
     return retain_cstr(snap.dump());
 }
 
 const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e) {
     if (e == nullptr) return retain_cstr("{}");
+    const auto vp = e->kernel.viewport_state();
     nlohmann::json diag;
     diag["id"] = "engine.diagnostics";
     diag["ready"] = e->kernel.has_dataset();
     diag["point_count"] = e->kernel.point_count();
     diag["last_error"] = e->kernel.last_error();
+    diag["frame_ready"] = vp.frame_ready;
+    diag["fps"] = vp.fps;
+    diag["viewport"] = {{"width", vp.width}, {"height", vp.height}};
     return retain_cstr(diag.dump());
 }
 

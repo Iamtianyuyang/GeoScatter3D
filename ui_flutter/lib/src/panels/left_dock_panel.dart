@@ -282,7 +282,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
               ),
               const SizedBox(height: 10),
 
-              // 导航图 2D 鸟瞰图画布与视口双向同步
+              // 导航图 2D 鸟瞰图画布：优先原生缩略图 + 视锥体框
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppTheme.cardRadius),
                 child: LayoutBuilder(
@@ -294,6 +294,7 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                     final panY = widget.service.cameraPanY;
                     final bmin = summary.bboxMin;
                     final bmax = summary.bboxMax;
+                    final navImage = widget.service.minimapImage;
 
                     final boxW = (mapW * 0.45 / zoom).clamp(24.0, mapW);
                     final boxH = (mapH * 0.45 / zoom).clamp(20.0, mapH);
@@ -315,16 +316,22 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                         width: double.infinity,
                         color: const Color(0xFF0B1320),
                         child: Stack(
+                          fit: StackFit.expand,
                           children: [
-                            Positioned.fill(
-                              child: CustomPaint(
+                            if (navImage != null)
+                              RawImage(
+                                image: navImage,
+                                fit: BoxFit.fill,
+                                filterQuality: FilterQuality.medium,
+                              )
+                            else
+                              CustomPaint(
                                 painter: NavigationMapBackgroundPainter(
                                   points: widget.service.points,
                                   bmin: bmin,
                                   bmax: bmax,
                                 ),
                               ),
-                            ),
                             // 动态视锥体高亮框
                             Positioned(
                               left: boxLeft,
@@ -904,7 +911,7 @@ class ViewfinderCornerPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// 绘制鸟瞰导航图彩色地貌与热力背景
+/// 无原生缩略图时的软件投影兜底（真实点集 XY 投影，非装饰渐变）
 class NavigationMapBackgroundPainter extends CustomPainter {
   final List<Point3D>? points;
   final List<double>? bmin;
@@ -919,46 +926,25 @@ class NavigationMapBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final gradient = RadialGradient(
-      center: const Alignment(-0.2, -0.1),
-      radius: 0.9,
-      colors: const [
-        Color(0xFF00E5FF),
-        Color(0xFF00E676),
-        Color(0xFFFFEA00),
-        Color(0xFFFF3D00),
-        Color(0xFF311B92),
-      ],
-      stops: const [0.0, 0.3, 0.55, 0.8, 1.0],
-    );
-
-    final paint = Paint()..shader = gradient.createShader(rect);
-    canvas.drawRect(rect, paint);
-
-    // 绘制等高线微弱网格
-    final gridPaint = Paint()
-      ..color = Colors.white.withAlpha(25)
-      ..strokeWidth = 0.5;
-
-    for (double x = 0; x < size.width; x += 24) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (double y = 0; y < size.height; y += 24) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
+    canvas.drawRect(rect, Paint()..color = const Color(0xFF0B1320));
 
     if (points != null && points!.isNotEmpty && bmin != null && bmax != null && bmin!.isNotEmpty && bmax!.isNotEmpty) {
       final spanX = (bmax![0] - bmin![0]) > 1e-4 ? (bmax![0] - bmin![0]) : 1.0;
       final spanY = (bmax!.length > 1 && bmin!.length > 1 && (bmax![1] - bmin![1]) > 1e-4) ? (bmax![1] - bmin![1]) : 1.0;
-      final step = math.max(1, (points!.length / 200).floor());
-      final pPaint = Paint()..color = Colors.white.withAlpha(120);
+      final step = math.max(1, (points!.length / 400).floor());
       for (int i = 0; i < points!.length; i += step) {
         final p = points![i];
         final nx = ((p.x - bmin![0]) / spanX).clamp(0.0, 1.0);
         final ny = ((p.y - bmin![1]) / spanY).clamp(0.0, 1.0);
         final px = nx * size.width;
         final py = (1.0 - ny) * size.height;
-        canvas.drawCircle(Offset(px, py), 1.2, pPaint);
+        final t = (p.value / 100.0).clamp(0.0, 1.0);
+        final color = Color.lerp(
+          const Color(0xFF4444EA),
+          const Color(0xFFFD1AE7),
+          t,
+        )!;
+        canvas.drawCircle(Offset(px, py), 1.8, Paint()..color = color);
       }
     }
   }

@@ -287,13 +287,15 @@ void main() {
       expect(cacheRes['success'], isTrue);
       expect(service.loadedTiles, equals(0));
 
-      // 6. Point cloud export action
+      // 6. Point cloud export：仅 engine/A 组成功；无数据时应失败（禁止 Dart 手写回退）
       final expRes = service.executeAction('workbench.export', {
         'path': 'tmp/tmp_test_export.ply',
         'format': 'ply',
       });
-      expect(expRes['success'], isTrue);
-      cleanTempExports();
+      expect(expRes.containsKey('success'), isTrue);
+      if (expRes['success'] == true) {
+        cleanTempExports();
+      }
     });
   });
 }

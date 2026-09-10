@@ -94,7 +94,7 @@ class TopMenuBar extends StatelessWidget {
               SizedBox(height: 4),
               Text(
                 '• 旋转视角：鼠标左键按住拖拽\n'
-                '• 平移视口：开启平移模式后左键拖拽\n'
+                '• 平移视口：鼠标右键/中键按住拖拽，或开启平移模式后左键拖拽\n'
                 '• 缩放视野：滚动鼠标滚轮 或 点击放大/缩小按钮\n'
                 '• 复位视角：快捷工具栏「复位视角 R」',
                 style: TextStyle(fontSize: 12.5, color: AppTheme.textBody, height: 1.5),

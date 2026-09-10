@@ -623,7 +623,7 @@ class _WelcomePageState extends State<WelcomePage> {
                 icon: Icons.mouse_rounded,
                 items: const [
                   {'label': '旋转视角', 'val': '鼠标左键拖拽'},
-                  {'label': '平移视口', 'val': '鼠标中键 或 Shift+左键'},
+                  {'label': '平移视口', 'val': '右键/中键拖拽 或 Shift+左键'},
                   {'label': '缩放视野', 'val': '滚轮滚动'},
                   {'label': '复位视角', 'val': 'Ctrl+R / 顶栏视角复位'},
                   {'label': '新建工程', 'val': '⌘N / Ctrl+N'},

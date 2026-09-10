@@ -14,7 +14,6 @@ import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import '../models/measurement_line_model.dart';
-import '../native/viewer_control_client.dart';
 import 'geoscatter3d_bindings.dart';
 
 part 'welcome_backend.dart';
@@ -114,25 +113,18 @@ class GeoScatter3dService extends ChangeNotifier {
 
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
-  NativeViewerControlClient? _nativeViewer;
-  // 单进程离屏引擎（优先路径；双进程 Viewer 为兼容回退）
+  // 单进程离屏引擎：唯一渲染路径；无引擎则工作台不可用（无 Dart 软预览）
   Pointer<Void>? _engineHandle;
   int _engineW = 0;
   int _engineH = 0;
   ui.Image? _nativeFrameImage;
   Timer? _nativeFrameTimer;
   bool _nativeFrameBusy = false;
-  Future<void> _nativeCommandTail = Future<void>.value();
   Map<String, dynamic> _nativeSnapshot = const {};
-  // 相机增量合并：拖拽时高频 onPanUpdate 合成一帧再送原生。
-  double _camAccRotX = 0;
-  double _camAccRotY = 0;
-  double _camAccPanX = 0;
-  double _camAccPanY = 0;
-  double _camAccScroll = 0;
   Timer? _camFlushTimer;
   bool _nativeInteracting = false;
   bool _engineRenderQueued = false;
+  double _lastEngineFrameMs = 0;
   Map<String, dynamic> get nativeSnapshot => _nativeSnapshot;
   bool get isRegionComputing => _nativeSnapshot['region_computing'] == true;
   List<String> get nativeTileDetails => List<String>.from(
@@ -347,6 +339,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   // 2D 鸟瞰小地图
   Uint8List? _minimapRgba;
+  ui.Image? _minimapImage;
   int _minimapWidth = 200;
   int _minimapHeight = 160;
 
@@ -375,6 +368,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   Map<String, dynamic>? get activeRegionStats => _activeRegionStats;
   Uint8List? get minimapRgba => _minimapRgba;
+  ui.Image? get minimapImage => _minimapImage;
   int get minimapWidth => _minimapWidth;
   int get minimapHeight => _minimapHeight;
 
@@ -385,13 +379,14 @@ class GeoScatter3dService extends ChangeNotifier {
 
   bool get leftDockVisible => _leftDockVisible;
   bool get rightDockVisible => _rightDockVisible;
-  bool get isDualProcessNative => _nativeViewer?.isConnected ?? false;
+  /// 双进程已移除；保留 getter 供 UI 编译。
+  bool get isDualProcessNative => false;
   bool get isEngineNative => _engineHandle != null;
-  bool get isNativeRendererActive => isEngineNative || isDualProcessNative;
+  bool get isNativeRendererActive => isEngineNative;
   Uint8List? get nativeViewportPng => _nativeViewportPng;
   ui.Image? get nativeFrameImage => _nativeFrameImage;
-  int get nativeFrameWidth => _engineW > 0 ? _engineW : (_nativeViewer?.lastCaptureWidth ?? 0);
-  int get nativeFrameHeight => _engineH > 0 ? _engineH : (_nativeViewer?.lastCaptureHeight ?? 0);
+  int get nativeFrameWidth => _engineW > 0 ? _engineW : 0;
+  int get nativeFrameHeight => _engineH > 0 ? _engineH : 0;
   String? get nativeViewerError => _nativeViewerError;
 
   void setPanning(bool panning) {
@@ -459,7 +454,21 @@ class GeoScatter3dService extends ChangeNotifier {
     if (panX != null) _cameraPanX = panX;
     if (panY != null) _cameraPanY = panY;
     final nativeAxis = _nativeAxisForPreset(preset);
-    if (nativeAxis != null) {
+    if (isEngineNative) {
+      // engine：预设视角用 look_at；增量旋转/平移仍走 camera_input
+      if (preset != null) {
+        _syncEngineCameraFromAzElZoom();
+      } else if (nativeAxis != null) {
+        _syncEngineCameraFromAzElZoom();
+      } else if (azimuth != null || elevation != null || zoom != null) {
+        _syncEngineCameraFromAzElZoom();
+      } else if (panX != null || panY != null) {
+        _queueNativeCamera({
+          'pan_delta_x': _cameraPanX - previousPanX,
+          'pan_delta_y': _cameraPanY - previousPanY,
+        });
+      }
+    } else if (nativeAxis != null) {
       _queueNativeCommand('gizmo.navigation', 'click', {'axis': nativeAxis});
     } else if (preset == null) {
       if (azimuth != null || elevation != null) {
@@ -512,6 +521,7 @@ class GeoScatter3dService extends ChangeNotifier {
       final nativeShape = _nativePointShape(normalized);
       if (nativeShape != null) {
         _queueNativeRenderSettings({'point_shape': nativeShape});
+        _applyEngineRenderSettings();
       }
       notifyListeners();
     }
@@ -522,6 +532,7 @@ class GeoScatter3dService extends ChangeNotifier {
     if (_heightScale != clamped) {
       _heightScale = clamped;
       _queueNativeRenderSettings({'height_exaggeration': clamped});
+      _applyEngineRenderSettings();
       notifyListeners();
     }
   }
@@ -530,6 +541,7 @@ class GeoScatter3dService extends ChangeNotifier {
     if (_heightSource != source) {
       _heightSource = source;
       _queueNativeRenderSettings({'height_attribute': source});
+      _applyEngineRenderSettings();
       notifyListeners();
     }
   }
@@ -538,6 +550,7 @@ class GeoScatter3dService extends ChangeNotifier {
     if (_colorAttribute != attr) {
       _colorAttribute = attr;
       _queueNativeRenderSettings({'color_attribute': attr});
+      _applyEngineRenderSettings();
       notifyListeners();
     }
   }
@@ -545,7 +558,7 @@ class GeoScatter3dService extends ChangeNotifier {
   void setViewportBackgroundColor(Color color) {
     if (_viewportBackgroundColor != color) {
       _viewportBackgroundColor = color;
-      // 原生渲染背景由 clear_color 控制；此处在 Flutter 侧绘制，仅保持本地状态。
+      _applyEngineRenderSettings();
       notifyListeners();
     }
   }
@@ -554,9 +567,6 @@ class GeoScatter3dService extends ChangeNotifier {
     final clamped = index.clamp(0, kThemeNames.length - 1);
     if (_themeIndex != clamped) {
       _themeIndex = clamped;
-      if (clamped < 4) {
-        _queueNativeCommand('menu.view.theme', 'set_value', {'value': clamped});
-      }
       notifyListeners();
     }
   }
@@ -566,20 +576,17 @@ class GeoScatter3dService extends ChangeNotifier {
   void setCameraLinked(bool linked) {
     if (_cameraLinked == linked) return;
     _cameraLinked = linked;
-    _queueNativeCommand('toolbar.link_camera', 'click');
     notifyListeners();
   }
 
   void toggleCameraLinked() => setCameraLinked(!_cameraLinked);
 
   void requestNewView() {
-    _queueNativeCommand('menu.view.new_view', 'click');
-    notifyListeners();
+    setCameraView(preset: 'iso');
   }
 
   void requestNewWorkspaceWindow() {
-    _queueNativeCommand('menu.window.new_workspace', 'click');
-    notifyListeners();
+    restoreWorkspace();
   }
 
   void restoreWorkspace() {
@@ -593,14 +600,12 @@ class GeoScatter3dService extends ChangeNotifier {
     _isShortcutOverlayOpen = false;
     _isPerformancePanelOpen = false;
     _isTileInspectorOpen = false;
-    _queueNativeCommand('menu.view.restore_workspace', 'click');
     notifyListeners();
   }
 
   void setNativePanelVisible(String panelId, bool visible) {
     if (!_nativePanelVisible.containsKey(panelId)) return;
     _nativePanelVisible[panelId] = visible;
-    _queueNativeCommand(panelId, 'set_visible', {'visible': visible});
     notifyListeners();
   }
 
@@ -609,19 +614,39 @@ class GeoScatter3dService extends ChangeNotifier {
     setNativePanelVisible(panelId, !current);
   }
 
+  /// 打开文件：A 组原生对话框 → 交给既有加载流程。
   void openViaNativeFileMenu() {
-    _queueNativeCommand('menu.file.open', 'click');
-    notifyListeners();
+    unawaited(_openPickedDataset(bundle: false));
   }
 
   void openViaNativeBundleMenu() {
-    _queueNativeCommand('menu.file.open_bundle', 'click');
-    notifyListeners();
+    unawaited(_openPickedDataset(bundle: true));
+  }
+
+  Future<void> _openPickedDataset({required bool bundle}) async {
+    if (_bindings == null || !_initialized) return;
+    try {
+      String path;
+      if (bundle) {
+        path = _readFfiCstr(_bindings!.pick_folder());
+      } else {
+        final filter = 'dataset'.toNativeUtf8();
+        try {
+          path = _readFfiCstr(_bindings!.pick_file(filter));
+        } finally {
+          calloc.free(filter);
+        }
+      }
+      if (path.isEmpty) return;
+      await executeActionAsync('welcome.open_project', {'path': path});
+    } catch (error) {
+      _nativeViewerError = '打开对话框失败: $error';
+      notifyListeners();
+    }
   }
 
   void requestNativeMenuScreenshot() {
-    _queueNativeCommand('menu.file.screenshot', 'click');
-    notifyListeners();
+    requestScreenshot();
   }
 
   void rememberRecentProject(String path) {
@@ -636,37 +661,11 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
-  /// 查询原生 status.bar / runtime.diagnostics，补齐状态栏只读信息。
+  /// 查询原生诊断，补齐状态栏只读信息。
   Future<void> refreshNativeStatusBar() async {
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
-    try {
-      final response = await client.request('get_state', {
-        'component': 'status.bar',
-      });
-      final result = response['result'];
-      if (result is Map<String, dynamic>) {
-        _nativeSnapshot = Map<String, dynamic>.from({
-          ..._nativeSnapshot,
-          'status_bar': result,
-        });
-        final cam = result['camera_position'];
-        if (cam is String && cam.isNotEmpty) {
-          _cameraCoordsString = cam;
-        }
-        final fps = result['fps'];
-        if (fps is num) _fps = fps.toDouble();
-        final visible = result['visible_points'];
-        if (visible is num) _visiblePoints = visible.toInt();
-        final loaded = result['loaded_tiles'];
-        if (loaded is num) _loadedTiles = loaded.toInt();
-        final pending = result['pending_tiles'];
-        if (pending is num) _pendingTiles = pending.toInt();
-        final gpuMem = result['gpu_memory_bytes'];
-        if (gpuMem is num) _gpuMemoryBytes = gpuMem.toInt();
-        notifyListeners();
-      }
-    } catch (_) {}
+    if (isEngineNative) {
+      _pollEngineMetrics();
+    }
   }
 
   void resetScalarRange() {
@@ -835,7 +834,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
-  /// 启动原生渲染：优先单进程 engine（低延迟 RGBA），失败则回退双进程 Viewer。
+  /// 启动原生渲染：仅 `gs3d_engine_*`；失败返回 false 并设置错误（无 Dart 回退）。
   Future<bool> startNativeRenderer() async {
     final datasetPath = _loadedDatasetPath;
     if (datasetPath == null || datasetPath.isEmpty) {
@@ -844,13 +843,22 @@ class GeoScatter3dService extends ChangeNotifier {
       return false;
     }
 
-    await stopNativeRenderer();
-    if (_bindings?.hasEngineApi == true) {
-      final ok = await _startEngineRenderer(datasetPath);
-      if (ok) return true;
-      // engine 失败继续尝试双进程
+    try {
+      await stopNativeRenderer();
+    } catch (error) {
+      _nativeViewerError = '停止旧渲染器时出错: $error';
     }
-    return _startDualProcessRenderer(datasetPath);
+    if (_bindings?.hasEngineApi != true) {
+      _nativeViewerError =
+          '需要 gs3d_engine_* 单进程内核（请重建并部署 gs3d_ffi.dll）';
+      notifyListeners();
+      return false;
+    }
+    final ok = await _startEngineRenderer(datasetPath);
+    if (!ok) {
+      notifyListeners();
+    }
+    return ok;
   }
 
   Future<bool> _startEngineRenderer(String datasetPath) async {
@@ -898,52 +906,30 @@ class GeoScatter3dService extends ChangeNotifier {
       _engineH = h;
       _nativeViewerError = null;
       _nativeSnapshot = {'ready': true, 'point_count': _summary.pointCount};
+      // 把当前 UI 渲染参数同步进 engine，避免首帧与侧栏状态脱节。
+      // 不在 apply 里再 schedule，避免与下面的 await 首帧竞态。
+      _applyEngineRenderSettings(scheduleRender: false);
       await _renderEngineFrame();
+      if (_nativeFrameImage == null) {
+        // 首帧失败：销毁句柄并报错；无软件预览回退。
+        _engineHandle = null;
+        try {
+          await Isolate.run(() {
+            final b = GeoScatter3dBindings.openLibrary();
+            b.engine_destroy_opt?.call(Pointer<Void>.fromAddress(addr));
+          });
+        } catch (_) {}
+        final err = _nativeViewerError ?? '首帧渲染失败';
+        _nativeViewerError = '单进程引擎启动失败: $err';
+        return false;
+      }
       _restartNativeFrameTimer();
+      unawaited(refreshMinimap());
       notifyListeners();
-      return _nativeFrameImage != null;
+      return true;
     } catch (error) {
       _nativeViewerError = '单进程引擎异常: $error';
       _engineHandle = null;
-      return false;
-    }
-  }
-
-  Future<bool> _startDualProcessRenderer(String datasetPath) async {
-    final executable = _resolveNativeViewerExecutable();
-    if (executable == null) {
-      _nativeViewerError = '未找到 GeoScatter3D.exe';
-      notifyListeners();
-      return false;
-    }
-
-    final client = NativeViewerControlClient();
-    _nativeViewer = client;
-    try {
-      final started = await client.start(
-        executablePath: executable,
-        datasetPath: datasetPath,
-      );
-      if (!started) {
-        _nativeViewer = null;
-        _nativeViewerError = '原生查看器未能在 10 秒内就绪';
-        notifyListeners();
-        return false;
-      }
-      _nativeViewerError = null;
-      // 确保相机取景到数据包围盒，避免首帧空场。
-      await client.executeComponent('canvas.viewport', 'reset_camera', const {});
-      await refreshNativeViewport();
-      if (_nativeViewportPng == null || _nativeSnapshot['ready'] != true) {
-        throw StateError(_nativeViewerError ?? '原生视口尚未就绪');
-      }
-      _restartNativeFrameTimer();
-      return true;
-    } catch (error) {
-      await client.stop(force: true);
-      _nativeViewer = null;
-      _nativeViewerError = '原生查看器启动失败: $error';
-      notifyListeners();
       return false;
     }
   }
@@ -956,6 +942,7 @@ class GeoScatter3dService extends ChangeNotifier {
     final addr = e.address;
     final w = _engineW;
     final h = _engineH;
+    final sw = Stopwatch()..start();
     try {
       final result = await Isolate.run(() {
         final b = GeoScatter3dBindings.openLibrary();
@@ -1008,6 +995,12 @@ class GeoScatter3dService extends ChangeNotifier {
         _nativeViewerError = 'engine 渲染失败: $error';
       }
     } finally {
+      final ms = sw.elapsedMicroseconds / 1000.0;
+      if (ms > 0.3) {
+        _lastEngineFrameMs = ms;
+        _frameTimeMs = ms;
+        _fps = 1000.0 / ms;
+      }
       _nativeFrameBusy = false;
     }
   }
@@ -1041,46 +1034,14 @@ class GeoScatter3dService extends ChangeNotifier {
     _nativeFrameTimer = Timer.periodic(interval, (_) {
       if (isEngineNative) {
         if (!_nativeInteracting) unawaited(_renderEngineFrame());
-        return;
       }
-      unawaited(refreshNativeViewport(includeState: !_nativeInteracting));
     });
   }
 
   Future<void> refreshNativeViewport({bool includeState = true}) async {
     if (isEngineNative) {
       await _renderEngineFrame();
-      return;
     }
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected || _nativeFrameBusy) return;
-    // 拖拽中让相机合并帧优先，避免旧截图覆盖新视角。
-    if (_nativeInteracting && (_camFlushTimer != null || _camAccRotX != 0 || _camAccRotY != 0 || _camAccPanX != 0 || _camAccPanY != 0 || _camAccScroll != 0)) {
-      return;
-    }
-    _nativeFrameBusy = true;
-    try {
-      final png = await client.capturePng();
-      if (!identical(client, _nativeViewer)) return;
-      _nativeViewportPng = png;
-      _nativeViewerError = null;
-      if (includeState) {
-        final state = await client.request('get_state', {
-          'component': 'runtime.pick',
-        });
-        if (!identical(client, _nativeViewer)) return;
-        applyNativeSnapshot(Map<String, dynamic>.from(state['result'] as Map));
-      } else {
-        notifyListeners();
-      }
-    } catch (error) {
-      if (identical(client, _nativeViewer)) {
-        _nativeViewerError = '读取原生渲染帧失败: $error';
-      }
-    } finally {
-      _nativeFrameBusy = false;
-    }
-    if (includeState) notifyListeners();
   }
 
   /// 原生主线程产生的纯数据快照统一归并到状态中枢。
@@ -1138,23 +1099,26 @@ class GeoScatter3dService extends ChangeNotifier {
     _pickFlushTimer?.cancel();
     _pickFlushTimer = null;
     _pendingPickParams = null;
-    _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
     _nativeInteracting = false;
     final engine = _engineHandle;
     _engineHandle = null;
     _nativeFrameImage?.dispose();
     _nativeFrameImage = null;
-    final client = _nativeViewer;
-    _nativeViewer = null;
     _nativeViewportPng = null;
     _nativeSnapshot = const {};
     if (engine != null) {
-      await Isolate.run(() {
-        _bindings?.engine_destroy_opt?.call(Pointer<Void>.fromAddress(engine.address));
-      });
-    }
-    if (client != null) {
-      await client.stop();
+      // 只捕获 address（int）；在 isolate 内重新 openLibrary，避免把
+      // 带 Timer/ChangeNotifier 的 this 送进 Isolate.run（unsendable）。
+      final addr = engine.address;
+      try {
+        await Isolate.run(() {
+          final b = GeoScatter3dBindings.openLibrary();
+          b.engine_destroy_opt?.call(Pointer<Void>.fromAddress(addr));
+        });
+      } catch (error) {
+        // destroy 失败不阻断后续重启；句柄已从服务层摘除。
+        _nativeViewerError ??= 'engine destroy: $error';
+      }
     }
     notifyListeners();
   }
@@ -1172,122 +1136,27 @@ class GeoScatter3dService extends ChangeNotifier {
     if (rx == 0 && ry == 0 && px == 0 && py == 0 && sy == 0) return;
 
     // 单进程：手势事件立刻改相机姿态（跟手），渲染异步跟上。
-    // 不能再走「合并 → 等上一帧渲染 → 再 camera_input」的串行队列。
     final engine = _engineHandle;
-    if (engine != null) {
-      _setNativeInteracting(true);
-      final rc = _bindings?.engine_camera_input_opt?.call(
-        engine,
-        rx,
-        ry,
-        px,
-        py,
-        sy,
-      );
-      if (rc != null && rc != 0) {
-        _nativeViewerError = 'engine camera_input rc=$rc';
-      }
-      _scheduleEngineRender();
-      return;
-    }
-
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
-    _camAccRotX += rx;
-    _camAccRotY += ry;
-    _camAccPanX += px;
-    _camAccPanY += py;
-    _camAccScroll += sy;
+    if (engine == null) return;
     _setNativeInteracting(true);
-    _camFlushTimer ??= Timer(
-      const Duration(milliseconds: 16),
-      _flushNativeCamera,
+    final rc = _bindings?.engine_camera_input_opt?.call(
+      engine,
+      rx,
+      ry,
+      px,
+      py,
+      sy,
     );
+    if (rc != null && rc != 0) {
+      _nativeViewerError = 'engine camera_input rc=$rc';
+    }
+    _scheduleEngineRender();
   }
 
   void _setNativeInteracting(bool value) {
     if (_nativeInteracting == value) return;
     _nativeInteracting = value;
     _restartNativeFrameTimer();
-  }
-
-  /// engine 路径：同进程 camera_input + render，无 RPC/PNG。
-  Future<void> _flushEngineCamera(
-    double rotX,
-    double rotY,
-    double panX,
-    double panY,
-    double scroll,
-  ) async {
-    final e = _engineHandle;
-    if (e == null) return;
-    if (_nativeFrameBusy) return;
-    _nativeFrameBusy = true;
-    final addr = e.address;
-    final w = _engineW;
-    final h = _engineH;
-    try {
-      final result = await Isolate.run(() {
-        final b = GeoScatter3dBindings.openLibrary();
-        final cam = b.engine_camera_input_opt;
-        final render = b.engine_render_rgba_opt;
-        if (cam == null || render == null) {
-          return <Object>['error', 'engine camera/render missing'];
-        }
-        final eng = Pointer<Void>.fromAddress(addr);
-        final rc = cam(eng, rotX, rotY, panX, panY, scroll);
-        if (rc != 0) {
-          final err = b.engine_last_error_opt?.call(eng).toDartString();
-          return <Object>['error', err ?? 'camera_input rc=$rc'];
-        }
-        final maxBytes = w * h * 4;
-        final buf = calloc<Uint8>(maxBytes);
-        final outW = calloc<Uint32>();
-        final outH = calloc<Uint32>();
-        try {
-          final rrc = render(eng, buf, maxBytes, outW, outH);
-          if (rrc != 0) {
-            return <Object>['error', 'render rc=$rrc'];
-          }
-          final ow = outW.value;
-          final oh = outH.value;
-          return <Object>['ok', ow, oh, Uint8List.fromList(buf.asTypedList(ow * oh * 4))];
-        } finally {
-          calloc.free(buf);
-          calloc.free(outW);
-          calloc.free(outH);
-        }
-      });
-      if (!identical(e, _engineHandle)) return;
-      if (result[0] == 'error') {
-        _nativeViewerError = result[1].toString();
-        notifyListeners();
-        return;
-      }
-      final ow = result[1] as int;
-      final oh = result[2] as int;
-      final bytes = result[3] as Uint8List;
-      if (ow != _engineW || oh != _engineH) {
-        _engineW = ow;
-        _engineH = oh;
-      }
-      final image = await _decodeRgbaImage(bytes, ow, oh);
-      if (!identical(e, _engineHandle)) {
-        image.dispose();
-        return;
-      }
-      _nativeFrameImage?.dispose();
-      _nativeFrameImage = image;
-      _nativeViewerError = null;
-      notifyListeners();
-    } catch (error) {
-      if (identical(e, _engineHandle)) {
-        _nativeViewerError = 'engine 相机失败: $error';
-        notifyListeners();
-      }
-    } finally {
-      _nativeFrameBusy = false;
-    }
   }
 
   /// 相机已同步改完，只需排队出帧；在途渲染结束后补最新姿态。
@@ -1303,65 +1172,6 @@ class GeoScatter3dService extends ChangeNotifier {
         _scheduleEngineRender();
       }
     }));
-  }
-
-  void _flushNativeCamera() {
-    _camFlushTimer = null;
-    final engine = _engineHandle;
-    if (engine != null) {
-      // engine 路径已在 _queueNativeCamera 同步应用，这里只兜底双进程。
-      _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
-      return;
-    }
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) {
-      _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
-      _setNativeInteracting(false);
-      return;
-    }
-    final rotX = _camAccRotX;
-    final rotY = _camAccRotY;
-    final panX = _camAccPanX;
-    final panY = _camAccPanY;
-    final scroll = _camAccScroll;
-    _camAccRotX = _camAccRotY = _camAccPanX = _camAccPanY = _camAccScroll = 0;
-    _nativeCommandTail = _nativeCommandTail.then((_) async {
-      final c = _nativeViewer;
-      if (c == null || !identical(c, client)) return;
-      if (_nativeFrameBusy) return;
-      _nativeFrameBusy = true;
-      try {
-        final png = await c.cameraInputAndCapture(
-          rotateX: rotX,
-          rotateY: rotY,
-          panX: panX,
-          panY: panY,
-          scrollY: scroll,
-        );
-        if (!identical(c, _nativeViewer)) return;
-        _nativeViewportPng = png;
-        _nativeViewerError = null;
-        notifyListeners();
-      } catch (error) {
-        if (identical(c, _nativeViewer)) {
-          _nativeViewerError = '原生相机输入失败: $error';
-          notifyListeners();
-        }
-      } finally {
-        _nativeFrameBusy = false;
-      }
-    });
-    // 松手检测：若 120ms 内无新增量则退出交互态。
-    Timer(const Duration(milliseconds: 120), () {
-      if (_camFlushTimer == null &&
-          _camAccRotX == 0 &&
-          _camAccRotY == 0 &&
-          _camAccPanX == 0 &&
-          _camAccPanY == 0 &&
-          _camAccScroll == 0) {
-        _setNativeInteracting(false);
-      }
-    });
   }
 
   int? _lastSyncedNativeW;
@@ -1396,39 +1206,11 @@ class GeoScatter3dService extends ChangeNotifier {
     double? localMaxX,
     double? localMaxY,
   }) {
-    final client = _nativeViewer;
-    if (client == null ||
-        !client.isConnected ||
-        displayWidth <= 0 ||
-        displayHeight <= 0) {
-      return;
-    }
-    final sourceWidth = client.lastCaptureWidth;
-    final sourceHeight = client.lastCaptureHeight;
-    if (sourceWidth <= 0 || sourceHeight <= 0) return;
-    final scale = math.min(
-      displayWidth / sourceWidth,
-      displayHeight / sourceHeight,
-    );
-    final offsetX = (displayWidth - sourceWidth * scale) * 0.5;
-    final offsetY = (displayHeight - sourceHeight * scale) * 0.5;
-    double mapX(double x) => (x - offsetX) / scale;
-    double mapY(double y) => (y - offsetY) / scale;
-    final params = <String, dynamic>{
-      'kind': kind,
-      'screen_x': mapX(localX),
-      'screen_y': mapY(localY),
-    };
-    if (localMaxX != null && localMaxY != null) {
-      params['screen_min_x'] = mapX(localX);
-      params['screen_min_y'] = mapY(localY);
-      params['screen_max_x'] = mapX(localMaxX);
-      params['screen_max_y'] = mapY(localMaxY);
-    }
-    _queueNativeCommand('runtime.pick', 'input', params);
+    final point = pickPointAt(localX, localY, displayWidth, displayHeight);
+    setHoveredPoint(point);
   }
 
-  /// 高频 hover 只保留最后一帧，避免每次 onHover 都打一发控制面。
+  /// 高频 hover 只保留最后一帧，避免每次 onHover 都打一发引擎。
   Timer? _pickFlushTimer;
   Map<String, dynamic>? _pendingPickParams;
 
@@ -1439,67 +1221,30 @@ class GeoScatter3dService extends ChangeNotifier {
     required double displayWidth,
     required double displayHeight,
   }) {
-    final client = _nativeViewer;
-    if (client == null ||
-        !client.isConnected ||
-        displayWidth <= 0 ||
-        displayHeight <= 0) {
-      return;
-    }
-    final sourceWidth = client.lastCaptureWidth;
-    final sourceHeight = client.lastCaptureHeight;
-    if (sourceWidth <= 0 || sourceHeight <= 0) return;
-    final scale = math.min(
-      displayWidth / sourceWidth,
-      displayHeight / sourceHeight,
-    );
-    final offsetX = (displayWidth - sourceWidth * scale) * 0.5;
-    final offsetY = (displayHeight - sourceHeight * scale) * 0.5;
+    if (!isEngineNative) return;
     _pendingPickParams = {
-      'kind': kind,
-      'screen_x': (localX - offsetX) / scale,
-      'screen_y': (localY - offsetY) / scale,
+      'x': localX,
+      'y': localY,
+      'w': displayWidth,
+      'h': displayHeight,
     };
-    _pickFlushTimer ??= Timer(const Duration(milliseconds: 40), () {
-      _pickFlushTimer = null;
-      final params = _pendingPickParams;
+    _pickFlushTimer?.cancel();
+    _pickFlushTimer = Timer(const Duration(milliseconds: 33), () {
+      final p = _pendingPickParams;
       _pendingPickParams = null;
-      if (params != null) {
-        _queueNativeCommand('runtime.pick', 'input', params, false);
-      }
+      if (p == null) return;
+      final point = pickPointAt(
+        p['x'] as double,
+        p['y'] as double,
+        p['w'] as double,
+        p['h'] as double,
+      );
+      setHoveredPoint(point);
     });
   }
 
   void _synchronizeNativeMeasurementMode(bool enabled) {
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
-    unawaited(_syncNativeMeasurementMode(client, enabled));
-  }
-
-  Future<void> _syncNativeMeasurementMode(
-    NativeViewerControlClient client,
-    bool enabled,
-  ) async {
-    try {
-      final response = await client.request('get_state', {
-        'component': 'toolbar.measure',
-      });
-      final result = response['result'];
-      final nativeEnabled = result is Map<String, dynamic>
-          ? result['measure_mode_active'] as bool?
-          : null;
-      if (nativeEnabled != enabled) {
-        await client.executeComponent('toolbar.measure', 'click', const {});
-        if (identical(client, _nativeViewer)) {
-          await refreshNativeViewport();
-        }
-      }
-    } catch (error) {
-      if (identical(client, _nativeViewer)) {
-        _nativeViewerError = '原生测量模式同步失败: $error';
-        notifyListeners();
-      }
-    }
+    // 测量线为 Dart 本地状态；无需原生同步。
   }
 
   void _queueNativeCommand(
@@ -1508,226 +1253,12 @@ class GeoScatter3dService extends ChangeNotifier {
     Map<String, dynamic> params = const {},
     bool refresh = true,
   ]) {
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
-    _nativeCommandTail = _nativeCommandTail.then((_) async {
-      if (!identical(client, _nativeViewer)) return;
-      await _sendNativeCommand(client, component, command, params, refresh: refresh);
-    });
-  }
-
-  /// 高频路径可传 refresh:false，由帧定时器统一拉图。
-  Future<void> _sendNativeCommand(
-    NativeViewerControlClient client,
-    String component,
-    String command,
-    Map<String, dynamic> params, {
-    bool refresh = true,
-  }) async {
-    try {
-      // executeComponent 内部经 Isolate 执行阻塞 FFI，不卡 UI。
-      final resp = await client.executeComponent(component, command, params);
-      if (resp['error'] != null) {
-        throw StateError(resp['error'].toString());
-      }
-      if (refresh && identical(client, _nativeViewer)) {
-        await refreshNativeViewport(includeState: true);
-      }
-    } catch (error) {
-      if (identical(client, _nativeViewer)) {
-        _nativeViewerError = '原生命令执行失败: $error';
-        notifyListeners();
-      }
-    }
-  }
-
-  /// 返回 true 表示类型化 FFI 已成功处理（rc==0）。
-  /// 符号缺失或返回非 0 时返回 false，由调用方回退 RPC。
-  bool _tryTypedFfiCommand(
-    String component,
-    String command,
-    Map<String, dynamic> params,
-  ) {
-    final b = _bindings;
-    if (b == null) return false;
-    final jsonParams = jsonEncode(params);
-    try {
-      switch (component) {
-        case 'runtime.render_settings':
-          if (command == 'set') {
-            final fn = b.set_render_settings_json_opt;
-            if (fn == null) return false;
-            final ptr = jsonParams.toNativeUtf8();
-            try {
-              return fn(ptr) == 0;
-            } finally {
-              calloc.free(ptr);
-            }
-          }
-          return false;
-        case 'runtime.camera':
-          if (command == 'input') {
-            final fn = b.camera_input_opt;
-            if (fn == null) return false;
-            final rx = (params['rotate_delta_x'] as num?)?.toDouble() ?? 0;
-            final ry = (params['rotate_delta_y'] as num?)?.toDouble() ?? 0;
-            final px = (params['pan_delta_x'] as num?)?.toDouble() ?? 0;
-            final py = (params['pan_delta_y'] as num?)?.toDouble() ?? 0;
-            final sy = (params['scroll_y'] as num?)?.toDouble() ?? 0;
-            return fn(rx, ry, px, py, sy) == 0;
-          }
-          return false;
-        case 'runtime.pick':
-          if (command == 'input') {
-            final kind = params['kind'] as String?;
-            if (kind == null) return false;
-            if (kind == 'measurement') {
-              final op = params['operation'] as String?;
-              final opFn = b.measurement_op_opt;
-              if (op == null || opFn == null) return false;
-              final rest = Map<String, dynamic>.from(params)
-                ..remove('kind')
-                ..remove('operation');
-              final restPtr = jsonEncode(rest).toNativeUtf8();
-              final opPtr = op.toNativeUtf8();
-              try {
-                return opFn(opPtr, restPtr) == 0;
-              } finally {
-                calloc.free(opPtr);
-                calloc.free(restPtr);
-              }
-            }
-            final fn = b.pick_input_opt;
-            if (fn == null) return false;
-            final rest = Map<String, dynamic>.from(params)..remove('kind');
-            final kindPtr = kind.toNativeUtf8();
-            final restPtr = jsonEncode(rest).toNativeUtf8();
-            try {
-              return fn(kindPtr, restPtr) == 0;
-            } finally {
-              calloc.free(kindPtr);
-              calloc.free(restPtr);
-            }
-          }
-          return false;
-        case 'runtime.diagnostics':
-          if (command == 'clear_cache') {
-            final fn = b.clear_tile_cache_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'canvas.viewport':
-          if (command == 'reset_camera') {
-            final fn = b.reset_camera_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'gizmo.navigation':
-          if (command == 'click') {
-            final fn = b.gizmo_axis_opt;
-            final axis = (params['axis'] as num?)?.toInt();
-            if (fn == null || axis == null) return false;
-            return fn(axis) == 0;
-          }
-          return false;
-        case 'menu.view.theme':
-          if (command == 'set_value') {
-            final fn = b.set_theme_opt;
-            final value = (params['value'] as num?)?.toInt();
-            if (fn == null || value == null) return false;
-            return fn(value) == 0;
-          }
-          if (command == 'click') {
-            final fn = b.cycle_theme_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'toolbar.link_camera':
-          if (command == 'click') {
-            final fn = b.set_camera_linked_opt;
-            if (fn == null) return false;
-            return fn(_cameraLinked ? 1 : 0) == 0;
-          }
-          return false;
-        case 'menu.view.new_view':
-          if (command == 'click') {
-            final fn = b.request_new_view_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'menu.window.new_workspace':
-          if (command == 'click') {
-            final fn = b.request_new_workspace_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'menu.view.restore_workspace':
-          if (command == 'click') {
-            final fn = b.restore_workspace_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'menu.file.open':
-          if (command == 'click') {
-            final fn = b.open_native_file_dialog_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'menu.file.open_bundle':
-          if (command == 'click') {
-            final fn = b.open_native_bundle_dialog_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        case 'menu.file.screenshot':
-          if (command == 'click') {
-            final fn = b.request_native_screenshot_opt;
-            if (fn == null) return false;
-            return fn() == 0;
-          }
-          return false;
-        default:
-          if (component.startsWith('panel.') && command == 'set_visible') {
-            final fn = b.set_panel_visible_opt;
-            final visible = params['visible'] == true;
-            if (fn == null) return false;
-            final idPtr = component.toNativeUtf8();
-            try {
-              return fn(idPtr, visible ? 1 : 0) == 0;
-            } finally {
-              calloc.free(idPtr);
-            }
-          }
-          return false;
-      }
-    } catch (_) {
-      return false;
-    }
+    // 双进程控制面已删除；engine 渲染设置走 _applyEngineRenderSettings。
   }
 
   String _readFfiCstr(Pointer<Utf8> ptr) {
     if (ptr == nullptr) return '';
     return ptr.toDartString();
-  }
-
-  Map<String, dynamic> _readFfiJsonObject(Pointer<Utf8> Function()? getter) {
-    if (getter == null) return const {};
-    try {
-      final raw = _readFfiCstr(getter());
-      if (raw.isEmpty) return const {};
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {}
-    return const {};
   }
 
   static int? _nativeAxisForPreset(String? preset) {
@@ -1762,23 +1293,6 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
-  String? _resolveNativeViewerExecutable() {
-    final sep = Platform.pathSeparator;
-    final root = resolveRepoRoot();
-    final candidates = [
-      if (runtimeDirectory != null) '$runtimeDirectory${sep}GeoScatter3D.exe',
-      // 优先完整原生运行时（含 config/shaders/exe/dll）
-      '$root${sep}tmp${sep}build-win${sep}Release${sep}GeoScatter3D.exe',
-      '$root${sep}tmp${sep}flutter-native${sep}Release${sep}GeoScatter3D.exe',
-      '${File(Platform.resolvedExecutable).parent.path}${sep}GeoScatter3D.exe',
-      '${Directory.current.path}${sep}GeoScatter3D.exe',
-    ];
-    for (final candidate in candidates) {
-      if (File(candidate).existsSync()) return candidate;
-    }
-    return null;
-  }
-
   void _startMetricsPolling() {
     _metricsTimer?.cancel();
     _metricsTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -1792,8 +1306,8 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void _pollMetrics() {
-    if (isNativeRendererActive) {
-      unawaited(_pollNativeMetrics());
+    if (isEngineNative) {
+      _pollEngineMetrics();
       return;
     }
     if (_bindings != null && _initialized) {
@@ -1848,47 +1362,66 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void clearCache() {
-    if (isNativeRendererActive) {
-      _queueNativeCommand('runtime.diagnostics', 'clear_cache');
-      return;
-    }
+    // 单进程 engine：清帧缓存并重建上传；A 组镜像一并清理。
     if (_bindings != null && _initialized) {
       try {
         _bindings!.clear_cache();
       } catch (_) {}
     }
+    final engine = _engineHandle;
+    final fn = _bindings?.engine_clear_tile_cache_opt;
+    if (engine != null && fn != null) {
+      try {
+        fn(engine);
+      } catch (_) {}
+    }
     _loadedTiles = 0;
     _pendingTiles = 0;
+    _cacheHitRate = -1.0;
+    if (isEngineNative) _scheduleEngineRender();
     notifyListeners();
   }
 
-  Future<void> _pollNativeMetrics() async {
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) return;
+  void _pollEngineMetrics() {
+    final engine = _engineHandle;
+    final b = _bindings;
+    if (engine == null || b == null) return;
     try {
-      final response = await client.request('get_state', {
-        'component': 'runtime.diagnostics',
-      });
-      if (!identical(client, _nativeViewer)) return;
-      final result = response['result'];
-      if (result is! Map<String, dynamic>) return;
-      _fps = (result['fps'] as num?)?.toDouble() ?? _fps;
-      _frameTimeMs = _fps > 0 ? 1000.0 / _fps : 0.0;
-      _visiblePoints =
-          (result['visible_points'] as num?)?.toInt() ?? _visiblePoints;
-      _gpuMemoryBytes =
-          (result['gpu_memory_bytes'] as num?)?.toInt() ?? _gpuMemoryBytes;
-      _loadedTiles = (result['loaded_tiles'] as num?)?.toInt() ?? _loadedTiles;
-      _pendingTiles =
-          (result['pending_tiles'] as num?)?.toInt() ?? _pendingTiles;
-      _cacheHitRate =
-          (result['cache_hit_rate'] as num?)?.toDouble() ?? _cacheHitRate;
-      final camera = result['camera_position'];
-      if (camera is String && camera.isNotEmpty) _cameraCoordsString = camera;
-      notifyListeners();
-    } catch (_) {
-      // 原生进程停止时由 stopNativeRenderer 统一清理状态。
+      final snapRaw = b.engine_get_snapshot_json_opt?.call(engine).toDartString();
+      if (snapRaw != null && snapRaw.isNotEmpty) {
+        final decoded = jsonDecode(snapRaw);
+        if (decoded is Map) {
+          _nativeSnapshot = Map<String, dynamic>.from({
+            ..._nativeSnapshot,
+            ...decoded.map((k, v) => MapEntry(k.toString(), v)),
+          });
+          _visiblePoints =
+              (decoded['point_count'] as num?)?.toInt() ?? _visiblePoints;
+        }
+      }
+      final diagRaw =
+          b.engine_get_diagnostics_json_opt?.call(engine).toDartString();
+      if (diagRaw != null && diagRaw.isNotEmpty) {
+        final decoded = jsonDecode(diagRaw);
+        if (decoded is Map) {
+          final err = decoded['last_error'];
+          if (err is String && err.isNotEmpty) {
+            _nativeViewerError = err;
+          } else {
+            _nativeViewerError = null;
+          }
+        }
+      }
+    } catch (_) {}
+    if (_lastEngineFrameMs > 0.5) {
+      _fps = 1000.0 / _lastEngineFrameMs;
+      _frameTimeMs = _lastEngineFrameMs;
     }
+    _cameraCoordsString =
+        '${_cameraAzimuth.toStringAsFixed(1)}, ${_cameraElevation.toStringAsFixed(1)}, ${(_cameraZoom * 100).toStringAsFixed(1)}';
+    // A 组性能镜像（loadDataset 后可用）作为补充
+    if (_points.isNotEmpty) _visiblePoints = math.max(_visiblePoints, 0);
+    notifyListeners();
   }
 
   Point3D? pickPointAt(
@@ -1898,80 +1431,56 @@ class GeoScatter3dService extends ChangeNotifier {
     double viewportHeight, {
     double tolerancePx = 25.0,
   }) {
-    if (_bindings != null && _initialized) {
+    // engine 激活：用引擎真实相机 VP 拾取；否则 A 组简化投影兜底。
+    final engine = _engineHandle;
+    final enginePick = _bindings?.engine_pick_point_opt;
+    if (engine != null && enginePick != null) {
       final pOut = calloc<ffi.Float>(4);
       try {
-        final res = _bindings!.pick_point(
+        final res = enginePick(
+          engine,
           screenX,
           screenY,
-          viewportWidth,
-          viewportHeight,
-          _cameraAzimuth,
-          _cameraElevation,
-          _cameraZoom,
-          _cameraPanX,
-          _cameraPanY,
+          tolerancePx,
           pOut,
         );
         if (res == 1) {
-          return Point3D(x: pOut[0], y: pOut[1], z: pOut[2], value: pOut[3]);
+          return Point3D(
+            x: pOut[0],
+            y: pOut[1],
+            z: pOut[2],
+            value: pOut[3],
+          );
         }
       } catch (_) {
       } finally {
         calloc.free(pOut);
       }
+      return null;
     }
-
-    if (_points.isEmpty) return null;
-    final radAz = _cameraAzimuth * (math.pi / 180.0);
-    final radEl = _cameraElevation * (math.pi / 180.0);
-    final cosAz = math.cos(radAz);
-    final sinAz = math.sin(radAz);
-    final cosEl = math.cos(radEl);
-    final sinEl = math.sin(radEl);
-
-    final bmin = _summary.bboxMin;
-    final bmax = _summary.bboxMax;
-    final midX = (bmin[0] + bmax[0]) * 0.5;
-    final midY = (bmin[1] + bmax[1]) * 0.5;
-    final midZ = (bmin[2] + bmax[2]) * 0.5;
-    final maxSpan = math.max(
-      bmax[0] - bmin[0],
-      math.max(bmax[1] - bmin[1], bmax[2] - bmin[2]),
-    );
-    final baseScale = (maxSpan > 1e-4)
-        ? (math.min(viewportWidth, viewportHeight) * 0.65 / maxSpan)
-        : 1.0;
-    final totalScale = baseScale * _cameraZoom;
-    final cx = viewportWidth * 0.5 + _cameraPanX;
-    final cy = viewportHeight * 0.5 + _cameraPanY;
-
-    Point3D? closest;
-    double closestDist = tolerancePx;
-    for (final p in _points) {
-      final rx = p.x - midX;
-      final ry = p.y - midY;
-      final rz = p.z - midZ;
-
-      final x1 = rx * cosAz - ry * sinAz;
-      final y1 = rx * sinAz + ry * cosAz;
-      final z1 = rz;
-
-      final x2 = x1;
-      final y2 = y1 * cosEl - z1 * sinEl;
-
-      final px = cx + x2 * totalScale;
-      final py = cy - y2 * totalScale;
-
-      final dist = math.sqrt(
-        (screenX - px) * (screenX - px) + (screenY - py) * (screenY - py),
+    if (_bindings == null || !_initialized) return null;
+    final pOut = calloc<ffi.Float>(4);
+    try {
+      final res = _bindings!.pick_point(
+        screenX,
+        screenY,
+        viewportWidth,
+        viewportHeight,
+        _cameraAzimuth,
+        _cameraElevation,
+        _cameraZoom,
+        _cameraPanX,
+        _cameraPanY,
+        pOut,
       );
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = p;
+      if (res == 1) {
+        return Point3D(x: pOut[0], y: pOut[1], z: pOut[2], value: pOut[3]);
       }
+    } catch (_) {
+    } finally {
+      calloc.free(pOut);
     }
-    return closest;
+    return null;
   }
 
   void setHoveredPoint(Point3D? point) {
@@ -1993,6 +1502,42 @@ class GeoScatter3dService extends ChangeNotifier {
     _cameraPanX = 0.0;
     _cameraPanY = 0.0;
     notifyListeners();
+  }
+
+  /// 将 Dart 相机方位角/仰角/缩放同步到 engine（look_at 绝对姿态）。
+  void _syncEngineCameraFromAzElZoom() {
+    final engine = _engineHandle;
+    final lookAt = _bindings?.engine_set_camera_look_at_opt;
+    if (engine == null || lookAt == null) return;
+    final bmin = _summary.bboxMin;
+    final bmax = _summary.bboxMax;
+    if (bmin.length < 3 || bmax.length < 3) return;
+    final centerX = (bmin[0] + bmax[0]) * 0.5;
+    final centerY = (bmin[1] + bmax[1]) * 0.5;
+    final centerZ = (bmin[2] + bmax[2]) * 0.5;
+    final spanX = bmax[0] - bmin[0];
+    final spanY = bmax[1] - bmin[1];
+    final spanZ = bmax[2] - bmin[2];
+    final span = math.max(spanX, math.max(spanY, spanZ));
+    final dist = math.max(span * 2.0, 1.0) / math.max(_cameraZoom, 0.05);
+    final az = _cameraAzimuth * math.pi / 180.0;
+    final el = _cameraElevation * math.pi / 180.0;
+    final posX = centerX + dist * math.cos(el) * math.cos(az);
+    final posY = centerY + dist * math.cos(el) * math.sin(az);
+    final posZ = centerZ + dist * math.sin(el);
+    lookAt(
+      engine,
+      posX,
+      posY,
+      posZ,
+      centerX,
+      centerY,
+      centerZ,
+      0,
+      0,
+      1,
+    );
+    _scheduleEngineRender();
   }
 
   void setMeasurementMode(bool enabled) {
@@ -2040,44 +1585,17 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void removeMeasurementLine(String id) {
-    if (isNativeRendererActive) {
-      final index = int.tryParse(id) ?? _measurementLines.indexWhere((e) => e.id == id);
-      if (index < 0) return;
-      _queueNativeCommand('runtime.pick', 'input', {
-        'kind': 'measurement',
-        'operation': 'remove',
-        'index': index,
-      });
-      return;
-    }
     _measurementLines.removeWhere((item) => item.id == id);
     notifyListeners();
   }
 
   void clearMeasurementLines() {
-    if (isNativeRendererActive) {
-      _queueNativeCommand('runtime.pick', 'input', {
-        'kind': 'measurement',
-        'operation': 'clear',
-      });
-      return;
-    }
     _measurementLines.clear();
     _pendingMeasureStart = null;
     notifyListeners();
   }
 
   void toggleMeasurementLineFixed(String id) {
-    if (isNativeRendererActive) {
-      final index = int.tryParse(id) ?? _measurementLines.indexWhere((e) => e.id == id);
-      if (index < 0) return;
-      _queueNativeCommand('runtime.pick', 'input', {
-        'kind': 'measurement',
-        'operation': 'toggle_fixed',
-        'index': index,
-      });
-      return;
-    }
     final idx = _measurementLines.indexWhere((item) => item.id == id);
     if (idx != -1) {
       final cur = _measurementLines[idx];
@@ -2087,13 +1605,6 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void setMeasurementDisplayMode(String mode) {
-    if (isNativeRendererActive) {
-      _queueNativeCommand('runtime.pick', 'input', {
-        'kind': 'measurement',
-        'operation': 'display',
-        'mode': mode == '2d' ? 1 : (mode == 'both' ? 2 : 0),
-      });
-    }
     if (_measurementDisplayMode != mode) {
       _measurementDisplayMode = mode;
       notifyListeners();
@@ -2152,111 +1663,18 @@ class GeoScatter3dService extends ChangeNotifier {
       }
     }
 
-    if (_points.isEmpty) {
-      final empty = {
-        'count': 0,
-        'mean': 0.0,
-        'min': 0.0,
-        'max': 0.0,
-        'std_dev': 0.0,
-        'histogram': [0, 0, 0, 0, 0],
-      };
-      _activeRegionStats = empty;
-      notifyListeners();
-      return empty;
-    }
-
-    final radAz = _cameraAzimuth * (math.pi / 180.0);
-    final radEl = _cameraElevation * (math.pi / 180.0);
-    final cosAz = math.cos(radAz);
-    final sinAz = math.sin(radAz);
-    final cosEl = math.cos(radEl);
-    final sinEl = math.sin(radEl);
-
-    final bmin = _summary.bboxMin;
-    final bmax = _summary.bboxMax;
-    final midX = (bmin[0] + bmax[0]) * 0.5;
-    final midY = (bmin[1] + bmax[1]) * 0.5;
-    final midZ = (bmin[2] + bmax[2]) * 0.5;
-    final maxSpan = math.max(
-      bmax[0] - bmin[0],
-      math.max(bmax[1] - bmin[1], bmax[2] - bmin[2]),
-    );
-    final baseScale = (maxSpan > 1e-4)
-        ? (math.min(viewportWidth, viewportHeight) * 0.65 / maxSpan)
-        : 1.0;
-    final totalScale = baseScale * _cameraZoom;
-    final cx = viewportWidth * 0.5 + _cameraPanX;
-    final cy = viewportHeight * 0.5 + _cameraPanY;
-
-    final selected = <Point3D>[];
-    for (final p in _points) {
-      final rx = p.x - midX;
-      final ry = p.y - midY;
-      final rz = p.z - midZ;
-
-      final x1 = rx * cosAz - ry * sinAz;
-      final y1 = rx * sinAz + ry * cosAz;
-      final z1 = rz;
-
-      final x2 = x1;
-      final y2 = y1 * cosEl - z1 * sinEl;
-
-      final px = cx + x2 * totalScale;
-      final py = cy - y2 * totalScale;
-
-      if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
-        selected.add(p);
-      }
-    }
-
-    if (selected.isEmpty) {
-      final empty = {
-        'count': 0,
-        'mean': 0.0,
-        'min': 0.0,
-        'max': 0.0,
-        'std_dev': 0.0,
-        'histogram': [0, 0, 0, 0, 0],
-      };
-      _activeRegionStats = empty;
-      notifyListeners();
-      return empty;
-    }
-
-    double sum = 0.0;
-    double smin = selected[0].value;
-    double smax = selected[0].value;
-    for (final p in selected) {
-      sum += p.value;
-      if (p.value < smin) smin = p.value;
-      if (p.value > smax) smax = p.value;
-    }
-    final mean = sum / selected.length;
-    double varSum = 0.0;
-    for (final p in selected) {
-      varSum += (p.value - mean) * (p.value - mean);
-    }
-    final stdDev = math.sqrt(varSum / selected.length);
-
-    final bins = [0, 0, 0, 0, 0];
-    final step = (smax > smin) ? (smax - smin) / 5.0 : 1.0;
-    for (final p in selected) {
-      final b = ((p.value - smin) / step).floor().clamp(0, 4);
-      bins[b]++;
-    }
-
-    final stats = {
-      'count': selected.length,
-      'mean': mean,
-      'min': smin,
-      'max': smax,
-      'std_dev': stdDev,
-      'histogram': bins,
+    // 无 A 组结果时返回空（禁止 Dart 投影硬算“可用”）
+    const empty = {
+      'count': 0,
+      'mean': 0.0,
+      'min': 0.0,
+      'max': 0.0,
+      'std_dev': 0.0,
+      'histogram': [0, 0, 0, 0, 0],
     };
-    _activeRegionStats = stats;
+    _activeRegionStats = empty;
     notifyListeners();
-    return stats;
+    return empty;
   }
 
   void clearRegionStats() {
@@ -2264,19 +1682,19 @@ class GeoScatter3dService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Uint8List? refreshMinimap({int width = 200, int height = 160}) {
+  /// 刷新鸟瞰导航图：仅 `gs3d_ffi_get_nav_map_thumbnail`；失败返回 null。
+  Future<Uint8List?> refreshMinimap({int width = 200, int height = 160}) async {
     _minimapWidth = width;
     _minimapHeight = height;
 
+    Uint8List? buffer;
     if (_bindings != null && _initialized) {
       final bufferSize = width * height * 4;
       final pBuf = calloc<ffi.Uint8>(bufferSize);
       try {
         final res = _bindings!.get_nav_map_thumbnail(pBuf, width, height);
-        if (res == 1) {
-          _minimapRgba = Uint8List.fromList(pBuf.asTypedList(bufferSize));
-          notifyListeners();
-          return _minimapRgba;
+        if (res == 0) {
+          buffer = Uint8List.fromList(pBuf.asTypedList(bufferSize));
         }
       } catch (_) {
       } finally {
@@ -2284,34 +1702,13 @@ class GeoScatter3dService extends ChangeNotifier {
       }
     }
 
-    final buffer = Uint8List(width * height * 4);
-    for (int i = 0; i < width * height; ++i) {
-      buffer[i * 4 + 0] = 0x1A;
-      buffer[i * 4 + 1] = 0x1F;
-      buffer[i * 4 + 2] = 0x2C;
-      buffer[i * 4 + 3] = 0xFF;
-    }
-
-    if (_points.isNotEmpty) {
-      final bmin = _summary.bboxMin;
-      final bmax = _summary.bboxMax;
-      final spanX = (bmax[0] - bmin[0]) > 1e-4 ? (bmax[0] - bmin[0]) : 1.0;
-      final spanY = (bmax[1] - bmin[1]) > 1e-4 ? (bmax[1] - bmin[1]) : 1.0;
-
-      for (final p in _points) {
-        final normX = ((p.x - bmin[0]) / spanX).clamp(0.0, 1.0);
-        final normY = ((p.y - bmin[1]) / spanY).clamp(0.0, 1.0);
-        final px = (normX * (width - 1)).round();
-        final py = ((1.0 - normY) * (height - 1)).round();
-        final idx = (py * width + px) * 4;
-        buffer[idx + 0] = 0x4F;
-        buffer[idx + 1] = 0x46;
-        buffer[idx + 2] = 0xE5;
-        buffer[idx + 3] = 0xFF;
-      }
-    }
-
     _minimapRgba = buffer;
+    _minimapImage?.dispose();
+    _minimapImage = null;
+    if (buffer != null) {
+      final image = await _decodeRgbaImage(buffer, width, height);
+      _minimapImage = image;
+    }
     notifyListeners();
     return buffer;
   }
@@ -2347,6 +1744,20 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   bool exportPointCloud(String outputPath, {String format = 'ply'}) {
+    // 优先 engine 内全量导出（与渲染数据一致）
+    final engine = _engineHandle;
+    if (engine != null && _bindings != null) {
+      final pPath = outputPath.toNativeUtf8();
+      final pFmt = format.toNativeUtf8();
+      try {
+        final rc = _bindings!.engine_export_opt?.call(engine, pPath, pFmt);
+        if (rc == 0) return true;
+      } catch (_) {
+      } finally {
+        calloc.free(pPath);
+        calloc.free(pFmt);
+      }
+    }
     if (_bindings != null && _initialized) {
       final pPath = outputPath.toNativeUtf8();
       final pFmt = format.toNativeUtf8();
@@ -2359,93 +1770,16 @@ class GeoScatter3dService extends ChangeNotifier {
         calloc.free(pFmt);
       }
     }
-
-    try {
-      final file = File(outputPath);
-      if (!file.parent.existsSync()) {
-        try {
-          file.parent.createSync(recursive: true);
-        } catch (_) {}
-      }
-      final sb = StringBuffer();
-      final isPly = format.toLowerCase() == 'ply';
-      if (isPly) {
-        sb.writeln('ply');
-        sb.writeln('format ascii 1.0');
-        sb.writeln('element vertex ${_points.length}');
-        sb.writeln('property float x');
-        sb.writeln('property float y');
-        sb.writeln('property float z');
-        sb.writeln('property float value');
-        sb.writeln('end_header');
-        for (final p in _points) {
-          sb.writeln('${p.x} ${p.y} ${p.z} ${p.value}');
-        }
-      } else {
-        sb.writeln('x,y,z,value');
-        for (final p in _points) {
-          sb.writeln('${p.x},${p.y},${p.z},${p.value}');
-        }
-      }
-      file.writeAsStringSync(sb.toString());
-      return true;
-    } catch (e) {
-      debugPrint('Export failed: $e');
-      return false;
-    }
+    // 禁止 Dart 手写点集文件；导出失败即 false。
+    return false;
   }
 
-  /// 由运行中的 ViewerApp 从源 GS3D 全量导出，并等待原生任务完成。
-  ///
-  /// 使用异步 execute + get_state 轮询，**不在 UI isolate 上调用**
-  /// `export_via_viewer`（其内部可阻塞数分钟）。
+  /// 导出入口：同步走 engine/A 组；保留异步 API 形状供 UI 调用。
   Future<bool> exportPointCloudThroughNativeViewer(
     String outputPath, {
     String format = 'ply',
   }) async {
-    final client = _nativeViewer;
-    if (client == null || !client.isConnected) {
-      return exportPointCloud(outputPath, format: format);
-    }
-
-    try {
-      await client.executeComponent('runtime.dataset_export', 'export', {
-        'output_path': outputPath,
-        'format': format,
-      });
-      final stateResponse = await client.request('get_state', {
-        'component': 'runtime.dataset_export',
-      });
-      final state = stateResponse['result'];
-      final requestId = state is Map<String, dynamic>
-          ? (state['request_id'] as num?)?.toInt()
-          : null;
-      if (requestId == null) return false;
-
-      final deadline = DateTime.now().add(const Duration(minutes: 2));
-      while (DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        final poll = await client.request('get_state', {
-          'component': 'runtime.dataset_export',
-        });
-        final s = poll['result'];
-        if (s is! Map<String, dynamic>) continue;
-        final completed = (s['completed_request_id'] as num?)?.toInt();
-        if (completed != requestId) continue;
-        return s['success'] == true;
-      }
-      if (identical(client, _nativeViewer)) {
-        _nativeViewerError = '原生完整数据导出超时';
-        notifyListeners();
-      }
-      return false;
-    } catch (error) {
-      if (identical(client, _nativeViewer)) {
-        _nativeViewerError = '原生完整数据导出失败: $error';
-        notifyListeners();
-      }
-      return false;
-    }
+    return exportPointCloud(outputPath, format: format);
   }
 
   void setLayoutMode(WorkbenchLayoutMode mode) {
@@ -2885,6 +2219,7 @@ class GeoScatter3dService extends ChangeNotifier {
           _bindings!.remember_recent_project(nativePath);
           _refreshRecentProjects();
         } catch (_) {}
+        unawaited(refreshMinimap());
         notifyListeners();
         if (activate &&
             (wasNativeRendererActive ||
@@ -3968,7 +3303,7 @@ class GeoScatter3dService extends ChangeNotifier {
             'supported_formats': ['.gs3d', '.gs3d.bundle', '.csv', '.dat'],
             'controls': {
               'orbit': '鼠标左键拖拽旋转',
-              'pan': '鼠标中键拖拽平移',
+              'pan': '鼠标右键/中键拖拽，或 Shift+左键',
               'zoom': '鼠标滚轮缩放',
               'reset': '顶部重置视角按钮',
             },
@@ -4308,11 +3643,11 @@ class GeoScatter3dService extends ChangeNotifier {
       case 'workbench.minimap.refresh':
         final w = (p['width'] as num?)?.toInt() ?? 200;
         final h = (p['height'] as num?)?.toInt() ?? 160;
-        final thumb = refreshMinimap(width: w, height: h);
+        unawaited(refreshMinimap(width: w, height: h));
         return {
-          'success': thumb != null,
-          'message': thumb != null ? '小地图缩略图已刷新' : '刷新小地图失败',
-          'data': {'width': w, 'height': h, 'bytes': thumb?.length ?? 0},
+          'success': true,
+          'message': '导航图缩略图刷新中',
+          'data': {'width': w, 'height': h},
         };
 
       case 'workbench.minimap.navigate':
@@ -4409,11 +3744,11 @@ class GeoScatter3dService extends ChangeNotifier {
 
       case 'workbench.view.new':
         requestNewView();
-        return {'success': true, 'message': '已请求原生新建视图'};
+        return {'success': true, 'message': '已重置为等轴测视角'};
 
       case 'workbench.workspace.new_window':
         requestNewWorkspaceWindow();
-        return {'success': true, 'message': '已请求原生新建工作窗口'};
+        return {'success': true, 'message': '已恢复默认工作区布局'};
 
       case 'workbench.workspace.restore':
         restoreWorkspace();
@@ -4535,11 +3870,32 @@ class GeoScatter3dService extends ChangeNotifier {
         if (axis == null || axis < 0 || axis > 5) {
           return {'success': false, 'message': 'axis 必须是 0-5'};
         }
-        _queueNativeCommand('gizmo.navigation', 'click', {'axis': axis});
+        // engine 激活时优先引擎预设；否则 Dart 相机预设。
+        final gizmoFn = _bindings?.engine_gizmo_axis_opt;
+        final eng = _engineHandle;
+        String preset = 'iso';
+        if (eng != null && gizmoFn != null) {
+          final rc = gizmoFn(eng, axis);
+          if (rc != 0) {
+            return {'success': false, 'message': 'engine gizmo rc=$rc'};
+          }
+          _scheduleEngineRender();
+        } else {
+          const presets = <int, String>{
+            0: 'front',
+            1: 'front',
+            2: 'side',
+            3: 'side',
+            4: 'top',
+            5: 'top',
+          };
+          preset = presets[axis] ?? 'iso';
+          setCameraView(preset: preset);
+        }
         return {
           'success': true,
-          'message': '已切换导航球预设视角 axis=$axis',
-          'data': {'axis': axis},
+          'message': '已切换导航球预设视角 axis=$axis ($preset)',
+          'data': {'axis': axis, 'preset': preset},
         };
 
       default:
@@ -4638,6 +3994,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
     _pointSize = size;
     _queueNativeRenderSettings({'point_size': size});
+    _applyEngineRenderSettings();
     notifyListeners();
   }
 
@@ -4655,6 +4012,7 @@ class GeoScatter3dService extends ChangeNotifier {
     if (nativeColormap != null) {
       _queueNativeRenderSettings({'colormap_index': nativeColormap});
     }
+    _applyEngineRenderSettings();
     notifyListeners();
   }
 
@@ -4669,7 +4027,47 @@ class GeoScatter3dService extends ChangeNotifier {
       'value_clip_min': minVal,
       'value_clip_max': maxVal,
     });
+    _applyEngineRenderSettings();
     notifyListeners();
+  }
+
+  /// 将当前 UI 渲染参数写入单进程 engine。
+  /// engine 模式下双进程控制面命令是空操作，必须走这套同步路径。
+  /// [scheduleRender]=false 仅写参数（启动路径会自己 await 首帧，避免竞态）。
+  void _applyEngineRenderSettings({bool scheduleRender = true}) {
+    final e = _engineHandle;
+    final b = _bindings;
+    if (e == null || b == null) return;
+
+    b.engine_set_point_size_opt?.call(e, _pointSize);
+    final cm = _nativeColormapIndex(_colormap);
+    if (cm != null) b.engine_set_colormap_index_opt?.call(e, cm);
+    final shape = _nativePointShape(_pointShape);
+    if (shape != null) b.engine_set_point_shape_opt?.call(e, shape);
+    // 标量区间：与 set_value_clip 语义一致（启用裁剪）
+    b.engine_set_value_clip_opt?.call(e, 1, _scalarMin, _scalarMax);
+    b.engine_set_height_exaggeration_opt?.call(e, _heightScale);
+    b.engine_set_height_source_opt?.call(e, _heightSourceIndex);
+    b.engine_set_color_source_opt?.call(e, _colorSourceIndex);
+    final bg = _viewportBackgroundColor;
+    // Flutter 3.27+: Color.r/g/b 为 0–1 double
+    b.engine_set_background_opt?.call(e, bg.r, bg.g, bg.b, 1.0);
+    if (scheduleRender) _scheduleEngineRender();
+  }
+
+  /// 0=Z 高程, 1=Value 属性
+  int get _heightSourceIndex {
+    final s = _heightSource.toLowerCase();
+    if (s.contains('value') || s.contains('属性') || s.contains('fold')) {
+      return 1;
+    }
+    return 0;
+  }
+
+  int get _colorSourceIndex {
+    final s = _colorAttribute.toLowerCase();
+    if (s.contains('elev') || s.contains('高程') || s == 'z') return 0;
+    return 1;
   }
 
   static int? _nativeColormapIndex(String name) {

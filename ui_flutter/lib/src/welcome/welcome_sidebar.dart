@@ -113,7 +113,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
               SizedBox(height: 4),
               Text(
                 '• 旋转视角：鼠标左键按住拖拽\n'
-                '• 平移视口：鼠标中键按住拖拽 或 Shift + 鼠标左键\n'
+                '• 平移视口：鼠标右键或中键按住拖拽（也可 Shift+左键）\n'
                 '• 缩放视野：滚动鼠标滚轮\n'
                 '• 复位视角：工作台顶部工具栏「视角复位」按钮',
                 style: TextStyle(

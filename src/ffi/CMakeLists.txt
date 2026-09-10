@@ -4,7 +4,6 @@
 
 add_library(gs3d_ffi SHARED
     geoscatter3d_ffi.cpp
-    ViewerBridge.cpp
     HeadlessRenderKernel.cpp
     Gs3dEngineApi.cpp
 )

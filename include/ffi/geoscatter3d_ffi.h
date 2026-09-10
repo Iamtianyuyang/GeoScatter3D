@@ -24,28 +24,20 @@ extern "C" {
 /*
  * GeoScatter3D C-ABI 契约（Flutter / 外部绑定唯一入口）
  *
- * A 组（本地引擎，DLL 内状态，无 Viewer 也可用）：§1–§17
- * B 组（Viewer 桥与运行时控制，需 viewer_start 成功）：§18–§19
- *   旧 DLL 可能缺失 B 组符号；Dart 侧必须 optLookup。
+ * A 组（本地引擎，DLL 内状态）：§1–§17
+ * §18–§19 双进程 Viewer 桥已删除；多端仅使用 A 组 + §20 单进程 engine。
  *
  * 返回码（int32_t）：
  *   0 成功
  *  -1 空指针/非法参数
- *  -2 目标不存在 / Viewer 未连接
- *  -3 内部失败或 JSON-RPC error
- *  -4 状态冲突（如同时 rotate+pan、导出占用）
- *  -5 超时 / CreateProcess 失败
- *  -6 子进程提前退出
- *  -7 控制面连接超时
+ *  -2 目标不存在
+ *  -3 内部失败
+ *  -4 状态冲突
+ *  -5 超时
  *  -8 句柄无效
  *
- * 字符串：
- *   - 入参 UTF-8，仅调用期间有效，实现必须拷贝
- *   - 出参 const char*：调用方读取后立即拷贝；若实现返回 malloc 块，
- *     必须用 gs3d_ffi_free_string 释放。禁止缓存裸指针。
- *
- * 线程：A 组内部加锁；B 组 RPC 同步阻塞（约 5s 超时）。
- * 生命周期：init → [viewer_start … viewer_stop/quit_viewer] → shutdown。
+ * 线程：A 组内部加锁。
+ * 生命周期：init → [engine_* …] → shutdown。
  */
 
 // ============================================================================
@@ -231,72 +223,8 @@ GS3D_FFI_API int32_t gs3d_ffi_export_dataset(
 );
 
 // ============================================================================
-// 18. Viewer 进程桥 (Full Control-Plane Bridge via FFI)
+// 18-19. （已删除）双进程 Viewer 桥 — 请改用 §20 gs3d_engine_*
 // ============================================================================
-
-/// 启动 headless Viewer 并连接控制面。dataset 为 .gs3d 或 .gs3d.bundle。
-/// 返回 0 成功；负数见错误。
-GS3D_FFI_API int32_t gs3d_ffi_viewer_start(
-    const char* executable_path,
-    const char* dataset_path
-);
-GS3D_FFI_API void gs3d_ffi_viewer_stop(void);
-GS3D_FFI_API int32_t gs3d_ffi_viewer_is_connected(void);
-GS3D_FFI_API int32_t gs3d_ffi_viewer_last_capture_width(void);
-GS3D_FFI_API int32_t gs3d_ffi_viewer_last_capture_height(void);
-GS3D_FFI_API const char* gs3d_ffi_viewer_last_error(void);
-GS3D_FFI_API const char* gs3d_ffi_viewer_startup_log(void);
-
-/// 发送一行 JSON-RPC 到控制面，返回一行 JSON 响应。
-GS3D_FFI_API const char* gs3d_ffi_viewer_rpc(const char* json_request_line);
-
-/// 帧同步截图：返回 JSON {"data":"<base64 png>","width":w,"height":h}
-GS3D_FFI_API const char* gs3d_ffi_viewer_screenshot_json(void);
-
-/// execute(component, command, params_json) 便捷封装
-GS3D_FFI_API const char* gs3d_ffi_viewer_execute(
-    const char* component,
-    const char* command,
-    const char* params_json
-);
-/// get_state(component) 便捷封装
-GS3D_FFI_API const char* gs3d_ffi_viewer_get_state(const char* component);
-
-// ============================================================================
-// 19. 主题 / 面板 / 相机联动 / 工作区 等完整运行时控制 (经 Viewer 桥)
-// ============================================================================
-
-GS3D_FFI_API int32_t gs3d_ffi_set_theme(int32_t theme_index);
-GS3D_FFI_API int32_t gs3d_ffi_cycle_theme(void);
-GS3D_FFI_API int32_t gs3d_ffi_set_camera_linked(int32_t linked);
-GS3D_FFI_API int32_t gs3d_ffi_request_new_view(void);
-GS3D_FFI_API int32_t gs3d_ffi_request_new_workspace(void);
-GS3D_FFI_API int32_t gs3d_ffi_restore_workspace(void);
-GS3D_FFI_API int32_t gs3d_ffi_set_panel_visible(const char* panel_id, int32_t visible);
-GS3D_FFI_API int32_t gs3d_ffi_open_native_file_dialog(void);
-GS3D_FFI_API int32_t gs3d_ffi_open_native_bundle_dialog(void);
-GS3D_FFI_API int32_t gs3d_ffi_request_native_screenshot(void);
-GS3D_FFI_API const char* gs3d_ffi_get_status_bar_json(void);
-GS3D_FFI_API const char* gs3d_ffi_get_interaction_snapshot_json(void);
-GS3D_FFI_API const char* gs3d_ffi_get_runtime_diagnostics_json(void);
-GS3D_FFI_API const char* gs3d_ffi_get_render_settings_json(void);
-GS3D_FFI_API int32_t gs3d_ffi_set_render_settings_json(const char* params_json);
-GS3D_FFI_API int32_t gs3d_ffi_camera_input(
-    float rotate_dx, float rotate_dy,
-    float pan_dx, float pan_dy,
-    float scroll_y
-);
-GS3D_FFI_API int32_t gs3d_ffi_reset_camera(void);
-GS3D_FFI_API int32_t gs3d_ffi_gizmo_axis(int32_t axis);
-GS3D_FFI_API int32_t gs3d_ffi_pick_input(const char* kind, const char* params_json);
-GS3D_FFI_API int32_t gs3d_ffi_measurement_op(const char* op, const char* params_json);
-GS3D_FFI_API int32_t gs3d_ffi_clear_tile_cache(void);
-GS3D_FFI_API int32_t gs3d_ffi_export_via_viewer(
-    const char* output_path,
-    const char* format
-);
-GS3D_FFI_API const char* gs3d_ffi_list_components_json(void);
-GS3D_FFI_API int32_t gs3d_ffi_quit_viewer(void);
 
 // ============================================================================
 // 20. 单进程渲染内核 (gs3d_engine*) — 多端可移植，无 spawn Viewer
@@ -328,6 +256,30 @@ GS3D_FFI_API int32_t gs3d_engine_set_colormap_index(gs3d_engine* e, int32_t inde
 GS3D_FFI_API int32_t gs3d_engine_set_point_shape(gs3d_engine* e, int32_t shape);
 GS3D_FFI_API int32_t gs3d_engine_set_value_clip(
     gs3d_engine* e, int32_t enabled, float min_v, float max_v);
+/// source: 0=Z, 1=Value
+GS3D_FFI_API int32_t gs3d_engine_set_height_source(gs3d_engine* e, int32_t source);
+GS3D_FFI_API int32_t gs3d_engine_set_color_source(gs3d_engine* e, int32_t source);
+GS3D_FFI_API int32_t gs3d_engine_set_height_exaggeration(gs3d_engine* e, float mult);
+GS3D_FFI_API int32_t gs3d_engine_set_background(
+    gs3d_engine* e, float r, float g, float b, float a);
+/// format: "ply" | "csv"
+GS3D_FFI_API int32_t gs3d_engine_export(
+    gs3d_engine* e, const char* path, const char* format);
+
+/// 屏幕坐标拾取：使用 engine 当前相机 VP。命中填 [x,y,z,value] 返回 1，未命中 0，错误负。
+GS3D_FFI_API int32_t gs3d_engine_pick_point(
+    gs3d_engine* e, float screen_x, float screen_y,
+    float tolerance_px, float* out_point_xyzv);
+
+/// Gizmo 预设轴 0..5（-X/+X/-Y/+Y/+Z/-Z）。
+GS3D_FFI_API int32_t gs3d_engine_gizmo_axis(gs3d_engine* e, int32_t axis);
+
+/// 清空帧缓存并重建点云上传（单进程软复位）。
+GS3D_FFI_API int32_t gs3d_engine_clear_tile_cache(gs3d_engine* e);
+
+/// 当前帧编码 PNG；未渲染过返回 -2。
+GS3D_FFI_API int32_t gs3d_engine_read_frame_png(
+    gs3d_engine* e, uint8_t* out, uint32_t max_bytes, uint32_t* out_len);
 
 GS3D_FFI_API int32_t gs3d_engine_set_camera_look_at(
     gs3d_engine* e,

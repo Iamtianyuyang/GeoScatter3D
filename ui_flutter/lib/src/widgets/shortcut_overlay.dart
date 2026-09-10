@@ -114,6 +114,7 @@ class ShortcutOverlay extends StatelessWidget {
                           const SizedBox(height: 10),
                           _buildShortcutGrid([
                             _ShortcutItem(keys: ['鼠标左键拖拽'], desc: '绕观察焦点轨道自由旋转视口'),
+                            _ShortcutItem(keys: ['右键/中键拖拽'], desc: '视口平面平移（无需切换模式）'),
                             _ShortcutItem(keys: ['滚轮滑动'], desc: '平滑放大 / 缩小视口视野'),
                             _ShortcutItem(keys: ['平移模式', '左键拖拽'], desc: '视口平面沿当前观察轴平移'),
                             _ShortcutItem(keys: ['双击数据点'], desc: '将点设为旋转对焦中心 (Orbit Pivot)'),

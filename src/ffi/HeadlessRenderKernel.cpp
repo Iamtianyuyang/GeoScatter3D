@@ -1,12 +1,21 @@
 #include "ffi/HeadlessRenderKernel.hpp"
 
 #include "camera/CameraController.hpp"
+#include "camera/MouseRay.hpp"
 #include "data/PointDataAdapters.hpp"
 #include "util/Log.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+
+// 仅本编译单元定义 STB 写实现；gs3d_ffi 不链接 gs3d_app（ViewerAppScreenshot），
+// 不会在同一镜像内重复符号。
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 namespace gs3d::ffi {
 
@@ -245,7 +254,8 @@ int HeadlessRenderKernel::camera_input(
     }
     input.scroll_y = scroll_y;
     input.mouse_position_valid = false;
-    camera_controller_.update(camera_, input);
+    const bool changed = camera_controller_.update(camera_, input);
+    (void)changed;
     update_push_from_camera();
     return 0;
 }
@@ -257,18 +267,23 @@ void HeadlessRenderKernel::update_push_from_camera() {
 
 void HeadlessRenderKernel::set_point_size(float size) {
     std::lock_guard<std::mutex> lock(mutex_);
-    push_.point_size = std::max(0.5f, size);
+    point_size_ = std::max(0.5f, size);
+    push_.point_size = point_size_;
 }
 
 void HeadlessRenderKernel::set_colormap_index(int index) {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto clamped = static_cast<std::uint32_t>(std::clamp(index, 0, 8));
+    colormap_index_ = std::clamp(index, 0, 8);
+    const auto clamped = static_cast<std::uint32_t>(colormap_index_);
     push_.flags = (push_.flags & ~gs3d::render::PointFlags::kColormapMask) |
                   ((clamped & 0x7Fu) << 1);
 }
 
 void HeadlessRenderKernel::set_value_clip(bool enabled, float min_v, float max_v) {
     std::lock_guard<std::mutex> lock(mutex_);
+    value_clip_enabled_ = enabled ? 1 : 0;
+    value_clip_min_ = min_v;
+    value_clip_max_ = max_v;
     if (enabled) {
         push_.flags |= gs3d::render::PointFlags::kValueClip;
     } else {
@@ -285,9 +300,96 @@ void HeadlessRenderKernel::set_value_clip(bool enabled, float min_v, float max_v
 
 void HeadlessRenderKernel::set_point_shape(int shape) {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto s = static_cast<std::uint32_t>(std::clamp(shape, 0, 3));
+    point_shape_ = std::clamp(shape, 0, 3);
+    const auto s = static_cast<std::uint32_t>(point_shape_);
     push_.flags = (push_.flags & ~gs3d::render::PointFlags::kPointShapeMask) |
                   (s << gs3d::render::PointFlags::kPointShapeShift);
+}
+
+void HeadlessRenderKernel::set_height_source(int source) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    height_source_ = source == 1 ? 1 : 0;
+    push_.height_source = static_cast<std::uint32_t>(height_source_);
+}
+
+void HeadlessRenderKernel::set_color_source(int source) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    color_source_ = source == 1 ? 1 : 0;
+    push_.color_source = static_cast<std::uint32_t>(color_source_);
+}
+
+void HeadlessRenderKernel::set_height_exaggeration(float mult) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    height_mult_ = std::clamp(mult, 0.01f, 100.0f);
+    push_.height_mult = height_mult_;
+}
+
+void HeadlessRenderKernel::set_background(float r, float g, float b, float a) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    clear_r_ = std::clamp(r, 0.0f, 1.0f);
+    clear_g_ = std::clamp(g, 0.0f, 1.0f);
+    clear_b_ = std::clamp(b, 0.0f, 1.0f);
+    clear_a_ = std::clamp(a, 0.0f, 1.0f);
+    has_custom_clear_ = true;
+    gs3d::render::ClearColor cc;
+    cc.r = clear_r_;
+    cc.g = clear_g_;
+    cc.b = clear_b_;
+    cc.a = clear_a_;
+    framebuffer_.set_clear_color(cc);
+}
+
+int HeadlessRenderKernel::export_dataset(
+    const std::string& path,
+    const std::string& format
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!has_dataset_) {
+        set_error("export: no dataset");
+        return -3;
+    }
+    try {
+        const auto fs_path = std::filesystem::u8path(path);
+        const auto parent = fs_path.parent_path();
+        if (!parent.empty()) {
+            std::filesystem::create_directories(parent);
+        }
+        const bool csv = format == "csv" || format == "CSV";
+        std::ofstream out(fs_path, std::ios::binary);
+        if (!out) {
+            set_error("export: cannot open " + path);
+            return -2;
+        }
+        const auto& pts = dataset_.points();
+        const std::size_t n = pts.size();
+        if (csv) {
+            out << "x,y,z,value\n";
+            out.setf(std::ios::fixed);
+            out.precision(6);
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto& p = pts[i];
+                out << p.x << ',' << p.y << ',' << p.z << ',' << p.value
+                    << '\n';
+            }
+        } else {
+            // 简化 PLY（ascii）：与预处理导出字段对齐
+            out << "ply\nformat ascii 1.0\n"
+                << "element vertex " << n << "\n"
+                << "property float x\nproperty float y\nproperty float z\n"
+                << "property float value\nend_header\n";
+            out.setf(std::ios::fixed);
+            out.precision(6);
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto& p = pts[i];
+                out << p.x << ' ' << p.y << ' ' << p.z << ' ' << p.value
+                    << '\n';
+            }
+        }
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        return -3;
+    }
 }
 
 int HeadlessRenderKernel::render_rgba(
@@ -428,6 +530,7 @@ int HeadlessRenderKernel::render_rgba(
         last_rgba_.assign(out_rgba, out_rgba + bytes);
         last_w_ = w;
         last_h_ = h;
+        track_frame_timing_locked();
 
         vkDestroyBuffer(context_->device(), staging, nullptr);
         vkFreeMemory(context_->device(), staging_mem, nullptr);
@@ -442,13 +545,244 @@ int HeadlessRenderKernel::render_rgba(
 }
 
 int HeadlessRenderKernel::encode_last_frame_png(
-    std::uint8_t* /*out*/,
-    std::uint32_t /*max_bytes*/,
-    std::uint32_t* /*out_len*/
+    std::uint8_t* out,
+    std::uint32_t max_bytes,
+    std::uint32_t* out_len
 ) {
-    // 内核不引入 STB 实现（与 ViewerAppScreenshot 冲突）；请用 render_rgba。
-    set_error("png encode not implemented in kernel; use render_rgba");
-    return -4;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (out == nullptr || out_len == nullptr) return -1;
+    if (last_rgba_.empty() || last_w_ == 0 || last_h_ == 0) {
+        set_error("png encode: no frame rendered");
+        return -2;
+    }
+    struct PngBuffer {
+        std::uint8_t* base;
+        std::uint32_t cap;
+        std::uint32_t len;
+        bool overflow;
+    } buf{out, max_bytes, 0, false};
+    const auto writer = [](void* ctx, void* data, int size) {
+        auto* b = static_cast<PngBuffer*>(ctx);
+        if (size <= 0) return;
+        if (b->overflow ||
+            static_cast<std::uint32_t>(size) > b->cap - b->len) {
+            b->overflow = true;
+            return;
+        }
+        std::memcpy(b->base + b->len, data, static_cast<std::size_t>(size));
+        b->len += static_cast<std::uint32_t>(size);
+    };
+    const int ok = stbi_write_png_to_func(
+        writer, &buf, static_cast<int>(last_w_), static_cast<int>(last_h_),
+        4, last_rgba_.data(), static_cast<int>(last_w_) * 4
+    );
+    if (!ok || buf.overflow) {
+        set_error("png encode failed or buffer too small");
+        return buf.overflow ? -1 : -3;
+    }
+    *out_len = buf.len;
+    last_error_.clear();
+    return 0;
+}
+
+int HeadlessRenderKernel::pick_point(
+    float screen_x, float screen_y, float tolerance_px,
+    float* out_point_xyzv
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (out_point_xyzv == nullptr) return -1;
+    if (!has_dataset_) {
+        set_error("pick: no dataset");
+        return -3;
+    }
+    const auto& pts = dataset_.points();
+    if (pts.empty()) return 0;
+
+    const gs3d::camera::Viewport vp{
+        config_.width == 0 ? 1u : config_.width,
+        config_.height == 0 ? 1u : config_.height,
+    };
+    const auto mvp = camera_.view_projection_matrix();
+    const float tol = tolerance_px > 0.0f ? tolerance_px : 20.0f;
+    const float tol_sq = tol * tol;
+
+    float best_sq = tol_sq + 1.0f; // 必须严格落在容差圆内
+    int best_idx = -1;
+
+    for (std::size_t i = 0; i < pts.size(); ++i) {
+        const auto& p = pts[i];
+        const auto sp = gs3d::camera::MouseRay::world_to_screen(
+            mvp, p.x, p.y, p.z,
+            static_cast<float>(vp.width), static_cast<float>(vp.height)
+        );
+        if (!sp.has_value()) continue;
+        const float dx = sp->x - screen_x;
+        const float dy = sp->y - screen_y;
+        const float dsq = dx * dx + dy * dy;
+        if (dsq <= tol_sq && dsq < best_sq) {
+            best_sq = dsq;
+            best_idx = static_cast<int>(i);
+        }
+    }
+
+    if (best_idx < 0) return 0; // 未命中：容差圆内无点
+    const auto& hit = pts[static_cast<std::size_t>(best_idx)];
+    out_point_xyzv[0] = hit.x;
+    out_point_xyzv[1] = hit.y;
+    out_point_xyzv[2] = hit.z;
+    out_point_xyzv[3] = hit.value;
+    last_error_.clear();
+    return 1;
+}
+
+int HeadlessRenderKernel::gizmo_axis(int axis) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!has_dataset_) {
+        set_error("gizmo: no dataset");
+        return -3;
+    }
+    if (axis < 0 || axis > 5) return -1;
+
+    const gs3d::camera::CameraBounds bounds{
+        {dataset_.bbox_min_x(), dataset_.bbox_min_y(), dataset_.bbox_min_z()},
+        {dataset_.bbox_max_x(), dataset_.bbox_max_y(), dataset_.bbox_max_z()},
+    };
+    const float cx = (bounds.min.x + bounds.max.x) * 0.5f;
+    const float cy = (bounds.min.y + bounds.max.y) * 0.5f;
+    const float cz = (bounds.min.z + bounds.max.z) * 0.5f;
+    const float span = std::max({
+        bounds.max.x - bounds.min.x,
+        bounds.max.y - bounds.min.y,
+        bounds.max.z - bounds.min.z,
+        1.0f,
+    });
+    const float dist = span * 1.8f;
+
+    float px = cx, py = cy, pz = cz + dist;
+    float up_x = 0.0f, up_y = 0.0f, up_z = 1.0f;
+    switch (axis) {
+        case 0: px = cx - dist; py = cy; pz = cz; break; // -X
+        case 1: px = cx + dist; py = cy; pz = cz; break; // +X
+        case 2: px = cx; py = cy - dist; pz = cz; break; // -Y
+        case 3: px = cx; py = cy + dist; pz = cz; break; // +Y
+        case 4: // +Z top：视线沿 -Z，up 必须用 Y 避免奇异
+            px = cx; py = cy - dist * 0.001f; pz = cz + dist;
+            up_x = 0.0f; up_y = 1.0f; up_z = 0.0f;
+            break;
+        case 5: // -Z bottom
+            px = cx; py = cy - dist * 0.001f; pz = cz - dist;
+            up_x = 0.0f; up_y = 1.0f; up_z = 0.0f;
+            break;
+        default: break;
+    }
+    camera_.set_position({px, py, pz});
+    camera_.set_target({cx, cy, cz});
+    camera_.set_up({up_x, up_y, up_z});
+    camera_.look_at({px, py, pz}, {cx, cy, cz}, {up_x, up_y, up_z});
+    update_push_from_camera();
+    last_error_.clear();
+    return 0;
+}
+
+int HeadlessRenderKernel::clear_tile_cache() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    last_rgba_.clear();
+    last_w_ = last_h_ = 0;
+    last_frame_tick_ = 0;
+    estimated_fps_ = 0.0f;
+    if (context_ && has_dataset_) {
+        try {
+            vkDeviceWaitIdle(context_->device());
+            cloud_ = gs3d::render::PointCloudGpu{};
+            const auto view = gs3d::data::make_point_data_view(dataset_.points());
+            cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
+        } catch (const std::exception& ex) {
+            set_error(ex.what());
+            return -3;
+        }
+    }
+    last_error_.clear();
+    return 0;
+}
+
+HeadlessRenderKernel::CameraState HeadlessRenderKernel::camera_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    CameraState st;
+    const auto& pos = camera_.position();
+    const auto& tgt = camera_.target();
+    st.position[0] = pos.x;
+    st.position[1] = pos.y;
+    st.position[2] = pos.z;
+    st.target[0] = tgt.x;
+    st.target[1] = tgt.y;
+    st.target[2] = tgt.z;
+    st.distance = camera_.distance();
+    const float dx = tgt.x - pos.x;
+    const float dy = tgt.y - pos.y;
+    const float dz = tgt.z - pos.z;
+    const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (len > 1e-6f) {
+        st.elevation_deg = std::asin(std::clamp(dz / len, -1.0f, 1.0f)) *
+                           180.0f / 3.14159265358979323846f;
+        st.azimuth_deg = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
+    }
+    st.zoom = st.distance > 1e-3f ? (span_or_default() / st.distance) : 1.0f;
+    if (has_dataset_) {
+        const float cx = (dataset_.bbox_min_x() + dataset_.bbox_max_x()) * 0.5f;
+        const float cy = (dataset_.bbox_min_y() + dataset_.bbox_max_y()) * 0.5f;
+        st.pan[0] = tgt.x - cx;
+        st.pan[1] = tgt.y - cy;
+    }
+    return st;
+}
+
+HeadlessRenderKernel::RenderState HeadlessRenderKernel::render_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    RenderState st;
+    st.point_size = point_size_;
+    st.colormap_index = colormap_index_;
+    st.point_shape = point_shape_;
+    st.height_source = height_source_;
+    st.color_source = color_source_;
+    st.height_mult = height_mult_;
+    st.value_clip_enabled = value_clip_enabled_;
+    st.value_clip_min = value_clip_min_;
+    st.value_clip_max = value_clip_max_;
+    return st;
+}
+
+HeadlessRenderKernel::ViewportState HeadlessRenderKernel::viewport_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ViewportState st;
+    st.width = config_.width;
+    st.height = config_.height;
+    st.frame_ready = !last_rgba_.empty();
+    st.fps = estimated_fps_;
+    return st;
+}
+
+float HeadlessRenderKernel::span_or_default() const {
+    if (!has_dataset_) return 100.0f;
+    const float dx = dataset_.bbox_max_x() - dataset_.bbox_min_x();
+    const float dy = dataset_.bbox_max_y() - dataset_.bbox_min_y();
+    const float dz = dataset_.bbox_max_z() - dataset_.bbox_min_z();
+    return std::max({dx, dy, dz, 1.0f});
+}
+
+void HeadlessRenderKernel::track_frame_timing_locked() {
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    if (last_frame_tick_ > 0) {
+        const float dt = static_cast<float>(ms - last_frame_tick_);
+        if (dt > 0.5f) {
+            const float inst = 1000.0f / dt;
+            estimated_fps_ = estimated_fps_ <= 0.0f
+                                 ? inst
+                                 : estimated_fps_ * 0.8f + inst * 0.2f;
+        }
+    }
+    last_frame_tick_ = ms;
 }
 
 }  // namespace gs3d::ffi

@@ -31,6 +31,7 @@ class _CenterViewportState extends State<CenterViewport> {
   int? _dragPointer;
   Offset? _dragLastLocal;
   bool _dragIsBox = false;
+  bool _dragForcePan = false; // 右键/中键拖动强制平移
   Size _lastVpSize = Size.zero;
 
   void _finishBoxSelect(Offset start, Offset current) {
@@ -44,18 +45,6 @@ class _CenterViewportState extends State<CenterViewport> {
       _boxSelectCurrent = null;
     });
     if ((maxX - minX) <= 5 || (maxY - minY) <= 5) return;
-    if (widget.service.isDualProcessNative) {
-      widget.service.queueNativePick(
-        'region',
-        localX: minX,
-        localY: minY,
-        localMaxX: maxX,
-        localMaxY: maxY,
-        displayWidth: vp.width,
-        displayHeight: vp.height,
-      );
-      return;
-    }
     final stats = widget.service.calculateRegionBoxStats(
       minX,
       minY,
@@ -316,11 +305,17 @@ class _CenterViewportState extends State<CenterViewport> {
                       },
                       child: Listener(
                         onPointerDown: (event) {
-                          if (event.buttons != kPrimaryButton) return;
+                          final isPrimary = event.buttons == kPrimaryButton;
+                          final isPanBtn = event.buttons == kSecondaryButton ||
+                              event.buttons == kTertiaryButton;
+                          if (!isPrimary && !isPanBtn) return;
                           _focusNode.requestFocus();
                           _dragPointer = event.pointer;
                           _dragLastLocal = event.localPosition;
-                          _dragIsBox = HardwareKeyboard.instance.isShiftPressed;
+                          _dragForcePan = isPanBtn;
+                          // Shift+左键仍为框选；右键/中键不进入框选
+                          _dragIsBox =
+                              isPrimary && HardwareKeyboard.instance.isShiftPressed;
                           if (_dragIsBox) {
                             setState(() {
                               _boxSelectStart = event.localPosition;
@@ -346,7 +341,8 @@ class _CenterViewportState extends State<CenterViewport> {
                           }
                           if (dx == 0 && dy == 0) return;
                           final service = widget.service;
-                          if (service.isPanning) {
+                          // 右键/中键始终平移；左键看是否处于平移模式
+                          if (service.isPanning || _dragForcePan) {
                             service.setCameraView(
                               panX: service.cameraPanX + dx,
                               panY: service.cameraPanY + dy,
@@ -367,6 +363,7 @@ class _CenterViewportState extends State<CenterViewport> {
                           _dragPointer = null;
                           _dragLastLocal = null;
                           _dragIsBox = false;
+                          _dragForcePan = false;
                           if (wasBox && start != null && current != null) {
                             _finishBoxSelect(start, current);
                           }
@@ -375,6 +372,7 @@ class _CenterViewportState extends State<CenterViewport> {
                           _dragPointer = null;
                           _dragLastLocal = null;
                           _dragIsBox = false;
+                          _dragForcePan = false;
                           setState(() {
                             _boxSelectStart = null;
                             _boxSelectCurrent = null;
@@ -405,24 +403,14 @@ class _CenterViewportState extends State<CenterViewport> {
                                 setState(() {
                                   _hoverPos = event.localPosition;
                                 });
-                                if (widget.service.isDualProcessNative) {
-                                  widget.service.queueNativePickThrottled(
-                                    'hover',
-                                    localX: event.localPosition.dx,
-                                    localY: event.localPosition.dy,
-                                    displayWidth: vpSize.width,
-                                    displayHeight: vpSize.height,
-                                  );
-                                  return;
-                                }
-                                final picked = widget.service.pickPointAt(
-                                  event.localPosition.dx,
-                                  event.localPosition.dy,
-                                  vpSize.width,
-                                  vpSize.height,
-                                  tolerancePx: 20.0,
+                                // 高频 hover 节流到 ~30Hz，命中结果写回 hoveredPoint
+                                widget.service.queueNativePickThrottled(
+                                  'hover',
+                                  localX: event.localPosition.dx,
+                                  localY: event.localPosition.dy,
+                                  displayWidth: vpSize.width,
+                                  displayHeight: vpSize.height,
                                 );
-                                widget.service.setHoveredPoint(picked);
                               },
                               onExit: (_) {
                                 setState(() {
@@ -433,18 +421,6 @@ class _CenterViewportState extends State<CenterViewport> {
                               child: GestureDetector(
                                 onTapUp: (details) {
                                   _focusNode.requestFocus();
-                                  if (widget.service.isDualProcessNative) {
-                                    widget.service.queueNativePick(
-                                      widget.service.isMeasurementMode
-                                          ? 'measure'
-                                          : 'hover',
-                                      localX: details.localPosition.dx,
-                                      localY: details.localPosition.dy,
-                                      displayWidth: vpSize.width,
-                                      displayHeight: vpSize.height,
-                                    );
-                                    return;
-                                  }
                                   final picked = widget.service.pickPointAt(
                                     details.localPosition.dx,
                                     details.localPosition.dy,
@@ -462,16 +438,6 @@ class _CenterViewportState extends State<CenterViewport> {
                                   }
                                 },
                                 onDoubleTapDown: (details) {
-                                  if (widget.service.isDualProcessNative) {
-                                    widget.service.queueNativePick(
-                                      'focus',
-                                      localX: details.localPosition.dx,
-                                      localY: details.localPosition.dy,
-                                      displayWidth: vpSize.width,
-                                      displayHeight: vpSize.height,
-                                    );
-                                    return;
-                                  }
                                   final picked = widget.service.pickPointAt(
                                     details.localPosition.dx,
                                     details.localPosition.dy,
@@ -557,41 +523,22 @@ class _CenterViewportState extends State<CenterViewport> {
                                         )
                                       : RepaintBoundary(
                                           key: _viewportRepaintKey,
-                                          child: CustomPaint(
-                                            painter: ViewportCanvasPainter(
-                                              points: points,
-                                              pointSize: pointSize,
-                                              pointShape: pointShape,
-                                              colormap: colormap,
-                                              scalarMin: scalarMin,
-                                              scalarMax: scalarMax,
-                                              azimuth: azimuth,
-                                              elevation: elevation,
-                                              zoom: zoom,
-                                              panX: panX,
-                                              panY: panY,
-                                              showMapAxis: mapAxis,
-                                              showCrosshair: crosshair,
-                                              showWorldAxis: worldAxis,
-                                              selectedPoint:
-                                                  widget.service.selectedPoint,
-                                              hoveredPoint:
-                                                  widget.service.hoveredPoint,
-                                              measurementLines: widget
-                                                  .service
-                                                  .measurementLines,
-                                              pendingMeasureStart: widget
-                                                  .service
-                                                  .pendingMeasureStart,
-                                              isMeasurementMode: widget
-                                                  .service
-                                                  .isMeasurementMode,
-                                              measurementDisplayMode: widget
-                                                  .service
-                                                  .measurementDisplayMode,
-                                              boxSelectStart: _boxSelectStart,
-                                              boxSelectCurrent:
-                                                  _boxSelectCurrent,
+                                          child: ColoredBox(
+                                            color: const Color(0xFF0B1320),
+                                            child: Center(
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(24),
+                                                child: Text(
+                                                  widget.service.nativeViewerError ??
+                                                      'gs3d_engine 未就绪：请确认已部署 gs3d_ffi.dll 并成功载入工程',
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: AppTheme.textDim,
+                                                    fontSize: 13,
+                                                    height: 1.5,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
