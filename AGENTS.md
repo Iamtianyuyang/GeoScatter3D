@@ -19,9 +19,10 @@
 - **图形句柄严禁穿透**：UI 层绝不允许直接引入 Vulkan 驱动 API 或持有底层 GPU 句柄，纹理与视口通过不透明句柄或离屏缓冲区回读；
 - 控制面动作统一收敛于 `executeAction`（45 项原子 UI 动作引擎），对外支持标准 JSON-RPC 2.0 协议调用。
 
-## R3 双轨机制与高可用保障（Dual-Path Reliability）
-- 视口交互与分析计算采用“原生引擎优先 + 纯 Dart 高精度数学回退”双轨策略；
-- 无论动态库 (`gs3d_ffi.dll`) 是否存在、无论是否连接原生 `ViewerControlClient`，在无头测试与跨平台环境下必须通过纯 Dart 算法保持 100% 可用且无异常崩溃。
+## R3 单一渲染核心（gs3d_engine）
+- **核心且唯一**原生渲染路径为单进程 `gs3d_engine_*`；**禁止**纯 Dart 软件点云预览，也**禁止** spawn 双进程 Viewer；
+- engine 不可用时必须显式报错（缺 DLL / Vulkan 失败），不得静默用 Dart 投影假装可用；
+- 拾取/统计等分析可继续走 A 组 C-ABI（load 后的元数据），失败返回空/错误，不再用 Dart 数学硬撑“可用”。
 
 ## R4 临时产物隔离与测试自清理
 - 严禁向项目根目录、`ui_flutter/` 源码目录散落导出文件或测试中间件；
@@ -48,7 +49,7 @@
      cd ui_flutter
      flutter test
      ```
-     必须全部通过（当前基准：50/50），且测试后 `git status` 必须保持 Clean；
+     必须全部通过（当前基准：58 通过 / 3 跳过），且测试后 `git status` 必须保持 Clean；
    - **C++ 依赖与架构护栏检查**：
      ```powershell
      python scripts/check_include_deps.py

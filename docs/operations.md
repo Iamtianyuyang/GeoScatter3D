@@ -11,8 +11,7 @@
 > 文档地图：
 > - 架构与数据流 / 逐帧流程 / 资源所有权 / 重大风险: [docs/architecture.md](architecture.md)
 > - 全部配置键 / 用户偏好: [docs/config-reference.md](config-reference.md)
-> - 控制面协议细节（JSON-RPC 2.0、线程模型、错误码）: [docs/control-plane.md](control-plane.md)
-> - 控制面组件注册契约: [docs/component-registry.md](component-registry.md)
+> - 控制面协议细节：以 `src/control/` 源码为准（独立 control-plane / component-registry 文档已删除）
 > - 二进制格式规范: [docs/spec/gs3d-format.md](spec/gs3d-format.md)
 > - 构建 / 测试 / 分发: [README.md](../README.md)
 
@@ -199,7 +198,7 @@ Windows 实测结果（2026-08-16，VS2026 + vcpkg）：构建成功，
 ## 4. 程序化驱动指南（控制面）
 
 协议细节（传输、线程模型、错误码、`execute`/`toggle`/`set_value`/`click`
-语义、通知）见 [docs/control-plane.md](control-plane.md)，本节给出可复制的
+语义、通知）以 `src/control/` 源码为准，本节给出可复制的
 完整会话。控制面在查看器阶段生效；**欢迎窗口阶段不监听**。
 
 ### 4.1 启动
@@ -231,7 +230,7 @@ def req(method, params=None, rid=1):
     return json.loads(buf.split(b"\n", 1)[0])
 
 print(req("ping", rid=1))                       # 健康检查 → "pong"
-print(req("list_components", rid=2))            # 自我发现，29 个组件（见 component-registry.md）
+print(req("list_components", rid=2))            # 自我发现，组件注册见 src/control/ComponentRegistry
 print(req("get_state", {"component": "panel.performance"}, rid=3))   # 查询面板可见性
 print(req("toggle", {"component": "panel.performance"}, rid=4))      # 切换性能面板
 print(req("get_state", {"component": "viewport.main"}, rid=5))       # 视口状态（fps/点数/尺寸）
@@ -340,12 +339,12 @@ TIA-151 全程验证：每次运行均以 `quit` 退出，结束时
 | 2 | GPU pick 写出的 `point_id` 只保证**单次运行内稳定**，不是跨运行/跨文件的持久 ID，不得存盘或长期引用 | `ViewerPickSystem`（见 architecture.md「GPU Pick Contract」） |
 | 3 | LOD v1 sidecar 已被读取端**显式拒绝**（提示重新生成 v2）；tile 读取端按 stride 强校验，损坏/手工拼装文件显式拒绝，不得静默置零解码 | `docs/spec/gs3d-format.md`、architecture.md 风险 2 |
 | 4 | `tile.max_visible_tiles` 已废弃：任何值都不截断可见 tile（硬截断致块状伪影），极端视图预算由连续自适应 LOD 解决 | `docs/config-reference.md` [tile] |
-| 5 | `--headless` 需要可用 GPU 与桌面会话；纯离屏无显示器 CI 不在当前范围 | `src/main.cpp`、control-plane.md §6 |
-| 6 | 控制面只绑 `127.0.0.1`、无认证（设计决策）；并发连接上限 60；单条消息 64 MiB；单飞截图（同一时刻一张，2 s 超时） | `docs/control-plane.md` §2/§6 |
+| 5 | `--headless` 需要可用 GPU 与桌面会话；纯离屏无显示器 CI 不在当前范围 | `src/main.cpp`、`src/control/` |
+| 6 | 控制面只绑 `127.0.0.1`、无认证（设计决策）；并发连接上限 60；单条消息 64 MiB；单飞截图（同一时刻一张，2 s 超时） | `src/control/ControlPlane.*` |
 | 7 | `ThreadPool::shutdown()` 取消未开始工作并令对应 future 抛 `TaskCancelled`；pool 必须比它返回的每个 future 活得更久 | `src/util/`（见 architecture.md 风险 6） |
 | 8 | 控制面 `menu.view.theme` 的 `set_value` 只接受主题 0-3（`% 4`），高对比主题 (4) 不可达；UI 菜单则五套齐全 | `src/control/MenuComponents.cpp` |
 | 9 | 控制面 `screenshot` 截的是**整窗完整客户区**（swapchain 全幅回读，非画布裁剪；UI 保存面板路径才裁剪画布） | `ViewerAppScreenshot.cpp:request_control_capture` |
-| 10 | 控制面在**欢迎窗口阶段不监听**；自动化必须 `--no-welcome` | `docs/control-plane.md` §6、本手册第 5 节 |
+| 10 | 控制面在**欢迎窗口阶段不监听**；自动化必须 `--no-welcome` | `src/control/`、本手册第 5 节 |
 | 11 | **禁止 OS 级桌面/窗口截屏取证**（BitBlt/PrintWindow/第三方工具）；窗口不得获得前台焦点；取图一律控制面 `screenshot`（swapchain 回读），自动化全程 `--headless` 隐藏窗口 | 本手册 §4.4、`src/main.cpp`（headless 忽略布局 ini） |
 
 ## 7. 给文档读者的核对指引

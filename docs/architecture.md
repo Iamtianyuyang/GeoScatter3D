@@ -1,7 +1,7 @@
 # GeoScatter3D 架构与现状
 
-> 状态: 现行 | 核对基准: 2026-08-16, main@8162b1a (TIA-111 之后；布局/主题
-> 现状按代码核验，详见 [operations.md](operations.md) 第 1 节)
+> 状态: 现行 | 核对基准: 2026-09-11, flutter 单进程 FFI 主路径（双进程已删除）
+> 单进程契约见 [fullstack-engine-parity.md](compose/spec/fullstack-engine-parity.md) 与 [ffi-single-process.md](compose/spec/ffi-single-process.md)
 
 ## 架构总览
 
@@ -83,8 +83,9 @@ PointPipeline --> OffscreenFramebuffer[N] --> Flutter Image.memory
 | `data` | 引擎数据层 | `Gs3dDataset`, `Gs3dLodDataset`, `Gs3dTileDataset`, `CsvReader`：GS3D v2 格式强校验、点数据流式解算与内存映射 |
 | `preprocess` | 引擎工具层 | `Gs3dWriter`, `Gs3dLodWriter`, `Gs3dTileWriter`, `PointStats`：离线高并发 CSV 切片、统计直方图与瓦片树生成 |
 | `ui` | 前端逻辑层 | `PanelRegistry`, `LayoutRegistry`, `WorkspaceManager`, `UiFonts`, `ThemeRegistry`, `ViewportCanvas`：无 GUI 依赖的 UI 元数据/布局/主题组件（前端界面由 Flutter 承担） |
-| `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`） |
-| `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射 |
+| `ffi` | 跨语言边界 | `HeadlessRenderKernel`, `Gs3dEngineApi`：单进程离屏引擎 C-ABI（`gs3d_engine_*` + A 组本地元数据 API） |
+| `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`）；GUI/控制面路径仍用 |
+| `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射（双进程/legacy 路径） |
 
 ## 代码物理分层与目录拓扑
 
@@ -111,16 +112,30 @@ include/ & src/
 │       └── (根目录)  # UI 纯逻辑组件 (WorkspaceManager, UiFonts)
 │
 └── [应用编排与控制面 App Shell]
-    ├── app/          # 顶层主循环与领域编排系统
+    ├── app/          # 顶层主循环与领域编排系统（GUI/控制面路径）
     │   ├── systems/  # 运行时子系统 (CameraFrame, LodFrame, PickSystem, FrameRenderer...)
     │   ├── session/  # 点云会话与缓存 (DatasetSession, TilePointCache, PreprocessedBundle...)
     │   ├── config/   # 配置与偏好管理 (AppConfigValidation, UserPreferences, RecentProjects...)
     │   ├── state/    # 交互与布局状态适配 (ViewportInteractionState, ViewerWorkbenchLayout...)
     │   └── (根目录)  # 主入口与分部类 (ViewerApp.cpp, AppConfig.cpp, WelcomeWindow.cpp)
+    ├── ffi/          # Flutter 可调用 C-ABI：HeadlessRenderKernel + Gs3dEngineApi
     └── control/      # JSON-RPC 2.0 自动化控制面 (ControlPlane, ComponentRegistry, Handlers)
 ```
 
 ## 启动流程
+
+### Flutter 单进程主路径（默认）
+
+1. Flutter `GeoScatter3dService.startNativeRenderer()` 探测 `hasEngineApi`。
+2. `gs3d_engine_create_simple` 创建离屏 Vulkan 内核（无 GLFW/swapchain），
+   `gs3d_engine_load_dataset` 载入 `.gs3d.bundle` 或独立 `.gs3d`。
+3. 相机/渲染设置经 `gs3d_engine_*` 直接写入内核；`render_rgba` 输出帧，
+   服务层解码为 `ui.Image` 呈现。
+4. engine 失败或符号缺失时**明确报错**；**无**纯 Dart 软件点云预览（核心仅为 `gs3d_engine_*`）。
+
+### 历史：GUI / 控制面路径（已废弃双进程）
+
+> 以下描述保留给 `GeoScatter3D.exe` 独立自动化/控制面；Flutter 主路径不再 spawn 该进程。
 
 1. `main()` 读取 TOML 和命令行覆盖项。
 2. CSV/DAT 模式先生成 GS3D；启用 tile 时同时生成 tile index/data；bundle
@@ -221,10 +236,10 @@ include/ & src/
   可折叠侧边栏（TIA-111 方向 B）。
 - **前端现状**：C++ 侧只保留原生渲染与控制面；`ui` 层仅保留控制面/应用
   依赖的纯逻辑组件（面板/布局/主题注册表、工作区、视口几何）。前端界面全部由
-  `ui_flutter/`（Flutter Windows 桌面）承担。Flutter **不直接持有 TCP socket**：
-  经 `gs3d_ffi.dll` 的 C-ABI（本地引擎 API + `ViewerBridge` 进程/TCP 封装）调用；
-  视口图像经帧同步 PNG 回读。契约见 `include/ffi/geoscatter3d_ffi.h` 与
-  `docs/compose/spec/ffi-backend-bridge.md`。
+  经 `gs3d_ffi.dll` 的 C-ABI 调用单进程 `gs3d_engine_*`；视口仅呈现 engine RGBA 帧。
+  引擎不可用时显式报错，不做 Dart 软件投影回退。
+  契约见 `include/ffi/geoscatter3d_ffi.h` 与
+  `docs/compose/spec/ffi-single-process.md`。
 - **主题现状**：5 套（`include/ui/Theme.hpp`），代码默认 `kCarbonBlueDark`
   （深色），`config/viewer.toml` 默认 `carbon-blue`（浅色）覆盖；运行期菜单
   视图→主题 五套齐全，写入用户偏好 `[ui] theme`。
@@ -281,9 +296,9 @@ include/ & src/
 
 ## 后续拆分方向
 
-1. **Flutter 前端收敛**：保持控制面 JSON-RPC 动作集与 `AppState`/`UiActions` 契约
-   稳定，将逐帧编排器集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
-   逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
+1. **Flutter 前端收敛**：单进程 `gs3d_engine_*` 已为默认渲染路径；控制面 JSON-RPC
+   与 `AppState`/`UiActions` 契约保留给双进程/自动化路径。逐帧编排器继续收敛
+   `ViewerApp::run()`，避免主循环逐项复制 UI 字段。
 2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
    逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
 3. ~~稳定的文件格式层~~ **已完成** (TIA-93)：GS3D v2 / LOD / tile 已统一为
@@ -291,3 +306,6 @@ include/ & src/
    格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。
 4. **Swapchain 变更接口**：明确通知依赖 render pass 的管线重建，而不是
    依赖当前隐含的初始化顺序。
+5. **单进程纹理呈现优化**：当前 RGBA 回读已可用；后续可评估
+   `TextureRegistry`/零拷贝纹理，降低大分辨率拷贝成本（见
+   [ffi-single-process.md](compose/spec/ffi-single-process.md) S3）。

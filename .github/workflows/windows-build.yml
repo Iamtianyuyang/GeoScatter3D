@@ -13,8 +13,8 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      # Dear ImGui is a submodule and is compiled by both application targets.
-      # A checkout without submodules cannot even generate the build system.
+      # Submodules (Catch2) are required; a checkout without submodules
+      # cannot even generate the build system.
       - uses: actions/checkout@v4
         with:
           # Test the PR head itself rather than GitHub's synthetic merge ref.

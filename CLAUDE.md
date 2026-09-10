@@ -86,5 +86,5 @@ Stop-Process -Name GeoScatter3D -Force -ErrorAction SilentlyContinue
 - **操作总纲**：[`docs/operations.md`](docs/operations.md) —— 当前布局现状、构建配置、控制面协议与故障排查指引。
 - **架构全景**：[`docs/architecture.md`](docs/architecture.md) —— 模块划分、资源所有权、逐帧渲染流程。
 - **解耦规范**：[`docs/RULES.md`](docs/RULES.md) —— 解耦路线图、状态模型拆解契约。
-- **控制面协议**：[`docs/control-plane.md`](docs/control-plane.md) —— JSON-RPC 方法清单与帧同步语义。
+- **控制面协议**：以 `src/control/` 源码与 `docs/operations.md` §4 为准（独立文档已删除）。
 - **格式规范**：[`docs/spec/gs3d-format.md`](docs/spec/gs3d-format.md) —— GS3D v2 / LOD / Tile 二进制结构定义。

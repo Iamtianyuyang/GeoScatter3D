@@ -1,7 +1,7 @@
 # GeoScatter3D
 
 GeoScatter3D 是一个面向大规模三维散点/点云数据的现代桌面端高可用可视化与分析系统。
-底层由 C++20 / Vulkan 1.3 核心引擎提供海量数据流式处理与离屏图形计算，前端采用现代 **Flutter Desktop (Windows)** 框架构建，并通过纯 C-ABI 动态链接库 (`gs3d_ffi.dll`) 与 JSON-RPC 2.0 控制面实现双向指令与状态联动。
+底层由 C++20 / Vulkan 1.3 核心引擎提供海量数据流式处理与离屏图形计算，前端采用现代 **Flutter Desktop (Windows)** 框架构建，经纯 C-ABI 动态链接库 (`gs3d_ffi.dll`) 调用**单进程离屏渲染内核**（默认）；旧双进程 JSON-RPC 控制面保留为兼容回退。
 
 ---
 
@@ -66,11 +66,18 @@ FFI、Vulkan 查看器和预处理器；Flutter 构建时部署 DLL、shader、�
 
 ### 2. 独立开发与测试
 
-#### 运行 Flutter 前台自动化测试（50 项测试通过）
+#### 运行 Flutter 前台自动化测试（58 项测试通过）
 涵盖 FFI 动态加载、欢迎页向导、三套布局路由、视口深度交互、命令弹窗及导出对话框：
 ```powershell
 cd ui_flutter
 flutter test
+```
+
+#### 单进程渲染内核 e2e（可选）
+```powershell
+cd ui_flutter
+$env:GS3D_ENGINE_E2E='1'
+flutter test test/engine_e2e_test.dart
 ```
 
 #### 本地 Flutter 开发模式启动

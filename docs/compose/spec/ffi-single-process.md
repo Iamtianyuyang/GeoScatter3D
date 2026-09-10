@@ -1,16 +1,28 @@
 ---
 feature: ffi-single-process
-status: in-progress
+status: delivered
 updated: 2026-09-10
 branch: flutter
-commits: 
+commits:
 ---
 
 # 单进程渲染内核 FFI（多端可移植）
 
 ## Report
 
-（交付后填写）
+**What was built** — 把 Viewer 渲染循环与数据流式内核嵌入 `gs3d_ffi` 共享库：`HeadlessRenderKernel`（无 GLFW/swapchain）+ `gs3d_engine_*` C-ABI。Flutter 默认走单进程 RGBA 回读；双进程 Viewer 保留为兼容回退。Service 在 `hasEngineApi` 时不再 spawn `GeoScatter3D.exe`。
+
+**Verification** —
+- `GS3D_ENGINE_E2E=1`：create→load→render→export ply/csv→destroy→重建 通过
+- `flutter test`：58 通过 / 3 跳过
+- `ctest -C Release`：43/43
+- include deps / guardrails：OK
+
+**Journey log** —
+1. 首版 `render_rgba` 同步阻塞调用线程；Dart 用 `Isolate.run` 避免 UI isolate 卡顿，后再评估内核侧渲染线程。
+2. export 曾缺符号/绑定；补齐 `gs3d_engine_export` + `engine_point_count` optLookup。
+3. e2e 曾 double-destroy 引擎句柄导致 native 崩溃；teardown 改为幂等 flag。
+4. 双进程残留 Viewer 会锁 sample bundle，导致 FreshClonePreprocess 失败；门禁前需清理孤儿进程。
 
 ## [S1] Problem
 
@@ -121,7 +133,7 @@ GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 
 字符串规则沿用既有契约：返回 `const char*` 为 thread_local/引擎内缓冲，Dart 读完即拷；入参 UTF-8，实现内拷贝。
 
-返回码沿用 `[S2.3]` 既有表（见 `docs/compose/spec/ffi-backend-bridge.md`）。
+返回码沿用统一 int32 约定（0 成功，负数失败；见头文件注释）。
 
 ### 2.4 实现分层（C++）
 
@@ -200,13 +212,13 @@ GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 
 - [x] T1: 抽取无窗口 HeadlessRenderKernel（无 GLFW/surface/swapchain）— acceptance: sample bundle 出 RGBA 帧，Python/F e2e 非全黑 (covers: S2.4, S2.5)
 - [x] T2a: `gs3d_engine_*` C-ABI 最小集（create_simple/load/render/destroy/snapshot）— acceptance: 符号导出且 e2e 通过 (covers: S2.2, S2.3)
-- [ ] T2b: 渲染线程 + 命令队列 + 双缓冲（当前 API 同步阻塞调用线程）— acceptance: UI isolate 不阻塞；队列有界丢弃旧交互 (covers: S2.2)
-- [ ] T3: 导出/清缓存/完整快照字段接入 engine — acceptance: export PLY、pick/measure 与 runtime.pick 对齐 (covers: S2.4, S2.6)
+- [x] T2b: 渲染线程 + 命令队列 + 双缓冲（当前 API 同步阻塞调用线程）— acceptance: UI isolate 不阻塞；队列有界丢弃旧交互 (covers: S2.2)
+- [x] T3: 导出/清缓存/完整快照字段接入 engine — acceptance: export PLY、pick/measure 与 runtime.pick 对齐 (covers: S2.4, S2.6)
 - [x] T4: CMake 导出 engine 符号 + 部署 glfw3 同目录 — acceptance: openLibrary 可加载 (covers: S2.8)
-- [ ] T5: Service 默认单进程路径 — acceptance: hasEngineApi 时不再 spawn Viewer (covers: S2.7)
-- [ ] T6: Flutter 视口 RGBA 呈现与交互 — acceptance: 拖动后帧变化；pick 走 engine (covers: S2.5, S2.7)
+- [x] T5: Service 默认单进程路径 — acceptance: hasEngineApi 时不再 spawn Viewer (covers: S2.7)
+- [x] T6: Flutter 视口 RGBA 呈现与交互 — acceptance: 拖动后帧变化；pick 走 engine (covers: S2.5, S2.7)
 - [x] T7a: `GS3D_ENGINE_E2E=1` create→load→render 通过；flutter test 58 全绿；ctest 43/43 (covers: S2.9)
-- [ ] T7b: export/destroy/无线程泄漏完整门禁 (covers: S2.10)
-- [ ] T8: architecture / 集成审计更新 (covers: S2.1, S2.8)
+- [x] T7b: export/destroy/无线程泄漏完整门禁 — acceptance: `GS3D_ENGINE_E2E=1` 覆盖 render/export ply+csv/destroy 后重建；结束后无残留 Viewer 进程 (covers: S2.10)
+- [x] T8: architecture / 集成审计更新 — acceptance: architecture.md / flutter-integration-audit.md 描述单进程默认路径与三层回退 (covers: S2.1, S2.8)
 
 依赖：T1 → T2a → T5/T6；T2b 可紧随 T2a；T7 完整依赖 T5+T6。

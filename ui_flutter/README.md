@@ -1,6 +1,6 @@
 # GeoScatter3D Flutter Desktop 前端
 
-GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop 框架构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库 (`gs3d_ffi.dll`) 与原生高性能 C++20 / Vulkan 1.3 核心引擎及 JSON-RPC 2.0 控制面无缝通信。
+GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop 框架构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库 (`gs3d_ffi.dll`) 调用原生 C++20 / Vulkan 1.3 引擎：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
 
 本项目遵循严格的架构解耦与工程护栏：**UI 纯只读投影或产生纯数据命令（UiActions）、图形句柄不穿透、临时中间产物收敛至 `tmp/`**。
 
@@ -46,11 +46,12 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 - **八叉树瓦片与 LOD 视察器 (`TileInspectorDialog`)**：深入检查空间八叉树分级结构与后台瓦片流式加载管线。
 - **点云数据集导出 (`ExportPointCloudDialog`)**：支持将工区点云全量导出为标准 ASCII PLY 或逗号分隔 CSV 格式。
 
-### 6. 双轨动作与原生控制面引擎 (Action Engine & Dual-Path Control)
+### 6. 统一动作引擎与单进程控制 (Action Engine)
+
 - 注册了 **45 个统一高层 UI 动作**，覆盖欢迎页、工作台、视口控制、测量、诊断及数据导出。
-- **原生引擎联动与离线回退双轨制**：
-  - 连接原生引擎时，通过 `ViewerControlClient` 将相机矩阵、渲染设置、高频事件分发给本地 C++ 渲染管线；
-  - 部分数学交互具有 Dart 回退；新建和打开工程需要完整原生运行时，缺失时显示错误。
+- **单进程引擎路径**：
+  - `hasEngineApi` 时经 `gs3d_engine_*` 直连 `HeadlessRenderKernel`（渲染 + 拾取 + Gizmo + 导出 + PNG），RGBA 帧呈现，不 spawn 子进程；
+  - 引擎不可用时显式报错；拾取/统计可走 A 组 C-ABI 或返回空；无纯 Dart 软件点云预览。
 
 ---
 
@@ -64,8 +65,6 @@ ui_flutter/
 │       ├── ffi/
 │       │   ├── geoscatter3d_bindings.dart    # 纯 C-ABI 动态链接库原生函数签名绑定
 │       │   └── geoscatter3d_service.dart     # 核心状态中枢、45项动作调度器与指标轮询引擎
-│       ├── native/
-│       │   └── viewer_control_client.dart    # 本地原生查看器 TCP + JSON-RPC 双向控制面客户端
 │       ├── panels/
 │       │   ├── center_viewport.dart          # 3D 视口画布、射线拾取、测距连线、框选与罗盘
 │       │   ├── left_dock_panel.dart          # 左侧抽屉：2D小地图、空间测量线列表、选区统计
