@@ -135,7 +135,9 @@ TEST_CASE("Panel component commands mutate the shared UI state", "[component_reg
     CHECK(state.panels.dataset == true);
     CHECK(set["visible"] == true);
 
-    dataset->execute("set_visible", nlohmann::json{{"visible", false}});
+    const auto hidden =
+        dataset->execute("set_visible", nlohmann::json{{"visible", false}});
+    CHECK(hidden.is_object());
     CHECK(state.panels.dataset == false);
 
     const auto state_json = dataset->execute("get_state", nlohmann::json::object());
@@ -384,6 +386,10 @@ TEST_CASE("Every non-debug component capability is driven to success (100%)",
                            component->info().id == "runtime.dataset_export") {
                     params["output_path"] = "tmp/export.ply";
                     params["format"] = "ply";
+                } else if (capability.command == "resize" &&
+                           component->info().id == "runtime.viewport") {
+                    params["width"] = 640;
+                    params["height"] = 480;
                 }
             }
             nlohmann::json result;

@@ -3,6 +3,61 @@
 版本号沿用 Git 提交历史; 未打 release tag 前按里程碑组织。条目按时间倒序,
 日期为提交日期 (GitHub 仓库 `Iamtianyuyang/GeoScatter3D`)。
 
+## 2026-09-10 — 前后端全量接入 + 前端统一重构
+
+### 后端接入（Flutter ↔ C-ABI）
+
+- **Dart 重算消除**: `calculateStats()` 改为原生优先
+  (`calculate_region_stats` 以包围盒为选区), 返回 `source` 标记
+  (`native_region_stats` / `dart_sample`); 仅引擎不可用时回退 Dart 采样。
+- **未绑定 ABI 补齐**: 绑定 `gs3d_engine_create` (完整
+  `gs3d_engine_config`: 视口尺寸 / 首选 GPU UUID / 着色器目录 /
+  validation) 与 `gs3d_engine_unload_dataset`; `hasEngineApi` 收紧为
+  四项必备符号齐备。
+- **空实现消灭**: 删除 `_queueNativeCommand` /
+  `_queueNativeRenderSettings` / `_synchronizeNativeMeasurementMode`
+  三个空壳转发, 渲染设置统一直接生效。
+- **动作目录端到端门禁**: 新增 `action_coverage_test.dart`, 遍历
+  `getAvailableActions()` 全量动作断言无未知 ID / 无 null / 均带
+  `success`, 并对 stats / measure / export 做真机断言。
+
+### 真实缺陷修复
+
+- **DLL 相对路径加载**: `SetDllDirectoryA` 会改写相对路径基准, 含 `..`
+  的候选路径必然失败 (Windows error 126); 改为先绝对化再打开。
+- **引擎着色器目录回退**: `gs3d_engine_create` 在 `shader_dir` 为空时未
+  回退, 导致 PointPipeline 退回相对 `assets/shaders`, 工作目录非仓库根
+  即静默取不到着色器; 现统一回退到 DLL 同目录资产路径。
+- **对比度缺陷**: 左停靠面板「清除选区」链接原为 white70 白字落在浅蓝
+  底上近乎不可见, 改为强调色并同步下划线颜色。
+
+### 前端统一重构（Apple HIG）
+
+- **单一令牌源**: 新增 `lib/src/theme/gs3d_tokens.dart`, 分层为
+  `Gs3dPalette` / `Gs3dTokens` / `Gs3dType` / `Gs3dMaterial` /
+  `Gs3dMotion` / `Gs3dA11y`; 删除 `app_theme.dart` 与 `macos_tokens.dart`
+  两套兼容适配层, 改由 `gs3d_theme.dart` 统一装配 `ThemeData` (含深色)。
+- **流体交互组件库**: 新增 `lib/src/widgets/fluid.dart` — 可中断弹簧数值
+  (`Gs3dSpringValue`)、悬停/按压反馈 (`Gs3dPressable`)、毛玻璃容器
+  (`Gs3dGlass`)、令牌化卡片/菜单项/胶囊/状态点/指标磁贴/弹簧模态路由。
+- **欢迎页重设计**: Hero、三联操作卡片、最近工程表格、抽屉侧栏、顶栏、
+  页脚与五个弹窗全部令牌化; 抽屉折叠宽度由 sheet 弹簧驱动, 可被高频
+  切换打断续接; 移除死代码, 关于页显卡信息与动作数量改为动态读取。
+- **工作台重设计**: 底部状态栏改为分段遥测条 (可点击项带悬停/按压反馈,
+  读数等宽表格数字); `CollapsibleCard` 折叠箭头由弹簧驱动; 悬浮 Dock /
+  分析舱的 Handwritten `BackdropFilter` 收敛到 `Gs3dGlass`; 导轨项改为
+  弹簧驱动三态颜色插值; 暗色舱新增 `Gs3dDark` 色阶。
+- **无障碍**: `Gs3dA11yScope` 全局注入; 减弱动效停用装饰粒子并归零过渡,
+  降低透明度时毛玻璃退化为实心, 高对比时描边增强。
+- **材质取舍**: 毛玻璃仅用于浮于视口之上的形态 (悬浮 Dock / 分析舱 /
+  模态 / 命令面板), 铺满整高的固定 chrome 用实心表面 + 发丝描边。
+
+### 门禁
+
+- `flutter analyze` 0 告警; `flutter test` 60 通过 / 3 跳过;
+  `GS3D_ENGINE_E2E=1` 62 通过 / 1 跳过 / 0 失败 (RTX 4070);
+  `ctest -C Release` 43/43 通过; 两项工程护栏 OK。
+
 ## 2026-08-14 — TIA-93 数据格式修复 (PR #3)
 
 - **LOD v1 正式废弃**: `validate_file_header` 对 v1 显式报错并提示

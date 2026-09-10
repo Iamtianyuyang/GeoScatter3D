@@ -117,7 +117,9 @@ TEST_CASE(
 {
     auto state = make_app_state();
     state.render_views[0].render_requested = true;
+    // 视口 1 只作为流式聚焦目标：可见但已脱离停靠，因此不进入离屏渲染列表。
     state.render_views[1].visible = true;
+    state.render_views[1].detached = true;
     state.render_views[2].render_requested = true;
 
     gs3d::render::PointPushConstants push;
@@ -138,6 +140,27 @@ TEST_CASE(
     REQUIRE(visible_viewports.size() == 2);
     CHECK(visible_viewports[0] == 0);
     CHECK(visible_viewports[1] == 2);
+
+    // 兜底契约：ImGui 移除后 render_requested 由每帧 fill_render_views 置位，
+    // 因此「可见且未脱离」的视口即使尚未被标记也必须进入离屏渲染列表
+    // （WorkspaceManager 复原隐藏视口时会短暂处于 visible=true /
+    // render_requested=false 的组合）。
+    state.render_views[0].visible = false;
+    state.render_views[0].render_requested = false;
+    state.render_views[1].visible = true;
+    state.render_views[1].detached = false;
+    state.render_views[1].render_requested = false;
+    state.render_views[2].render_requested = false;
+    const auto before_fill = presentation.reconcile_runtime_viewports(
+        state,
+        3,
+        1,
+        visible_viewports
+    );
+    CHECK(before_fill.active_viewport_count == 2);
+    CHECK(before_fill.streaming_viewport_index == 1);
+    REQUIRE(visible_viewports.size() == 1);
+    CHECK(visible_viewports[0] == 1);
 
     state.render_views[1].visible = false;
     const auto fallback = presentation.reconcile_runtime_viewports(

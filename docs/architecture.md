@@ -240,9 +240,13 @@ include/ & src/
   引擎不可用时显式报错，不做 Dart 软件投影回退。
   契约见 `include/ffi/geoscatter3d_ffi.h` 与
   `docs/compose/spec/ffi-single-process.md`。
-- **主题现状**：5 套（`include/ui/Theme.hpp`），代码默认 `kCarbonBlueDark`
-  （深色），`config/viewer.toml` 默认 `carbon-blue`（浅色）覆盖；运行期菜单
-  视图→主题 五套齐全，写入用户偏好 `[ui] theme`。
+- **主题现状**：Flutter 前端由单一令牌源
+  `ui_flutter/lib/src/theme/gs3d_tokens.dart` 调度（`Gs3dPalette` 原始色板 →
+  `Gs3dTokens` 语义令牌 → `Gs3dType` 光学排版 → `Gs3dMaterial` 玻璃/阴影 →
+  `Gs3dMotion` 弹簧物理 → `Gs3dA11y` 无障碍上下文；暗色分析舱色阶见
+  `Gs3dDark`），`ThemeData` 由 `gs3d_theme.dart` 装配。C++ 侧遗留的
+  5 套 `include/ui/Theme.hpp` 主题随 ImGui 移除已不再驱动界面。
+  详见 `docs/flutter-integration-audit.md`「前端设计体系」。
 
 **仍未实现/有明确边界:**
 
