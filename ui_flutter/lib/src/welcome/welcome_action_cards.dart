@@ -161,23 +161,33 @@ class _HeroButton extends StatelessWidget {
             children: [
               Icon(icon, size: 17, color: fg),
               const SizedBox(width: Gs3dTokens.space8),
-              Text(
-                label,
-                style: Gs3dType.bodyStrong.copyWith(
-                  fontSize: 13.5,
-                  color: fg,
+              // KB-02：超窄视口下 Wrap 子项宽度受限，标签/提示允许
+              // 收缩 + 省略；正常宽度下按内容自然撑开，视觉零变化。
+              Flexible(
+                child: Text(
+                  label,
+                  style: Gs3dType.bodyStrong.copyWith(
+                    fontSize: 13.5,
+                    color: fg,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               // 次级按钮把提示写成第二段小字，替代早期卡片里的整行副标题。
               if (variant != _HeroVariant.quiet) ...[
                 const SizedBox(width: Gs3dTokens.space8),
-                Text(
-                  hint,
-                  style: Gs3dType.caption.copyWith(
-                    fontSize: 11.5,
-                    color: fg.withValues(alpha: variant == _HeroVariant.primary
-                        ? 0.82
-                        : 0.72),
+                Flexible(
+                  child: Text(
+                    hint,
+                    style: Gs3dType.caption.copyWith(
+                      fontSize: 11.5,
+                      color: fg.withValues(alpha: variant == _HeroVariant.primary
+                          ? 0.82
+                          : 0.72),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

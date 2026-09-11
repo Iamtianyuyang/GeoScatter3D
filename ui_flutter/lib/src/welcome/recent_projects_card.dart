@@ -301,7 +301,16 @@ class _RecentProjectRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: Gs3dTokens.space12),
-              Text(item.relativeTimeStr, style: Gs3dType.caption),
+              // KB-02：超窄视口下时间文本不可断行会把行挤溢出，
+              // 收为弹性 + 省略；正常宽度下按内容自然撑开，视觉零变化。
+              Flexible(
+                child: Text(
+                  item.relativeTimeStr,
+                  style: Gs3dType.caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               const SizedBox(width: Gs3dTokens.space4),
               IconButton(
                 key: WelcomeUiKeys.recentItemRemove(index),

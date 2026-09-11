@@ -276,6 +276,32 @@ void main() {
     });
   });
 
+  group('超窄 compact 回归（KB-02：328×525 逻辑分辨率）', () {
+    testWidgets('欢迎页无 RenderFlex 溢出且侧栏关键控件仍在树中', (tester) async {
+      final service = WelcomeUiTestService();
+      service.markEngineUnavailable('libgs3d_ffi.so not found');
+      TabletDrawerScaffold.resetGestureGuide();
+
+      // 安卓模拟器 wm size 800x1280（dpr≈2.44）对应的逻辑分辨率，
+      // 此前该尺寸下左侧抽屉底部出现 ~9px 黄黑条纹溢出指示器。
+      await TabletSurface.pumpTabletApp(
+        tester,
+        service,
+        surface: const Size(328, 525),
+      );
+      await tester.pumpAndSettle();
+
+      // 布局阶段不允许抛出任何 RenderFlex 溢出异常。
+      expect(tester.takeException(), isNull);
+
+      // 侧栏关键控件仍可布局、可访问（不因自适应收缩而丢失）。
+      expect(find.byKey(WelcomeUiKeys.sidebarLogo), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.footerDocsButton), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.footerAboutButton), findsOneWidget);
+      expect(find.byKey(WelcomeUiKeys.footerGpuButton), findsOneWidget);
+    });
+  });
+
   group('2208×1840 横向平板命中 expanded，桌面布局照旧', () {
     testWidgets('expanded 档保留三栏常驻面板与桌面顶栏', (tester) async {
       final service = WelcomeUiTestService();

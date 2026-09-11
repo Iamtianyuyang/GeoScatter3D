@@ -147,3 +147,46 @@ WidgetTester 多指针序列实测（`center_viewport.dart` 裸 Listener 路径�
 - **路由判定：NoOne（全绿，可交付）**。
 - KB-01 修复达标：触控档命中区 ≥48、expanded 档零变化，无新增问题，无遗留问题。
 - 承接第 1 轮已知残留（非本轮范围，不影响门禁）：平板模拟器 APK 构建/UX 走查仍待脱离沙箱后按 §4 步骤补做；`tools/render_preview_test.dart` 未预设 `markEngineUnavailable` 为预览工具观感问题。
+
+
+---
+
+## 7. 模拟器实测补做（2026-09-11，交付总监执行）
+
+第 1 轮被沙箱阻断的 APK 链路已补做完成。**根因更正**：第 1 轮 `flutter build apk`
+失败的真正原因是构建时未设代理，gradle 依赖解析停滞（41 分钟挂起 / daemon 被杀）；
+保留 `HTTPS_PROXY` 重试后 **203.3s 构建成功**（`app-debug.apk`，171MB），增量重建
+仅 17.5s。
+
+**环境**：Pixel_10_Pro_Fold 模拟器（emulator-5554），物理 2076×2152 @390dpi
+≈ 852×883 逻辑（tablet 档）；`wm size 800x1280` ≈ 328×525 逻辑（compact 档）。
+
+| 走查项 | 结果 | 证据 |
+| --- | --- | --- |
+| 冷启动到达欢迎页 | ✅ | emulator-01 |
+| 图标 rail 导航（文件/最近项目/示例库） | ✅ | emulator-02/03 |
+| 示例工程库三卡渲染 | ✅ | emulator-03 |
+| 样例载入（无数据包）→ 显式错误横幅「数据源文件不存在」 | ✅ R3 | emulator-04 |
+| 新建工程对话框：tablet 档落底部 sheet（拖拽把手 + 贴底） | ✅ | emulator-05 |
+| 「构建并载入工作台」→ 对话框内联红色错误，不假装成功 | ✅ R3 | emulator-06 |
+| GPU 对话框：底部 sheet + 「未探测到可用 Vulkan 设备」诚实提示，应用按钮禁用 | ✅ R3 | emulator-07 |
+| `wm size 800x1280` 实时响应式重排 | ✅（发现 KB-02） | emulator-08 |
+| KB-02 修复后真机复验（超窄档无溢出） | ✅ | emulator-09 |
+| 命令面板按钮 | ⛔ 不适用：需先进入工作台，而工作台依赖数据载入，安卓无引擎环境无法到达 | — |
+
+### KB-02（新发现 → 已修复 → 已验证）
+
+- **现象**：328×525 逻辑分辨率下欢迎页左下角 RenderFlex 溢出 ~9px（黄黑条纹）。
+- **根因**：欢迎页同屏 5 处固定尺寸子项在超窄/超矮视口下溢出（侧栏导航列垂直、
+  品牌行水平、动作区等）。
+- **修复**（工程师寇豆码）：根因自适应——`Expanded` + `maxLines/ellipsis`、
+  列表滚动收缩，未使用 OverflowBox/clip 掩盖；expanded 档视觉零变化。
+  新增 328×525 回归用例（`tester.takeException()` 断言）。
+- **验证**：widget 用例全绿（83 通过/3 跳过）+ 真机 `wm size 800x1280` 复验
+  无溢出（emulator-09）。
+
+**截图**：`tmp/ui-preview/emulator-01..09-*.png`（OS 级 screencap 仅作模拟器
+UX 取证，不涉及产品内截屏特性，R5 不受影响）。模拟器已 `adb emu kill`，
+进程零残留。
+
+**最终判定：平板模拟器实测通过（1 项 N/A 已注明原因），可交付。**

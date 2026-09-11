@@ -126,64 +126,71 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                       const SizedBox(height: 6),
 
                     // 2. 五个导航项。
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Gs3dTokens.space8,
-                      ),
-                      child: Column(
-                        children: [
-                          _SidebarNavItem(
-                            icon: Icons.folder_open_rounded,
-                            label: '文件',
-                            isSelected: widget.selectedIndex == 0,
-                            isCollapsed: isNarrow,
-                            minTouchSize: touchMin,
-                            onTap: () => widget.onSelectIndex(0),
-                          ),
-                          const SizedBox(height: Gs3dTokens.space4),
-                          _SidebarNavItem(
-                            icon: Icons.access_time_rounded,
-                            label: '最近项目',
-                            isSelected: widget.selectedIndex == 1,
-                            isCollapsed: isNarrow,
-                            minTouchSize: touchMin,
-                            onTap: () => widget.onSelectIndex(1),
-                          ),
-                          const SizedBox(height: Gs3dTokens.space4),
-                          _SidebarNavItem(
-                            icon: Icons.view_in_ar_rounded,
-                            label: '示例',
-                            isSelected: widget.selectedIndex == 2,
-                            isCollapsed: isNarrow,
-                            minTouchSize: touchMin,
-                            onTap: () => widget.onSelectIndex(2),
-                          ),
-                          const SizedBox(height: Gs3dTokens.space4),
-                          // 帮助 / 关于（沿用 footer* 稳定键，切换视图）。
-                          _SidebarNavItem(
-                            key: WelcomeUiKeys.footerDocsButton,
-                            icon: Icons.help_outline_rounded,
-                            label: '帮助',
-                            isSelected: widget.selectedIndex == 3,
-                            isCollapsed: isNarrow,
-                            minTouchSize: touchMin,
-                            onTap: () => widget.onSelectIndex(3),
-                          ),
-                          const SizedBox(height: Gs3dTokens.space4),
-                          _SidebarNavItem(
-                            key: WelcomeUiKeys.footerAboutButton,
-                            icon: Icons.info_outline_rounded,
-                            label: '关于',
-                            isSelected: widget.selectedIndex == 4,
-                            isCollapsed: isNarrow,
-                            minTouchSize: touchMin,
-                            onTap: () => widget.onSelectIndex(4),
-                          ),
-                        ],
+                    //
+                    // KB-02 根因修复：导航区从「固定高度 + Spacer」改为
+                    // Flexible + 可滚动视口。超矮视口（如 328×525 逻辑分辨率）
+                    // 下导航项自动可滚动，而不是把底部 GPU 卡片挤出界外
+                    // （此前垂直 RenderFlex 溢出 ~9px 出黄黑条纹）。
+                    // 空间充裕（桌面 / 常规平板）时滚动视口天然撑满剩余高度，
+                    // 导航项仍顶部对齐、GPU 卡片仍钉在底部，视觉零变化。
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Gs3dTokens.space8,
+                        ),
+                        child: Column(
+                          children: [
+                            _SidebarNavItem(
+                              icon: Icons.folder_open_rounded,
+                              label: '文件',
+                              isSelected: widget.selectedIndex == 0,
+                              isCollapsed: isNarrow,
+                              minTouchSize: touchMin,
+                              onTap: () => widget.onSelectIndex(0),
+                            ),
+                            const SizedBox(height: Gs3dTokens.space4),
+                            _SidebarNavItem(
+                              icon: Icons.access_time_rounded,
+                              label: '最近项目',
+                              isSelected: widget.selectedIndex == 1,
+                              isCollapsed: isNarrow,
+                              minTouchSize: touchMin,
+                              onTap: () => widget.onSelectIndex(1),
+                            ),
+                            const SizedBox(height: Gs3dTokens.space4),
+                            _SidebarNavItem(
+                              icon: Icons.view_in_ar_rounded,
+                              label: '示例',
+                              isSelected: widget.selectedIndex == 2,
+                              isCollapsed: isNarrow,
+                              minTouchSize: touchMin,
+                              onTap: () => widget.onSelectIndex(2),
+                            ),
+                            const SizedBox(height: Gs3dTokens.space4),
+                            // 帮助 / 关于（沿用 footer* 稳定键，切换视图）。
+                            _SidebarNavItem(
+                              key: WelcomeUiKeys.footerDocsButton,
+                              icon: Icons.help_outline_rounded,
+                              label: '帮助',
+                              isSelected: widget.selectedIndex == 3,
+                              isCollapsed: isNarrow,
+                              minTouchSize: touchMin,
+                              onTap: () => widget.onSelectIndex(3),
+                            ),
+                            const SizedBox(height: Gs3dTokens.space4),
+                            _SidebarNavItem(
+                              key: WelcomeUiKeys.footerAboutButton,
+                              icon: Icons.info_outline_rounded,
+                              label: '关于',
+                              isSelected: widget.selectedIndex == 4,
+                              isCollapsed: isNarrow,
+                              minTouchSize: touchMin,
+                              onTap: () => widget.onSelectIndex(4),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-
-                    const Spacer(),
 
                     // 3. 底部硬件状态卡片（绑定 footerGpuButton）。
                     Padding(

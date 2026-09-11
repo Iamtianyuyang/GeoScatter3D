@@ -126,11 +126,17 @@ class _WelcomePageState extends State<WelcomePage> {
                     const MacTrafficLights(),
                     const Spacer(),
                     // 品牌区：长按唤起命令面板（触屏等价快捷键入口）。
-                    GestureDetector(
-                      onLongPress: _openCommandPalette,
-                      child: const Text(
-                        'GeoScatter3D · v0.1.0',
-                        style: Gs3dType.bodyStrong,
+                    // KB-02：超窄视口下用 Flexible 收缩 + 省略号，避免顶栏
+                    // 横向溢出；桌面宽度充裕时视觉零变化。
+                    Flexible(
+                      child: GestureDetector(
+                        onLongPress: _openCommandPalette,
+                        child: Text(
+                          'GeoScatter3D · v0.1.0',
+                          style: Gs3dType.bodyStrong,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                     const Spacer(),

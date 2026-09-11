@@ -105,26 +105,34 @@ class WelcomeHero extends StatelessWidget {
           ),
         ),
         const SizedBox(width: Gs3dTokens.space12 + 2),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '空间数据工作台',
-              style: Gs3dType.caption.copyWith(
-                color: Gs3dTokens.accent,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 2.4,
+        // KB-02：超窄视口下品牌行会挤压文字列，Expanded + 单行省略保证
+        // 任意宽度不横向溢出；桌面宽度充裕时布局与视觉零变化。
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '空间数据工作台',
+                style: Gs3dType.caption.copyWith(
+                  color: Gs3dTokens.accent,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2.4,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'GEOSCATTER 3D · v0.1.0',
-              style: Gs3dType.micro.copyWith(
-                color: Gs3dTokens.textTertiary,
-                letterSpacing: 0.6,
+              const SizedBox(height: 2),
+              Text(
+                'GEOSCATTER 3D · v0.1.0',
+                style: Gs3dType.micro.copyWith(
+                  color: Gs3dTokens.textTertiary,
+                  letterSpacing: 0.6,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
