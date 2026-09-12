@@ -62,7 +62,8 @@ class GeoScatter3dService extends ChangeNotifier {
   int _presentTicks = 0;
   int _presentWidth = 0;
   int _presentHeight = 0;
-  bool _presentAttachTried = false;
+  /// 已经尝试过零拷贝接管的视口尺寸；尺寸变化（旋转/分屏）时再给一次机会。
+  ui.Size? _presentAttemptedSize;
   final Stopwatch _fpsClock = Stopwatch();
   final Stopwatch _frameClock = Stopwatch();
   double _fps = 0;
@@ -89,6 +90,8 @@ class GeoScatter3dService extends ChangeNotifier {
   int? get textureId => _textureId;
   /// 是否已接管为零拷贝呈现（引擎直接 present 到 Flutter 纹理）。
   bool get zeroCopyPresent => _textureId != null;
+  /// 当前取帧通路的展示名（HUD/诊断用）。
+  String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
 
   Future<void> initialize({bool loadSample = true}) async {
@@ -150,11 +153,13 @@ class GeoScatter3dService extends ChangeNotifier {
   ///
   /// 不可用时只记录一次并保持回读路径——不能静默地假装纹理通路可用。
   Future<void> _tryAttachPresent(Gs3dEngine engine, ui.Size size) async {
-    if (_presentAttachTried || _disposed) return;
-    _presentAttachTried = true;
+    if (_disposed) return;
     final width = size.width.toInt();
     final height = size.height.toInt();
     if (width < 1 || height < 1) return;
+    // 同一尺寸只试一次（避免每帧重复往返平台层）；尺寸变化时允许重试。
+    if (_presentAttemptedSize == size) return;
+    _presentAttemptedSize = size;
     try {
       final id = await _presentBinder.attach(
         engineHandle: engine.nativeHandle,
@@ -333,7 +338,7 @@ class GeoScatter3dService extends ChangeNotifier {
       if (size != null) {
         _engine!.resize(size.width.toInt(), size.height.toInt());
         // 拿到真实视口尺寸后才尝试接管纹理通路（成功后下一 tick 走 ①）。
-        if (!_presentAttachTried) {
+        if (_textureId == null) {
           await _tryAttachPresent(_engine!, size);
           if (_textureId != null) {
             _engine!.requestFrame();

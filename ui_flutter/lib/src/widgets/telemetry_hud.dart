@@ -12,6 +12,9 @@ class TelemetryHud extends StatelessWidget {
   final String lodSummary;
   final String gpuName;
   final String status;
+  /// 当前生效的取帧通路（如「零拷贝纹理」/「RGBA 回读」）；空串则不展示。
+  /// 真机排障用：一眼看出引擎是否已接管 Flutter 纹理层。
+  final String renderPath;
 
   const TelemetryHud({
     super.key,
@@ -22,6 +25,7 @@ class TelemetryHud extends StatelessWidget {
     this.lodSummary = '',
     this.gpuName = 'Vulkan GPU',
     this.status = '就绪',
+    this.renderPath = '',
   });
 
   @override
@@ -112,10 +116,11 @@ class TelemetryHud extends StatelessWidget {
                 const SizedBox(height: 2),
               ],
 
-              // 点数与状态
+              // 点数、状态与当前取帧通路
               Text(
                 key: const ValueKey('viewport_status'),
-                '$visiblePoints 可见点 | $status',
+                '$visiblePoints 可见点 | $status'
+                '${renderPath.isEmpty ? '' : ' · $renderPath'}',
                 style: const TextStyle(
                   color: Color(0xFF94A3B8), // Slate 400
                   fontSize: 11,

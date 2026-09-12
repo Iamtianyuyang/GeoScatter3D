@@ -177,6 +177,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                 lodSummary: _service.lodSummary,
                 gpuName: _service.gpuName,
                 status: _service.status,
+                renderPath: _service.renderPath,
               ),
             ),
             SafeArea(

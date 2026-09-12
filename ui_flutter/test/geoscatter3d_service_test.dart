@@ -312,9 +312,15 @@ void main() {
       expect(service.frame, isNotNull);
       expect(service.error, isNull);
 
-      // 只尝试一次：后续 tick 不再反复调用平台层。
+      // 同一尺寸只尝试一次：后续 tick 不再反复调用平台层。
       await service.renderNextFrame();
       expect(failed.attachCount, 1);
+
+      // 尺寸变化（旋转/分屏）后再给一次机会——此前只试一次会让一次失败永久失去纹理。
+      service.requestSize(const ui.Size(640, 480));
+      await service.renderNextFrame();
+      expect(failed.attachCount, 2);
+      expect(service.zeroCopyPresent, isFalse);
     });
 
     test('resize 在 present 模式下交给平台层，并同步引擎宽高比', () async {
