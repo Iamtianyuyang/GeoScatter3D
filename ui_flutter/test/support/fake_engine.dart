@@ -38,6 +38,8 @@ class FakeEngine implements Gs3dEngine {
   @override
   bool get isDisposed => disposeCount > 0;
   @override
+  int get nativeHandle => 0;
+  @override
   int get pointCount => _drawnPointCount;
   @override
   int get sourcePointCount => _sourcePointCount;
@@ -48,6 +50,8 @@ class FakeEngine implements Gs3dEngine {
   @override
   Map<String, dynamic> get diagnostics => {
     'gpu': {'name': 'fixture GPU'},
+    'fps': 58.5,
+    'frame_time_ms': 17.1,
     'lod': {
       'source_points': _sourcePointCount,
       'drawn_points': _drawnPointCount,

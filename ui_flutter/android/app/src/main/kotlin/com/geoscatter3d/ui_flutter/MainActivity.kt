@@ -13,19 +13,27 @@ import android.provider.OpenableColumns
 import android.view.Surface
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.view.TextureRegistry
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
-/** Android 文档选择器桥接。
+/** Android 文档选择器桥接 + 零拷贝呈现通路。
  *
  * 选择结果会立即复制到应用私有持久目录，之后交给现有 FFI 引擎读取；
  * 不向 C++ 层暴露 content:// URI，也不申请外部存储权限。
+ *
+ * 零拷贝呈现：Flutter 的 TextureRegistry.SurfaceProducer 提供一个
+ * 可被 GPU 写入的 Surface（背后是 SurfaceTexture/BufferQueue），引擎直接把
+ * 交换链 present 到它，合成器把它当作普通 Flutter 纹理层合成——不再需要
+ * RGBA 回读 + RawImage 上传。
  */
 class MainActivity : FlutterActivity() {
     companion object {
         private const val DOCUMENT_CHANNEL = "com.geoscatter3d.ui_flutter/documents"
+        private const val SURFACE_CHANNEL = "com.geoscatter3d.ui_flutter/surface"
         private const val PICK_FILE_REQUEST = 4101
         private const val PICK_DIRECTORY_REQUEST = 4102
         private const val SAVE_FILE_REQUEST = 4103
@@ -38,6 +46,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 零拷贝通路的 Flutter 纹理条目（为 null 表示未接管，走回读路径）。 */
+    private var presentProducer: TextureRegistry.SurfaceProducer? = null
+    private var presentEngine = 0L
+    private var presentWidth = 0
+    private var presentHeight = 0
 
     private external fun nativeAttachSurface(
         engine: Long,
@@ -127,6 +141,157 @@ class MainActivity : FlutterActivity() {
 
                 else -> result.notImplemented()
             }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SURFACE_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "attach" -> attachPresentSurface(flutterEngine, call, result)
+                "resize" -> resizePresentSurface(call, result)
+                "detach" -> {
+                    detachPresentSurface()
+                    result.success(null)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    // ── 零拷贝呈现（Flutter Texture）────────────────────────────────────
+
+    /**
+     * 建立纹理通路：SurfaceProducer → Surface → 引擎交换链。
+     *
+     * 返回 Flutter 纹理 id（Dart 侧用它渲染 Texture widget）。
+     * 任何一步失败都返回 error，Dart 侧保持回读路径（不得静默地“假装可用”）。
+     */
+    private fun attachPresentSurface(
+        flutterEngine: FlutterEngine,
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val engine = engineHandleOf(call.argument<Number>("engineHandle"))
+        val width = call.argument<Number>("width")?.toInt() ?: 0
+        val height = call.argument<Number>("height")?.toInt() ?: 0
+        if (engine == 0L || width <= 0 || height <= 0) {
+            result.error("invalid_attach_args", "引擎句柄或尺寸无效", null)
+            return
+        }
+        try {
+            detachPresentSurface()
+            val producer = flutterEngine.renderer.createSurfaceProducer(
+                TextureRegistry.SurfaceLifecycle.resetInBackground,
+            )
+            producer.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
+                override fun onSurfaceCleanup() {
+                    // 合成器丢弃了 Surface（如切后台）：引擎不得继续持有失效窗口。
+                    if (presentProducer === producer) detachPresentSurface()
+                }
+
+                override fun onSurfaceCreated() {
+                    // 新 Surface 已就绪（resetInBackground 前后台切换）：重新附加。
+                    if (presentProducer === producer && presentEngine != 0L) {
+                        reattachCurrentSurface()
+                    }
+                }
+            })
+            producer.setSize(width, height)
+            val surface = producer.getSurface()
+                ?: throw IllegalStateException("SurfaceProducer 未提供 Surface")
+            val attach = nativeAttachSurface(engine, surface, width, height)
+            if (attach != 0) {
+                producer.release()
+                result.error("attach_failed", "引擎附加 Surface 失败 (rc=$attach)", attach)
+                return
+            }
+            presentProducer = producer
+            presentEngine = engine
+            presentWidth = width
+            presentHeight = height
+            result.success(
+                mapOf(
+                    "textureId" to producer.id(),
+                    "width" to width,
+                    "height" to height,
+                ),
+            )
+        } catch (error: Throwable) {
+            detachPresentSurface()
+            result.error("surface_unavailable", error.message, null)
+        }
+    }
+
+    /**
+     * 视口尺寸变化：先 setSize 让 BufferQueue 按新尺寸缓冲，再用新的 Surface
+     * 重新附加（交换链必须按新尺寸重建；重建代价是一次 GPU 资源重建）。
+     */
+    private fun resizePresentSurface(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val width = call.argument<Number>("width")?.toInt() ?: 0
+        val height = call.argument<Number>("height")?.toInt() ?: 0
+        if (width <= 0 || height <= 0) {
+            result.error("invalid_resize_args", "尺寸无效", null)
+            return
+        }
+        val producer = presentProducer
+        if (producer == null) {
+            result.error("no_surface", "当前没有纹理通路", null)
+            return
+        }
+        if (width == presentWidth && height == presentHeight) {
+            result.success(mapOf("width" to width, "height" to height))
+            return
+        }
+        try {
+            producer.setSize(width, height)
+            presentWidth = width
+            presentHeight = height
+            val surface = producer.getSurface()
+                ?: throw IllegalStateException("SurfaceProducer 未提供 Surface")
+            val attach = nativeAttachSurface(presentEngine, surface, width, height)
+            if (attach != 0) {
+                result.error("attach_failed", "引擎重新附加 Surface 失败 (rc=$attach)", attach)
+                return
+            }
+            result.success(mapOf("width" to width, "height" to height))
+        } catch (error: Throwable) {
+            result.error("surface_resize_failed", error.message, null)
+        }
+    }
+
+    private fun reattachCurrentSurface() {
+        val producer = presentProducer ?: return
+        if (presentEngine == 0L) return
+        try {
+            val surface = producer.getSurface() ?: return
+            nativeAttachSurface(presentEngine, surface, presentWidth, presentHeight)
+        } catch (_: Throwable) {
+            // 重新附加失败：保持已清空的状态，下一次 attach 会重试。
+        }
+    }
+
+    /** 释放纹理通路；幂等，可在任意线程调用。 */
+    private fun detachPresentSurface() {
+        val producer = presentProducer ?: return
+        presentProducer = null
+        if (presentEngine != 0L) {
+            try {
+                nativeClearSurface(presentEngine)
+            } catch (_: Throwable) {
+                // 引擎可能已释放；纹理仍需回收。
+            }
+        }
+        presentEngine = 0L
+        presentWidth = 0
+        presentHeight = 0
+        try {
+            producer.release()
+        } catch (_: Throwable) {
+            // release 失败无需处理（纹理已由 Flutter 侧持有失效）。
         }
     }
 
@@ -283,6 +448,12 @@ class MainActivity : FlutterActivity() {
             pendingSaveSource = null
             result.error("picker_open_failed", error.message, null)
         }
+    }
+
+    override fun onDestroy() {
+        // 活动销毁前释放纹理通路：避免引擎持有已失效的 ANativeWindow。
+        detachPresentSurface()
+        super.onDestroy()
     }
 
     @Suppress("DEPRECATION")

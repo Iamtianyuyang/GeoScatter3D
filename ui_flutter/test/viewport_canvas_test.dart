@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/widgets/viewport_canvas.dart';
 import 'support/fake_engine.dart';
+import 'support/fake_present_surface.dart';
 
 void main() {
   testWidgets(
@@ -57,6 +58,35 @@ void main() {
       expect(find.textContaining('Vulkan unavailable fixture'), findsOneWidget);
       expect(find.byKey(const ValueKey('viewport_frame')), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'texture path renders a Texture layer instead of a RawImage frame',
+    (tester) async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ViewportCanvas(service: service)),
+        ),
+      );
+      // 首帧 build 提交视口尺寸 → 下一 tick 接管纹理（两条 pump 覆盖 ticker）。
+      for (var i = 0; i < 4 && !service.zeroCopyPresent; i++) {
+        await tester.pump();
+      }
+      expect(service.zeroCopyPresent, isTrue);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('viewport_texture')), findsOneWidget);
+      expect(find.byKey(const ValueKey('viewport_frame')), findsNothing);
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

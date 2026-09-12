@@ -69,6 +69,28 @@ class _ViewportCanvasState extends State<ViewportCanvas>
     builder: (context, child) => _buildViewport(context),
   );
 
+  /// 零拷贝通路优先：有 Flutter 纹理时直接合成引擎交换链（无回读、无上传）；
+  /// 否则回退到 RGBA 帧的 RawImage。
+  Widget _buildFrameSurface() {
+    final textureId = _service.textureId;
+    if (textureId != null) {
+      return Texture(
+        key: const ValueKey('viewport_texture'),
+        textureId: textureId,
+        filterQuality: FilterQuality.none,
+      );
+    }
+    if (_service.frame != null) {
+      return _OwnedFrame(image: _service.frame!);
+    }
+    return const Center(
+      child: CircularProgressIndicator(
+        color: Color(0xFF38BDF8),
+        strokeWidth: 2,
+      ),
+    );
+  }
+
   Widget _buildViewport(BuildContext context) {
     if (_service.error != null) {
       return Container(
@@ -137,14 +159,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                   },
                   child: Container(
                     color: const Color(0xFF0B0F19), // 视口暗色基底
-                    child: _service.frame != null
-                        ? _OwnedFrame(image: _service.frame!)
-                        : const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF38BDF8),
-                              strokeWidth: 2,
-                            ),
-                          ),
+                    child: _buildFrameSurface(),
                   ),
                 ),
               ),

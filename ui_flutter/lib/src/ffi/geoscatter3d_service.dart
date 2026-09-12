@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'gs3d_engine.dart';
+import 'present_surface.dart';
 
 /// 基准/压力测试入口：以 --dart-define=GS3D_BENCH_POINTS=10000000 构建，
 /// 启动后直接生成该点数的合成地形（用于真机验证千万级数据的 LOD 与帧预算）。
@@ -21,18 +22,26 @@ const bool kSurfaceSmoke = bool.fromEnvironment('GS3D_SURFACE_SMOKE');
 /// 用于在没有双指手势的自动化通道里进入细尺度 tile 区间。
 const int kBenchZoomSteps = int.fromEnvironment('GS3D_BENCH_ZOOM');
 
+/// 零拷贝呈现通路的遥测刷新周期（单位：tick）。
+/// present 模式下不再逐帧回读像素，HUD 的 fps/绘制点数/LOD 摘要改为周期性
+/// 从引擎诊断读取（每 30 tick ≈ 0.5s@60Hz，一次 FFI JSON 往返）。
+const int kPresentTelemetryTicks = 30;
+
 /// 唯一视口状态中枢；拥有引擎、帧和控制动作，Widget 不直接执行 FFI。
 class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dService({
     Gs3dEngine? engine,
     Future<Gs3dEngine> Function()? createEngine,
+    PresentSurfaceBinder? presentBinder,
   }) : _engine = engine,
        _ownsEngine = engine == null,
+       _presentBinder = presentBinder ?? defaultPresentSurfaceBinder(),
        _createEngine =
            createEngine ??
            (() => Gs3dEngine.createForPlatform(width: 800, height: 600));
 
   final Future<Gs3dEngine> Function() _createEngine;
+  final PresentSurfaceBinder _presentBinder;
   final bool _ownsEngine;
   Gs3dEngine? _engine;
   bool _disposed = false;
@@ -49,6 +58,11 @@ class GeoScatter3dService extends ChangeNotifier {
   int _frameNumber = 0;
   int _windowFrames = 0;
   int _lastSequence = 0;
+  int? _textureId;
+  int _presentTicks = 0;
+  int _presentWidth = 0;
+  int _presentHeight = 0;
+  bool _presentAttachTried = false;
   final Stopwatch _fpsClock = Stopwatch();
   final Stopwatch _frameClock = Stopwatch();
   double _fps = 0;
@@ -70,6 +84,11 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 原生渲染线程的帧耗时（毫秒）；与 UI 端解码/绘制解耦。
   double get renderTimeMs => _renderTimeMs;
   String get gpuName => _gpuName;
+  /// Flutter 纹理 id；null 表示没有零拷贝通路（视图层回退到 RawImage）。
+  /// 注意 0 是合法纹理 id，不可用 0 当哨兵值。
+  int? get textureId => _textureId;
+  /// 是否已接管为零拷贝呈现（引擎直接 present 到 Flutter 纹理）。
+  bool get zeroCopyPresent => _textureId != null;
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
 
   Future<void> initialize({bool loadSample = true}) async {
@@ -118,8 +137,39 @@ class GeoScatter3dService extends ChangeNotifier {
       // 首帧由渲染线程异步产生；UI 线程不再阻塞在 Vulkan 提交上。
       engine.requestFrame();
       notifyListeners();
+      // 已知视口尺寸时立即尝试接管零拷贝通路；否则等首个 tick 拿到尺寸再试。
+      if (size != null) {
+        unawaited(_tryAttachPresent(engine, size));
+      }
     } catch (error) {
       _fail(error);
+    }
+  }
+
+  /// 尝试把引擎接管到 Flutter 纹理通路（零拷贝 present）。
+  ///
+  /// 不可用时只记录一次并保持回读路径——不能静默地假装纹理通路可用。
+  Future<void> _tryAttachPresent(Gs3dEngine engine, ui.Size size) async {
+    if (_presentAttachTried || _disposed) return;
+    _presentAttachTried = true;
+    final width = size.width.toInt();
+    final height = size.height.toInt();
+    if (width < 1 || height < 1) return;
+    try {
+      final id = await _presentBinder.attach(
+        engineHandle: engine.nativeHandle,
+        width: width,
+        height: height,
+      );
+      if (_disposed || id == null) return;
+      _textureId = id;
+      _presentWidth = width;
+      _presentHeight = height;
+      _presentTicks = 0;
+      debugPrint('[GS3D] 零拷贝呈现已接管: texture=$id ${width}x$height');
+      notifyListeners();
+    } catch (error) {
+      debugPrint('[GS3D] 零拷贝纹理不可用，保持 RGBA 回读: $error');
     }
   }
 
@@ -150,7 +200,30 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// 由引擎诊断的 LOD 状态生成规模摘要；小数据集返回空串（HUD 不显示）。
   void _refreshLodSummary(Gs3dEngine engine) {
-    final lod = engine.diagnostics['lod'];
+    _applyLodSummary(engine.diagnostics);
+  }
+
+  /// 从一份已取回的诊断 JSON 刷新遥测（present 模式下每 30 tick 调一次）。
+  void _applyDiagnostics(Map<String, dynamic> diagnostics) {
+    if (diagnostics.isEmpty) return;
+    _applyLodSummary(diagnostics);
+    final lod = diagnostics['lod'];
+    if (lod is Map) {
+      _pointCount = (lod['drawn_points'] as num?)?.toInt() ?? _pointCount;
+      _sourcePointCount =
+          (lod['source_points'] as num?)?.toInt() ?? _sourcePointCount;
+    }
+    final fps = (diagnostics['fps'] as num?)?.toDouble() ?? 0;
+    if (fps > 0) {
+      _fps = fps;
+      _frameTimeMs = 1000 / fps;
+    }
+    final frameMs = (diagnostics['frame_time_ms'] as num?)?.toDouble() ?? 0;
+    if (frameMs > 0) _renderTimeMs = frameMs;
+  }
+
+  void _applyLodSummary(Map diagnostics) {
+    final lod = diagnostics['lod'];
     if (lod is! Map) {
       _lodSummary = '';
       return;
@@ -229,18 +302,44 @@ class GeoScatter3dService extends ChangeNotifier {
     _frameClock.reset();
   }
 
-  /// 每帧 tker：先请求渲染线程出帧，再非阻塞地取回已完成帧。
+  /// 每帧 ticker：零拷贝通路下只推帧 + 周期刷遥测；否则走序号驱动的回读。
   ///
   /// 旧实现把整个 Vulkan 提交 + 回读（~20ms）按死在 UI isolate 上，
-  /// 手势与动画都要等它；现在 UI 线程只做一次 memcpy + 解码。
+  /// 手势与动画都要等它；回读路径仍只做一次 memcpy + 解码，
+  /// present 路径则完全不做像素回读。
   Future<void> renderNextFrame() async {
     if (!ready || _rendering || _paused) return;
     _rendering = true;
     try {
       final size = _pendingSize;
       _pendingSize = null;
+
+      // ① 零拷贝通路：引擎直接 present 到 Flutter 纹理，不碰像素。
+      //    此时 frameSequence 不再递增（present 模式不发布回读帧），
+      //    若沿用序号驱动会导致本函数永不取帧、HUD 僵死。
+      final textureId = _textureId;
+      if (textureId != null) {
+        if (size != null) {
+          await _resizePresentSurface(size);
+        }
+        _engine!.requestFrame();
+        _presentTicks++;
+        if (_presentTicks % kPresentTelemetryTicks == 0) {
+          _refreshPresentTelemetry();
+        }
+        return;
+      }
+
       if (size != null) {
         _engine!.resize(size.width.toInt(), size.height.toInt());
+        // 拿到真实视口尺寸后才尝试接管纹理通路（成功后下一 tick 走 ①）。
+        if (!_presentAttachTried) {
+          await _tryAttachPresent(_engine!, size);
+          if (_textureId != null) {
+            _engine!.requestFrame();
+            return;
+          }
+        }
       }
 
       final sequence = _engine!.frameSequence;
@@ -288,6 +387,37 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  /// present 模式下的遥测刷新：一次诊断读取同时得到 fps / 帧耗时 / 绘制点数
+  /// 与 LOD 摘要；只在真正变化时才 notifyListeners（纹理层不需要重建）。
+  void _refreshPresentTelemetry() {
+    final engine = _engine;
+    if (engine == null || _disposed) return;
+    _applyDiagnostics(engine.diagnostics);
+    _frameNumber++;
+    notifyListeners();
+  }
+
+  /// 视口尺寸变化（旋转/分屏）：纹理 Surface 与交换链需要一起改。
+  Future<void> _resizePresentSurface(ui.Size size) async {
+    final width = size.width.toInt();
+    final height = size.height.toInt();
+    if (width < 1 || height < 1) return;
+    if (width == _presentWidth && height == _presentHeight) return;
+    _presentWidth = width;
+    _presentHeight = height;
+    try {
+      // 引擎侧只需同步相机宽高比与离屏尺寸；交换链由平台层重建。
+      _engine!.resize(width, height);
+      await _presentBinder.resize(
+        textureId: _textureId!,
+        width: width,
+        height: height,
+      );
+    } catch (error) {
+      debugPrint('[GS3D] 纹理尺寸更新失败: $error');
+    }
+  }
+
   /// 当前最小控制面只开放相机输入与复位；未实现的动作必须明确拒绝。
   void executeAction(String action, [Map<String, double> values = const {}]) {
     if (!ready) throw StateError('引擎尚未就绪');
@@ -317,10 +447,25 @@ class GeoScatter3dService extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _fpsClock.stop();
-    if (_ownsEngine) _engine?.dispose();
+    final engine = _engine;
     _engine = null;
     _frame?.dispose();
     _frame = null;
+    final textureId = _textureId;
+    _textureId = null;
+    // 必须在释放引擎之前解除纹理通路：nativeClearSurface 需要有效句柄。
+    unawaited(_releasePresent(engine, textureId));
+  }
+
+  Future<void> _releasePresent(Gs3dEngine? engine, int? textureId) async {
+    if (textureId != null) {
+      try {
+        await _presentBinder.detach(textureId: textureId);
+      } catch (error) {
+        debugPrint('[GS3D] 释放零拷贝纹理失败: $error');
+      }
+    }
+    if (_ownsEngine) engine?.dispose();
   }
 
   @override

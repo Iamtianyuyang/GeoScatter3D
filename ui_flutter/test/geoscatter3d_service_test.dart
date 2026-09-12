@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/ffi/gs3d_engine.dart';
 import 'support/fake_engine.dart';
+import 'support/fake_present_surface.dart';
 
 void main() {
   test('factory failure is explicit, never ready or a fake frame', () async {
@@ -182,4 +183,183 @@ void main() {
       expect(service.ready, isTrue);
     },
   );
+
+  group('零拷贝呈现通路', () {
+    test('拿到视口尺寸后接管纹理，present 模式不再回读像素', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      expect(service.zeroCopyPresent, isFalse);
+
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+      expect(service.textureId, 42);
+      expect(binder.attachCount, 1);
+      expect(binder.attachSizes.single, (320, 240));
+      // 纹理接管前仍需同步引擎宽高比（相机投影依赖它）。
+      expect(engine.sizes, [(320, 240)]);
+
+      final reads = engine.readCount;
+      final requests = engine.requestCount;
+      for (var i = 0; i < 5; i++) {
+        await service.renderNextFrame();
+      }
+      // present 模式：每个 tick 推帧，但永不回读（frameSequence 不再变化）。
+      expect(engine.readCount, reads);
+      expect(engine.requestCount, requests + 5);
+      expect(service.frame, isNull);
+      expect(service.error, isNull);
+    });
+
+    test('present 模式周期性从诊断刷新遥测，不靠帧序号', () async {
+      final engine = FakeEngine();
+      engine.setLodScenario(source: 1000000, drawn: 79400, level: 2,
+          levelCount: 3);
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+
+      final frameNumber = service.frameNumber;
+      for (var i = 0; i < kPresentTelemetryTicks; i++) {
+        await service.renderNextFrame();
+      }
+      // 遥测（fps / 绘制点数 / LOD 摘要 / 帧计数）必须真的在动。
+      expect(service.frameNumber, frameNumber + 1);
+      expect(service.fps, 58.5);
+      expect(service.frameTimeMs, closeTo(1000 / 58.5, 0.01));
+      expect(service.pointCount, 79400);
+      expect(service.sourcePointCount, 1000000);
+      expect(service.lodSummary, contains('LOD 3/3'));
+    });
+
+    test('纹理 id 0 是合法 id，必须接管而不是当成不可用', () async {
+      // 回归：Flutter 纹理注册表的首个纹理 id 就是 0；若用 0 当「不可用」哨兵，
+      // 就会出现「Kotlin 已把引擎挂到 Surface、Dart 却走回读」的死屏状态。
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder(textureId: 0);
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+      expect(service.textureId, 0);
+      final reads = engine.readCount;
+      await service.renderNextFrame();
+      expect(engine.readCount, reads);
+    });
+
+    test('平台没有纹理通路时（attach 返回 null）保持回读', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder()..unsupported = true;
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isFalse);
+      expect(service.textureId, isNull);
+      final reads = engine.readCount;
+      await service.renderNextFrame();
+      expect(engine.readCount, greaterThan(reads));
+    });
+
+    test('纹理不可用时保持回读路径，并只记录一次', () async {
+      final engine = FakeEngine();
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder);
+      final picture = recorder.endRecording();
+      final source = picture.toImageSync(2, 2);
+      picture.dispose();
+      // 每次读回一个新 clone（与真引擎一致）；clone 所有权归服务。
+      engine.render = () async => source.clone();
+      addTearDown(source.dispose);
+      final failed = FakePresentSurfaceBinder()..failAttach = true;
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: failed,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isFalse);
+      expect(failed.attachCount, 1);
+
+      // 回读路径必须仍然工作（不得因纹理失败而主屏黑屏）。
+      final reads = engine.readCount;
+      await service.renderNextFrame();
+      expect(engine.readCount, greaterThan(reads));
+      expect(service.frame, isNotNull);
+      expect(service.error, isNull);
+
+      // 只尝试一次：后续 tick 不再反复调用平台层。
+      await service.renderNextFrame();
+      expect(failed.attachCount, 1);
+    });
+
+    test('resize 在 present 模式下交给平台层，并同步引擎宽高比', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+
+      service.requestSize(const ui.Size(640, 480));
+      await service.renderNextFrame();
+      expect(binder.resizeCount, 1);
+      expect(binder.resizeSizes.single, (640, 480));
+      expect(engine.sizes, [(320, 240), (640, 480)]);
+
+      // 尺寸未变时不重复下发（避免每帧重建交换链）。
+      service.requestSize(const ui.Size(640, 480));
+      await service.renderNextFrame();
+      expect(binder.resizeCount, 1);
+    });
+
+    test('dispose 先解除纹理通路再释放引擎', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      await service.initialize();
+      service.requestSize(const ui.Size(320, 240));
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+
+      service.dispose();
+      // detach 是异步的：等一拍确保已下发。
+      await Future<void>.delayed(Duration.zero);
+      expect(binder.detachCount, 1);
+      expect(binder.detachedTextureId, 42);
+      expect(service.textureId, isNull);
+    });
+  });
 }
