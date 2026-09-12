@@ -119,14 +119,24 @@ void HeadlessRenderKernel::create_pipeline() {
     );
 }
 
-void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
+void HeadlessRenderKernel::destroy_gpu_resources(bool keep_cpu_lod) noexcept {
     if (context_) {
         vkDeviceWaitIdle(context_->device());
     }
     destroy_present_resources_locked();
     destroy_frame_resources();
     lod_.destroy();
-    lod_chain_.clear();
+    /*
+     * Surface 重建（attach/detach/resize）不会改变数据：CPU 侧的 LOD 链可以留用，
+     * 只把 GPU 缓冲重新上传即可。否则每次旋转屏幕都要重跑一次 CPU 建链
+     * （真机 100 万点实测 460 ms，是明显的卡顿来源）。
+     */
+    if (!keep_cpu_lod) {
+        lod_chain_.clear();
+        lod_dataset_.reset();
+        estimated_spacing_ = 0.0f;
+        lod_build_ms_ = 0.0;
+    }
     drawn_point_count_ = 0;
     gpu_point_count_ = 0;
     tile_reader_.reset();
@@ -523,73 +533,90 @@ std::size_t HeadlessRenderKernel::choose_lod_index() const {
     return count - 1;
 }
 
-int HeadlessRenderKernel::rebuild_lod_locked() {
+int HeadlessRenderKernel::rebuild_lod_locked(bool reuse_cpu_chain) {
+    /*
+     * reuse_cpu_chain：Surface 重建后的重上传路径。CPU 建链结果与数据/预算无关地
+     * 保持不变，因此只重传 GPU 缓冲（真机 100 万点：建链 460 ms → 上传 57 ms）。
+     * 链为空（尚未建过）时自动退化为完整重建。
+     */
+    const bool reuse = reuse_cpu_chain && !lod_chain_.empty();
+    lod_cpu_chain_reused_ = reuse;
     lod_.destroy();
-    lod_chain_.clear();
     drawn_level_ = 0;
     drawn_point_count_ = 0;
     gpu_point_count_ = 0;
-    estimated_spacing_ = 0.0f;
-    lod_build_ms_ = 0.0;
     lod_upload_ms_ = 0.0;
+    if (!reuse) {
+        lod_chain_.clear();
+        lod_dataset_.reset();
+        estimated_spacing_ = 0.0f;
+        lod_build_ms_ = 0.0;
+    }
 
     const auto& points = dataset_.points();
     if (points.empty()) {
         return -2;
+    }
+    if (reuse) {
+        gs3d::util::log::info()
+            << "[HeadlessRenderKernel] LOD chain reused (skip CPU build): levels="
+            << lod_chain_.size() << '\n';
     }
 
     /*
      * 1. 粗尺度层级：优先用预处理产出的 .gs3dlod（Potree 式分层由写作端决定，
      *    层数/体素可复现），缺失时才在运行时按点间距现场建链。
      */
-    lod_dataset_.reset();
-    std::filesystem::path lod_path;
-    if (!bundle_dir_.empty()) {
-        lod_path = bundle_dir_ / "lod.gs3dlod";
-    } else if (!dataset_path_.empty()) {
-        lod_path = dataset_path_.parent_path() /
-                   (dataset_path_.stem().string() + ".gs3dlod");
-    }
-
-    if (!config_.disable_lod && !lod_path.empty() &&
-        std::filesystem::exists(lod_path)) {
-        try {
-            auto read = gs3d::data::Gs3dLodReader::read(lod_path, dataset_.header());
-            if (read.stats.success && !read.dataset.empty()) {
-                for (const auto& level : read.dataset.levels()) {
-                    LodLevel gpu_level;
-                    gpu_level.points = level.points;
-                    gpu_level.voxel_size = level.voxel_size;
-                    gpu_level.source_point_count = level.source_point_count;
-                    lod_chain_.push_back(std::move(gpu_level));
-                }
-                estimated_spacing_ = lod_chain_.empty()
-                    ? 0.0f
-                    : lod_chain_.front().voxel_size / 2.0f;
-                gs3d::util::log::info()
-                    << "[HeadlessRenderKernel] lod sidecar: levels="
-                    << lod_chain_.size() << "\n";
-                lod_dataset_ = std::move(read.dataset);
-            }
-        } catch (const std::exception& ex) {
-            gs3d::util::log::warning()
-                << "[HeadlessRenderKernel] lod sidecar unusable: " << ex.what()
-                << "\n";
-            lod_chain_.clear();
+    if (!reuse) {
+        std::filesystem::path lod_path;
+        if (!bundle_dir_.empty()) {
+            lod_path = bundle_dir_ / "lod.gs3dlod";
+        } else if (!dataset_path_.empty()) {
+            lod_path = dataset_path_.parent_path() /
+                       (dataset_path_.stem().string() + ".gs3dlod");
         }
-    }
 
-    if (!config_.disable_lod && lod_chain_.empty()) {
-        LodBuildConfig lod_config;
-        lod_config.min_points = std::max<std::uint64_t>(
-            LodBuildConfig{}.min_points,
-            effective_point_budget() / 2u
-        );
-        LodChain chain = LodBuilder::build(points, lod_config);
-        estimated_spacing_ = chain.estimated_spacing;
-        lod_build_ms_ = chain.build_ms;
-        lod_chain_ = std::move(chain.levels);
-    }
+        if (!config_.disable_lod && !lod_path.empty() &&
+            std::filesystem::exists(lod_path)) {
+            try {
+                auto read = gs3d::data::Gs3dLodReader::read(lod_path, dataset_.header());
+                if (read.stats.success && !read.dataset.empty()) {
+                    for (const auto& level : read.dataset.levels()) {
+                        LodLevel gpu_level;
+                        gpu_level.points = level.points;
+                        gpu_level.voxel_size = level.voxel_size;
+                        gpu_level.source_point_count = level.source_point_count;
+                        lod_chain_.push_back(std::move(gpu_level));
+                    }
+                    estimated_spacing_ = lod_chain_.empty()
+                        ? 0.0f
+                        : lod_chain_.front().voxel_size / 2.0f;
+                    gs3d::util::log::info()
+                        << "[HeadlessRenderKernel] lod sidecar: levels="
+                        << lod_chain_.size() << "\n";
+                    lod_dataset_ = std::move(read.dataset);
+                }
+            } catch (const std::exception& ex) {
+                gs3d::util::log::warning()
+                    << "[HeadlessRenderKernel] lod sidecar unusable: " << ex.what()
+                    << "\n";
+                lod_chain_.clear();
+            }
+        }
+
+        if (!config_.disable_lod && lod_chain_.empty()) {
+            LodBuildConfig lod_config;
+            lod_config.min_points = std::max<std::uint64_t>(
+                LodBuildConfig{}.min_points,
+                effective_point_budget() / 2u
+            );
+            LodChain chain = LodBuilder::build(points, lod_config);
+            estimated_spacing_ = chain.estimated_spacing;
+            lod_build_ms_ = chain.build_ms;
+            lod_chain_ = std::move(chain.levels);
+        }
+
+    }  // if (!reuse)
 
     // 2. 组装 GPU 层级：跳过超过 max_gpu_points 的层，避免一次性显存峰值。
     gs3d::render::PointCloudLodSource source;
@@ -968,7 +995,7 @@ int HeadlessRenderKernel::attach_surface(
     gs3d::util::log::info()
         << "[HeadlessRenderKernel] attach_surface " << width << 'x' << height
         << " had_dataset=" << (had_dataset ? 1 : 0) << '\n';
-    destroy_gpu_resources();
+    destroy_gpu_resources(/*keep_cpu_lod=*/true);
 
     const int rc = create_resources_locked();
     if (rc != 0) {
@@ -976,7 +1003,7 @@ int HeadlessRenderKernel::attach_surface(
         return rc;
     }
     if (had_dataset) {
-        const int rebuild_rc = rebuild_lod_locked();
+        const int rebuild_rc = rebuild_lod_locked(/*reuse_cpu_chain=*/true);
         if (rebuild_rc != 0) {
             gs3d::util::log::error()
                 << "[HeadlessRenderKernel] attach_surface: LOD rebuild failed rc="
@@ -999,9 +1026,9 @@ void HeadlessRenderKernel::detach_surface() {
     }
     surface_provider_ = {};
     const bool had_dataset = has_dataset_;
-    destroy_gpu_resources();
+    destroy_gpu_resources(/*keep_cpu_lod=*/true);
     if (create_resources_locked() == 0 && had_dataset) {
-        rebuild_lod_locked();
+        rebuild_lod_locked(/*reuse_cpu_chain=*/true);
     }
 }
 
@@ -1108,7 +1135,8 @@ int HeadlessRenderKernel::present_frame() {
         );
         submitted = false;
 
-        present_surface_->end_frame(frame);
+        // 返回值只表示「本帧是否真的提交了」，present 通路不关心（失败会抛异常）。
+        (void)present_surface_->end_frame(frame);
         track_frame_timing_locked();
         last_error_.clear();
         return 0;
@@ -1690,6 +1718,7 @@ HeadlessRenderKernel::LodState HeadlessRenderKernel::lod_state() const {
     state.estimated_spacing = estimated_spacing_;
     state.build_ms = lod_build_ms_;
     state.upload_ms = lod_upload_ms_;
+    state.cpu_chain_reused = lod_cpu_chain_reused_;
     state.automatic_budget = point_budget_ == 0;
     state.tiles_available = tile_reader_ != nullptr && tile_reader_->valid();
     if (state.tiles_available) {

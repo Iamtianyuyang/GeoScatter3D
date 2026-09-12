@@ -361,9 +361,105 @@ TEST_CASE("engine presents the point cloud into a platform surface") {
     CHECK(lit_pixels(rgba) > 100);
 }
 
+TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
+    /*
+     * 回归：Surface 重建（真机旋转/分屏）不应重跑 CPU LOD 建链。
+     * 100 万点上实测建链 460 ms、上传 40 ms，不区分开就是每次旋转都卡一下。
+     * 断言两件事：第二次附加确实是「复用」路径，且 GPU 缓冲真的重传了
+     * （否则 lod_ 为空，present_frame 会一直返回 -2）。
+     */
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (!std::filesystem::exists(shader_dir / "point.vert.spv")) {
+        SUCCEED("SPIR-V not built; skipping surface re-attach test");
+        return;
+    }
+
+    HiddenWindow window;
+    gs3d::render::VulkanSurfaceProvider provider{};
+    const char* extensions[] = {VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    provider.instance_extensions = extensions;
+    provider.instance_extension_count = 1;
+    provider.create_surface = &create_win32_surface;
+    provider.user_data = window.handle();
+
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config{};
+    config.width = 512;
+    config.height = 288;
+    config.enable_validation = true;
+    config.shader_dir = shader_dir.string();
+    if (host.start(config) != 0) {
+        SUCCEED("Vulkan unavailable; skipping surface re-attach test");
+        return;
+    }
+
+    // 25 万点：与真机 bench bundle 同量级，足以产出至少一级 LOD。
+    REQUIRE(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.load_synthetic(250000);
+    }) == 0);
+
+    auto lod_of = [&host]() {
+        auto state = std::make_shared<gs3d::ffi::HeadlessRenderKernel::LodState>();
+        host.invoke([state](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            *state = kernel.lod_state();
+            return 0;
+        });
+        return *state;
+    };
+
+    const auto built = lod_of();
+    REQUIRE(built.level_count >= 2);
+    // 加载阶段是真建链（供后面断言附加阶段没有重建）。
+    CHECK_FALSE(built.cpu_chain_reused);
+
+    REQUIRE(host.invoke([&provider](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.attach_surface(provider, 512, 288);
+    }) == 0);
+    const auto attached = lod_of();
+    // load_synthetic 已经建过一次链，附加时只应重传 GPU 缓冲。
+    CHECK(attached.cpu_chain_reused);
+    CHECK(attached.level_count == built.level_count);
+    CHECK(attached.drawn_points == built.drawn_points);
+    CHECK(attached.estimated_spacing == built.estimated_spacing);
+
+    // 旋转尺寸后重新附加：必须复用 CPU 链。
+    host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        kernel.detach_surface();
+        return 0;
+    });
+    REQUIRE(host.invoke([&provider](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.attach_surface(provider, 640, 360);
+    }) == 0);
+    const auto reattached = lod_of();
+    CHECK(reattached.cpu_chain_reused);
+    CHECK(reattached.level_count == built.level_count);
+    CHECK(reattached.drawn_points == built.drawn_points);
+    CHECK(reattached.estimated_spacing == built.estimated_spacing);
+
+    // GPU 缓冲已重传：能真的画出来（否则 lod_ 为空，只会得到 -2）。
+    int presented = 0;
+    for (int frame = 0; frame < 8 && presented == 0; ++frame) {
+        int rc = 0;
+        host.invoke([&rc](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            rc = kernel.present_frame();
+            return 0;
+        });
+        if (rc == 0) {
+            ++presented;
+        } else {
+            CHECK(rc == -2);  // -2 = 本帧跳过（交换链刚重建）
+        }
+    }
+    CHECK(presented > 0);
+}
+
 #else
 
 TEST_CASE("engine presents the point cloud into a platform surface") {
+    SUCCEED("platform present surface not covered on this platform yet");
+}
+
+TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
     SUCCEED("platform present surface not covered on this platform yet");
 }
 

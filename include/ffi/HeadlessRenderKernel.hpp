@@ -185,6 +185,8 @@ public:
         float estimated_spacing = 0.0f;
         double build_ms = 0.0;
         double upload_ms = 0.0;
+        /// 最近一次 GPU 上传是否复用了已有 CPU LOD 链（Surface 重建路径）。
+        bool cpu_chain_reused = false;
         bool automatic_budget = true;
         // ── 细尺度 tile ──────────────────────────────────────────────
         bool tiles_available = false;
@@ -224,7 +226,8 @@ public:
 
 private:
     void create_pipeline();
-    void destroy_gpu_resources() noexcept;
+    /// keep_cpu_lod=true 时保留 CPU 侧 LOD 链（Surface 重建后只需重新上传）。
+    void destroy_gpu_resources(bool keep_cpu_lod = false) noexcept;
     /// 申请/复用帧资源（命令缓冲、栅栏、常驻 staging 缓冲）。
     void ensure_frame_resources(std::size_t bytes);
     void destroy_frame_resources() noexcept;
@@ -238,7 +241,8 @@ private:
     /// 生成内置合成地形（基准/压力测试）。
     int generate_synthetic_grid(std::uint64_t requested_points);
     /// 根据当前数据集重建 CPU LOD 链并上传各级到 GPU。
-    int rebuild_lod_locked();
+    /// reuse_cpu_chain=true 时跳过 CPU 建链，只用已有链重新上传（Surface 重建后）。
+    int rebuild_lod_locked(bool reuse_cpu_chain = false);
     /// 解析并打开数据集旁边的 LOD / tile sidecar（无则保留为空）。
     void open_sidecars_locked(
         const std::filesystem::path& dataset_path,
@@ -283,6 +287,8 @@ private:
     std::uint64_t point_budget_ = 0;
     double lod_build_ms_ = 0.0;
     double lod_upload_ms_ = 0.0;
+    /// 最近一次 rebuild 是否跳过 CPU 建链（供测试与诊断断言）。
+    bool lod_cpu_chain_reused_ = false;
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

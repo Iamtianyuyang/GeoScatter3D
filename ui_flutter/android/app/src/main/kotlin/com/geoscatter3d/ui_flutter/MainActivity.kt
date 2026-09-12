@@ -224,8 +224,13 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * 视口尺寸变化：先 setSize 让 BufferQueue 按新尺寸缓冲，再用新的 Surface
-     * 重新附加（交换链必须按新尺寸重建；重建代价是一次 GPU 资源重建）。
+     * 视口尺寸变化：setSize 后必须重新附加。
+     *
+     * 试过「Surface 对象未变时只 setSize、让引擎自己按 OUT_OF_DATE 重建交换链」的
+     * 偷懒路径：真机上交换链并不会被判为过期（没有 recreate 日志），结果引擎继续
+     * 以旧尺寸 present，Flutter 侧留出大片黑边 —— 正确性优先，这里始终重新附加。
+     * 重新附加的卡顿由原生侧解决：Surface 重建不再重跑 CPU LOD 建链，
+     * 只重传 GPU 缓冲（kernel `rebuild_lod_locked(reuse_cpu_chain=true)`）。
      */
     private fun resizePresentSurface(
         call: MethodCall,
@@ -254,7 +259,11 @@ class MainActivity : FlutterActivity() {
                 ?: throw IllegalStateException("SurfaceProducer 未提供 Surface")
             val attach = nativeAttachSurface(presentEngine, surface, width, height)
             if (attach != 0) {
-                result.error("attach_failed", "引擎重新附加 Surface 失败 (rc=$attach)", attach)
+                result.error(
+                    "attach_failed",
+                    "引擎重新附加 Surface 失败 (rc=$attach)",
+                    attach,
+                )
                 return
             }
             result.success(mapOf("width" to width, "height" to height))
