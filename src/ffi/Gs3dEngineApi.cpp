@@ -146,6 +146,45 @@ int32_t gs3d_engine_load_synthetic(gs3d_engine* e, uint64_t point_count) {
     });
 }
 
+int32_t gs3d_engine_set_surface(
+    gs3d_engine* e, const gs3d_surface_provider* provider,
+    uint32_t width, uint32_t height) {
+    if (e == nullptr || provider == nullptr) return -1;
+    gs3d::render::VulkanSurfaceProvider surface_provider{};
+    surface_provider.instance_extensions = provider->instance_extensions;
+    surface_provider.instance_extension_count = provider->instance_extension_count;
+    surface_provider.create_surface = provider->create_surface;
+    surface_provider.user_data = provider->user_data;
+    const auto captured = surface_provider;
+    return e->host.invoke(
+        [captured, width, height](gs3d::ffi::HeadlessRenderKernel& k) {
+            return k.attach_surface(captured, width, height);
+        }
+    );
+}
+
+int32_t gs3d_engine_clear_surface(gs3d_engine* e) {
+    if (e == nullptr) return -1;
+    return e->host.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
+        k.detach_surface();
+        return 0;
+    });
+}
+
+int32_t gs3d_engine_present_frame(gs3d_engine* e) {
+    if (e == nullptr) return -1;
+    return e->host.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
+        return k.present_frame();
+    });
+}
+
+int32_t gs3d_engine_has_surface(gs3d_engine* e) {
+    if (e == nullptr) return 0;
+    return e->host.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
+        return k.has_surface() ? 1 : 0;
+    });
+}
+
 int32_t gs3d_engine_set_point_budget(gs3d_engine* e, uint64_t max_points) {
     if (e == nullptr) return -1;
     return e->host.invoke([max_points](gs3d::ffi::HeadlessRenderKernel& k) {

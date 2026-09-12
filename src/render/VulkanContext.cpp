@@ -207,13 +207,21 @@ void VulkanContext::create_surface() {
         );
     }
 
-    check_vk(
-        provider.create_surface(
-            instance_,
-            provider.user_data,
-            &surface_
-        ),
-        "VulkanContext: platform failed to create Vulkan surface"
+    std::uint64_t surface_handle = 0;
+    const std::int32_t create_result = provider.create_surface(
+        reinterpret_cast<void*>(instance_),
+        provider.user_data,
+        &surface_handle
+    );
+    if (create_result != 0) {
+        throw std::runtime_error(
+            "VulkanContext: platform failed to create Vulkan surface (code " +
+            std::to_string(create_result) + ")"
+        );
+    }
+    // 整个内核里唯一一处 uint64 → VkSurfaceKHR 的转换：平台句柄不穿透 ABI。
+    surface_ = reinterpret_cast<VkSurfaceKHR>(
+        static_cast<std::uintptr_t>(surface_handle)
     );
 
     if (surface_ == VK_NULL_HANDLE) {

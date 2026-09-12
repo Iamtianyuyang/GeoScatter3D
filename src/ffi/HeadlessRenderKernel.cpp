@@ -49,16 +49,21 @@ void HeadlessRenderKernel::set_error(const std::string& message) {
 
 int HeadlessRenderKernel::create(const Config& config) {
     std::lock_guard<std::mutex> lock(mutex_);
-    try {
-        destroy_gpu_resources();
-        config_ = config;
-        if (config_.width == 0 || config_.height == 0) {
-            set_error("invalid viewport size");
-            return -1;
-        }
+    destroy_gpu_resources();
+    config_ = config;
+    if (config_.width == 0 || config_.height == 0) {
+        set_error("invalid viewport size");
+        return -1;
+    }
+    return create_resources_locked();
+}
 
+int HeadlessRenderKernel::create_resources_locked() {
+    try {
         gs3d::render::VulkanContextConfig ctx_cfg;
-        ctx_cfg.headless = true;
+        // 附加了平台 surface 就走窗口上下文，否则维持纯离屏。
+        ctx_cfg.headless = !surface_provider_.valid();
+        ctx_cfg.surface_provider = surface_provider_;
         ctx_cfg.preferred_gpu = config_.preferred_gpu;
         ctx_cfg.enable_validation_layers = config_.enable_validation;
         ctx_cfg.application_name = "GeoScatter3D.FFI.Engine";
@@ -81,6 +86,10 @@ int HeadlessRenderKernel::create(const Config& config) {
             VK_FORMAT_R8G8B8A8_UNORM
         );
         create_pipeline();
+
+        if (surface_provider_.valid()) {
+            create_present_resources_locked();
+        }
 
         camera_.set_viewport(config_.width, config_.height);
         camera_.set_perspective(45.0f, 1.0f, 100000.0f);
@@ -110,6 +119,7 @@ void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
     if (context_) {
         vkDeviceWaitIdle(context_->device());
     }
+    destroy_present_resources_locked();
     destroy_frame_resources();
     lod_.destroy();
     lod_chain_.clear();
@@ -863,6 +873,233 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
         tile_clip_bounds_ = gs3d::core::Bounds3f{
             min_x, min_y, min_z, max_x, max_y, max_z
         };
+    }
+}
+
+
+void HeadlessRenderKernel::create_present_resources_locked() {
+    present_surface_ = std::make_unique<gs3d::render::PresentSurface>(
+        *context_,
+        gs3d::render::PresentSurface::Config{
+            config_.width,
+            config_.height,
+            true,
+            VK_FORMAT_B8G8R8A8_UNORM,
+        }
+    );
+
+    gs3d::render::PointPipelineConfig pipe_cfg;
+    if (!config_.shader_dir.empty()) {
+        pipe_cfg.vertex_shader_path =
+            std::filesystem::path(config_.shader_dir) / "point.vert.spv";
+        pipe_cfg.fragment_shader_path =
+            std::filesystem::path(config_.shader_dir) / "point.frag.spv";
+    }
+    // 交换链 render pass 只有颜色 + 深度：附件数必须跟着改。
+    pipe_cfg.color_attachment_count = 1;
+    present_pipeline_ = std::make_unique<gs3d::render::PointPipeline>(
+        *context_, present_surface_->render_pass(), pipe_cfg
+    );
+
+    VkCommandBufferAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc.commandPool = command_pool_;
+    alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc.commandBufferCount = 1;
+    check_vk(
+        vkAllocateCommandBuffers(context_->device(), &alloc, &present_command_),
+        "alloc present command buffer"
+    );
+
+    VkFenceCreateInfo fence_info{};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    check_vk(
+        vkCreateFence(context_->device(), &fence_info, nullptr, &present_fence_),
+        "create present fence"
+    );
+}
+
+void HeadlessRenderKernel::destroy_present_resources_locked() noexcept {
+    present_surface_.reset();
+    present_pipeline_.reset();
+    if (context_ != nullptr) {
+        if (present_fence_ != VK_NULL_HANDLE) {
+            vkDestroyFence(context_->device(), present_fence_, nullptr);
+        }
+        if (present_command_ != VK_NULL_HANDLE && command_pool_ != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(
+                context_->device(), command_pool_, 1, &present_command_);
+        }
+    }
+    present_fence_ = VK_NULL_HANDLE;
+    present_command_ = VK_NULL_HANDLE;
+}
+
+int HeadlessRenderKernel::attach_surface(
+    const gs3d::render::VulkanSurfaceProvider& provider,
+    std::uint32_t width,
+    std::uint32_t height
+) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!provider.valid()) {
+        set_error("attach_surface: provider has no create_surface callback");
+        return -1;
+    }
+    if (width == 0 || height == 0) {
+        set_error("attach_surface: zero-sized surface");
+        return -1;
+    }
+
+    surface_provider_ = provider;
+    config_.width = width;
+    config_.height = height;
+
+    const bool had_dataset = has_dataset_;
+    destroy_gpu_resources();
+
+    const int rc = create_resources_locked();
+    if (rc != 0) {
+        surface_provider_ = {};
+        return rc;
+    }
+    if (had_dataset && rebuild_lod_locked() != 0) {
+        return -3;
+    }
+
+    gs3d::util::log::info()
+        << "[HeadlessRenderKernel] surface attached: " << config_.width << 'x'
+        << config_.height << '\n';
+    last_error_.clear();
+    return 0;
+}
+
+void HeadlessRenderKernel::detach_surface() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!surface_provider_.valid()) {
+        return;
+    }
+    surface_provider_ = {};
+    const bool had_dataset = has_dataset_;
+    destroy_gpu_resources();
+    if (create_resources_locked() == 0 && had_dataset) {
+        rebuild_lod_locked();
+    }
+}
+
+bool HeadlessRenderKernel::has_surface() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return present_surface_ != nullptr && present_surface_->valid();
+}
+
+int HeadlessRenderKernel::present_frame() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_ || !present_surface_ || !present_pipeline_ ||
+        !has_dataset_ || lod_.empty()) {
+        set_error("present prerequisites missing");
+        return -2;
+    }
+
+    bool submitted = false;
+    try {
+        gs3d::render::PresentSurface::Frame frame{};
+        if (!present_surface_->begin_frame(frame)) {
+            return -2;  // 交换链刚重建：跳过本帧
+        }
+
+        update_push_from_camera();
+        update_tile_streaming_locked();
+
+        drawn_level_ = choose_lod_index();
+        const gs3d::render::PointCloudGpu& cloud = lod_.gpu_cloud(drawn_level_);
+        drawn_point_count_ = cloud.point_count();
+
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        check_vk(
+            vkBeginCommandBuffer(present_command_, &begin), "begin present cmd");
+
+        VkClearValue clears[2]{};
+        clears[0].color = {{clear_r_, clear_g_, clear_b_, clear_a_}};
+        clears[1].depthStencil = {1.0f, 0};
+
+        VkRenderPassBeginInfo pass{};
+        pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        pass.renderPass = present_surface_->render_pass();
+        pass.framebuffer = frame.framebuffer;
+        pass.renderArea.extent = frame.extent;
+        pass.clearValueCount = 2;
+        pass.pClearValues = clears;
+        vkCmdBeginRenderPass(
+            present_command_, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+        // 合成顺序与离屏路径一致：coarsest 兜底 → 裁剪后的选中层 → 瓦片全精度。
+        if (lod_.level_count() > 1) {
+            const auto& coarsest = lod_.lowest_detail().gpu_cloud;
+            if (!tile_clip_active_ ||
+                coarsest.point_count() != cloud.point_count()) {
+                present_pipeline_->draw(
+                    present_command_, coarsest, frame.extent, push_);
+            }
+        }
+
+        gs3d::render::PointPushConstants lod_push = push_;
+        if (tile_clip_active_) {
+            lod_push.flags |= gs3d::render::PointFlags::kSpatialClip;
+            lod_push.clip_min[0] = tile_clip_bounds_.min_x;
+            lod_push.clip_min[1] = tile_clip_bounds_.min_y;
+            lod_push.clip_min[2] = tile_clip_bounds_.min_z;
+            lod_push.clip_max[0] = tile_clip_bounds_.max_x;
+            lod_push.clip_max[1] = tile_clip_bounds_.max_y;
+            lod_push.clip_max[2] = tile_clip_bounds_.max_z;
+        }
+        present_pipeline_->draw(present_command_, cloud, frame.extent, lod_push);
+
+        if (!tile_drawable_ids_.empty()) {
+            present_pipeline_->bind_for_viewport(present_command_, frame.extent);
+            for (const auto tile_id : tile_drawable_ids_) {
+                const auto& tile_cloud = tile_gpu_.gpu_cloud_for_tile(tile_id);
+                // 瓦片永远用无裁剪 push（kSpatialClip 会丢弃 bbox 内部）。
+                present_pipeline_->draw_per_tile(
+                    present_command_, tile_cloud, push_);
+                tile_drawn_points_ += tile_cloud.point_count();
+            }
+        }
+
+        vkCmdEndRenderPass(present_command_);
+        check_vk(vkEndCommandBuffer(present_command_), "end present cmd");
+
+        check_vk(
+            vkResetFences(context_->device(), 1, &present_fence_),
+            "reset present fence"
+        );
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &present_command_;
+        check_vk(
+            vkQueueSubmit(context_->graphics_queue(), 1, &submit, present_fence_),
+            "submit present cmd"
+        );
+        submitted = true;
+        check_vk(
+            vkWaitForFences(
+                context_->device(), 1, &present_fence_, VK_TRUE, UINT64_MAX),
+            "wait present"
+        );
+        submitted = false;
+
+        present_surface_->end_frame(frame);
+        track_frame_timing_locked();
+        last_error_.clear();
+        return 0;
+    } catch (const std::exception& ex) {
+        if (submitted && context_ && present_fence_ != VK_NULL_HANDLE) {
+            vkWaitForFences(
+                context_->device(), 1, &present_fence_, VK_TRUE, UINT64_MAX);
+        }
+        set_error(ex.what());
+        return -3;
     }
 }
 

@@ -666,6 +666,7 @@ target_compile_definitions(GeoScatter3DPresentSurfaceTests PRIVATE
     GS3D_TEST_SHADER_DIR="${GS3D_GENERATED_SHADER_DIR}"
 )
 target_link_libraries(GeoScatter3DPresentSurfaceTests PRIVATE
+    gs3d_engine_core
     gs3d_render
     gs3d_data
     Vulkan::Vulkan

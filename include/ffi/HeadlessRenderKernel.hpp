@@ -14,6 +14,7 @@
 #include "render/PointCloudGpu.hpp"
 #include "render/PointCloudLodGpu.hpp"
 #include "render/PointCloudTileGpu.hpp"
+#include "render/PresentSurface.hpp"
 #include "render/PointPipeline.hpp"
 #include "render/TileSelection.hpp"
 #include "render/VulkanContext.hpp"
@@ -84,6 +85,24 @@ public:
     void set_point_budget(std::uint64_t max_points);
 
     int resize(std::uint32_t width, std::uint32_t height);
+
+    /*
+     * 附加平台 surface：切换到「窗口呈现」上下文（内部重建 VulkanContext、
+     * 交换链与 1 附件的 present 管线）。离屏回读路径保持不变，
+     * 仍可用于截图与自动化测试。
+     *
+     * provider 与 C ABI 同形状，因此无需任何适配层；平台句柄只以
+     * uint64 形式出现，核心不认识 HWND / ANativeWindow。
+     */
+    int attach_surface(
+        const gs3d::render::VulkanSurfaceProvider& provider,
+        std::uint32_t width,
+        std::uint32_t height
+    );
+    void detach_surface();
+    [[nodiscard]] bool has_surface() const;
+    /// 渲染并呈递一帧到交换链；0 成功，-2 表示本帧需跳过（刚重建）。
+    int present_frame();
 
     // 相机：position/target/up + 透视 FOV
     void set_camera_look_at(
@@ -210,6 +229,11 @@ private:
     void ensure_frame_resources(std::size_t bytes);
     void destroy_frame_resources() noexcept;
     void update_push_from_camera();
+    /// create()/attach_surface() 共用的资源创建序列（调用方已持锁）。
+    int create_resources_locked();
+    void create_present_resources_locked();
+    void destroy_present_resources_locked() noexcept;
+
     // ── 大规模数据：LOD 链与点预算 ──────────────────────────────────────────
     /// 生成内置合成地形（基准/压力测试）。
     int generate_synthetic_grid(std::uint64_t requested_points);
@@ -311,6 +335,13 @@ private:
     // 帧计时（简单 fps 估计）
     std::int64_t last_frame_tick_ = 0;
     float estimated_fps_ = 0.0f;
+
+    // ── 窗口呈现（present）──────────────────────────────────────────────────
+    gs3d::render::VulkanSurfaceProvider surface_provider_{};
+    std::unique_ptr<gs3d::render::PresentSurface> present_surface_;
+    std::unique_ptr<gs3d::render::PointPipeline> present_pipeline_;
+    VkCommandBuffer present_command_ = VK_NULL_HANDLE;
+    VkFence present_fence_ = VK_NULL_HANDLE;
 
     mutable std::mutex mutex_;
 };

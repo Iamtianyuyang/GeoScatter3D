@@ -177,6 +177,26 @@ void EngineHost::render_pending_frame() {
         return;
     }
     try {
+        /*
+         * 窗口呈现模式：直接画进交换链并 present，不做任何回读。
+         * 一帧被跳过（交换链刚重建）不算失败。
+         */
+        if (kernel_->has_surface()) {
+            const auto started = std::chrono::steady_clock::now();
+            const int present_rc = kernel_->present_frame();
+            last_render_us_.store(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - started
+                ).count()
+            );
+            if (present_rc == -2) {
+                return;
+            }
+            if (present_rc != 0) {
+                set_error(kernel_->last_error());
+            }
+            return;
+        }
         const auto viewport = kernel_->viewport_state();
         if (viewport.width == 0 || viewport.height == 0) {
             return;

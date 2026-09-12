@@ -259,6 +259,37 @@ GS3D_FFI_API int32_t gs3d_engine_load_synthetic(
 GS3D_FFI_API int32_t gs3d_engine_set_point_budget(
     gs3d_engine* e, uint64_t max_points);
 
+/* ── 平台 surface（窗口呈现）：全部为 C ABI，不出现 Vulkan 类型 ──────────
+ *
+ * 平台适配层负责把 HWND / ANativeWindow 变成原生 surface 句柄：
+ *   - instance_extensions 为创建 surface 所需的 instance 扩展名
+ *     （如 "VK_KHR_win32_surface" / "VK_KHR_android_surface"）；
+ *   - create_surface(instance, user_data, out_surface_handle) 返回 0 表示成功，
+ *     out_surface_handle 填平台创建的 surface 句柄（内部会转成 VkSurfaceKHR）；
+ *   - user_data 所有权属调用方，至少需活到回调返回。
+ */
+typedef struct gs3d_surface_provider {
+    const char* const* instance_extensions;
+    uint32_t instance_extension_count;
+    int32_t (*create_surface)(
+        void* instance, void* user_data, uint64_t* out_surface_handle);
+    void* user_data;
+} gs3d_surface_provider;
+
+/// 附加平台 surface 并切到窗口呈现（内部重建上下文/交换链/present 管线）。
+GS3D_FFI_API int32_t gs3d_engine_set_surface(
+    gs3d_engine* e, const gs3d_surface_provider* provider,
+    uint32_t width, uint32_t height);
+
+/// 分离 surface，回到纯离屏回读路径。
+GS3D_FFI_API int32_t gs3d_engine_clear_surface(gs3d_engine* e);
+
+/// 渲染并呈递一帧到交换链（仅在附加 surface 后可用）。0 成功，-2 本帧跳过。
+GS3D_FFI_API int32_t gs3d_engine_present_frame(gs3d_engine* e);
+
+/// 当前是否处于窗口呈现模式。
+GS3D_FFI_API int32_t gs3d_engine_has_surface(gs3d_engine* e);
+
 /// 数据集总点数（源）与最近一帧实际绘制点数（LOD 后）。
 GS3D_FFI_API uint64_t gs3d_engine_source_point_count(gs3d_engine* e);
 GS3D_FFI_API uint64_t gs3d_engine_drawn_point_count(gs3d_engine* e);

@@ -2,14 +2,16 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
 namespace {
 
-VkResult create_surface_stub(
-    VkInstance,
+std::int32_t create_surface_stub(
     void*,
-    VkSurfaceKHR*
+    void*,
+    std::uint64_t*
 ) {
-    return VK_ERROR_INITIALIZATION_FAILED;
+    return -3;  // 模拟平台失败
 }
 
 } // namespace

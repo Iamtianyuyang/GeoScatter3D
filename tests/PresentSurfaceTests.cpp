@@ -3,6 +3,8 @@
 
 #include "render/PointCloudGpu.hpp"
 #include "render/PointPipeline.hpp"
+#include "ffi/EngineHost.hpp"
+#include "ffi/HeadlessRenderKernel.hpp"
 #include "render/PresentSurface.hpp"
 #include "render/VulkanContext.hpp"
 
@@ -66,16 +68,27 @@ private:
     HWND hwnd_ = nullptr;
 };
 
-VkResult create_win32_surface(
-    VkInstance instance,
+/*
+ * 平台适配回调：形状与 C ABI 完全一致（int32 返回码 + uint64 不透明句柄），
+ * Android 侧 ANativeWindow 版本会在这里调用 vkCreateAndroidSurfaceKHR。
+ */
+std::int32_t create_win32_surface(
+    void* instance,
     void* user_data,
-    VkSurfaceKHR* out_surface
+    std::uint64_t* out_surface_handle
 ) {
     VkWin32SurfaceCreateInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
     info.hinstance = GetModuleHandleA(nullptr);
     info.hwnd = static_cast<HWND>(user_data);
-    return vkCreateWin32SurfaceKHR(instance, &info, nullptr, out_surface);
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    const VkResult result = vkCreateWin32SurfaceKHR(
+        reinterpret_cast<VkInstance>(instance), &info, nullptr, &surface);
+    if (result != VK_SUCCESS) {
+        return -3;
+    }
+    *out_surface_handle = reinterpret_cast<std::uint64_t>(surface);
+    return 0;
 }
 
 std::vector<gs3d::data::Gs3dPoint> make_points(int edge, float span) {
@@ -264,9 +277,93 @@ TEST_CASE("present surface renders a point cloud into a real swapchain") {
     }
 }
 
+TEST_CASE("engine presents the point cloud into a platform surface") {
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (!std::filesystem::exists(shader_dir / "point.vert.spv")) {
+        SUCCEED("SPIR-V not built; skipping engine present test");
+        return;
+    }
+
+    HiddenWindow window;
+    gs3d::render::VulkanSurfaceProvider provider{};
+    const char* extensions[] = {VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    provider.instance_extensions = extensions;
+    provider.instance_extension_count = 1;
+    provider.create_surface = &create_win32_surface;
+    provider.user_data = window.handle();
+
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config{};
+    config.width = 512;
+    config.height = 288;
+    config.enable_validation = true;
+    config.shader_dir = shader_dir.string();
+    if (host.start(config) != 0) {
+        SUCCEED("Vulkan unavailable; skipping engine present test");
+        return;
+    }
+
+    // 先加载数据再附加 surface：验证 dataset/LOD 在上下文重建后仍可用。
+    REQUIRE(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.load_sample();
+    }) == 0);
+
+    const int attach_rc = host.invoke(
+        [&provider](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            return kernel.attach_surface(provider, 512, 288);
+        }
+    );
+    REQUIRE(attach_rc == 0);
+    REQUIRE(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.has_surface() ? 0 : -1;
+    }) == 0);
+
+    // 连续呈递若干帧：0 成功；-2 只允许出现在交换链刚重建的那一帧。
+    int presented = 0;
+    int skipped = 0;
+    for (int frame = 0; frame < 8; ++frame) {
+        int rc = 0;
+        host.invoke([&rc](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            rc = kernel.present_frame();
+            return 0;
+        });
+        if (rc == 0) {
+            ++presented;
+        } else if (rc == -2) {
+            ++skipped;
+        } else {
+            FAIL("present_frame failed with " << rc);
+            break;
+        }
+    }
+    CHECK(presented > 0);
+    CHECK(skipped <= 1);
+
+    // 分离 surface 后应回到纯离屏回读路径，且仍能出帧。
+    REQUIRE(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        kernel.detach_surface();
+        return 0;
+    }) == 0);
+    CHECK(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.has_surface() ? -1 : 0;
+    }) == 0);
+
+    std::vector<std::uint8_t> rgba(512 * 288 * 4);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    CHECK(host.invoke(
+        [&rgba, &width, &height](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            return kernel.render_rgba(
+                rgba.data(), static_cast<std::uint32_t>(rgba.size()),
+                &width, &height);
+        }
+    ) == 0);
+    CHECK(lit_pixels(rgba) > 100);
+}
+
 #else
 
-TEST_CASE("present surface renders a point cloud into a real swapchain") {
+TEST_CASE("engine presents the point cloud into a platform surface") {
     SUCCEED("platform present surface not covered on this platform yet");
 }
 
