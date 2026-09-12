@@ -113,6 +113,17 @@ public:
 
     void clear() noexcept;
 
+    /*
+     * 释放全部 GPU 资源（含共享 staging buffer）。
+     *
+     * clear() 只清驻留表，而 staging buffer 不属驻留表——若只调 clear()，
+     * 它会活到对象析构，那时 VulkanContext 已先被销毁，析构里的
+     * vkDestroyBuffer 会拿到悬垂 device（实测：校验层报
+     * "vkDestroyBuffer: Invalid device"，随后 CRT abort）。
+     * 因此释放设备前必须调本函数，而非 clear()。
+     */
+    void destroy() noexcept;
+
     [[nodiscard]]
     bool valid() const noexcept;
 

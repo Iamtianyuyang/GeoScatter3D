@@ -22,6 +22,9 @@ target_link_libraries(gs3d_engine_core PUBLIC
     gs3d_data
     gs3d_render
     gs3d_camera_core
+    # TilePointCache（细尺度 tile 的 CPU LRU）在 app_support 中；
+    # 依赖方向 app_support → preprocess → data，无回环。
+    gs3d_app_support
     Vulkan::Vulkan
 )
 

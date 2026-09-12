@@ -52,7 +52,7 @@ public:
         /// 流式+合成的帧内在 Windows E2E 中触发原生崩溃
         /// （vkDestroyBuffer: Invalid device 后进程未完成），
         /// 默认关闭以便后续单独定位；打开前勿用于生产。
-        bool tile_streaming = false;
+        bool tile_streaming = true;  // BISECT
         /// tile 投影宽度 ≥ 该像素数才加载全精度（Potree SSE；旧 Viewer 默认 50）。
         float min_tile_pixel_size = 50.0f;
         /// 每帧 tile 上传字节预算（避免一次拉入过多阻塞帧）。

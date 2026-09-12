@@ -250,3 +250,60 @@ TEST_CASE("kernel gpu diagnostics are empty before create") {
     CHECK(diagnostics.name.empty());
     CHECK_FALSE(diagnostics.profile.empty());  // Profile 名称来自编译期常量
 }
+
+// ─── 大 bundle 的细尺度 tile 路径 ────────────────────────────────────────────
+// 回归：teardown 曾在 VulkanContext 之后才释放 tile 的共享 staging buffer，
+// 触发 vkDestroyBuffer: Invalid device + CRT abort（exit 0xC0000409）。
+
+TEST_CASE("tile streaming uploads and composes a large bundle") {
+    const std::string bundle = std::string(GS3D_TEST_BENCH_BUNDLE);
+    if (!std::filesystem::exists(bundle)) {
+        SUCCEED("bench bundle missing; generate with gs3d_bench_bundle");
+        return;
+    }
+
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config;
+    config.width = 640;
+    config.height = 360;
+    config.enable_validation = true;
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (std::filesystem::exists(shader_dir / "point.vert.spv")) {
+        config.shader_dir = shader_dir.string();
+    }
+    REQUIRE(config.tile_streaming);
+    REQUIRE(host.start(config) == 0);
+
+    const int load_rc = host.invoke(
+        [&bundle](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            return kernel.load_dataset(bundle);
+        }
+    );
+    REQUIRE(load_rc == 0);
+
+    // 连续出帧直到瓦片驻留下来；首帧即会读取并上传若干瓦片。
+    std::uint64_t resident = 0;
+    std::uint64_t tile_points = 0;
+    std::uint64_t tile_uploaded_bytes = 0;
+    for (int frame = 0; frame < 40; ++frame) {
+        host.request_frame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        host.invoke([&](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            const auto lod = kernel.lod_state();
+            resident = lod.tile_resident;
+            tile_points = lod.tile_drawn_points;
+            tile_uploaded_bytes = lod.tile_uploaded_bytes_frame;
+            return 0;
+        });
+        if (resident > 0 && tile_points > 0) {
+            break;
+        }
+    }
+
+    CHECK(resident > 0);
+    CHECK(tile_points > 0);
+
+    // 让引擎在渲染线程上销毁内核（teardown 回归点），失败会以原生异常暴露。
+    host.stop();
+    SUCCEED("tile streaming teardown completed");
+}

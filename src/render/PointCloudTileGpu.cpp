@@ -70,6 +70,19 @@ void PointCloudTileGpu::clear() noexcept {
     usage_tick_ = 0;
 }
 
+void PointCloudTileGpu::destroy() noexcept {
+    clear();
+    /*
+     * 共享 staging buffer 不在驻留表里，clear() 不会碰它。若只调 clear()，
+     * 它会活到 PointCloudTileGpu 析构时才释放——那时调用方的 VulkanContext
+     * 往往已被销毁，VulkanBuffer::destroy() 拿着悬垂 context 去
+     * vkDestroyBuffer：校验层报 "vkDestroyBuffer: Invalid device"，
+     * 随后 CRT abort（实测 exit 0xC0000409）。
+     * 因此释放设备前必须调本函数。
+     */
+    shared_staging_buffer_.destroy();
+}
+
 bool PointCloudTileGpu::valid() const noexcept {
     return !loaded_tile_ids_.empty() &&
            stats_.success &&

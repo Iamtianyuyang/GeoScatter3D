@@ -45,7 +45,7 @@ void main() {
     });
   }, skip: Platform.environment['GS3D_ENGINE_E2E'] != '1');
   test(
-    'large bundle: lod sidecar levels drive the coarse layer',
+    'large bundle: lod sidecar plus full-resolution tile streaming',
     () async {
       const bundle = '../tmp/bench-bundle-1m';
       final engine = Gs3dEngine.create(
@@ -63,14 +63,22 @@ void main() {
       expect(lod['tile_count'], greaterThan(0));
       expect(lod['level_count'], greaterThan(1), reason: 'lod.gs3dlod 已生效');
 
-      // 粗尺度：连续出帧，LOD 选层稳定、帧可读。
-      for (var i = 0; i < 10; i++) {
+      // 细尺度：连续出帧后应有瓦片驻留并叠加绘制全精度点。
+      var resident = 0;
+      var tilePoints = 0;
+      for (var i = 0; i < 60; i++) {
         engine.requestFrame();
-        await Future<void>.delayed(const Duration(milliseconds: 2));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final current = engine.diagnostics['lod'] as Map<String, dynamic>;
+        resident = (current['tile_resident'] as num?)?.toInt() ?? 0;
+        tilePoints = (current['tile_drawn_points'] as num?)?.toInt() ?? 0;
+        if (resident > 0 && tilePoints > 0) break;
       }
+      expect(resident, greaterThan(0), reason: '瓦片应被读取并上传到 GPU');
+      expect(tilePoints, greaterThan(0), reason: '瓦片应参与合成绘制');
 
       final image = await engine.readFrame();
-      expect(image, isNotNull, reason: 'LOD 合成后必须能取到帧');
+      expect(image, isNotNull, reason: 'LOD + tile 合成后必须能取到帧');
       image?.dispose();
     },
     skip: Platform.environment['GS3D_ENGINE_E2E'] != '1'

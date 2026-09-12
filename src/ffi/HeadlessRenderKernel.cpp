@@ -117,7 +117,7 @@ void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
     gpu_point_count_ = 0;
     tile_reader_.reset();
     tile_cache_.reset();
-    tile_gpu_.clear();
+    tile_gpu_.destroy();
     tile_index_view_ = {};
     tile_needed_ids_.clear();
     tile_drawable_ids_.clear();
@@ -320,7 +320,7 @@ void HeadlessRenderKernel::open_sidecars_locked(
 ) {
     tile_reader_.reset();
     tile_cache_.reset();
-    tile_gpu_.clear();
+    tile_gpu_.destroy();
     tile_index_view_ = {};
     tile_needed_ids_.clear();
     tile_drawable_ids_.clear();
@@ -656,7 +656,7 @@ void HeadlessRenderKernel::unload_dataset() noexcept {
     gpu_point_count_ = 0;
     tile_reader_.reset();
     tile_cache_.reset();
-    tile_gpu_.clear();
+    tile_gpu_.destroy();
     tile_index_view_ = {};
     tile_needed_ids_.clear();
     tile_drawable_ids_.clear();

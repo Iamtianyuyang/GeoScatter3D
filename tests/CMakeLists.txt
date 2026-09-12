@@ -638,6 +638,7 @@ target_include_directories(GeoScatter3DEngineHostTests PRIVATE
 )
 target_compile_definitions(GeoScatter3DEngineHostTests PRIVATE
     GS3D_TEST_SHADER_DIR="${GS3D_GENERATED_SHADER_DIR}"
+    GS3D_TEST_BENCH_BUNDLE="${PROJECT_SOURCE_DIR}/tmp/bench-bundle-1m"
 )
 target_link_libraries(GeoScatter3DEngineHostTests PRIVATE
     gs3d_engine_core
