@@ -89,8 +89,7 @@ typedef DartRenderRgba =
       ffi.Pointer<ffi.Uint32> outH,
     );
 
-typedef CCameraInput =
-    ffi.Int32 Function(
+typedef CCameraInput =    ffi.Int32 Function(
       Gs3dEnginePtr e,
       ffi.Float rotDx,
       ffi.Float rotDy,
@@ -110,6 +109,36 @@ typedef DartCameraInput =
 
 typedef CResetCamera = ffi.Int32 Function(Gs3dEnginePtr e);
 typedef DartResetCamera = int Function(Gs3dEnginePtr e);
+
+typedef CRequestFrame = ffi.Int32 Function(Gs3dEnginePtr e);
+typedef DartRequestFrame = int Function(Gs3dEnginePtr e);
+
+typedef CReadFrameRgba =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<ffi.Uint8> outRgba,
+      ffi.Uint32 maxBytes,
+      ffi.Pointer<ffi.Uint32> outW,
+      ffi.Pointer<ffi.Uint32> outH,
+      ffi.Pointer<ffi.Uint32> outStride,
+      ffi.Pointer<ffi.Uint64> outSequence,
+    );
+typedef DartReadFrameRgba =
+    int Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<ffi.Uint8> outRgba,
+      int maxBytes,
+      ffi.Pointer<ffi.Uint32> outW,
+      ffi.Pointer<ffi.Uint32> outH,
+      ffi.Pointer<ffi.Uint32> outStride,
+      ffi.Pointer<ffi.Uint64> outSequence,
+    );
+
+typedef CFrameSequence = ffi.Uint64 Function(Gs3dEnginePtr e);
+typedef DartFrameSequence = int Function(Gs3dEnginePtr e);
+
+typedef CLastRenderMs = ffi.Double Function(Gs3dEnginePtr e);
+typedef DartLastRenderMs = double Function(Gs3dEnginePtr e);
 
 typedef CGetDiagnosticsJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 typedef DartGetDiagnosticsJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
@@ -138,6 +167,10 @@ class Gs3dBindings {
   late final DartSetPointShape setPointShape;
   late final DartSetBackground setBackground;
   late final DartRenderRgba renderRgba;
+  late final DartRequestFrame requestFrame;
+  late final DartReadFrameRgba readFrameRgba;
+  late final DartFrameSequence frameSequence;
+  late final DartLastRenderMs lastRenderMs;
   late final DartCameraInput cameraInput;
   late final DartResetCamera resetCamera;
   late final DartGetDiagnosticsJson getDiagnosticsJson;
@@ -178,6 +211,18 @@ class Gs3dBindings {
     );
     renderRgba = lib.lookupFunction<CRenderRgba, DartRenderRgba>(
       'gs3d_engine_render_rgba',
+    );
+    requestFrame = lib.lookupFunction<CRequestFrame, DartRequestFrame>(
+      'gs3d_engine_request_frame',
+    );
+    readFrameRgba = lib.lookupFunction<CReadFrameRgba, DartReadFrameRgba>(
+      'gs3d_engine_read_frame_rgba',
+    );
+    frameSequence = lib.lookupFunction<CFrameSequence, DartFrameSequence>(
+      'gs3d_engine_frame_sequence',
+    );
+    lastRenderMs = lib.lookupFunction<CLastRenderMs, DartLastRenderMs>(
+      'gs3d_engine_last_render_ms',
     );
     cameraInput = lib.lookupFunction<CCameraInput, DartCameraInput>(
       'gs3d_engine_camera_input',

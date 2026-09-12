@@ -3,6 +3,8 @@
 # ---------------------------------------------------------------------------
 
 add_library(gs3d_engine_core STATIC
+    EngineHost.cpp
+    FrameChannel.cpp
     HeadlessRenderKernel.cpp
 )
 

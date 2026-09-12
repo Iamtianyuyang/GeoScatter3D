@@ -28,29 +28,12 @@ void check_vk(VkResult result, const char* message) {
     }
 }
 
-// 回读的临时对象必须在每个异常出口释放；提交后先等待设备停止使用它们。
-struct ReadbackResources {
-    VkDevice device;
-    VkCommandPool pool;
-    VkCommandBuffer command = VK_NULL_HANDLE;
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-    void* mapped = nullptr;
-    bool pending = false;
-
-    ReadbackResources(VkDevice d, VkCommandPool p) : device(d), pool(p) {}
-    ReadbackResources(const ReadbackResources&) = delete;
-    ReadbackResources& operator=(const ReadbackResources&) = delete;
-    ~ReadbackResources() {
-        if (pending) vkDeviceWaitIdle(device);
-        if (mapped) vkUnmapMemory(device, memory);
-        if (fence) vkDestroyFence(device, fence, nullptr);
-        if (command) vkFreeCommandBuffers(device, pool, 1, &command);
-        if (buffer) vkDestroyBuffer(device, buffer, nullptr);
-        if (memory) vkFreeMemory(device, memory, nullptr);
-    }
-};
+/** VkPhysicalDeviceProperties::apiVersion → "1.1.180"（仅供诊断展示）。 */
+std::string format_api_version(std::uint32_t version) {
+    return std::to_string(VK_VERSION_MAJOR(version)) + "." +
+           std::to_string(VK_VERSION_MINOR(version)) + "." +
+           std::to_string(VK_VERSION_PATCH(version));
+}
 
 }  // namespace
 
@@ -126,6 +109,7 @@ void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
     if (context_) {
         vkDeviceWaitIdle(context_->device());
     }
+    destroy_frame_resources();
     cloud_ = gs3d::render::PointCloudGpu{};
     pipeline_.reset();
     framebuffer_.destroy();
@@ -134,6 +118,124 @@ void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
         command_pool_ = VK_NULL_HANDLE;
     }
     context_.reset();
+}
+
+void HeadlessRenderKernel::ensure_frame_resources(std::size_t bytes) {
+    const VkDevice device = context_->device();
+
+    if (frame_command_ == VK_NULL_HANDLE) {
+        VkCommandBufferAllocateInfo alloc{};
+        alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        alloc.commandPool = command_pool_;
+        alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        alloc.commandBufferCount = 1;
+        check_vk(
+            vkAllocateCommandBuffers(device, &alloc, &frame_command_),
+            "alloc frame command buffer"
+        );
+    }
+
+    if (frame_fence_ == VK_NULL_HANDLE) {
+        VkFenceCreateInfo fence_info{};
+        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        check_vk(
+            vkCreateFence(device, &fence_info, nullptr, &frame_fence_),
+            "create frame fence"
+        );
+    }
+
+    if (bytes == 0 || staging_capacity_ >= bytes) {
+        return;
+    }
+
+    // 扩容：旧缓冲可能仍被上一帧使用，先等设备空闲再释放。
+    vkDeviceWaitIdle(device);
+    if (staging_buffer_ != VK_NULL_HANDLE) {
+        if (staging_mapped_ != nullptr) {
+            vkUnmapMemory(device, staging_memory_);
+            staging_mapped_ = nullptr;
+        }
+        vkDestroyBuffer(device, staging_buffer_, nullptr);
+        staging_buffer_ = VK_NULL_HANDLE;
+        vkFreeMemory(device, staging_memory_, nullptr);
+        staging_memory_ = VK_NULL_HANDLE;
+        staging_capacity_ = 0;
+    }
+
+    VkBufferCreateInfo buf_info{};
+    buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buf_info.size = bytes;
+    buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    check_vk(
+        vkCreateBuffer(device, &buf_info, nullptr, &staging_buffer_),
+        "create staging buffer"
+    );
+
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(device, staging_buffer_, &req);
+    VkPhysicalDeviceMemoryProperties mem_props{};
+    vkGetPhysicalDeviceMemoryProperties(context_->physical_device(), &mem_props);
+    std::uint32_t mem_type = UINT32_MAX;
+    for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if ((req.memoryTypeBits & (1u << i)) &&
+            (mem_props.memoryTypes[i].propertyFlags &
+             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+            (mem_props.memoryTypes[i].propertyFlags &
+             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+            mem_type = i;
+            break;
+        }
+    }
+    if (mem_type == UINT32_MAX) {
+        throw std::runtime_error("no host-visible coherent memory for staging");
+    }
+
+    VkMemoryAllocateInfo mem_alloc{};
+    mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    mem_alloc.allocationSize = req.size;
+    mem_alloc.memoryTypeIndex = mem_type;
+    check_vk(
+        vkAllocateMemory(device, &mem_alloc, nullptr, &staging_memory_),
+        "allocate staging memory"
+    );
+    check_vk(
+        vkBindBufferMemory(device, staging_buffer_, staging_memory_, 0),
+        "bind staging memory"
+    );
+    check_vk(
+        vkMapMemory(device, staging_memory_, 0, bytes, 0, &staging_mapped_),
+        "map staging memory"
+    );
+    staging_capacity_ = bytes;
+}
+
+void HeadlessRenderKernel::destroy_frame_resources() noexcept {
+    if (!context_) {
+        return;
+    }
+    const VkDevice device = context_->device();
+    if (staging_mapped_ != nullptr) {
+        vkUnmapMemory(device, staging_memory_);
+        staging_mapped_ = nullptr;
+    }
+    if (staging_buffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, staging_buffer_, nullptr);
+        staging_buffer_ = VK_NULL_HANDLE;
+    }
+    if (staging_memory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device, staging_memory_, nullptr);
+        staging_memory_ = VK_NULL_HANDLE;
+    }
+    staging_capacity_ = 0;
+    if (frame_fence_ != VK_NULL_HANDLE) {
+        vkDestroyFence(device, frame_fence_, nullptr);
+        frame_fence_ = VK_NULL_HANDLE;
+    }
+    if (frame_command_ != VK_NULL_HANDLE && command_pool_ != VK_NULL_HANDLE) {
+        vkFreeCommandBuffers(device, command_pool_, 1, &frame_command_);
+        frame_command_ = VK_NULL_HANDLE;
+    }
 }
 
 void HeadlessRenderKernel::destroy() noexcept {
@@ -499,6 +601,9 @@ int HeadlessRenderKernel::render_rgba(
         set_error("render prerequisites missing");
         return -2;
     }
+    // 提交后若中途抛异常，必须先把栅栏等回来再退出：下一帧要复用同一条
+    // 命令缓冲与栅栏，留着仍在执行的 GPU 工作会直接冲突。
+    bool submitted = false;
     try {
         const auto extent = framebuffer_.extent();
         const std::uint32_t w = extent.width;
@@ -511,24 +616,19 @@ int HeadlessRenderKernel::render_rgba(
             return -1;
         }
 
+        ensure_frame_resources(bytes);
+        const VkDevice device = context_->device();
+
         update_push_from_camera();
 
-        ReadbackResources resources(context_->device(), command_pool_);
-        VkCommandBufferAllocateInfo alloc{};
-        alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        alloc.commandPool = command_pool_;
-        alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        alloc.commandBufferCount = 1;
-        auto& cmd = resources.command;
-        check_vk(vkAllocateCommandBuffers(context_->device(), &alloc, &cmd),
-                 "alloc cmd");
-
+        // 命令池带 RESET_COMMAND_BUFFER_BIT：vkBeginCommandBuffer 隐式重置，
+        // 命令缓冲跨帧复用，不再每帧分配/释放。
         VkCommandBufferBeginInfo begin{};
         begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        check_vk(vkBeginCommandBuffer(cmd, &begin), "begin cmd");
+        check_vk(vkBeginCommandBuffer(frame_command_, &begin), "begin cmd");
 
-        framebuffer_.render(cmd, [&](VkCommandBuffer c) {
+        framebuffer_.render(frame_command_, [&](VkCommandBuffer c) {
             pipeline_->draw(c, cloud_, extent, push_);
         });
 
@@ -546,63 +646,21 @@ int HeadlessRenderKernel::render_rgba(
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.layerCount = 1;
         vkCmdPipelineBarrier(
-            cmd,
+            frame_command_,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &barrier
         );
-
-        // 临时 staging buffer
-        VkBufferCreateInfo buf_info{};
-        buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buf_info.size = bytes;
-        buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        auto& staging = resources.buffer;
-        check_vk(vkCreateBuffer(context_->device(), &buf_info, nullptr, &staging),
-                 "create staging");
-
-        VkMemoryRequirements req{};
-        vkGetBufferMemoryRequirements(context_->device(), staging, &req);
-        VkPhysicalDeviceMemoryProperties mem_props{};
-        vkGetPhysicalDeviceMemoryProperties(context_->physical_device(), &mem_props);
-        std::uint32_t mem_type = UINT32_MAX;
-        for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-            if ((req.memoryTypeBits & (1u << i)) &&
-                (mem_props.memoryTypes[i].propertyFlags &
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-                (mem_props.memoryTypes[i].propertyFlags &
-                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-                mem_type = i;
-                break;
-            }
-        }
-        if (mem_type == UINT32_MAX) {
-            set_error("no host-visible memory for staging");
-            return -3;
-        }
-        VkMemoryAllocateInfo mem_alloc{};
-        mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        mem_alloc.allocationSize = req.size;
-        mem_alloc.memoryTypeIndex = mem_type;
-        auto& staging_mem = resources.memory;
-        if (vkAllocateMemory(context_->device(), &mem_alloc, nullptr, &staging_mem) !=
-            VK_SUCCESS) {
-            set_error("staging alloc failed");
-            return -3;
-        }
-        check_vk(vkBindBufferMemory(context_->device(), staging, staging_mem, 0),
-                 "bind staging");
 
         VkBufferImageCopy region{};
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         region.imageSubresource.layerCount = 1;
         region.imageExtent = VkExtent3D{w, h, 1};
         vkCmdCopyImageToBuffer(
-            cmd,
+            frame_command_,
             framebuffer_.color_image(),
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            staging,
+            staging_buffer_,
             1,
             &region
         );
@@ -612,7 +670,7 @@ int HeadlessRenderKernel::render_rgba(
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        vkCmdPipelineBarrier(frame_command_, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &barrier);
 
@@ -620,34 +678,30 @@ int HeadlessRenderKernel::render_rgba(
         host_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         host_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         host_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        vkCmdPipelineBarrier(frame_command_, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_HOST_BIT,
             0, 1, &host_barrier, 0, nullptr, 0, nullptr);
 
-        check_vk(vkEndCommandBuffer(cmd), "end cmd");
+        check_vk(vkEndCommandBuffer(frame_command_), "end cmd");
 
-        VkFenceCreateInfo fence_info{};
-        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        auto& fence = resources.fence;
-        check_vk(vkCreateFence(context_->device(), &fence_info, nullptr, &fence),
-                 "fence");
+        check_vk(vkResetFences(device, 1, &frame_fence_), "reset frame fence");
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit.commandBufferCount = 1;
-        submit.pCommandBuffers = &cmd;
-        check_vk(vkQueueSubmit(context_->graphics_queue(), 1, &submit, fence),
-                 "submit");
-        resources.pending = true;
-        check_vk(vkWaitForFences(context_->device(), 1, &fence, VK_TRUE, UINT64_MAX),
-                 "wait readback");
-        resources.pending = false;
+        submit.pCommandBuffers = &frame_command_;
+        check_vk(
+            vkQueueSubmit(context_->graphics_queue(), 1, &submit, frame_fence_),
+            "submit"
+        );
+        submitted = true;
+        check_vk(
+            vkWaitForFences(device, 1, &frame_fence_, VK_TRUE, UINT64_MAX),
+            "wait readback"
+        );
+        submitted = false;
 
-        auto& mapped = resources.mapped;
-        check_vk(vkMapMemory(context_->device(), staging_mem, 0, bytes, 0, &mapped),
-                 "map");
-        std::memcpy(out_rgba, mapped, bytes);
-        vkUnmapMemory(context_->device(), staging_mem);
-        mapped = nullptr;
+        // staging 缓冲常驻映射：省掉每帧 map/unmap 的驱动往返。
+        std::memcpy(out_rgba, staging_mapped_, bytes);
 
         last_rgba_.assign(out_rgba, out_rgba + bytes);
         last_w_ = w;
@@ -657,6 +711,11 @@ int HeadlessRenderKernel::render_rgba(
         last_error_.clear();
         return 0;
     } catch (const std::exception& ex) {
+        if (submitted && context_ && frame_fence_ != VK_NULL_HANDLE) {
+            vkWaitForFences(
+                context_->device(), 1, &frame_fence_, VK_TRUE, UINT64_MAX
+            );
+        }
         set_error(ex.what());
         return -3;
     }
@@ -877,6 +936,31 @@ HeadlessRenderKernel::ViewportState HeadlessRenderKernel::viewport_state() const
     st.frame_ready = !last_rgba_.empty();
     st.fps = estimated_fps_;
     return st;
+}
+
+HeadlessRenderKernel::GpuDiagnostics HeadlessRenderKernel::gpu_diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    GpuDiagnostics diag;
+    diag.profile = gs3d::render::kVulkanProfileName;
+    if (!context_) {
+        return diag;
+    }
+
+    const auto& gpus = context_->gpu_list();
+    const std::size_t index = context_->active_gpu_index();
+    if (index < gpus.size()) {
+        const auto& gpu = gpus[index];
+        diag.name = gpu.name;
+        diag.type_label = gs3d::render::gpu_type_label(gpu.device_type);
+        diag.uuid = gpu.device_uuid;
+        diag.api_version = format_api_version(gpu.api_version);
+        diag.driver_version = gpu.driver_version;
+        diag.memory_bytes = gpu.device_local_memory_bytes;
+    } else {
+        diag.name = context_->physical_device_name();
+    }
+    diag.selection = context_->selection_summary();
+    return diag;
 }
 
 float HeadlessRenderKernel::span_or_default() const {

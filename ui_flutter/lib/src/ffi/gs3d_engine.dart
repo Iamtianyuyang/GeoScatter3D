@@ -19,6 +19,8 @@ class Gs3dEngine {
   int _rgbaBufferSize = 0;
   final ffi.Pointer<ffi.Uint32> _outW = calloc<ffi.Uint32>();
   final ffi.Pointer<ffi.Uint32> _outH = calloc<ffi.Uint32>();
+  final ffi.Pointer<ffi.Uint32> _outStride = calloc<ffi.Uint32>();
+  final ffi.Pointer<ffi.Uint64> _outSequence = calloc<ffi.Uint64>();
 
   Gs3dEngine._(this._bindings, this._ptr, this._width, this._height);
 
@@ -174,17 +176,13 @@ class Gs3dEngine {
   }
 
   /// 渲染一帧离屏 RGBA8，并异步转码为 ui.Image
+  ///
+  /// 同步兼容路径：会阻塞在原生渲染线程上直到这一帧回读完成。
+  /// 交互式前端应改用 [requestFrame] + [readFrame]。
   Future<ui.Image?> renderFrame() async {
     if (_disposed || _width <= 0 || _height <= 0) return null;
 
-    final neededBytes = _width * _height * 4;
-    if (_rgbaBuffer == null || _rgbaBufferSize < neededBytes) {
-      if (_rgbaBuffer != null) {
-        calloc.free(_rgbaBuffer!);
-      }
-      _rgbaBufferSize = neededBytes;
-      _rgbaBuffer = calloc<ffi.Uint8>(neededBytes);
-    }
+    _ensureBuffer(_width * _height * 4);
 
     final rc = _bindings.renderRgba(
       _ptr,
@@ -203,15 +201,94 @@ class Gs3dEngine {
       throw StateError('原生帧尺寸无效: ${rw}x$rh');
     }
 
-    final byteData = _rgbaBuffer!.asTypedList(rw * rh * 4);
+    return _decode(rw, rh);
+  }
+
+  /// 已发布帧序号；每次成功渲染递增。渲染线程空闲时不变。
+  int get frameSequence {
+    if (_disposed) return 0;
+    return _bindings.frameSequence(_ptr);
+  }
+
+  /// 最近一帧在渲染线程上的耗时（毫秒，含 GPU 提交与回读）。
+  double get lastRenderMs {
+    if (_disposed) return 0;
+    return _bindings.lastRenderMs(_ptr);
+  }
+
+  /// 请求渲染线程异步绘制一帧（非阻塞，渲染中重复请求会被合并）。
+  void requestFrame() {
+    _checkDisposed();
+    final rc = _bindings.requestFrame(_ptr);
+    if (rc != 0) {
+      throw StateError('异步帧请求失败 (rc=$rc): $lastError');
+    }
+  }
+
+  /// 读取最近完成帧并转码为 ui.Image；尚无帧时返回 null。
+  ///
+  /// 该调用不触发 Vulkan、也不等待渲染线程，等待代价上限是一次 memcpy。
+  Future<ui.Image?> readFrame() async {
+    if (_disposed) return null;
+
+    // 首次读取时按已知视口尺寸预分配，避免一次探测往返。
+    if (_rgbaBuffer == null && _width > 0 && _height > 0) {
+      _ensureBuffer(_width * _height * 4);
+    }
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final rc = _bindings.readFrameRgba(
+        _ptr,
+        _rgbaBuffer ?? ffi.nullptr.cast<ffi.Uint8>(),
+        _rgbaBufferSize,
+        _outW,
+        _outH,
+        _outStride,
+        _outSequence,
+      );
+      if (rc == -2) return null; // 尚无已完成帧
+      if (rc == -1) {
+        // 容量不足：ABI 已回填实际宽高，扩容后重试一次。
+        final needed = _outW.value * _outH.value * 4;
+        if (needed <= 0) {
+          throw StateError('原生帧尺寸无效: ${_outW.value}x${_outH.value}');
+        }
+        _ensureBuffer(needed);
+        continue;
+      }
+      if (rc != 0) {
+        throw StateError('读取原生帧失败 (rc=$rc): $lastError');
+      }
+
+      final rw = _outW.value;
+      final rh = _outH.value;
+      if (rw <= 0 || rh <= 0 || rw * rh * 4 > _rgbaBufferSize) {
+        throw StateError('原生帧尺寸无效: ${rw}x$rh');
+      }
+      return _decode(rw, rh);
+    }
+    throw StateError('原生帧缓冲扩容后仍无法读取: $lastError');
+  }
+
+  void _ensureBuffer(int bytes) {
+    if (_rgbaBuffer != null && _rgbaBufferSize >= bytes) return;
+    if (_rgbaBuffer != null) {
+      calloc.free(_rgbaBuffer!);
+    }
+    _rgbaBufferSize = bytes;
+    _rgbaBuffer = calloc<ffi.Uint8>(bytes);
+  }
+
+  Future<ui.Image> _decode(int width, int height) {
+    final byteData = _rgbaBuffer!.asTypedList(width * height * 4);
     // 拷贝至 Dart 管理的 Uint8List 以供 decodeImageFromPixels 使用
     final copy = Uint8List.fromList(byteData);
 
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       copy,
-      rw,
-      rh,
+      width,
+      height,
       ui.PixelFormat.rgba8888,
       (image) => completer.complete(image),
     );
@@ -229,6 +306,8 @@ class Gs3dEngine {
     }
     calloc.free(_outW);
     calloc.free(_outH);
+    calloc.free(_outStride);
+    calloc.free(_outSequence);
   }
 
   void _checkDisposed() {

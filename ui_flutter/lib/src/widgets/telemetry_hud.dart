@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 class TelemetryHud extends StatelessWidget {
   final double fps;
   final double frameTimeMs;
+  /// 原生渲染线程上“提交 + 回读”的实际耗时；0 表示不可用（不展示）。
+  final double renderTimeMs;
   final int visiblePoints;
   final String gpuName;
   final String status;
@@ -13,6 +15,7 @@ class TelemetryHud extends StatelessWidget {
     super.key,
     required this.fps,
     required this.frameTimeMs,
+    this.renderTimeMs = 0,
     required this.visiblePoints,
     this.gpuName = 'Vulkan GPU',
     this.status = '就绪',
@@ -91,6 +94,20 @@ class TelemetryHud extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
+
+              // 引擎侧耗时：渲染线程提交 + 回读，与 UI 端解码/绘制解耦
+              if (renderTimeMs > 0) ...[
+                Text(
+                  key: const ValueKey('viewport_render_cost'),
+                  '引擎 ${renderTimeMs.toStringAsFixed(2)} ms',
+                  style: const TextStyle(
+                    color: Color(0xFF7DD3FC), // Sky 300
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
 
               // 点数与状态
               Text(

@@ -294,10 +294,29 @@ GS3D_FFI_API int32_t gs3d_engine_camera_input(
     float rotate_dx, float rotate_dy,
     float pan_dx, float pan_dy, float scroll_y);
 
-/// 渲染一帧离屏 RGBA8。成功后 out_w/out_h 有效。
+/// 渲染一帧离屏 RGBA8（同步兼容路径，调用线程阻塞在渲染线程上）。
+/// 成功后 out_w/out_h 有效。新前端应改用 request_frame + read_frame_rgba。
 GS3D_FFI_API int32_t gs3d_engine_render_rgba(
     gs3d_engine* e, uint8_t* out_rgba, uint32_t max_bytes,
     uint32_t* out_w, uint32_t* out_h);
+
+/// 请求渲染线程异步绘制一帧；已有帧在渲染中时合并请求。
+/// 返回 0 表示请求已受理或已被合并，负值为失败。
+GS3D_FFI_API int32_t gs3d_engine_request_frame(gs3d_engine* e);
+
+/// 拷贝最近一次完成的帧（不触发 Vulkan、不等待渲染）。
+/// 0 成功；-1 容量不足（仍回填实际宽高，调用方扩容重试）；-2 尚无帧。
+/// out_stride/out_sequence 可为 NULL。
+GS3D_FFI_API int32_t gs3d_engine_read_frame_rgba(
+    gs3d_engine* e, uint8_t* out_rgba, uint32_t max_bytes,
+    uint32_t* out_w, uint32_t* out_h,
+    uint32_t* out_stride, uint64_t* out_sequence);
+
+/// 已发布帧序号（每次成功渲染递增）；无帧时为 0。
+GS3D_FFI_API uint64_t gs3d_engine_frame_sequence(gs3d_engine* e);
+
+/// 最近一帧在渲染线程上的耗时（毫秒，含 GPU 提交与回读）。
+GS3D_FFI_API double gs3d_engine_last_render_ms(gs3d_engine* e);
 
 GS3D_FFI_API const char* gs3d_engine_get_snapshot_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e);

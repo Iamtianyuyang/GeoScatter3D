@@ -84,7 +84,7 @@ PointPipeline --> OffscreenFramebuffer[N] --> Flutter Image.memory
 | `data` | 引擎数据层 | `Gs3dDataset`, `Gs3dLodDataset`, `Gs3dTileDataset`, `CsvReader`：GS3D v2 格式强校验、点数据流式解算与内存映射 |
 | `preprocess` | 引擎工具层 | `Gs3dWriter`, `Gs3dLodWriter`, `Gs3dTileWriter`, `PointStats`：离线高并发 CSV 切片、统计直方图与瓦片树生成 |
 | `ui` | 前端逻辑层 | `PanelRegistry`, `LayoutRegistry`, `WorkspaceManager`, `UiFonts`, `ThemeRegistry`, `ViewportCanvas`：无 GUI 依赖的 UI 元数据/布局/主题组件（前端界面由 Flutter 承担） |
-| `ffi` | 跨语言边界 | `HeadlessRenderKernel`, `Gs3dEngineApi`：单进程离屏引擎 C-ABI（`gs3d_engine_*` + A 组本地元数据 API） |
+| `ffi` | 跨语言边界 | `HeadlessRenderKernel`, `EngineHost`, `FrameChannel`, `Gs3dEngineApi`：单进程离屏引擎 C-ABI（`gs3d_engine_*` + A 组本地元数据 API）。`EngineHost` 持有唯一渲染线程，`FrameChannel` 负责已发布帧的非阻塞读取 |
 | `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`）；GUI/控制面路径仍用 |
 | `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射（双进程/legacy 路径） |
 
@@ -130,8 +130,11 @@ include/ & src/
 1. Flutter `GeoScatter3dService.startNativeRenderer()` 探测 `hasEngineApi`。
 2. `gs3d_engine_create_simple` 创建离屏 Vulkan 内核（无 GLFW/swapchain），
    `gs3d_engine_load_dataset` 载入 `.gs3d.bundle` 或独立 `.gs3d`。
-3. 相机/渲染设置经 `gs3d_engine_*` 直接写入内核；`render_rgba` 输出帧，
-   服务层解码为 `ui.Image` 呈现。
+3. 相机/渲染设置经 `gs3d_engine_*` 投递到引擎渲染线程（`EngineHost` 独占
+   `VkDevice`）；视口按 ticker 调用 `gs3d_engine_request_frame` 预约帧，
+   再用 `gs3d_engine_read_frame_rgba` 非阻塞取回最近完成帧（`FrameChannel`
+   双缓冲，UI isolate 不再阻塞在 Vulkan 提交上），服务层解码为 `ui.Image` 呈现。
+   `gs3d_engine_render_rgba` 保留为同步兼容路径（测试/单发调用）。
 4. engine 失败或符号缺失时**明确报错**；**无**纯 Dart 软件点云预览（核心仅为 `gs3d_engine_*`）。
 
 ### 历史：GUI / 控制面路径（已废弃双进程）

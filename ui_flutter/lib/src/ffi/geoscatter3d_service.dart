@@ -27,9 +27,12 @@ class GeoScatter3dService extends ChangeNotifier {
   int _pointCount = 0;
   int _frameNumber = 0;
   int _windowFrames = 0;
+  int _lastSequence = 0;
   final Stopwatch _fpsClock = Stopwatch();
+  final Stopwatch _frameClock = Stopwatch();
   double _fps = 0;
   double _frameTimeMs = 0;
+  double _renderTimeMs = 0;
   String _gpuName = 'Vulkan GPU';
 
   ui.Image? get frame => _frame;
@@ -39,6 +42,8 @@ class GeoScatter3dService extends ChangeNotifier {
   int get frameNumber => _frameNumber;
   double get fps => _fps;
   double get frameTimeMs => _frameTimeMs;
+  /// 原生渲染线程的帧耗时（毫秒）；与 UI 端解码/绘制解耦。
+  double get renderTimeMs => _renderTimeMs;
   String get gpuName => _gpuName;
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
 
@@ -61,13 +66,25 @@ class GeoScatter3dService extends ChangeNotifier {
         throw StateError('样例点云加载失败: ${engine.lastError}');
       }
       _pointCount = engine.pointCount;
-      _gpuName = engine.diagnostics['gpu']?.toString() ?? 'Vulkan GPU';
+      _gpuName = _resolveGpuName(engine);
       _ready = true;
       _fpsClock.start();
+      _frameClock.start();
+      // 首帧由渲染线程异步产生；UI 线程不再阻塞在 Vulkan 提交上。
+      engine.requestFrame();
       notifyListeners();
     } catch (error) {
       _fail(error);
     }
+  }
+
+  String _resolveGpuName(Gs3dEngine engine) {
+    final gpu = engine.diagnostics['gpu'];
+    if (gpu is Map) {
+      final name = gpu['name'];
+      if (name is String && name.isNotEmpty) return name;
+    }
+    return 'Vulkan GPU';
   }
 
   void _fail(Object error) {
@@ -91,27 +108,44 @@ class GeoScatter3dService extends ChangeNotifier {
     _paused = paused;
     _windowFrames = 0;
     _fpsClock.reset();
+    _frameClock.reset();
   }
 
+  /// 每帧 tker：先请求渲染线程出帧，再非阻塞地取回已完成帧。
+  ///
+  /// 旧实现把整个 Vulkan 提交 + 回读（~20ms）按死在 UI isolate 上，
+  /// 手势与动画都要等它；现在 UI 线程只做一次 memcpy + 解码。
   Future<void> renderNextFrame() async {
     if (!ready || _rendering || _paused) return;
     _rendering = true;
-    final stopwatch = Stopwatch()..start();
     try {
       final size = _pendingSize;
       _pendingSize = null;
       if (size != null) {
         _engine!.resize(size.width.toInt(), size.height.toInt());
       }
-      final next = await _engine!.renderFrame();
+
+      final sequence = _engine!.frameSequence;
+      if (sequence == _lastSequence) {
+        // 尚无新帧：请求下一帧并让本 tick 提前返回（请求会被内核合并）。
+        _engine!.requestFrame();
+        return;
+      }
+
+      final next = await _engine!.readFrame();
       if (_disposed) {
         next?.dispose();
         return;
       }
-      if (next == null) throw StateError('原生引擎没有返回帧');
+      if (next == null) return;
+
+      _lastSequence = sequence;
       final previous = _frame;
       _frame = next;
-      _frameTimeMs = stopwatch.elapsedMicroseconds / 1000;
+      // 帧间隔反映渲染线程的真实出帧节拍（含 GPU 提交与回读）。
+      _frameTimeMs = _frameClock.elapsedMicroseconds / 1000;
+      _frameClock.reset();
+      _renderTimeMs = _engine!.lastRenderMs;
       _frameNumber++;
       _windowFrames++;
       if (_fpsClock.elapsedMilliseconds >= 500) {
@@ -121,6 +155,8 @@ class GeoScatter3dService extends ChangeNotifier {
       }
       notifyListeners();
       previous?.dispose();
+      // 立即预约下一帧，避免等下一个 tick 才启动渲染。
+      _engine!.requestFrame();
     } catch (error) {
       _fail(error);
     } finally {

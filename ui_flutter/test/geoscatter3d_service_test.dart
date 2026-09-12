@@ -56,7 +56,7 @@ void main() {
     expect(engine.disposeCount, 1);
   });
   test(
-    'resize is deferred and coalesced; null frame becomes terminal error',
+    'resize is deferred and coalesced; missing frame is not an error',
     () async {
       final engine = FakeEngine();
       final service = GeoScatter3dService(engine: engine);
@@ -68,26 +68,71 @@ void main() {
       expect(engine.sizes, isEmpty);
       await service.renderNextFrame();
       expect(engine.sizes, [(320, 240)]);
-      expect(service.error, contains('没有返回帧'));
-      await service.renderNextFrame();
-      expect(engine.renderCount, 1);
+      // 引擎未回帧时不得当成致命错误，也不得伪造帧。
+      expect(service.frame, isNull);
+      expect(service.error, isNull);
+      expect(engine.requestCount, greaterThanOrEqualTo(1));
     },
   );
-  test('pause and in-flight guard prevent extra render calls', () async {
+  test('no new sequence means no read and no error, only a new request', () async {
+    final engine = FakeEngine()..stallFrames = true;
+    final service = GeoScatter3dService(engine: engine);
+    addTearDown(service.dispose);
+    await service.initialize();
+    final requests = engine.requestCount;
+    await service.renderNextFrame();
+    await service.renderNextFrame();
+    expect(engine.readCount, 0);
+    expect(service.error, isNull);
+    expect(service.frame, isNull);
+    // 每个 tick 都向渲染线程预约下一帧（内核侧会合并重复请求）。
+    expect(engine.requestCount, requests + 2);
+  });
+  test('published frame is decoded once and updates telemetry', () async {
+    final engine = FakeEngine();
+    final completer = Completer<ui.Image?>();
+    engine.render = () => completer.future;
+    final service = GeoScatter3dService(engine: engine);
+    addTearDown(service.dispose);
+    await service.initialize();
+    expect(service.frameNumber, 0);
+    final rendering = service.renderNextFrame();
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder);
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(4, 4);
+    picture.dispose();
+    completer.complete(image);
+    await rendering;
+    expect(engine.readCount, 1);
+    expect(service.frame, isNotNull);
+    expect(service.frameNumber, 1);
+    // 消耗一帧后立即预约下一帧（initialize + 帧后各一次）。
+    expect(engine.requestCount, greaterThanOrEqualTo(2));
+    // 帧所有权归服务：由 service.dispose() 释放，测试不重复 dispose。
+  });
+  test('pause and in-flight guard prevent extra frame reads', () async {
     final completing = Completer<ui.Image?>();
     final engine = FakeEngine()..render = () => completing.future;
     final service = GeoScatter3dService(engine: engine);
     await service.initialize();
     service.setPaused(true);
     await service.renderNextFrame();
-    expect(engine.renderCount, 0);
+    expect(engine.readCount, 0);
     service.setPaused(false);
     final rendering = service.renderNextFrame();
     await service.renderNextFrame();
-    expect(engine.renderCount, 1);
+    expect(engine.readCount, 1);
     service.dispose();
     completing.complete(null);
     await rendering;
+  });
+  test('engine diagnostics expose the real GPU name', () async {
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    addTearDown(service.dispose);
+    await service.initialize();
+    expect(service.gpuName, 'fixture GPU');
   });
   test(
     'actions forward inputs and reject invalid or unknown requests',

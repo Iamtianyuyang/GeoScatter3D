@@ -3,6 +3,36 @@
 版本号沿用 Git 提交历史; 未打 release tag 前按里程碑组织。条目按时间倒序,
 日期为提交日期 (GitHub 仓库 `Iamtianyuyang/GeoScatter3D`)。
 
+## 2026-09-12 — Vulkan 核心：渲染线程 + 非阻塞帧通道
+
+- **渲染线程独占 Vulkan (vulkan-core.md §4)**: 新增 `gs3d::ffi::EngineHost`
+  (`include/ffi/EngineHost.hpp`)，内核在渲染线程创建/销毁，全部 `Vk*` 调用
+  收敛到该线程；控制面命令经 `invoke()` 入队执行，调用线程不再接触 Vulkan。
+- **非阻塞帧通道**: 新增 `gs3d::ffi::FrameChannel`（发布=O(1) 缓冲置换，
+  读取=单次 memcpy，不触发 Vulkan）；C-ABI 新增 `gs3d_engine_request_frame` /
+  `gs3d_engine_read_frame_rgba` / `gs3d_engine_frame_sequence` /
+  `gs3d_engine_last_render_ms`；`gs3d_engine_render_rgba` 保留为同步兼容路径。
+  首帧尺寸探测允许 `out_rgba = NULL`（只回填宽高返回 -1），修复了首帧
+  读到 0x0 而报错的缺陷（真机回归发现）。
+- **帧资源跨帧复用**: 内核不再每帧创建/销毁命令缓冲、栅栏、staging 缓冲与
+  内存映射（原先每帧 4 MiB 级分配）；staging 常驻映射，扩容前等设备空闲；
+  提交后异常路径先等栅栏再抛出，避免下一帧复用正在执行的 GPU 资源。
+- **设备诊断上 ABI**: `get_diagnostics_json` 新增 `gpu.{name,type,uuid,profile,
+  selection,api_version,driver_version,memory_bytes}` 与 `render_thread` /
+  `frame_sequence` / `frame_time_ms`；HUD 因此能显示真实显卡（真机：
+  Adreno (TM) 650）而非占位串。
+- **Flutter 侧**: `GeoScatter3dService.renderNextFrame` 改为「请求帧 + 序号判定 +
+  非阻塞读取」，UI isolate 不再阻塞 ~20 ms 等 Vulkan 提交；HUD 新增
+  「引擎 N ms」行区分核心成本与前端解码/绘制成本；测试替身
+  (`FakeEngine`) 按 request→publish→read 建模。
+- **验证**: 新增 `tests/EngineHostTests.cpp`（FrameChannel 契约 + 渲染线程
+  语义，10 用例 68 断言）；ctest 29/29；`flutter test` 16/16
+  (`GS3D_ENGINE_E2E=1` 含原生读写帧)；真机 Tab S7 (Adreno 650)：
+  Maestro 流程断言 HUD 与画面，帧差比对证实「旋转改变画面、复位完全恢复」
+  (MAD 4.13 / 0.00)，`integration_test/engine_smoke_test.dart` 真机全绿；
+  核心渲染耗时 `引擎 8.69 ms`，帧间隔 24.57 ms → 瓶颈已从核心移到前端
+  解码/绘制（零拷贝纹理呈现见 spec §8 第 3 步）。
+
 ## 2026-09-11 — 平板适配（响应式 UI + 触控 + 引擎显式降级）
 
 - **响应式断点中枢**: 新增 `Gs3dFormFactorScope`

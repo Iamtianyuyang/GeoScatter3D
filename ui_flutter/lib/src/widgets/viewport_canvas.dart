@@ -157,6 +157,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
               child: TelemetryHud(
                 fps: _service.fps,
                 frameTimeMs: _service.frameTimeMs,
+                renderTimeMs: _service.renderTimeMs,
                 visiblePoints: _service.pointCount,
                 gpuName: _service.gpuName,
                 status: _service.status,

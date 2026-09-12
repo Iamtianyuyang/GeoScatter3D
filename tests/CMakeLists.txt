@@ -628,6 +628,31 @@ add_test(
     COMMAND GeoScatter3DVulkanCoreContractTests
 )
 
+# 引擎宿主 / 帧通道：渲染线程独占 Vulkan、非阻塞帧读取契约。
+add_executable(GeoScatter3DEngineHostTests
+    EngineHostTests.cpp
+)
+target_include_directories(GeoScatter3DEngineHostTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/third_party/stb
+)
+target_compile_definitions(GeoScatter3DEngineHostTests PRIVATE
+    GS3D_TEST_SHADER_DIR="${GS3D_GENERATED_SHADER_DIR}"
+)
+target_link_libraries(GeoScatter3DEngineHostTests PRIVATE
+    gs3d_engine_core
+    Vulkan::Vulkan
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.EngineHost
+    COMMAND GeoScatter3DEngineHostTests
+)
+if(NOT ANDROID)
+    # 测试需要真实 SPIR-V（内核创建会读取 point.vert.spv / point.frag.spv）。
+    add_dependencies(GeoScatter3DEngineHostTests gs3d_shaders)
+endif()
+
 # Python Script Quality Gate Tests
 
 add_test(

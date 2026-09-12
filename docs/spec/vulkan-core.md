@@ -1,7 +1,10 @@
 # GeoScatter3D Vulkan 核心规范
 
-状态：现行基线 v0.1（2026-09-12）  
-范围：多端 Vulkan 核心、离屏引擎、平台 Surface 适配和 C-ABI 边界。
+状态：现行基线 v0.2（2026-09-12）
+范围：多端 Vulkan 核心、离屏引擎、渲染线程、平台 Surface 适配和 C-ABI 边界。
+变更（v0.2）：渲染线程（`EngineHost`）与非阻塞帧通道（`FrameChannel`）落地，
+`gs3d_engine_request_frame` / `read_frame_rgba` / `frame_sequence` /
+`last_render_ms` 进入 C-ABI；内核帧资源改为跨帧复用。
 
 ## 1. 目标与非目标
 
@@ -88,8 +91,12 @@ Instance 创建前必须通过 `negotiate_vulkan_instance_api_version()` 查询 
 
 ## 4. 线程与句柄规则
 
-- 一个 `gs3d_engine*` 的所有公开操作默认由调用方串行化；当前实现内部 mutex
-  作为最后一道保护，但不代表可以并行提交 Vulkan 命令。
+- 一个 `gs3d_engine*` 内部持有**唯一渲染线程**（`gs3d::ffi::EngineHost`）：
+  所有 `Vk*` 调用都发生在该线程上，内核对象在渲染线程创建、在渲染线程销毁。
+- 控制面命令（load/resize/camera/settings/export/pick/snapshot）通过
+  `EngineHost::invoke` 入队并在渲染线程执行，调用线程按原同步语义等待结果，
+  但自身不接触 Vulkan；命令串行执行，不存在并行提交。
+- 帧请求是异步且**可合并**的：渲染中重复 `request_frame` 不会排队堆积。
 - 同一 `VkDevice` 的命令池、command buffer、fence、semaphore 和资源所有权必须
   有唯一 C++ owner。跨 owner 传递只能是短生命周期的只读引用。
 - C ABI 返回的字符串由库持有，调用方必须立即复制；需要释放的内存只能使用
@@ -101,11 +108,22 @@ Instance 创建前必须通过 `negotiate_vulkan_instance_api_version()` 查询 
 
 - 当前跨端稳定交换格式是离屏 `RGBA8`：调用方提供容量，核心返回实际宽高；容量
   不足必须失败且不写越界。
+- 两条读取路径：
+  - `gs3d_engine_request_frame` + `gs3d_engine_read_frame_rgba`（推荐）：请求在
+    渲染线程异步出帧，读取只做一次 memcpy，不触发 Vulkan、不等待渲染；
+    `-2` 表示尚无完成帧，`-1` 表示容量不足并回填实际宽高（允许 `out_rgba = NULL`
+    做一次纯探测）；`frame_sequence` 用于判断是否有新帧。
+  - `gs3d_engine_render_rgba`（兼容）：同步渲染到调用方缓冲，供测试与单发调用。
+- 帧资源（命令缓冲、栅栏、staging 缓冲+常驻映射）跨帧复用，禁止每帧
+  分配/释放 4 MiB 级资源；staging 缓冲按需扩容，扩容前必须等设备空闲。
+- 渲染计时（`gs3d_engine_last_render_ms`）只统计本内核线程的提交+回读耗时，
+  与调用方解码/绘制解耦，用于区分“核心成本”与“前端成本”。
 - resize 必须拒绝零尺寸；资源重建前等待受影响的 GPU 工作完成。
 - shader 路径由调用方传入，未传入时由 ABI façade 按部署布局解析；核心本身不读取
   Flutter 工作目录，也不假定仓库根目录。
 - dataset、camera、render settings 和 diagnostics 都由 engine 句柄持有；UI 只读
-  取快照并发出命令。
+  取快照并发出命令。diagnostics 额外暴露活动 GPU 名称/类型/UUID/Profile/
+  apiVersion/显存与设备挑选原因。
 
 ## 6. 返回码和错误处理
 
@@ -129,8 +147,10 @@ C++ 层可以使用异常表达构造失败；跨过 C ABI 时必须捕获异常
 
 ## 8. 当前实施顺序
 
-1. 完成 `gs3d_camera_core`、`gs3d_render`、`gs3d_engine_core` 三层拆分并保持
+1. ✅ 完成 `gs3d_camera_core`、`gs3d_render`、`gs3d_engine_core` 三层拆分并保持
    `gs3d_ffi` ABI 兼容。
-2. 以 Windows 1.3 和 Android 1.1 的离屏 RGBA 路径为验收基线。
-3. 再接入窗口 Surface/swapchain 适配；不得为兼容旧 Viewer 把 GLFW 引入离屏目标。
+2. ✅ 以 Windows 1.3 和 Android 1.1 的离屏 RGBA 路径为验收基线；
+   渲染线程 + 非阻塞帧通道 + 帧资源复用已在 Windows 与 Android arm64 真机
+   （三星 Tab S7 / Adreno 650）上验证。
+3. ⏭ 再接入窗口 Surface/swapchain 适配；不得为兼容旧 Viewer 把 GLFW 引入离屏目标。
 4. 每增加一个前端能力，同时增加 ABI、引擎单测和 Flutter 投影测试。

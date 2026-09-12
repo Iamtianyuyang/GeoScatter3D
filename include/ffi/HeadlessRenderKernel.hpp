@@ -129,9 +129,25 @@ public:
         return point_count_;
     }
 
+    /// 活动 GPU 与 Profile 诊断（供 ABI 曝光，不泄露 Vulkan 句柄）。
+    struct GpuDiagnostics {
+        std::string name;
+        std::string type_label;
+        std::string uuid;
+        std::string profile;
+        std::string selection;
+        std::string api_version;  // "1.1.180"
+        std::uint32_t driver_version = 0;
+        std::uint64_t memory_bytes = 0;
+    };
+    [[nodiscard]] GpuDiagnostics gpu_diagnostics() const;
+
 private:
     void create_pipeline();
     void destroy_gpu_resources() noexcept;
+    /// 申请/复用帧资源（命令缓冲、栅栏、常驻 staging 缓冲）。
+    void ensure_frame_resources(std::size_t bytes);
+    void destroy_frame_resources() noexcept;
     void update_push_from_camera();
     void set_error(const std::string& message);
     void reset_camera_to_bounds_locked();
@@ -143,6 +159,14 @@ private:
 
     std::unique_ptr<gs3d::render::VulkanContext> context_;
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
+
+    // 帧资源：跨帧复用，避免每帧 4MB 级别的分配/释放抖动。
+    VkCommandBuffer frame_command_ = VK_NULL_HANDLE;
+    VkFence frame_fence_ = VK_NULL_HANDLE;
+    VkBuffer staging_buffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory staging_memory_ = VK_NULL_HANDLE;
+    void* staging_mapped_ = nullptr;
+    std::size_t staging_capacity_ = 0;
 
     gs3d::render::OffscreenFramebuffer framebuffer_;
     std::unique_ptr<gs3d::render::PointPipeline> pipeline_;
