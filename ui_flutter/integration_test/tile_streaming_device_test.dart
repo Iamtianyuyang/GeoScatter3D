@@ -28,13 +28,10 @@ void main() {
     final lodFinder = find.byKey(const ValueKey('viewport_lod'));
 
     Future<String> lodText() async {
+      // 注意：viewport_lod 这个 key 直接挂在 Text 上（不是容器），
+      // 所以必须直接读该 widget，用 descendant 找子节点永远是空。
       if (lodFinder.evaluate().isEmpty) return '';
-      return tester
-          .widgetList<Text>(
-            find.descendant(of: lodFinder, matching: find.byType(Text)),
-          )
-          .map((text) => text.data ?? '')
-          .join();
+      return tester.widget<Text>(lodFinder).data ?? '';
     }
 
     // 1. 等首帧与 LOD 规模行出现（粗尺度）。
@@ -100,6 +97,9 @@ void main() {
       reason: '放大后应进入细尺度 tile 流式（当前 LOD 行：${await lodText()}）',
     );
     expect(tileSummary, contains('驻留'));
+    // 证据输出：本次运行的粗尺度与细尺度规模行。
+    debugPrint('[ACCEPTANCE] coarse="$coarse"');
+    debugPrint('[ACCEPTANCE] fine="$tileSummary"');
 
     // 3. 画面必须仍在出帧（流式未卡死）。
     final frameFinder = find.byKey(const ValueKey('viewport_frame'));
