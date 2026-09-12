@@ -39,6 +39,29 @@ class MainActivity : FlutterActivity() {
             DOCUMENT_CHANNEL,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "prepareEngineShaders" -> {
+                    Thread {
+                        try {
+                            val directory = File(cacheDir, "tmp/engine-shaders")
+                            check(directory.mkdirs() || directory.isDirectory)
+                            for (name in listOf("point.vert.spv", "point.frag.spv")) {
+                                val key = io.flutter.FlutterInjector.instance()
+                                    .flutterLoader().getLookupKeyForAsset("assets/shaders/$name")
+                                assets.open(key).use { input ->
+                                    FileOutputStream(File(directory, name)).use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                            }
+                            mainHandler.post { result.success(directory.absolutePath) }
+                        } catch (error: Exception) {
+                            mainHandler.post {
+                                result.error("shader_prepare_failed", error.message, null)
+                            }
+                        }
+                    }.start()
+                }
+
                 "pickFile" -> openPicker(
                     Intent.ACTION_OPEN_DOCUMENT,
                     PICK_FILE_REQUEST,

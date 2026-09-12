@@ -2,6 +2,7 @@
 
 > 状态: 现行 | 核对基准: 2026-09-11, flutter 单进程 FFI 主路径（双进程已删除）
 > 单进程契约见 [fullstack-engine-parity.md](compose/spec/fullstack-engine-parity.md) 与 [ffi-single-process.md](compose/spec/ffi-single-process.md)
+> Vulkan 核心的跨平台边界、生命周期和平台接入规则见 [vulkan-core.md](spec/vulkan-core.md)。
 
 ## 架构总览
 

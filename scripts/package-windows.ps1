@@ -77,8 +77,7 @@ Write-Host "==> vcpkg: $VcpkgRoot"
 
 # --- Dependencies (idempotent: fast when already installed) -----------------
 Write-Host "==> Installing vcpkg dependencies"
-Exec { & "$VcpkgRoot\vcpkg.exe" install glfw3:x64-windows `
-        vulkan-headers:x64-windows vulkan-loader:x64-windows `
+Exec { & "$VcpkgRoot\vcpkg.exe" install vulkan-headers:x64-windows vulkan-loader:x64-windows `
         "glslang[tools]:x64-windows" }
 
 Write-Host "==> Initializing git submodules"

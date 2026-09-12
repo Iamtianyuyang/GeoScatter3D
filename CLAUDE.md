@@ -1,6 +1,6 @@
 # GeoScatter3D · CppStudio 开发者与智能体指令（CLAUDE.md）
 
-> 项目定性：大规模三维散点/点云数据 C++20 桌面高性能查看器（Flutter Desktop + C-ABI + Vulkan 1.3 + GLFW + 自研 GS3D/LOD/Tile 格式）。
+> 项目定性：大规模三维散点/点云数据 C++20 跨平台查看器（Flutter Desktop/Android + C-ABI + Vulkan Profile：桌面 1.3、Android 最低 1.1 + GLFW + 自研 GS3D/LOD/Tile 格式）。
 > 核心治理体系：已全面接入 **`cpp-cuda-vulkan-studio`** 现代化 C++ 图形工程规范。
 > 统一规则基准：详细规则与解耦规范见 [`docs/RULES.md`](docs/RULES.md)。
 
@@ -19,7 +19,7 @@
 ### 2. 技术叠加层路由（Technical Overlays）
 | 关注领域 | 涉及技术契约 | 规范要求 |
 | :--- | :--- | :--- |
-| **图形与同步** | Vulkan 1.3、描述符生命周期、管线屏障 | 严禁隐式同步；离屏 Framebuffer 严格按生命周期销毁；禁止向 UI 层泄漏 Vulkan 头文件 |
+| **图形与同步** | Vulkan Profile、描述符生命周期、管线屏障 | 严禁隐式同步；离屏 Framebuffer 严格按生命周期销毁；禁止向 UI 层泄漏 Vulkan 头文件 |
 | **界面与交互** | Flutter Desktop、GeoScatter3dService | 响应式 UI；状态归 GeoScatter3dService；UI 输出业务动作；禁止在 UI 帧内执行耗时重计算 |
 | **视口与相机** | 漫游视口、相机枢轴、GPU Pick | 默认以点云几何中心为旋转枢轴；GPU pick 为 front-most 最小深度回读；坐标映射与视口像素精确对齐 |
 | **控制面与自动化** | TCP + JSON-RPC 2.0、无头驱动、截图回读 | 自动化必须 `--headless` + `--no-welcome`；取图必须走控制面 `screenshot`；退出必须验证进程消亡 |

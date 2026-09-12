@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/OffscreenFramebuffer.hpp"
+#include "render/RenderTypes.hpp"
 #include "render/VulkanContext.hpp"
 #include "camera/Camera.hpp"
 

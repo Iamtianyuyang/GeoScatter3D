@@ -28,13 +28,12 @@ missing=()
 command -v cmake            >/dev/null || missing+=(cmake)
 command -v python3          >/dev/null || missing+=(python3)
 command -v glslangValidator >/dev/null || missing+=(glslang-tools)
-pkg-config --exists glfw3 2>/dev/null  || missing+=(libglfw3-dev)
 pkg-config --exists vulkan 2>/dev/null || missing+=(libvulkan-dev)
 
 if [ ${#missing[@]} -gt 0 ]; then
     echo "Missing dependencies: ${missing[*]}" >&2
     echo "On Debian/Ubuntu:" >&2
-    echo "  sudo apt-get install ninja-build libglfw3-dev libvulkan-dev glslang-tools" >&2
+    echo "  sudo apt-get install ninja-build libvulkan-dev glslang-tools" >&2
     exit 1
 fi
 
@@ -74,5 +73,5 @@ echo "Done."
 echo "  Folder:  $REPO_ROOT/dist/"
 echo "  Archive: $REPO_ROOT/$PACKAGE"
 echo
-echo "Note: the Linux package links system glfw/vulkan; target machines"
-echo "need libglfw3 and libvulkan1 installed."
+echo "Note: the Linux package links the system Vulkan loader; target machines"
+echo "need libvulkan1 installed."

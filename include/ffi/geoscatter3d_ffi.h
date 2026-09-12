@@ -248,6 +248,7 @@ GS3D_FFI_API gs3d_engine* gs3d_engine_create_simple(uint32_t width, uint32_t hei
 GS3D_FFI_API void gs3d_engine_destroy(gs3d_engine* e);
 
 GS3D_FFI_API int32_t gs3d_engine_load_dataset(gs3d_engine* e, const char* path);
+GS3D_FFI_API int32_t gs3d_engine_load_sample(gs3d_engine* e);
 GS3D_FFI_API int32_t gs3d_engine_unload_dataset(gs3d_engine* e);
 GS3D_FFI_API int32_t gs3d_engine_resize(gs3d_engine* e, uint32_t w, uint32_t h);
 
@@ -303,9 +304,12 @@ GS3D_FFI_API const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 GS3D_FFI_API uint64_t gs3d_engine_point_count(gs3d_engine* e);
 
-// ============================================================================
-// 21. CSV 预处理（编译入 .so，供移动端免外部可执行文件）
-// ============================================================================
+GS3D_FFI_API const char* gs3d_engine_version(void);
+GS3D_FFI_API int32_t gs3d_engine_preprocess_csv(
+    const char* csv_path,
+    const char* output_gs3d_path,
+    uint32_t threads,
+    uint32_t finest_target_points);
 
 /// CSV → .gs3d 单文件转换（单趟，含质心原点变换）。
 /// 成功返回 0，失败返回负值；错误详情经 gs3d_ffi_get_last_error() 获取。

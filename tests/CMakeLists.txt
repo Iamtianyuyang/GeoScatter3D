@@ -10,6 +10,14 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/catch2 ${CMAKE_CURRENT_BINARY
 
 # Unit Tests
 
+# The GLFW Viewer target was removed from the active single-process engine
+# build. Keep its historical tests available for the future window frontend,
+# but do not let stale gs3d_app/gs3d_viewport_lod links block the headless core.
+option(GS3D_BUILD_LEGACY_VIEWER_TESTS
+    "Build tests for the removed GLFW Viewer target"
+    OFF
+)
+
 add_executable(GeoScatter3DThreadPoolTests
     ThreadPoolTests.cpp
 )
@@ -174,6 +182,8 @@ add_test(
     COMMAND GeoScatter3DViewportPresentationStateTests
 )
 
+if(GS3D_BUILD_LEGACY_VIEWER_TESTS)
+
 add_executable(GeoScatter3DViewportLodControllerTests
     ViewportLodControllerTests.cpp
 )
@@ -188,6 +198,8 @@ add_test(
     NAME GeoScatter3D.ViewportLodController
     COMMAND GeoScatter3DViewportLodControllerTests
 )
+
+endif()
 
 add_executable(GeoScatter3DDataTests
     Gs3dFormatTests.cpp
@@ -272,6 +284,8 @@ target_link_libraries(GeoScatter3DUserPreferencesTests PRIVATE
     Catch2::Catch2WithMain
 )
 add_test(NAME GeoScatter3D.UserPreferences COMMAND GeoScatter3DUserPreferencesTests)
+
+if(GS3D_BUILD_LEGACY_VIEWER_TESTS)
 
 add_executable(GeoScatter3DViewerDatasetSessionTests
     ViewerDatasetSessionTests.cpp
@@ -378,6 +392,8 @@ add_test(
     COMMAND GeoScatter3DViewerFrameMetricsCollectorTests
 )
 
+endif()
+
 add_executable(GeoScatter3DViewerFrameClockTests
     ViewerFrameClockTests.cpp
 )
@@ -392,6 +408,8 @@ add_test(
     NAME GeoScatter3D.ViewerFrameClock
     COMMAND GeoScatter3DViewerFrameClockTests
 )
+
+if(GS3D_BUILD_LEGACY_VIEWER_TESTS)
 
 add_executable(GeoScatter3DViewerRuntimeConfigurationTests
     ViewerRuntimeConfigurationTests.cpp
@@ -453,6 +471,8 @@ add_test(
     COMMAND GeoScatter3DScreenshotServiceTests
 )
 
+endif()
+
 add_executable(GeoScatter3DComponentRegistryTests
     ComponentRegistryTests.cpp
 )
@@ -497,6 +517,8 @@ add_test(
     NAME GeoScatter3D.ControlPlane
     COMMAND GeoScatter3DControlPlaneTests
 )
+
+if(GS3D_BUILD_LEGACY_VIEWER_TESTS)
 
 add_executable(GeoScatter3DNavigationMapSystemTests
     NavigationMapSystemTests.cpp
@@ -558,6 +580,8 @@ add_test(
     COMMAND GeoScatter3DTileStreamingSystemTests
 )
 
+endif()
+
 add_executable(GeoScatter3DTileStreamingTests
     TileStreamingTests.cpp
 )
@@ -587,6 +611,21 @@ target_link_libraries(GeoScatter3DGpuInfoTests PRIVATE
 add_test(
     NAME GeoScatter3D.GpuInfo
     COMMAND GeoScatter3DGpuInfoTests
+)
+
+add_executable(GeoScatter3DVulkanCoreContractTests
+    VulkanCoreContractTests.cpp
+)
+target_include_directories(GeoScatter3DVulkanCoreContractTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(GeoScatter3DVulkanCoreContractTests PRIVATE
+    Vulkan::Vulkan
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.VulkanCoreContract
+    COMMAND GeoScatter3DVulkanCoreContractTests
 )
 
 # Python Script Quality Gate Tests
@@ -650,6 +689,7 @@ set_tests_properties(
 # (needs a real Vulkan device and takes seconds, not milliseconds; see
 # docs/plan/geoscatter3d-tasks.md Task 1). Run directly:
 #   ./build/GeoScatter3DBenchmark --config config/viewer.toml [frame_count]
+if(GS3D_BUILD_LEGACY_VIEWER_TESTS)
 add_executable(GeoScatter3DBenchmark
     BenchmarkSuite.cpp
 )
@@ -663,3 +703,4 @@ target_link_libraries(GeoScatter3DBenchmark PRIVATE
     gs3d_app
 )
 copy_runtime_assets(GeoScatter3DBenchmark)
+endif()

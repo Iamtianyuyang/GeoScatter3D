@@ -123,6 +123,11 @@ int32_t gs3d_engine_load_dataset(gs3d_engine* e, const char* path) {
     return e->kernel.load_dataset(path);
 }
 
+int32_t gs3d_engine_load_sample(gs3d_engine* e) {
+    if (e == nullptr) return -1;
+    return e->kernel.load_sample();
+}
+
 int32_t gs3d_engine_unload_dataset(gs3d_engine* e) {
     if (e == nullptr) return -1;
     e->kernel.unload_dataset();
@@ -307,6 +312,18 @@ const char* gs3d_engine_last_error(gs3d_engine* e) {
 uint64_t gs3d_engine_point_count(gs3d_engine* e) {
     if (e == nullptr) return 0;
     return e->kernel.point_count();
+}
+
+const char* gs3d_engine_version(void) {
+    return "0.2.0-engine";
+}
+
+int32_t gs3d_engine_preprocess_csv(
+    const char* csv_path,
+    const char* output_gs3d_path,
+    uint32_t threads,
+    uint32_t finest_target_points) {
+    return gs3d_ffi_preprocess_csv(csv_path, output_gs3d_path, threads, finest_target_points);
 }
 
 }  // extern "C"

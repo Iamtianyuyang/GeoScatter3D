@@ -1,8 +1,8 @@
 #pragma once
 
+#include "render/RenderTypes.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanDepthBuffer.hpp"
-#include "render/VulkanRenderer.hpp"
 
 #include <vulkan/vulkan.h>
 

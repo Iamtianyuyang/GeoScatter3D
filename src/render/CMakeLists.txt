@@ -1,5 +1,7 @@
 # ---------------------------------------------------------------------------
-# Render Subsystem: Vulkan Pipelines, Buffers, Shaders, and LOD Controllers
+# Platform-neutral Vulkan render core: no GLFW, Flutter or native window code.
+# Surface/swapchain frontends are optional adapters and must not be required by
+# the headless engine target.
 # ---------------------------------------------------------------------------
 
 add_library(gs3d_render STATIC

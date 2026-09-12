@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/GpuFrameTimer.hpp"
+#include "render/RenderTypes.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
 
@@ -14,13 +15,6 @@
 namespace gs3d::platform { class Window; }
 
 namespace gs3d::render {
-
-struct ClearColor {
-    float r = 0.02f;
-    float g = 0.02f;
-    float b = 0.025f;
-    float a = 1.0f;
-};
 
 class VulkanRenderer {
 public:
@@ -124,7 +118,7 @@ private:
     const VulkanContext& context_;
     VulkanSwapchain& swapchain_;
 
-    // 交换链 pass 使用 VK_KHR_dynamic_rendering（instance 为 Vulkan 1.2，
+    // 交换链 pass 使用 VK_KHR_dynamic_rendering（instance 为 Vulkan 1.3，
     // 入口函数须经 vkGetDeviceProcAddr 以 KHR 后缀加载）。
     PFN_vkCmdBeginRenderingKHR cmd_begin_rendering_ = nullptr;
     PFN_vkCmdEndRenderingKHR cmd_end_rendering_ = nullptr;

@@ -9,6 +9,27 @@
 
 namespace gs3d::render {
 
+// 各平台的 Vulkan 能力 Profile。桌面窗口/交换链路径使用 1.3；
+// Android 离屏路径面向 Tab S7 等 Vulkan 1.1 设备，不能在创建 instance
+// 时无条件请求 1.3。
+inline constexpr std::uint32_t kDesktopVulkanApiVersion = VK_API_VERSION_1_3;
+inline constexpr std::uint32_t kAndroidVulkanApiVersion = VK_API_VERSION_1_1;
+
+#if defined(__ANDROID__)
+inline constexpr std::uint32_t kMinimumVulkanApiVersion =
+    kAndroidVulkanApiVersion;
+inline constexpr const char* kVulkanProfileName = "android-vulkan-1.1";
+#else
+inline constexpr std::uint32_t kMinimumVulkanApiVersion =
+    kDesktopVulkanApiVersion;
+inline constexpr const char* kVulkanProfileName = "desktop-vulkan-1.3";
+#endif
+
+// 查询 Vulkan loader 能力，并返回当前平台 Profile 实际请求的 Instance
+// API 版本。loader 不满足 Profile 时抛出异常；调用方需在 ABI 边界转换错误。
+[[nodiscard]]
+std::uint32_t negotiate_vulkan_instance_api_version();
+
 /*
  * Information about an enumerated Vulkan physical device,
  * including its hardware UUID for stable identification across

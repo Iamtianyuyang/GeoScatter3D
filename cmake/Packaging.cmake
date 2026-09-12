@@ -19,9 +19,9 @@ if(GS3D_PACKAGE_TARGETS)
 endif()
 
 if(WIN32)
-    # vcpkg's applocal deployment already places every dependent DLL
-    # (vulkan-1.dll, glfw3.dll, ...) next to the built executable. Ship
-    # exactly that set instead of re-resolving dependencies at install time.
+    # vcpkg's applocal deployment already places the Vulkan loader next to the
+    # built executable. Ship exactly that set instead of re-resolving
+    # dependencies at install time.
     if(TARGET GeoScatter3D)
         install(
             DIRECTORY $<TARGET_FILE_DIR:GeoScatter3D>/

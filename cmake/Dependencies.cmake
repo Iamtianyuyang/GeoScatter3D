@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
-# External Dependencies & Tooling
+# External Dependencies & Tooling (the active engine is headless and has no
+# GLFW dependency; window adapters may add one in a future frontend target.)
 # ---------------------------------------------------------------------------
 
 find_package(Vulkan REQUIRED)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/VulkanGpuInfo.hpp"
+#include "render/VulkanSurface.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -28,8 +29,10 @@ struct VulkanContextConfig {
     std::uint32_t application_version = VK_MAKE_VERSION(0, 1, 0);
     // "auto" or "uuid:<32-char-hex>"
     std::string preferred_gpu = "auto";
-    // 无窗口离屏内核：不创建 surface / swapchain 扩展，present=graphics。
+    // true 时创建无 surface 的离屏上下文；false 时必须提供
+    // surface_provider，不能静默退回离屏模式。
     bool headless = false;
+    VulkanSurfaceProvider surface_provider{};
 };
 
 class VulkanContext {
@@ -50,6 +53,9 @@ public:
 
     [[nodiscard]]
     VkSurfaceKHR surface() const noexcept;
+
+    [[nodiscard]]
+    bool headless() const noexcept;
 
     [[nodiscard]]
     VkPhysicalDevice physical_device() const noexcept;
@@ -106,8 +112,11 @@ private:
 
 private:
     void create_instance();
+    void create_surface();
     void pick_physical_device();
     void create_logical_device();
+
+    void cleanup() noexcept;
 
     [[nodiscard]]
     std::vector<const char*> required_instance_extensions() const;

@@ -1,8 +1,8 @@
 # GeoScatter3D
 
 GeoScatter3D 是一个面向大规模三维散点/点云数据的现代 Flutter 桌面端与 Android 平板可视化、分析系统。
-底层由 C++20 / Vulkan 1.3 核心引擎提供海量数据流式处理与离屏图形计算，前端经纯 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用**单进程 `gs3d_engine_*` 渲染内核**；JSON-RPC 仅作为标准控制面协议，不再启动独立 Viewer。
-Android 发布包声明必须具备 Vulkan 1.3；引擎不可用时不使用 Dart 软渲染替代。
+底层由 C++20 / Vulkan 核心引擎提供海量数据流式处理与离屏图形计算，桌面 Profile 为 Vulkan 1.3，Android Profile 最低为 Vulkan 1.1；前端经纯 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用**单进程 `gs3d_engine_*` 渲染内核**；JSON-RPC 仅作为标准控制面协议，不再启动独立 Viewer。
+Android 发布包声明最低具备 Vulkan 1.1；引擎不可用时不使用 Dart 软渲染替代。
 
 ---
 
@@ -12,7 +12,7 @@ Android 发布包声明必须具备 Vulkan 1.3；引擎不可用时不使用 Dar
 - **高并发离线切片**：CSV / DAT 文件高并发解析并切片生成自研 GS3D v2 显式小端二进制格式；
 - **三层 GPU 数据路径**：八叉树空间分级组织，支持全量点云、LOD 视锥金字塔与局部瓦片（Tile）三种渲染数据路径；
 - **动态显存水位控制**：基于屏幕空间的瓦片挑选算法、异步后台线程读取、带字节预算的 LRU 缓存与逐帧限流 GPU 上传；
-- **高性能离屏着色**：Vulkan 1.3 点渲染管线，支持动态点大小调节与高程 `z` / 属性 `value` 双通道色标平滑映射。
+- **高性能离屏着色**：按平台 Profile 运行的 Vulkan 点渲染管线，支持动态点大小调节与高程 `z` / 属性 `value` 双通道色标平滑映射。
 
 ### 2. 现代化 Flutter 桌面工作台
 - **欢迎页与工程工作流**：支持新建工程、本地海量点云数据浏览、离线切片构建进度追踪与最近工程管理；
@@ -141,7 +141,7 @@ GeoScatter3D/
 │   │   └── util/                             # 基础通用工具箱 (ThreadPool 线程池、分级日志、计时器)
 │   │
 │   ├── [引擎层 Engine]
-│   │   ├── render/                           # Vulkan 1.3 显存资源、Shader 管线、GPU 缓存与离屏绘制
+│   │   ├── render/                           # Vulkan Profile 显存资源、Shader 管线、GPU 缓存与离屏绘制
 │   │   ├── camera/                           # 3D 视口相机变换矩阵、局部事件映射与同步组 (CameraHub)
 │   │   ├── data/                             # GS3D v2、LOD 与瓦片数据集格式、索引、全量导出器 (Gs3dExporter)
 │   │   └── preprocess/                       # 离线高并发 CSV 切片、统计直方图与八叉树瓦片生成

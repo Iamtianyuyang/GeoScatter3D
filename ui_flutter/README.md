@@ -1,6 +1,6 @@
 # GeoScatter3D Flutter Desktop 与 Android 移动端前端
 
-GeoScatter3D 的 Windows 桌面端与 Android 平板/移动端应用前端，采用 Flutter 构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用原生 C++20 / Vulkan 1.3 引擎：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
+GeoScatter3D 的 Windows 桌面端与 Android 平板/移动端应用前端，采用 Flutter 构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用原生 C++20 / Vulkan 引擎（桌面 1.3、Android 最低 1.1）：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
 
 本项目遵循严格的架构解耦与工程护栏：**UI 纯只读投影或产生纯数据命令（UiActions）、图形句柄不穿透、临时中间产物收敛至 `tmp/`**。
 
@@ -145,7 +145,7 @@ flutter build apk --debug
 签名；未配置密钥时请使用上面的 Debug APK 做本地 smoke test。
 
 移动端工程写入应用持久沙盒，Android 不申请外部存储权限；由于渲染内核无软件兜底，
-Android Manifest 声明设备必须支持 Vulkan 1.3。原生
+Android Manifest 声明设备必须支持 Vulkan 1.1。原生
 `libgs3d_ffi.so` 与 SPIR-V 着色器随 APK 部署。正式发布 Android 包时，复制
 `android/key.properties.example` 为 `android/key.properties`，将生产 keystore 放在
 `android/` 目录（或填写绝对路径），再构建 AAB；`key.properties`、`.jks` 和

@@ -18,14 +18,13 @@
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
-#include "preprocess/CsvToGs3dConverter.hpp"
-#include "preprocess/CsvToGs3dConverter.hpp"
 #include <vulkan/vulkan.h>
 #include "control/JsonRpc.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "data/Gs3dExporter.hpp"
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dReader.hpp"
+#include "render/VulkanGpuInfo.hpp"
 #include "util/Log.hpp"
 
 #include <algorithm>
@@ -92,48 +91,43 @@ void refresh_gpu_devices() {
     g_state.active_gpu = -1;
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "GeoScatter3D device discovery";
-    app.apiVersion = VK_API_VERSION_1_2;
+    try {
+        app.apiVersion =
+            gs3d::render::negotiate_vulkan_instance_api_version();
+    } catch (...) {
+        return;
+    }
     VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     create.pApplicationInfo = &app;
     VkInstance instance = VK_NULL_HANDLE;
     if (vkCreateInstance(&create, nullptr, &instance) != VK_SUCCESS) return;
     try {
-        uint32_t count = 0;
-        if (vkEnumeratePhysicalDevices(instance, &count, nullptr) == VK_SUCCESS) {
-            std::vector<VkPhysicalDevice> devices(count);
-            if (vkEnumeratePhysicalDevices(instance, &count, devices.data()) == VK_SUCCESS) {
-                const auto preferred = gs3d::app::load_preferred_gpu_preference();
-                int best_score = -1;
-                for (const auto device : devices) {
-                    VkPhysicalDeviceIDProperties id{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
-                    VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-                    props.pNext = &id;
-#if defined(__ANDROID__)
-                    // Android NDK：vkGetPhysicalDeviceProperties2 需动态加载。
-                    {
-                        static auto props2_fn = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
-                            vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkGetPhysicalDeviceProperties2"));
-                        if (props2_fn) {
-                            props2_fn(device, &props);
-                        } else {
-                            vkGetPhysicalDeviceProperties(device, &props.properties);
-                        }
-                    }
-#else
-                    vkGetPhysicalDeviceProperties2(device, &props);
-#endif
-                    if (props.properties.apiVersion < VK_API_VERSION_1_2) continue;
-                    std::ostringstream uuid;
-                    uuid << "uuid:" << std::hex << std::setfill('0');
-                    for (const auto byte : id.deviceUUID) uuid << std::setw(2) << static_cast<unsigned>(byte);
-                    if (std::find(g_state.gpu_preferences.begin(), g_state.gpu_preferences.end(), uuid.str()) != g_state.gpu_preferences.end()) continue;
-                    const auto type = props.properties.deviceType;
-                    const bool discrete = type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-                    g_state.gpus.emplace_back(props.properties.deviceName, discrete ? "独立显卡" : type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? "集成显卡" : "其他 Vulkan 设备");
-                    g_state.gpu_preferences.push_back(uuid.str());
-                    const int score = preferred && *preferred == uuid.str() ? 100 : discrete ? 3 : 1;
-                    if (score > best_score) { best_score = score; g_state.active_gpu = static_cast<int32_t>(g_state.gpus.size() - 1); }
-                }
+        const auto preferred = gs3d::app::load_preferred_gpu_preference();
+        int best_score = -1;
+        for (const auto& gpu : gs3d::render::enumerate_gpus(
+                 instance,
+                 VK_NULL_HANDLE)) {
+            if (!gpu.suitable) {
+                continue;
+            }
+
+            const std::string uuid = "uuid:" + gpu.device_uuid;
+            g_state.gpus.emplace_back(
+                gpu.name,
+                gs3d::render::gpu_type_label(gpu.device_type)
+            );
+            g_state.gpu_preferences.push_back(uuid);
+
+            const bool preferred_match =
+                preferred.has_value() && *preferred == uuid;
+            const bool discrete =
+                gpu.device_type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+            const int score = preferred_match ? 100 : discrete ? 3 : 1;
+            if (score > best_score) {
+                best_score = score;
+                g_state.active_gpu = static_cast<int32_t>(
+                    g_state.gpus.size() - 1
+                );
             }
         }
     } catch (...) {

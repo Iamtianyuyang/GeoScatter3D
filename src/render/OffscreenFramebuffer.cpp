@@ -244,7 +244,8 @@ void OffscreenFramebuffer::create_color_image() {
     image_info.tiling        = VK_IMAGE_TILING_OPTIMAL;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     image_info.usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                             | VK_IMAGE_USAGE_SAMPLED_BIT;
+                             | VK_IMAGE_USAGE_SAMPLED_BIT
+                             | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     image_info.samples       = VK_SAMPLE_COUNT_1_BIT;
     image_info.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 

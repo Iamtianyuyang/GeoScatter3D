@@ -117,7 +117,7 @@ gs3d::render::VulkanGpuInfo make_gpu(
     g.device_type = type;
     g.suitable = suitable;
     g.device_local_memory_bytes = memory;
-    g.api_version = VK_API_VERSION_1_2;
+    g.api_version = gs3d::render::kMinimumVulkanApiVersion;
     return g;
 }
 

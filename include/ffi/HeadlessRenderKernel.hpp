@@ -42,6 +42,7 @@ public:
     void destroy() noexcept;
 
     int load_dataset(const std::string& path);
+    int load_sample();
     void unload_dataset() noexcept;
     [[nodiscard]] bool has_dataset() const noexcept { return has_dataset_; }
 

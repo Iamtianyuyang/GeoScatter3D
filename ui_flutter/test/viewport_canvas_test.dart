@@ -1,0 +1,63 @@
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
+import 'package:ui_flutter/src/widgets/viewport_canvas.dart';
+import 'support/fake_engine.dart';
+
+void main() {
+  testWidgets(
+    'displayed frame survives service replacement until widget rebuild',
+    (tester) async {
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder);
+      final picture = recorder.endRecording();
+      final source = picture.toImageSync(2, 2);
+      picture.dispose();
+      final engine = FakeEngine()..render = () async => source.clone();
+      final service = GeoScatter3dService(engine: engine);
+      addTearDown(() {
+        service.dispose();
+        source.dispose();
+      });
+      await service.initialize();
+      await service.renderNextFrame();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ViewportCanvas(service: service)),
+        ),
+      );
+      final displayed = tester
+          .widget<RawImage>(find.byKey(const ValueKey('viewport_frame')))
+          .image!;
+      await service.renderNextFrame();
+      // 服务旧帧已经释放，显示端独立引用仍必须可用。
+      final retained = displayed.clone();
+      retained.dispose();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
+    'native startup failure displays its cause, without a fake viewport',
+    (tester) async {
+      final service = GeoScatter3dService(
+        createEngine: () async =>
+            throw StateError('Vulkan unavailable fixture'),
+      );
+      addTearDown(service.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ViewportCanvas(service: service)),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('vulkan_engine_error')), findsOneWidget);
+      expect(find.textContaining('Vulkan unavailable fixture'), findsOneWidget);
+      expect(find.byKey(const ValueKey('viewport_frame')), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+}

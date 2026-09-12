@@ -28,6 +28,30 @@ void check_vk(VkResult result, const char* message) {
     }
 }
 
+// 回读的临时对象必须在每个异常出口释放；提交后先等待设备停止使用它们。
+struct ReadbackResources {
+    VkDevice device;
+    VkCommandPool pool;
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    void* mapped = nullptr;
+    bool pending = false;
+
+    ReadbackResources(VkDevice d, VkCommandPool p) : device(d), pool(p) {}
+    ReadbackResources(const ReadbackResources&) = delete;
+    ReadbackResources& operator=(const ReadbackResources&) = delete;
+    ~ReadbackResources() {
+        if (pending) vkDeviceWaitIdle(device);
+        if (mapped) vkUnmapMemory(device, memory);
+        if (fence) vkDestroyFence(device, fence, nullptr);
+        if (command) vkFreeCommandBuffers(device, pool, 1, &command);
+        if (buffer) vkDestroyBuffer(device, buffer, nullptr);
+        if (memory) vkFreeMemory(device, memory, nullptr);
+    }
+};
+
 }  // namespace
 
 HeadlessRenderKernel::~HeadlessRenderKernel() {
@@ -165,6 +189,77 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
     }
 }
 
+int HeadlessRenderKernel::load_sample() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_) {
+        set_error("load_sample: engine not created");
+        return -3;
+    }
+    try {
+        const int grid_size = 100;
+        const float range = 20.0f;
+        std::vector<gs3d::data::Gs3dPoint> pts;
+        pts.reserve(grid_size * grid_size);
+
+        float min_x = 1e9f, max_x = -1e9f;
+        float min_y = 1e9f, max_y = -1e9f;
+        float min_z = 1e9f, max_z = -1e9f;
+        float min_val = 1e9f, max_val = -1e9f;
+
+        for (int i = 0; i < grid_size; ++i) {
+            const float x = -range + (2.0f * range * i) / (grid_size - 1);
+            for (int j = 0; j < grid_size; ++j) {
+                const float y = -range + (2.0f * range * j) / (grid_size - 1);
+                const float r = std::sqrt(x * x + y * y);
+                const float z = 6.0f * std::sin(r) / (r * 0.4f + 1.0f);
+                const float val = z;
+
+                min_x = std::min(min_x, x);
+                max_x = std::max(max_x, x);
+                min_y = std::min(min_y, y);
+                max_y = std::max(max_y, y);
+                min_z = std::min(min_z, z);
+                max_z = std::max(max_z, z);
+                min_val = std::min(min_val, val);
+                max_val = std::max(max_val, val);
+
+                gs3d::data::Gs3dPoint p{};
+                p.x = x;
+                p.y = y;
+                p.z = z;
+                p.value = val;
+                pts.push_back(p);
+            }
+        }
+
+        gs3d::data::Gs3dHeader header{};
+        std::memcpy(header.magic, gs3d::data::GS3D_MAGIC, 4);
+        header.version = gs3d::data::GS3D_VERSION;
+        header.header_size = gs3d::data::GS3D_HEADER_V2_SIZE;
+        header.point_data_offset = header.header_size;
+        header.point_count = pts.size();
+        header.bbox_min_x = min_x; header.bbox_min_y = min_y; header.bbox_min_z = min_z;
+        header.bbox_max_x = max_x; header.bbox_max_y = max_y; header.bbox_max_z = max_z;
+        header.value_min = min_val;
+        header.value_max = max_val;
+
+        dataset_ = gs3d::data::Gs3dDataset(header, std::move(pts), "built-in://sample");
+        point_count_ = dataset_.point_count();
+        has_dataset_ = true;
+
+        const auto view = gs3d::data::make_point_data_view(dataset_.points());
+        cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
+
+        reset_camera_to_bounds_locked();
+        last_error_.clear();
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(ex.what());
+        has_dataset_ = false;
+        return -3;
+    }
+}
+
 void HeadlessRenderKernel::unload_dataset() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (context_) {
@@ -221,7 +316,8 @@ void HeadlessRenderKernel::reset_camera_to_bounds_locked() {
     camera_controller_.clear_orbit_pivot();
     camera_.set_viewport(config_.width, config_.height);
     camera_.set_perspective(45.0f, 1.0f, 100000.0f);
-    camera_.fit_bounds(bounds);
+    // fit_bounds 保留当前朝向；真正的复位必须恢复规范朝向。
+    camera_controller_.reset_view(camera_);
     update_push_from_camera();
 }
 
@@ -417,12 +513,13 @@ int HeadlessRenderKernel::render_rgba(
 
         update_push_from_camera();
 
+        ReadbackResources resources(context_->device(), command_pool_);
         VkCommandBufferAllocateInfo alloc{};
         alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         alloc.commandPool = command_pool_;
         alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         alloc.commandBufferCount = 1;
-        VkCommandBuffer cmd = VK_NULL_HANDLE;
+        auto& cmd = resources.command;
         check_vk(vkAllocateCommandBuffers(context_->device(), &alloc, &cmd),
                  "alloc cmd");
 
@@ -435,16 +532,24 @@ int HeadlessRenderKernel::render_rgba(
             pipeline_->draw(c, cloud_, extent, push_);
         });
 
-        // color image → staging (注意 layout：Offscreen 结束后为 SHADER_READ_ONLY)
-        VkMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        // 离屏 pass 结束于只读布局，回读前必须显式转换为传输源。
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = framebuffer_.color_image();
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.layerCount = 1;
         vkCmdPipelineBarrier(
             cmd,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0, 1, &barrier, 0, nullptr, 0, nullptr
+            0, 0, nullptr, 0, nullptr, 1, &barrier
         );
 
         // 临时 staging buffer
@@ -453,7 +558,7 @@ int HeadlessRenderKernel::render_rgba(
         buf_info.size = bytes;
         buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        VkBuffer staging = VK_NULL_HANDLE;
+        auto& staging = resources.buffer;
         check_vk(vkCreateBuffer(context_->device(), &buf_info, nullptr, &staging),
                  "create staging");
 
@@ -473,24 +578,21 @@ int HeadlessRenderKernel::render_rgba(
             }
         }
         if (mem_type == UINT32_MAX) {
-            vkDestroyBuffer(context_->device(), staging, nullptr);
             set_error("no host-visible memory for staging");
-            vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
             return -3;
         }
         VkMemoryAllocateInfo mem_alloc{};
         mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         mem_alloc.allocationSize = req.size;
         mem_alloc.memoryTypeIndex = mem_type;
-        VkDeviceMemory staging_mem = VK_NULL_HANDLE;
+        auto& staging_mem = resources.memory;
         if (vkAllocateMemory(context_->device(), &mem_alloc, nullptr, &staging_mem) !=
             VK_SUCCESS) {
-            vkDestroyBuffer(context_->device(), staging, nullptr);
-            vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
             set_error("staging alloc failed");
             return -3;
         }
-        vkBindBufferMemory(context_->device(), staging, staging_mem, 0);
+        check_vk(vkBindBufferMemory(context_->device(), staging, staging_mem, 0),
+                 "bind staging");
 
         VkBufferImageCopy region{};
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -499,17 +601,34 @@ int HeadlessRenderKernel::render_rgba(
         vkCmdCopyImageToBuffer(
             cmd,
             framebuffer_.color_image(),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             staging,
             1,
             &region
         );
 
+        // 保持 OffscreenFramebuffer 对外的只读布局约定。
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkMemoryBarrier host_barrier{};
+        host_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        host_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        host_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT,
+            0, 1, &host_barrier, 0, nullptr, 0, nullptr);
+
         check_vk(vkEndCommandBuffer(cmd), "end cmd");
 
         VkFenceCreateInfo fence_info{};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        VkFence fence = VK_NULL_HANDLE;
+        auto& fence = resources.fence;
         check_vk(vkCreateFence(context_->device(), &fence_info, nullptr, &fence),
                  "fence");
         VkSubmitInfo submit{};
@@ -518,23 +637,22 @@ int HeadlessRenderKernel::render_rgba(
         submit.pCommandBuffers = &cmd;
         check_vk(vkQueueSubmit(context_->graphics_queue(), 1, &submit, fence),
                  "submit");
-        vkWaitForFences(context_->device(), 1, &fence, VK_TRUE, UINT64_MAX);
-        vkDestroyFence(context_->device(), fence, nullptr);
+        resources.pending = true;
+        check_vk(vkWaitForFences(context_->device(), 1, &fence, VK_TRUE, UINT64_MAX),
+                 "wait readback");
+        resources.pending = false;
 
-        void* mapped = nullptr;
+        auto& mapped = resources.mapped;
         check_vk(vkMapMemory(context_->device(), staging_mem, 0, bytes, 0, &mapped),
                  "map");
         std::memcpy(out_rgba, mapped, bytes);
         vkUnmapMemory(context_->device(), staging_mem);
+        mapped = nullptr;
 
         last_rgba_.assign(out_rgba, out_rgba + bytes);
         last_w_ = w;
         last_h_ = h;
         track_frame_timing_locked();
-
-        vkDestroyBuffer(context_->device(), staging, nullptr);
-        vkFreeMemory(context_->device(), staging_mem, nullptr);
-        vkFreeCommandBuffers(context_->device(), command_pool_, 1, &cmd);
 
         last_error_.clear();
         return 0;

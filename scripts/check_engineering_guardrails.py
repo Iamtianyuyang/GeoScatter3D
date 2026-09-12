@@ -252,11 +252,11 @@ def check_android_release_contract(
             flags=re.DOTALL,
         )
         if vulkan_feature is None:
-            violations.append("Android manifest must require Vulkan 1.3")
+            violations.append("Android manifest must require Vulkan 1.1")
         else:
             feature = vulkan_feature.group(0)
-            if 'android:version="0x00403000"' not in feature:
-                violations.append("Android manifest Vulkan feature is below Vulkan 1.3")
+            if 'android:version="0x00401000"' not in feature:
+                violations.append("Android manifest Vulkan feature is below Vulkan 1.1")
             if 'android:required="true"' not in feature:
                 violations.append("Android Vulkan feature must be required")
 

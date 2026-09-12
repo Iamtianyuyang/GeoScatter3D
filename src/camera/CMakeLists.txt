@@ -2,12 +2,19 @@
 # Camera Subsystem: Interactive Viewport Camera, Box Select, and Mouse Rays
 # ---------------------------------------------------------------------------
 
-add_library(gs3d_viewport_camera STATIC
+add_library(gs3d_camera_core STATIC
     BoxSelect.cpp
     Camera.cpp
     CameraController.cpp
     CameraHub.cpp
     MouseRay.cpp
+)
+
+target_include_directories(gs3d_camera_core PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+add_library(gs3d_viewport_camera STATIC
     ${PROJECT_SOURCE_DIR}/src/app/systems/ViewportCameraSystem.cpp
 )
 
@@ -17,5 +24,5 @@ target_include_directories(gs3d_viewport_camera PUBLIC
 
 target_link_libraries(gs3d_viewport_camera PUBLIC
     gs3d_app_support
-    gs3d_render
+    gs3d_camera_core
 )

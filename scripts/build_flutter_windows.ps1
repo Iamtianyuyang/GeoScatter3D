@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Build and stage the complete native runtime, then optionally build Flutter.
 #>
@@ -60,9 +60,6 @@ Copy-Item -LiteralPath (Join-Path $FfiDir 'gs3d_ffi.dll') -Destination $StageDir
 foreach ($RuntimeDir in @($NativeDir, $FfiDir)) {
     Get-ChildItem -LiteralPath $RuntimeDir -Filter '*.dll' | Copy-Item -Destination $StageDir -Force
 }
-if (-not (Get-ChildItem -LiteralPath $StageDir -Filter 'glfw3*.dll')) {
-    throw 'GLFW runtime DLL was not deployed by the native build.'
-}
 foreach ($Directory in @('assets', 'config', 'examples')) {
     $SourceDir = if ($Directory -eq 'assets') { Join-Path $NativeDir $Directory } else { Join-Path $RepoRoot $Directory }
     $DestinationDir = Join-Path $StageDir $Directory
@@ -89,6 +86,11 @@ if ((Test-Path -LiteralPath $FlutterCache) -and (Test-Path -LiteralPath $Vswhere
     }
 }
 if ($NativeOnly) { return }
+
+# 代理拦截 localhost WebSocket 会导致 flutter_tester 和 flutter build 中断。
+# 强制绕过代理访问本地地址，不影响其他网络请求。
+if (-not $env:NO_PROXY) { $env:NO_PROXY = 'localhost,127.0.0.1' }
+elseif ($env:NO_PROXY -notmatch 'localhost') { $env:NO_PROXY = "localhost,127.0.0.1,$env:NO_PROXY" }
 
 Push-Location $FlutterDir
 try {

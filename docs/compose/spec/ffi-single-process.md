@@ -214,7 +214,7 @@ GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 - [x] T2a: `gs3d_engine_*` C-ABI 最小集（create_simple/load/render/destroy/snapshot）— acceptance: 符号导出且 e2e 通过 (covers: S2.2, S2.3)
 - [x] T2b: 渲染线程 + 命令队列 + 双缓冲（当前 API 同步阻塞调用线程）— acceptance: UI isolate 不阻塞；队列有界丢弃旧交互 (covers: S2.2)
 - [x] T3: 导出/清缓存/完整快照字段接入 engine — acceptance: export PLY、pick/measure 与 runtime.pick 对齐 (covers: S2.4, S2.6)
-- [x] T4: CMake 导出 engine 符号 + 部署 glfw3 同目录 — acceptance: openLibrary 可加载 (covers: S2.8)
+- [x] T4: CMake 导出 engine 符号并部署运行时依赖 — acceptance: openLibrary 可加载 (covers: S2.8)
 - [x] T5: Service 默认单进程路径 — acceptance: hasEngineApi 时不再 spawn Viewer (covers: S2.7)
 - [x] T6: Flutter 视口 RGBA 呈现与交互 — acceptance: 拖动后帧变化；pick 走 engine (covers: S2.5, S2.7)
 - [x] T7a: `GS3D_ENGINE_E2E=1` create→load→render 通过；flutter test 58 全绿；ctest 43/43 (covers: S2.9)

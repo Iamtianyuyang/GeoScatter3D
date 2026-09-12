@@ -22,23 +22,76 @@ void check_vk(VkResult result, const char* message) {
 
 } // namespace
 
+std::uint32_t negotiate_vulkan_instance_api_version() {
+    // vkEnumerateInstanceVersion 是 Vulkan 1.1 的 loader 入口；通过
+    // vkGetInstanceProcAddr 获取，避免依赖平台直接导出该符号。
+    std::uint32_t loader_api_version = VK_API_VERSION_1_0;
+    const auto enumerate_instance_version =
+        reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+            vkGetInstanceProcAddr(
+                VK_NULL_HANDLE,
+                "vkEnumerateInstanceVersion"
+            )
+        );
+
+    if (enumerate_instance_version != nullptr) {
+        const VkResult result =
+            enumerate_instance_version(&loader_api_version);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error(
+                "VulkanContext: failed to query Vulkan loader version"
+            );
+        }
+    }
+
+    if (loader_api_version < kMinimumVulkanApiVersion) {
+        throw std::runtime_error(
+            std::string("VulkanContext: loader does not satisfy ") +
+            kVulkanProfileName
+        );
+    }
+
+    // Profile 是最低稳定契约；不向 loader 请求高于当前平台 Profile 的
+    // 版本，避免 Android 驱动/系统组合因过高 apiVersion 创建失败。
+    return std::min(loader_api_version, kMinimumVulkanApiVersion);
+}
+
 VulkanContext::VulkanContext(VulkanContextConfig config)
     : config_(std::move(config))
 {
 #ifndef NDEBUG
-    config_.enable_validation_layers = config_.enable_validation_layers;
+    // Debug 构建保留调用方的 validation 请求。
 #else
     config_.enable_validation_layers = false;
 #endif
-    config_.headless = true;
 
-    create_instance();
-    // 无 surface：不调用 create_surface
-    pick_physical_device();
-    create_logical_device();
+    if (!config_.headless && !config_.surface_provider.valid()) {
+        throw std::invalid_argument(
+            "VulkanContext: a surface provider is required for a "
+            "non-headless context"
+        );
+    }
+
+    try {
+        create_instance();
+        if (!config_.headless) {
+            create_surface();
+        }
+        pick_physical_device();
+        create_logical_device();
+    } catch (...) {
+        // 构造函数抛异常时析构函数不会运行，因此必须在这里回收已创建的
+        // instance/surface/device，避免设备选择或 surface 创建失败泄漏。
+        cleanup();
+        throw;
+    }
 }
 
 VulkanContext::~VulkanContext() {
+    cleanup();
+}
+
+void VulkanContext::cleanup() noexcept {
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
         vkDestroyDevice(device_, nullptr);
@@ -62,6 +115,10 @@ VkInstance VulkanContext::instance() const noexcept {
 
 VkSurfaceKHR VulkanContext::surface() const noexcept {
     return surface_;
+}
+
+bool VulkanContext::headless() const noexcept {
+    return config_.headless;
 }
 
 VkPhysicalDevice VulkanContext::physical_device() const noexcept {
@@ -110,7 +167,7 @@ void VulkanContext::create_instance() {
     app_info.applicationVersion = config_.application_version;
     app_info.pEngineName = "GeoScatter3D";
     app_info.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-    app_info.apiVersion = VK_API_VERSION_1_2;
+    app_info.apiVersion = negotiate_vulkan_instance_api_version();
 
     const auto extensions = required_instance_extensions();
 
@@ -136,6 +193,34 @@ void VulkanContext::create_instance() {
         vkCreateInstance(&create_info, nullptr, &instance_),
         "VulkanContext: failed to create Vulkan instance"
     );
+}
+
+void VulkanContext::create_surface() {
+    if (config_.headless) {
+        return;
+    }
+
+    const auto& provider = config_.surface_provider;
+    if (!provider.valid()) {
+        throw std::logic_error(
+            "VulkanContext: cannot create a surface without a provider"
+        );
+    }
+
+    check_vk(
+        provider.create_surface(
+            instance_,
+            provider.user_data,
+            &surface_
+        ),
+        "VulkanContext: platform failed to create Vulkan surface"
+    );
+
+    if (surface_ == VK_NULL_HANDLE) {
+        throw std::runtime_error(
+            "VulkanContext: platform returned a null Vulkan surface"
+        );
+    }
 }
 
 void VulkanContext::pick_physical_device() {
@@ -299,8 +384,48 @@ void VulkanContext::create_logical_device() {
 }
 
 std::vector<const char*> VulkanContext::required_instance_extensions() const {
-    // 离屏内核：不依赖窗口系统扩展。
-    return {};
+    if (config_.headless) {
+        // 离屏内核：不依赖窗口系统扩展。
+        return {};
+    }
+
+    std::vector<const char*> extensions;
+    extensions.reserve(
+        1 + config_.surface_provider.instance_extension_count
+    );
+    extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+
+    const auto& provider = config_.surface_provider;
+    if (provider.instance_extension_count > 0 &&
+        provider.instance_extensions == nullptr) {
+        throw std::invalid_argument(
+            "VulkanContext: surface extension array is null"
+        );
+    }
+
+    for (std::uint32_t i = 0;
+         i < provider.instance_extension_count;
+         ++i) {
+        const char* extension = provider.instance_extensions[i];
+        if (extension == nullptr) {
+            throw std::invalid_argument(
+                "VulkanContext: surface extension name is null"
+            );
+        }
+
+        const bool duplicate = std::any_of(
+            extensions.begin(),
+            extensions.end(),
+            [extension](const char* existing) {
+                return std::strcmp(existing, extension) == 0;
+            }
+        );
+        if (!duplicate) {
+            extensions.push_back(extension);
+        }
+    }
+
+    return extensions;
 }
 
 bool VulkanContext::validation_layers_supported() const {
