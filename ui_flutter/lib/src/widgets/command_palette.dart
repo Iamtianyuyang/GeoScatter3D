@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 
 /// 全局交互式命令面板 (Command Palette - Ctrl+P)
@@ -144,6 +145,8 @@ class _CommandPaletteState extends State<CommandPalette> {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = context.gs3dFormFactor == Gs3dFormFactorSlot.compact;
+
     return KeyboardListener(
       focusNode: FocusNode(),
       onKeyEvent: _handleKeyDown,
@@ -162,9 +165,11 @@ class _CommandPaletteState extends State<CommandPalette> {
             alignment: const Alignment(0, -0.65),
             child: Container(
               key: const ValueKey('command_palette_modal'),
-              width: 620,
+              width: isCompact ? double.infinity : 620,
               constraints: const BoxConstraints(maxHeight: 460),
-              margin: const EdgeInsets.symmetric(horizontal: 20),
+              margin: EdgeInsets.symmetric(
+                horizontal: isCompact ? Gs3dTokens.space8 : Gs3dTokens.space20,
+              ),
               decoration: BoxDecoration(
                 color: Gs3dTokens.surface,
                 borderRadius: BorderRadius.circular(10),
@@ -190,7 +195,10 @@ class _CommandPaletteState extends State<CommandPalette> {
                       ),
                       decoration: const BoxDecoration(
                         border: Border(
-                          bottom: BorderSide(color: Gs3dTokens.border, width: 1),
+                          bottom: BorderSide(
+                            color: Gs3dTokens.border,
+                            width: 1,
+                          ),
                         ),
                         color: Gs3dTokens.surfaceSunken,
                       ),
@@ -334,27 +342,44 @@ class _CommandPaletteState extends State<CommandPalette> {
                                             children: [
                                               Row(
                                                 children: [
-                                                  Text(
-                                                    action.name,
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.w700
-                                                          : FontWeight.w600,
-                                                      color: isSelected
-                                                          ? Gs3dTokens.accent
-                                                          : Gs3dTokens.textPrimary,
+                                                  Expanded(
+                                                    child: Text(
+                                                      action.name,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: isSelected
+                                                            ? FontWeight.w700
+                                                            : FontWeight.w600,
+                                                        color: isSelected
+                                                            ? Gs3dTokens.accent
+                                                            : Gs3dTokens
+                                                                  .textPrimary,
+                                                      ),
                                                     ),
                                                   ),
-                                                  const Spacer(),
-                                                  Text(
-                                                    action.id,
-                                                    style: const TextStyle(
-                                                      fontSize: 10.5,
-                                                      color: Gs3dTokens.textSecondary,
-                                                      fontFamily: 'monospace',
+                                                  if (!isCompact) ...[
+                                                    const SizedBox(
+                                                      width: Gs3dTokens.space8,
                                                     ),
-                                                  ),
+                                                    Flexible(
+                                                      child: Text(
+                                                        action.id,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          fontSize: 10.5,
+                                                          color: Gs3dTokens
+                                                              .textSecondary,
+                                                          fontFamily:
+                                                              'monospace',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ],
                                               ),
                                               const SizedBox(height: 2),
@@ -398,23 +423,47 @@ class _CommandPaletteState extends State<CommandPalette> {
                           top: BorderSide(color: Gs3dTokens.border, width: 1),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          _buildFooterKeyHint('↑ / ↓', '导航选择'),
-                          const SizedBox(width: 14),
-                          _buildFooterKeyHint('Enter', '执行指令'),
-                          const SizedBox(width: 14),
-                          _buildFooterKeyHint('Esc', '关闭面板'),
-                          const Spacer(),
-                          Text(
-                            '共 ${_filteredActions.length} 项可用动作',
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: Gs3dTokens.textSecondary,
+                      child: isCompact
+                          ? Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '点按外部关闭',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      color: Gs3dTokens.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: Gs3dTokens.space8),
+                                Text(
+                                  '共 ${_filteredActions.length} 项',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Gs3dTokens.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                _buildFooterKeyHint('↑ / ↓', '导航选择'),
+                                const SizedBox(width: Gs3dTokens.space12),
+                                _buildFooterKeyHint('Enter', '执行指令'),
+                                const SizedBox(width: Gs3dTokens.space12),
+                                _buildFooterKeyHint('Esc', '关闭面板'),
+                                const Spacer(),
+                                Text(
+                                  '共 ${_filteredActions.length} 项可用动作',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Gs3dTokens.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),
@@ -493,7 +542,10 @@ class _CommandPaletteState extends State<CommandPalette> {
         const SizedBox(width: 4),
         Text(
           actionLabel,
-          style: const TextStyle(fontSize: 10.5, color: Gs3dTokens.textSecondary),
+          style: const TextStyle(
+            fontSize: 10.5,
+            color: Gs3dTokens.textSecondary,
+          ),
         ),
       ],
     );

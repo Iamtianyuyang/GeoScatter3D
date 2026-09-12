@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui_flutter/src/models/dataset_model.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/layouts/standard_workbench_layout.dart';
 import 'package:ui_flutter/src/panels/bottom_status_bar.dart';
@@ -486,6 +487,10 @@ void main() {
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
       });
+
+      service.setSummaryForTest(
+        const DatasetSummary(attributes: ['field_statics', 'elevation']),
+      );
 
       await tester.pumpWidget(
         MaterialApp(

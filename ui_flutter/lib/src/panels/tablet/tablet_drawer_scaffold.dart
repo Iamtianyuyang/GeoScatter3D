@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../theme/gs3d_form_factor.dart';
@@ -111,9 +113,7 @@ class _TabletDrawerScaffoldState extends State<TabletDrawerScaffold> {
 
         // 5. 首次进入手势引导卡（Gs3dMotion 弹簧入场，仅显示一次）。
         if (!TabletDrawerScaffold._gestureGuideSeen)
-          Positioned.fill(
-            child: _GestureGuide(onDismiss: _dismissGuide),
-          ),
+          Positioned.fill(child: _GestureGuide(onDismiss: _dismissGuide)),
       ],
     );
   }
@@ -189,12 +189,19 @@ class _DrawerPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final fromLeft = side == _DrawerSide.left;
     final a11y = context.gs3dA11y;
+    final availableWidth = MediaQuery.sizeOf(context).width -
+        Gs3dFormFactorDims.drawerHandleWidth -
+        Gs3dTokens.space8;
+    final panelWidth = math.max(
+      Gs3dTokens.space48,
+      math.min(Gs3dFormFactorDims.tabletDrawerWidth, availableWidth),
+    );
     return Positioned(
       left: fromLeft ? Gs3dFormFactorDims.drawerHandleWidth + 6 : null,
       right: fromLeft ? null : Gs3dFormFactorDims.drawerHandleWidth + 6,
       top: Gs3dTokens.space8,
       bottom: Gs3dTokens.bottomBarTouchHeight + Gs3dTokens.space12,
-      width: Gs3dFormFactorDims.tabletDrawerWidth,
+      width: panelWidth,
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
         duration: a11y.resolve(const Duration(milliseconds: 420)),
@@ -282,9 +289,14 @@ class _GestureGuide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final a11y = context.gs3dA11y;
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.opaque,
-      onTap: onDismiss,
+      // Android / Maestro 某些注入路径不会让外层 GestureDetector 赢得
+      // tap 竞技场；原始指针抬起事件不依赖竞技场，保证引导不再卡住视口。
+      // 部分 Release 模拟器在遮罩层上只稳定派发按下事件，因此按下时
+      // 也直接收敛为关闭动作；引导本身是一次性提示，不需要拖拽语义。
+      onPointerDown: (_) => onDismiss(),
+      onPointerUp: (_) => onDismiss(),
       child: Container(
         color: Gs3dMaterial.scrim,
         alignment: Alignment.center,

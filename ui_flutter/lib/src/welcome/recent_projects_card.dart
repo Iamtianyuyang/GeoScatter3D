@@ -9,9 +9,18 @@ import 'welcome_ui_keys.dart';
 
 /// 最近打开项目列表（表头 + 表格行 + 空态）。
 class RecentProjectsCard extends StatelessWidget {
-  const RecentProjectsCard({super.key, required this.service});
+  const RecentProjectsCard({
+    super.key,
+    required this.service,
+    this.projects,
+    this.emptyMessage = '暂无最近打开的项目记录',
+    this.showEmptyDemoButton = true,
+  });
 
   final GeoScatter3dService service;
+  final List<RecentProjectItem>? projects;
+  final String emptyMessage;
+  final bool showEmptyDemoButton;
 
   Future<void> _onOpenItem(BuildContext context, RecentProjectItem item) async {
     final res = await service.executeActionAsync('welcome.recent.open', {
@@ -81,7 +90,7 @@ class RecentProjectsCard extends StatelessWidget {
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final recentList = service.recentProjects;
+        final recentList = projects ?? service.recentProjects;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,8 +157,8 @@ class RecentProjectsCard extends StatelessWidget {
                       color: Gs3dTokens.borderStrong,
                     ),
                     const SizedBox(height: Gs3dTokens.space8 + 2),
-                    const Text(
-                      '暂无最近打开的项目记录',
+                    Text(
+                      emptyMessage,
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
@@ -161,23 +170,27 @@ class RecentProjectsCard extends StatelessWidget {
                       '可使用上方动作新建工程，或打开已有 .gs3d 数据包',
                       style: Gs3dType.caption,
                     ),
-                    const SizedBox(height: Gs3dTokens.space12 + 2),
-                    OutlinedButton.icon(
-                      key: WelcomeUiKeys.recentEmptyDemoButton,
-                      onPressed: () =>
-                          service.executeActionAsync('welcome.quick_demo'),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                      label: const Text('载入内置示例工区体验'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Gs3dTokens.accent,
-                        side: const BorderSide(color: Gs3dTokens.accentBorder),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            Gs3dTokens.radiusMd,
+                    if (showEmptyDemoButton) ...[
+                      const SizedBox(height: Gs3dTokens.space12 + 2),
+                      OutlinedButton.icon(
+                        key: WelcomeUiKeys.recentEmptyDemoButton,
+                        onPressed: () =>
+                            service.executeActionAsync('welcome.quick_demo'),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                        label: const Text('载入内置示例工区体验'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Gs3dTokens.accent,
+                          side: const BorderSide(
+                            color: Gs3dTokens.accentBorder,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              Gs3dTokens.radiusMd,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               )
@@ -317,19 +330,13 @@ class _RecentProjectRow extends StatelessWidget {
                 icon: Icon(
                   hovered ? Icons.close_rounded : Icons.more_horiz_rounded,
                   size: 15,
-                  color: hovered
-                      ? Gs3dTokens.danger
-                      : Gs3dTokens.textTertiary,
+                  color: hovered ? Gs3dTokens.danger : Gs3dTokens.textTertiary,
                 ),
                 tooltip: '移除记录',
                 padding: EdgeInsets.zero,
                 constraints: BoxConstraints(
-                  minWidth: touchTarget
-                      ? Gs3dTokens.hitTargetTouch
-                      : 26,
-                  minHeight: touchTarget
-                      ? Gs3dTokens.hitTargetTouch
-                      : 26,
+                  minWidth: touchTarget ? Gs3dTokens.hitTargetTouch : 26,
+                  minHeight: touchTarget ? Gs3dTokens.hitTargetTouch : 26,
                 ),
                 onPressed: onRemove,
               ),

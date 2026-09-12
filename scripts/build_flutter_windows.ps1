@@ -46,17 +46,16 @@ if (-not (Test-Path (Join-Path $BuildDir 'CMakeCache.txt'))) {
 }
 Write-Host "==> Building native runtime ($NativeConfig)..."
 Invoke-Checked $Cmake $ConfigureArgs
+ # Flutter 桌面端通过 gs3d_ffi 直连单进程引擎；不要再构建已移除的
+ # GeoScatter3D / GeoScatter3DPreprocess 双进程目标。
 Invoke-Checked $Cmake @('--build', $BuildDir, '--config', $NativeConfig, '--target',
-    'gs3d_ffi', 'GeoScatter3D', 'GeoScatter3DPreprocess', '--parallel')
+    'gs3d_ffi', '--parallel')
 
 # 原生资源只暂存到 tmp；Flutter CMake 的 install 步骤负责部署 Debug/Release。
 $StageDir = Join-Path $RepoRoot "tmp/flutter-native/$Config"
 $NativeDir = Join-Path $BuildDir "src/$NativeConfig"
 $FfiDir = Join-Path $BuildDir "src/ffi/$NativeConfig"
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
-foreach ($Exe in @('GeoScatter3D.exe', 'GeoScatter3DPreprocess.exe')) {
-    Copy-Item -LiteralPath (Join-Path $NativeDir $Exe) -Destination $StageDir -Force
-}
 Copy-Item -LiteralPath (Join-Path $FfiDir 'gs3d_ffi.dll') -Destination $StageDir -Force
 foreach ($RuntimeDir in @($NativeDir, $FfiDir)) {
     Get-ChildItem -LiteralPath $RuntimeDir -Filter '*.dll' | Copy-Item -Destination $StageDir -Force
@@ -98,7 +97,7 @@ try {
     Pop-Location
 }
 $RunnerDir = Join-Path $FlutterDir "build/windows/x64/runner/$Config"
-foreach ($File in @('ui_flutter.exe', 'gs3d_ffi.dll', 'GeoScatter3D.exe', 'GeoScatter3DPreprocess.exe', 'assets/shaders/point.vert.spv')) {
+foreach ($File in @('ui_flutter.exe', 'gs3d_ffi.dll', 'assets/shaders/point.vert.spv', 'assets/shaders/point.frag.spv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $RunnerDir $File))) {
         throw "Incomplete Flutter runtime: $File"
     }

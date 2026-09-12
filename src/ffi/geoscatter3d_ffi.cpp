@@ -14,8 +14,12 @@
 #endif
 
 #include "app/PreprocessedBundle.hpp"
+#include "app/AppConfig.hpp"
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
+#include "preprocess/CsvToGs3dConverter.hpp"
+#include "preprocess/CsvToGs3dConverter.hpp"
+#include "preprocess/CsvToGs3dConverter.hpp"
 #include <vulkan/vulkan.h>
 #include "control/JsonRpc.hpp"
 #include "data/Gs3dFormat.hpp"
@@ -104,7 +108,20 @@ void refresh_gpu_devices() {
                     VkPhysicalDeviceIDProperties id{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
                     VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
                     props.pNext = &id;
+#if defined(__ANDROID__)
+                    // Android NDK：vkGetPhysicalDeviceProperties2 需动态加载。
+                    {
+                        static auto props2_fn = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+                            vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkGetPhysicalDeviceProperties2"));
+                        if (props2_fn) {
+                            props2_fn(device, &props);
+                        } else {
+                            vkGetPhysicalDeviceProperties(device, &props.properties);
+                        }
+                    }
+#else
                     vkGetPhysicalDeviceProperties2(device, &props);
+#endif
                     if (props.properties.apiVersion < VK_API_VERSION_1_2) continue;
                     std::ostringstream uuid;
                     uuid << "uuid:" << std::hex << std::setfill('0');
@@ -1078,5 +1095,65 @@ int32_t gs3d_ffi_export_dataset(
 // ============================================================================
 // 18-19. 双进程 Viewer 桥已删除 — 运行时控制改走 gs3d_engine_* 单进程 API
 // ============================================================================
+
+// ============================================================================
+// 21. CSV 预处理（编译入 .so，供移动端免外部可执行文件）
+// ============================================================================
+
+namespace {
+std::string g_preprocess_error;
+
+const char* retain_preprocess_error(const std::string& msg) {
+    g_preprocess_error = msg;
+    return g_preprocess_error.c_str();
+}
+} // namespace
+
+int32_t gs3d_ffi_preprocess_csv(
+    const char* csv_path,
+    const char* output_gs3d_path,
+    uint32_t threads,
+    uint32_t finest_target_points
+) {
+    if (csv_path == nullptr || output_gs3d_path == nullptr) {
+        return retain_preprocess_error("null path"), -1;
+    }
+    try {
+        const auto csv = std::filesystem::u8path(csv_path);
+        const auto out = std::filesystem::u8path(output_gs3d_path);
+        if (!std::filesystem::exists(csv)) {
+            return retain_preprocess_error("CSV not found: " + std::string(csv_path)), -2;
+        }
+        // 确保输出目录存在。
+        if (out.has_parent_path()) {
+            std::filesystem::create_directories(out.parent_path());
+        }
+        gs3d::preprocess::CsvToGs3dConverter converter;
+        const auto [result, dataset] = converter.convert(csv, out);
+        if (result.written_points == 0) {
+            return retain_preprocess_error("no points written"), -3;
+        }
+        // 移动端没有独立的 GeoScatter3DPreprocess 进程；C-ABI 预处理必须
+        // 直接发布与桌面端相同的完整工程包（manifest + source.gs3d）。
+        gs3d::app::AppConfig config;
+        config.input_mode = "csv";
+        config.csv_input_path = csv;
+        config.csv_convert.num_threads = threads;
+        config.viewer.lod.finest_target_points = finest_target_points;
+        config.viewer.tile.enabled = false;
+        const auto bundle = gs3d::app::make_bundle_paths(out.parent_path());
+        gs3d::app::write_bundle_manifest(bundle, config, dataset);
+        retain_preprocess_error("");
+        return 0;
+    } catch (const std::exception& ex) {
+        return retain_preprocess_error(ex.what()), -3;
+    } catch (...) {
+        return retain_preprocess_error("unknown error"), -3;
+    }
+}
+
+const char* gs3d_ffi_get_last_error(void) {
+    return g_preprocess_error.c_str();
+}
 
 } // extern "C"

@@ -44,6 +44,19 @@ class _CenterViewportState extends State<CenterViewport> {
   Offset? _lastCentroid;
   double? _lastPinchSpan;
 
+  Future<void> _loadBuiltInSample() async {
+    final result = await widget.service.executeActionAsync(
+      'welcome.quick_demo',
+    );
+    if (!mounted || result['success'] == true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] as String? ?? '内置示例加载失败'),
+        backgroundColor: Gs3dTokens.danger,
+      ),
+    );
+  }
+
   /// 当前在屏指针是否为触屏多指（≥2）。
   bool get _isMultiTouch => _activePointers.length >= 2;
 
@@ -116,47 +129,69 @@ class _CenterViewportState extends State<CenterViewport> {
         PopupMenuItem(
           value: 'reset',
           height: Gs3dTokens.hitTargetTouch,
-          child: Row(children: [
-            Icon(Icons.refresh_rounded, size: 18, color: Gs3dTokens.accent),
-            SizedBox(width: 10),
-            Text('复位视角', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.refresh_rounded, size: 18, color: Gs3dTokens.accent),
+              SizedBox(width: 10),
+              Text('复位视角', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+            ],
+          ),
         ),
         PopupMenuItem(
           value: 'pan',
           height: Gs3dTokens.hitTargetTouch,
-          child: Row(children: [
-            Icon(Icons.open_with_rounded, size: 18, color: Gs3dTokens.textBody),
-            SizedBox(width: 10),
-            Text('平移模式', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-          ]),
+          child: Row(
+            children: [
+              Icon(
+                Icons.open_with_rounded,
+                size: 18,
+                color: Gs3dTokens.textBody,
+              ),
+              SizedBox(width: 10),
+              Text('平移模式', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+            ],
+          ),
         ),
         PopupMenuItem(
           value: 'measure',
           height: Gs3dTokens.hitTargetTouch,
-          child: Row(children: [
-            Icon(Icons.straighten_rounded, size: 18, color: Gs3dTokens.textBody),
-            SizedBox(width: 10),
-            Text('标尺测距', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-          ]),
+          child: Row(
+            children: [
+              Icon(
+                Icons.straighten_rounded,
+                size: 18,
+                color: Gs3dTokens.textBody,
+              ),
+              SizedBox(width: 10),
+              Text('标尺测距', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+            ],
+          ),
         ),
         PopupMenuItem(
           value: 'screenshot',
           height: Gs3dTokens.hitTargetTouch,
-          child: Row(children: [
-            Icon(Icons.camera_alt_outlined, size: 18, color: Gs3dTokens.textBody),
-            SizedBox(width: 10),
-            Text('视口截图', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-          ]),
+          child: Row(
+            children: [
+              Icon(
+                Icons.camera_alt_outlined,
+                size: 18,
+                color: Gs3dTokens.textBody,
+              ),
+              SizedBox(width: 10),
+              Text('视口截图', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+            ],
+          ),
         ),
         PopupMenuItem(
           value: 'command',
           height: Gs3dTokens.hitTargetTouch,
-          child: Row(children: [
-            Icon(Icons.terminal, size: 18, color: Gs3dTokens.accent),
-            SizedBox(width: 10),
-            Text('命令面板', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.terminal, size: 18, color: Gs3dTokens.accent),
+              SizedBox(width: 10),
+              Text('命令面板', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
+            ],
+          ),
         ),
       ],
     );
@@ -166,8 +201,9 @@ class _CenterViewportState extends State<CenterViewport> {
         service.executeAction('workbench.camera.reset');
         break;
       case 'pan':
-        service.executeAction('workbench.camera.set_panning',
-            {'panning': !service.isPanning});
+        service.executeAction('workbench.camera.set_panning', {
+          'panning': !service.isPanning,
+        });
         break;
       case 'measure':
         service.executeAction('workbench.measure.mode');
@@ -176,8 +212,9 @@ class _CenterViewportState extends State<CenterViewport> {
         service.executeAction('workbench.screenshot');
         break;
       case 'command':
-        service.executeAction('workbench.overlay.command_palette',
-            {'open': true});
+        service.executeAction('workbench.overlay.command_palette', {
+          'open': true,
+        });
         break;
     }
   }
@@ -240,7 +277,9 @@ class _CenterViewportState extends State<CenterViewport> {
         if (byteData != null) {
           final bytes = byteData.buffer.asUint8List();
           final dir = Directory(
-            '${Directory.current.path}${Platform.pathSeparator}tmp',
+            Platform.isAndroid
+                ? '${Directory.systemTemp.path}/GeoScatter3D/exports'
+                : '${Directory.current.path}${Platform.pathSeparator}tmp',
           );
           if (!dir.existsSync()) {
             dir.createSync(recursive: true);
@@ -248,11 +287,26 @@ class _CenterViewportState extends State<CenterViewport> {
           final fileName =
               '${dir.path}${Platform.pathSeparator}screenshot_$timestamp.png';
           final file = File(fileName);
-          await file.writeAsBytes(bytes);
+          await file.writeAsBytes(bytes, flush: true);
+          var saved = true;
+          if (Platform.isAndroid) {
+            saved = await widget.service.saveFileToDevice(
+              sourcePath: file.path,
+              suggestedName: 'geoscatter3d_viewport_$timestamp.png',
+              mimeType: 'image/png',
+            );
+            if (await file.exists()) await file.delete();
+          }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('视口截图已保存至: $fileName'),
+                content: Text(
+                  saved
+                      ? (Platform.isAndroid
+                            ? '视口截图已保存到系统选择的位置'
+                            : '视口截图已保存至: $fileName')
+                      : '视口截图已取消或保存失败',
+                ),
                 duration: const Duration(seconds: 3),
                 behavior: SnackBarBehavior.floating,
               ),
@@ -315,17 +369,25 @@ class _CenterViewportState extends State<CenterViewport> {
                   border: Border.all(color: Gs3dTokens.border),
                 ),
                 child: Row(
-                  children: const [
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      '主三维视口 (Vulkan/Canvas)',
-                      style: TextStyle(
+                      context.gs3dFormFactor == Gs3dFormFactorSlot.compact
+                          ? '主视口'
+                          : '主三维视口 (Vulkan/Canvas)',
+                      style: const TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                         color: Gs3dTokens.textPrimary,
                       ),
                     ),
-                    SizedBox(width: 8),
-                    Icon(Icons.close, size: 14, color: Gs3dTokens.textSecondary),
+                    const SizedBox(width: 8),
+                    if (context.gs3dFormFactor != Gs3dFormFactorSlot.compact)
+                      const Icon(
+                        Icons.close,
+                        size: 14,
+                        color: Gs3dTokens.textSecondary,
+                      ),
                   ],
                 ),
               ),
@@ -365,7 +427,11 @@ class _CenterViewportState extends State<CenterViewport> {
                 splashRadius: 16,
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.fullscreen, size: 18, color: Gs3dTokens.textSecondary),
+              const Icon(
+                Icons.fullscreen,
+                size: 18,
+                color: Gs3dTokens.textSecondary,
+              ),
             ],
           ),
         ),
@@ -449,8 +515,7 @@ class _CenterViewportState extends State<CenterViewport> {
                       },
                       child: Listener(
                         onPointerDown: (event) {
-                          final isTouch =
-                              event.kind == PointerDeviceKind.touch;
+                          final isTouch = event.kind == PointerDeviceKind.touch;
                           // 多指追踪：所有触屏指针按 pointerId 登记生命周期。
                           if (isTouch) {
                             _activePointers[event.pointer] =
@@ -461,9 +526,17 @@ class _CenterViewportState extends State<CenterViewport> {
                               return;
                             }
                           }
-                          final isPrimary = event.buttons == kPrimaryButton;
-                          final isPanBtn = event.buttons == kSecondaryButton ||
+                          final isPanBtn =
+                              event.buttons == kSecondaryButton ||
                               event.buttons == kTertiaryButton;
+                          // Android 单指触控事件在部分设备/注入器上 buttons=0；
+                          // 触控优先档的无次键指针也视为主拖拽，不能丢掉旋转起点。
+                          // expanded 桌面档仍严格按鼠标主键判断，保留右键平移语义。
+                          final isPrimary =
+                              !isPanBtn &&
+                              (isTouch ||
+                                  event.buttons == kPrimaryButton ||
+                                  context.isTouchPreferred);
                           if (!isPrimary && !isPanBtn) return;
                           _focusNode.requestFocus();
                           _dragPointer = event.pointer;
@@ -471,7 +544,8 @@ class _CenterViewportState extends State<CenterViewport> {
                           _dragForcePan = isPanBtn;
                           // Shift+左键仍为框选；右键/中键不进入框选；
                           // 触屏单指不进框选（长按菜单替代右键语义）。
-                          _dragIsBox = isPrimary &&
+                          _dragIsBox =
+                              isPrimary &&
                               !isTouch &&
                               HardwareKeyboard.instance.isShiftPressed;
                           if (_dragIsBox) {
@@ -647,8 +721,6 @@ class _CenterViewportState extends State<CenterViewport> {
                                     );
                                   }
                                 },
-                                // 轨道/平移由外层 Listener 的 onPointerMove 处理；
-                                // GestureDetector 只负责点击/双击/长按菜单。
                                 onLongPressStart: (details) {
                                   // 长按 = 触屏右键（上下文菜单）。
                                   _showTouchContextMenu(details.globalPosition);
@@ -661,92 +733,106 @@ class _CenterViewportState extends State<CenterViewport> {
                                       // 下一帧再同步，避免在 build 中直接入队命令
                                       WidgetsBinding.instance
                                           .addPostFrameCallback((_) {
-                                        if (mounted) {
-                                          widget.service
-                                              .syncNativeViewportSize(w, h);
-                                        }
-                                      });
+                                            if (mounted) {
+                                              widget.service
+                                                  .syncNativeViewportSize(w, h);
+                                            }
+                                          });
                                     }
                                     return Container(
                                       key: WorkbenchUiKeys.viewportCanvas,
                                       color: bgColor,
                                       // R3：引擎不可用时渲染显式降级错误卡片，
                                       // 禁止任何 Dart 绘制的点云替代物。
-                                      child: widget.service
-                                                  .engineAvailability ==
+                                      child:
+                                          widget.service.engineAvailability ==
                                               EngineAvailability.unavailable
                                           ? Center(
                                               child: ViewportEngineErrorCard(
-                                                reason: widget.service
+                                                reason: widget
+                                                    .service
                                                     .initializationError,
                                               ),
                                             )
                                           : nativeFrameImage != null
-                                      ? RepaintBoundary(
-                                          key: _viewportRepaintKey,
-                                          child: CustomPaint(
-                                            foregroundPainter:
-                                                NativeOverlayPainter(
-                                                  widget.service.nativeSnapshot,
-                                                  worldAxis:
-                                                      worldAxis || mapAxis,
-                                                  crosshair: crosshair,
-                                                  selectionStart:
-                                                      _boxSelectStart,
-                                                  selectionEnd:
-                                                      _boxSelectCurrent,
+                                          ? RepaintBoundary(
+                                              key: _viewportRepaintKey,
+                                              child: CustomPaint(
+                                                foregroundPainter:
+                                                    NativeOverlayPainter(
+                                                      widget
+                                                          .service
+                                                          .nativeSnapshot,
+                                                      worldAxis:
+                                                          worldAxis || mapAxis,
+                                                      crosshair: crosshair,
+                                                      selectionStart:
+                                                          _boxSelectStart,
+                                                      selectionEnd:
+                                                          _boxSelectCurrent,
+                                                    ),
+                                                child: RawImage(
+                                                  image: nativeFrameImage,
+                                                  fit: BoxFit.fill,
+                                                  filterQuality:
+                                                      FilterQuality.medium,
                                                 ),
-                                            child: RawImage(
-                                              image: nativeFrameImage,
-                                              fit: BoxFit.fill,
-                                              filterQuality: FilterQuality.medium,
-                                            ),
-                                          ),
-                                        )
-                                      : nativeViewportPng != null
-                                      ? RepaintBoundary(
-                                          key: _viewportRepaintKey,
-                                          child: CustomPaint(
-                                            foregroundPainter:
-                                                NativeOverlayPainter(
-                                                  widget.service.nativeSnapshot,
-                                                  worldAxis:
-                                                      worldAxis || mapAxis,
-                                                  crosshair: crosshair,
-                                                  selectionStart:
-                                                      _boxSelectStart,
-                                                  selectionEnd:
-                                                      _boxSelectCurrent,
+                                              ),
+                                            )
+                                          : nativeViewportPng != null
+                                          ? RepaintBoundary(
+                                              key: _viewportRepaintKey,
+                                              child: CustomPaint(
+                                                foregroundPainter:
+                                                    NativeOverlayPainter(
+                                                      widget
+                                                          .service
+                                                          .nativeSnapshot,
+                                                      worldAxis:
+                                                          worldAxis || mapAxis,
+                                                      crosshair: crosshair,
+                                                      selectionStart:
+                                                          _boxSelectStart,
+                                                      selectionEnd:
+                                                          _boxSelectCurrent,
+                                                    ),
+                                                child: Image.memory(
+                                                  nativeViewportPng,
+                                                  fit: BoxFit.fill,
+                                                  gaplessPlayback: true,
+                                                  filterQuality:
+                                                      FilterQuality.medium,
                                                 ),
-                                            child: Image.memory(
-                                              nativeViewportPng,
-                                              fit: BoxFit.fill,
-                                              gaplessPlayback: true,
-                                              filterQuality: FilterQuality.medium,
-                                            ),
-                                          ),
-                                        )
-                                      : RepaintBoundary(
-                                          key: _viewportRepaintKey,
-                                          child: ColoredBox(
-                                            color: const Color(0xFF0B1320),
-                                            child: Center(
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(24),
-                                                child: Text(
-                                                  widget.service.nativeViewerError ??
-                                                      'gs3d_engine 未就绪：请确认已部署 gs3d_ffi.dll 并成功载入工程',
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(
-                                                    color: Gs3dTokens.textSecondary,
-                                                    fontSize: 13,
-                                                    height: 1.5,
+                                              ),
+                                            )
+                                          : RepaintBoundary(
+                                              key: _viewportRepaintKey,
+                                              child: ColoredBox(
+                                                color: const Color(0xFF0B1320),
+                                                child: Center(
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          24,
+                                                        ),
+                                                    child: Text(
+                                                      widget
+                                                              .service
+                                                              .nativeViewerError ??
+                                                          'gs3d_engine 未就绪：请确认已部署 gs3d_ffi.dll 并成功载入工程',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: const TextStyle(
+                                                        color: Gs3dTokens
+                                                            .textSecondary,
+                                                        fontSize: 13,
+                                                        height: 1.5,
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
                                     );
                                   },
                                 ),
@@ -835,182 +921,203 @@ class _CenterViewportState extends State<CenterViewport> {
                   Positioned(
                     top: 10,
                     left: 14,
-                    child: Row(
-                      children: [
-                        _buildPillButton(
-                          key: WorkbenchUiKeys.viewportResetButton,
-                          label: '复位视角 R',
-                          onPressed: () => widget.service.resetCamera(),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildPillToggleButton(
-                          key: WorkbenchUiKeys.viewportPanToggle,
-                          label: '平移模式',
-                          active: isPanning,
-                          onChanged: (v) => widget.service.setPanning(v),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildPillToggleButton(
-                          key: WorkbenchUiKeys.viewportMapAxisToggle,
-                          label: '地图轴',
-                          active: mapAxis,
-                          onChanged: (v) =>
-                              widget.service.setViewportOverlays(mapAxis: v),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildPillToggleButton(
-                          key: WorkbenchUiKeys.viewportWorldAxisToggle,
-                          label: '世界轴',
-                          active: worldAxis,
-                          onChanged: (v) =>
-                              widget.service.setViewportOverlays(worldAxis: v),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildPillToggleButton(
-                          key: WorkbenchUiKeys.viewportCrosshairToggle,
-                          label: '十字准线',
-                          active: crosshair,
-                          onChanged: (v) =>
-                              widget.service.setViewportOverlays(crosshair: v),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildPillToggleButton(
-                          key: const ValueKey(
-                            'workbench.viewport.measure_toggle',
-                          ),
-                          label: '标尺测距',
-                          active: widget.service.isMeasurementMode,
-                          onChanged: (v) =>
-                              widget.service.setMeasurementMode(v),
-                        ),
-                        const SizedBox(width: 6),
-                        // 预设视角快速切换菜单
-                        PopupMenuButton<String>(
-                          key: WorkbenchUiKeys.viewportPresetViewDropdown,
-                          tooltip: '选择预设视角',
-                          onSelected: (view) =>
-                              widget.service.setCameraView(preset: view),
-                          itemBuilder: (ctx) => const [
-                            PopupMenuItem(
-                              value: 'top',
-                              child: Text('顶视图 (Top)'),
+                    right: context.gs3dFormFactor == Gs3dFormFactorSlot.compact
+                        ? Gs3dTokens.space12
+                        : null,
+                    child: LayoutBuilder(
+                      builder: (context, _) {
+                        final toolbar = Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildPillButton(
+                              key: WorkbenchUiKeys.viewportResetButton,
+                              label: '复位视角 R',
+                              onPressed: () => widget.service.resetCamera(),
                             ),
-                            PopupMenuItem(
-                              value: 'front',
-                              child: Text('前视图 (Front)'),
+                            const SizedBox(width: 6),
+                            _buildPillToggleButton(
+                              key: WorkbenchUiKeys.viewportPanToggle,
+                              label: '平移模式',
+                              active: isPanning,
+                              onChanged: (v) => widget.service.setPanning(v),
                             ),
-                            PopupMenuItem(
-                              value: 'side',
-                              child: Text('侧视图 (Side)'),
+                            const SizedBox(width: 6),
+                            _buildPillToggleButton(
+                              key: WorkbenchUiKeys.viewportMapAxisToggle,
+                              label: '地图轴',
+                              active: mapAxis,
+                              onChanged: (v) => widget.service
+                                  .setViewportOverlays(mapAxis: v),
                             ),
-                            PopupMenuItem(
-                              value: 'iso',
-                              child: Text('等轴测 (Iso)'),
+                            const SizedBox(width: 6),
+                            _buildPillToggleButton(
+                              key: WorkbenchUiKeys.viewportWorldAxisToggle,
+                              label: '世界轴',
+                              active: worldAxis,
+                              onChanged: (v) => widget.service
+                                  .setViewportOverlays(worldAxis: v),
+                            ),
+                            const SizedBox(width: 6),
+                            _buildPillToggleButton(
+                              key: WorkbenchUiKeys.viewportCrosshairToggle,
+                              label: '十字准线',
+                              active: crosshair,
+                              onChanged: (v) => widget.service
+                                  .setViewportOverlays(crosshair: v),
+                            ),
+                            const SizedBox(width: 6),
+                            _buildPillToggleButton(
+                              key: const ValueKey(
+                                'workbench.viewport.measure_toggle',
+                              ),
+                              label: '标尺测距',
+                              active: widget.service.isMeasurementMode,
+                              onChanged: (v) =>
+                                  widget.service.setMeasurementMode(v),
+                            ),
+                            const SizedBox(width: 6),
+                            // 预设视角快速切换菜单
+                            PopupMenuButton<String>(
+                              key: WorkbenchUiKeys.viewportPresetViewDropdown,
+                              tooltip: '选择预设视角',
+                              onSelected: (view) =>
+                                  widget.service.setCameraView(preset: view),
+                              itemBuilder: (ctx) => const [
+                                PopupMenuItem(
+                                  value: 'top',
+                                  child: Text('顶视图 (Top)'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'front',
+                                  child: Text('前视图 (Front)'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'side',
+                                  child: Text('侧视图 (Side)'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'iso',
+                                  child: Text('等轴测 (Iso)'),
+                                ),
+                              ],
+                              child: _touchHitArea(
+                                Container(
+                                  height: 28,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Gs3dTokens.surface.withAlpha(235),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: Gs3dTokens.border,
+                                    ),
+                                    boxShadow: Gs3dTokens.elevation1,
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.view_in_ar_rounded,
+                                        size: 14,
+                                        color: Gs3dTokens.accent,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        '视角',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Gs3dTokens.textBody,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_drop_down,
+                                        size: 16,
+                                        color: Gs3dTokens.textSecondary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _buildIconPill(
+                              key: WorkbenchUiKeys.viewportZoomInButton,
+                              icon: Icons.zoom_in,
+                              tooltip: '放大',
+                              onPressed: () {
+                                widget.service.setCameraView(
+                                  zoom: (widget.service.cameraZoom * 1.2).clamp(
+                                    0.05,
+                                    50.0,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            _buildIconPill(
+                              key: WorkbenchUiKeys.viewportZoomOutButton,
+                              icon: Icons.zoom_out,
+                              tooltip: '缩小',
+                              onPressed: () {
+                                widget.service.setCameraView(
+                                  zoom: (widget.service.cameraZoom / 1.2).clamp(
+                                    0.05,
+                                    50.0,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 6),
+                            _buildIconPill(
+                              key: WorkbenchUiKeys.viewportScreenshotButton,
+                              icon: Icons.camera_alt_outlined,
+                              tooltip: '视口截图',
+                              onPressed: () =>
+                                  widget.service.requestScreenshot(),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildIconPill(
+                              key: const ValueKey(
+                                'workbench.viewport.cmd_palette_btn',
+                              ),
+                              icon: Icons.terminal,
+                              tooltip: '命令面板 (Ctrl+P)',
+                              onPressed: () =>
+                                  widget.service.toggleCommandPalette(),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildIconPill(
+                              key: const ValueKey(
+                                'workbench.viewport.shortcuts_btn',
+                              ),
+                              icon: Icons.keyboard_alt_outlined,
+                              tooltip: '快捷键速查 (F1)',
+                              onPressed: () =>
+                                  widget.service.toggleShortcutOverlay(),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildIconPill(
+                              key: const ValueKey(
+                                'workbench.viewport.perf_btn',
+                              ),
+                              icon: Icons.speed_rounded,
+                              tooltip: '性能诊断',
+                              onPressed: () =>
+                                  widget.service.togglePerformancePanel(),
                             ),
                           ],
-                          child: _touchHitArea(
-                            Container(
-                              height: 28,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Gs3dTokens.surface.withAlpha(235),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Gs3dTokens.border),
-                                boxShadow: Gs3dTokens.elevation1,
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.view_in_ar_rounded,
-                                    size: 14,
-                                    color: Gs3dTokens.accent,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    '视角',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: Gs3dTokens.textBody,
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.arrow_drop_down,
-                                    size: 16,
-                                    color: Gs3dTokens.textSecondary,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildIconPill(
-                          key: WorkbenchUiKeys.viewportZoomInButton,
-                          icon: Icons.zoom_in,
-                          tooltip: '放大',
-                          onPressed: () {
-                            widget.service.setCameraView(
-                              zoom: (widget.service.cameraZoom * 1.2).clamp(
-                                0.05,
-                                50.0,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(width: 4),
-                        _buildIconPill(
-                          key: WorkbenchUiKeys.viewportZoomOutButton,
-                          icon: Icons.zoom_out,
-                          tooltip: '缩小',
-                          onPressed: () {
-                            widget.service.setCameraView(
-                              zoom: (widget.service.cameraZoom / 1.2).clamp(
-                                0.05,
-                                50.0,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(width: 6),
-                        _buildIconPill(
-                          key: WorkbenchUiKeys.viewportScreenshotButton,
-                          icon: Icons.camera_alt_outlined,
-                          tooltip: '视口截图',
-                          onPressed: () => widget.service.requestScreenshot(),
-                        ),
-                        const SizedBox(width: 4),
-                        _buildIconPill(
-                          key: const ValueKey(
-                            'workbench.viewport.cmd_palette_btn',
-                          ),
-                          icon: Icons.terminal,
-                          tooltip: '命令面板 (Ctrl+P)',
-                          onPressed: () =>
-                              widget.service.toggleCommandPalette(),
-                        ),
-                        const SizedBox(width: 4),
-                        _buildIconPill(
-                          key: const ValueKey(
-                            'workbench.viewport.shortcuts_btn',
-                          ),
-                          icon: Icons.keyboard_alt_outlined,
-                          tooltip: '快捷键速查 (F1)',
-                          onPressed: () =>
-                              widget.service.toggleShortcutOverlay(),
-                        ),
-                        const SizedBox(width: 4),
-                        _buildIconPill(
-                          key: const ValueKey('workbench.viewport.perf_btn'),
-                          icon: Icons.speed_rounded,
-                          tooltip: '性能诊断',
-                          onPressed: () =>
-                              widget.service.togglePerformancePanel(),
-                        ),
-                      ],
+                        );
+                        if (context.gs3dFormFactor ==
+                            Gs3dFormFactorSlot.compact) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: toolbar,
+                          );
+                        }
+                        return toolbar;
+                      },
                     ),
                   ),
 
@@ -1112,12 +1219,8 @@ class _CenterViewportState extends State<CenterViewport> {
                                 Icons.file_open_rounded,
                                 size: 16,
                               ),
-                              label: const Text('载入 sample-points.gs3d.bundle'),
-                              onPressed: () {
-                                widget.service.loadDataset(
-                                  'data/sample-points.gs3d.bundle',
-                                );
-                              },
+                              label: const Text('载入内置示例'),
+                              onPressed: _loadBuiltInSample,
                             ),
                           ],
                         ),

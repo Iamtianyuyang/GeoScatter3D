@@ -61,9 +61,13 @@ rebuild.cmd
 .serena/
 .pi/skills/multica*
 
+# Android production signing material (never commit private keys or passwords)
+/ui_flutter/android/key.properties
+/ui_flutter/android/*.jks
+/ui_flutter/android/*.keystore
+
 # 本机 AI 工具注入的 skills/plugins（非项目源码，各人环境不同，不得入库）
 /.agents/
 /.claude/
 /.pi/skills/
-
 

@@ -6,6 +6,25 @@ extension WelcomeBackend on GeoScatter3dService {
     String action, [
     Map<String, dynamic> params = const {},
   ]) async {
+    if (action == 'welcome.browse_file') {
+      final type = (params['type'] as String?) ?? 'point_cloud';
+      final picked = await pickFileAsync(type);
+      final success = picked != null && picked.isNotEmpty;
+      return {
+        'success': success,
+        'message': success ? '已选择文件: $picked' : '已取消或未选择文件',
+        'data': {'path': picked},
+      };
+    }
+    if (action == 'welcome.browse_folder') {
+      final picked = await pickFolderAsync();
+      final success = picked != null && picked.isNotEmpty;
+      return {
+        'success': success,
+        'message': success ? '已选择目录: $picked' : '已取消或未选择目录',
+        'data': {'path': picked},
+      };
+    }
     if (!const {
       'welcome.quick_demo',
       'welcome.new_project',
@@ -14,6 +33,9 @@ extension WelcomeBackend on GeoScatter3dService {
     }.contains(action)) {
       return executeAction(action, params);
     }
+    // 工程动作必须在持久化沙盒准备完毕后再解析 projectsDirectory；
+    // bootstrap 已在后台启动同一个 Future，这里只等待，不重复执行。
+    await GeoScatter3dService.prepareStorage();
     if (_welcomeBusy) return {'success': false, 'message': '请等待当前工程操作完成'};
     _welcomeBusy = true;
     _welcomeError = null;
@@ -95,7 +117,8 @@ extension WelcomeBackend on GeoScatter3dService {
             : '无法加载 gs3d_ffi 动态库，请使用 VS Code F5 构建并启动完整程序',
       );
     }
-    if (Platform.isWindows && !await startNativeRenderer()) {
+    if ((Platform.isWindows || Platform.isAndroid) &&
+        !await startNativeRenderer()) {
       throw StateError(_nativeViewerError ?? '原生渲染器未能启动');
     }
     if (_preprocessCancelled) {
@@ -114,9 +137,21 @@ extension WelcomeBackend on GeoScatter3dService {
     String voxelMode,
     int finestTargetPoints,
   ) async {
-    final source = GeoScatter3dService.resolveDatasetPath(input);
-    if (source == null || !await File(source).exists()) {
-      throw FormatException('数据源文件不存在: $input');
+    // Android：从 Flutter assets 提取示例 CSV 到临时目录。
+    final isAndroidBundledSample =
+        Platform.isAndroid &&
+        (input == 'examples/sample-points.csv' ||
+            input.endsWith('sample-points.csv'));
+    String source;
+    if (isAndroidBundledSample) {
+      // 先用稳定的逻辑路径完成工程名与冲突校验，避免校验失败时产生孤儿临时目录。
+      source = 'sample-points.csv';
+    } else {
+      final resolved = GeoScatter3dService.resolveDatasetPath(input);
+      if (resolved == null || !await File(resolved).exists()) {
+        throw FormatException('数据源文件不存在: $input');
+      }
+      source = resolved;
     }
     final lower = source.toLowerCase();
     if (!lower.endsWith('.csv') && !lower.endsWith('.dat')) {
@@ -150,17 +185,11 @@ extension WelcomeBackend on GeoScatter3dService {
     if (await target.exists()) {
       throw FormatException('同名工程已存在，请修改工程名称: ${target.path}');
     }
-    final executable = GeoScatter3dService.resolvePreprocessExecutable();
-    final config = GeoScatter3dService.resolveDatasetPath(
-      'config/sample-viewer.toml',
-    );
-    if (executable == null || config == null) {
-      throw const FormatException('缺少预处理程序或配置，请使用 F5 构建完整运行环境');
-    }
     final temporaryRoot = Directory('${target.parent.parent.path}/tmp');
     await temporaryRoot.create(recursive: true);
     final temporary = await temporaryRoot.createTemp('welcome-build-');
     final stagedBundle = '${temporary.path}/$projectName.gs3d.bundle';
+    String? extractedAssetPath;
     final watch = Stopwatch()..start();
     void progress(
       String stage,
@@ -182,7 +211,43 @@ extension WelcomeBackend on GeoScatter3dService {
     }
 
     try {
+      if (isAndroidBundledSample) {
+        extractedAssetPath = await _extractAssetToTemp(
+          'assets/data/sample-points.csv',
+        );
+        source = extractedAssetPath;
+      }
       progress('正在构建工程', '解析原始数据、生成 LOD 与空间分块…');
+      if (Platform.isAndroid) {
+        // Android：走 .so 内置预处理器（FFI），无需外部可执行文件。
+        await Directory(stagedBundle).create(recursive: true);
+        final gs3dPath = '$stagedBundle/source.gs3d';
+        final rc = preprocessCsv(
+          source,
+          gs3dPath,
+          threads: threads,
+          finestTargetPoints: finestTargetPoints,
+        );
+        if (rc != 0) {
+          throw FormatException('FFI 预处理失败(code $rc): $lastPreprocessError');
+        }
+        await target.parent.create(recursive: true);
+        if (await target.exists()) {
+          throw const FormatException('同名工程已存在，请重新命名');
+        }
+        await Directory(stagedBundle).rename(target.path);
+        progress('正在启动原生渲染器', target.path);
+        final result = await _openWelcomeDataset(target.path);
+        progress('完成', '工程构建完成，原生视口已载入', finished: true);
+        return result;
+      }
+      final executable = GeoScatter3dService.resolvePreprocessExecutable();
+      final config = GeoScatter3dService.resolveDatasetPath(
+        'config/sample-viewer.toml',
+      );
+      if (executable == null || config == null) {
+        throw const FormatException('缺少预处理程序或配置，请使用 F5 构建完整运行环境');
+      }
       final process = await Process.start(executable, [
         '--config',
         config,
@@ -244,6 +309,25 @@ extension WelcomeBackend on GeoScatter3dService {
       }
       // createTemp 返回的专属目录，始终位于项目 tmp 下。
       if (await temporary.exists()) await temporary.delete(recursive: true);
+      if (extractedAssetPath != null) {
+        final extractedFile = File(extractedAssetPath);
+        final extractedDirectory = extractedFile.parent;
+        if (await extractedFile.exists()) await extractedFile.delete();
+        if (await extractedDirectory.exists()) {
+          await extractedDirectory.delete(recursive: true);
+        }
+      }
     }
+  }
+
+  /// 从 Flutter assets 提取文件到应用临时目录，返回绝对路径。
+  static Future<String> _extractAssetToTemp(String assetPath) async {
+    final data = await rootBundle.load(assetPath);
+    final tempDir = Directory.systemTemp.createTempSync('gs3d_asset_');
+    final file = File('${tempDir.path}/${assetPath.split('/').last}');
+    await file.writeAsBytes(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
+    return file.path;
   }
 }

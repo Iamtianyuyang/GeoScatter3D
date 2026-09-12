@@ -5,22 +5,30 @@
 # at runtime). CPack wraps the same rules into a versioned archive.
 # ---------------------------------------------------------------------------
 
-install(TARGETS
-    GeoScatter3D
-    GeoScatter3DPreprocess
-    gs3d_groundtruth
-    RUNTIME DESTINATION .
-)
+# 目标由平台/前端形态决定：当前 Flutter 单进程架构默认只产出 FFI
+# 共享库；保留可选工具目标的安装能力，但不能让已裁剪掉的旧 Viewer
+# 阻塞 CMake 重新配置。
+set(GS3D_PACKAGE_TARGETS)
+foreach(_target IN ITEMS gs3d_ffi GeoScatter3D GeoScatter3DPreprocess gs3d_groundtruth)
+    if(TARGET ${_target})
+        list(APPEND GS3D_PACKAGE_TARGETS ${_target})
+    endif()
+endforeach()
+if(GS3D_PACKAGE_TARGETS)
+    install(TARGETS ${GS3D_PACKAGE_TARGETS} RUNTIME DESTINATION . LIBRARY DESTINATION . ARCHIVE DESTINATION .)
+endif()
 
 if(WIN32)
     # vcpkg's applocal deployment already places every dependent DLL
     # (vulkan-1.dll, glfw3.dll, ...) next to the built executable. Ship
     # exactly that set instead of re-resolving dependencies at install time.
-    install(
-        DIRECTORY $<TARGET_FILE_DIR:GeoScatter3D>/
-        DESTINATION .
-        FILES_MATCHING PATTERN "*.dll"
-    )
+    if(TARGET GeoScatter3D)
+        install(
+            DIRECTORY $<TARGET_FILE_DIR:GeoScatter3D>/
+            DESTINATION .
+            FILES_MATCHING PATTERN "*.dll"
+        )
+    endif()
 endif()
 
 if(MSVC)

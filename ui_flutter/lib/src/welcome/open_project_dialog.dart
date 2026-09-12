@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import 'welcome_ui_keys.dart';
 
@@ -18,6 +21,7 @@ class OpenProjectDialog extends StatefulWidget {
 class _OpenProjectDialogState extends State<OpenProjectDialog> {
   late final TextEditingController _pathController;
   String? _errorMessage;
+  bool _isPicking = false;
   bool get _isLoading => widget.service.welcomeBusy;
 
   @override
@@ -40,24 +44,32 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
     if (mounted) setState(() {});
   }
 
-  void _browseFile() {
-    final picked = widget.service.pickFile('open_project');
+  Future<void> _browseFile() async {
+    if (_isPicking) return;
+    setState(() => _isPicking = true);
+    final picked = await widget.service.pickFileAsync('open_project');
+    if (!mounted) return;
     if (picked != null && picked.isNotEmpty) {
       setState(() {
         _pathController.text = picked;
         _errorMessage = null;
       });
     }
+    setState(() => _isPicking = false);
   }
 
-  void _browseFolder() {
-    final picked = widget.service.pickFolder();
+  Future<void> _browseFolder() async {
+    if (_isPicking) return;
+    setState(() => _isPicking = true);
+    final picked = await widget.service.pickFolderAsync();
+    if (!mounted) return;
     if (picked != null && picked.isNotEmpty) {
       setState(() {
         _pathController.text = picked;
         _errorMessage = null;
       });
     }
+    setState(() => _isPicking = false);
   }
 
   Future<void> _submit() async {
@@ -82,42 +94,38 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isLoading,
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
-        ),
-        backgroundColor: Gs3dTokens.surface,
-        surfaceTintColor: Colors.transparent,
-        child: Container(
-          width: 520,
-          padding: const EdgeInsets.all(Gs3dTokens.space24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const _DialogIcon(icon: Icons.folder_open_rounded),
-                  const SizedBox(width: Gs3dTokens.space12),
-                  const Text('打开工程数据包', style: Gs3dType.title2),
-                  const Spacer(),
-                  IconButton(
-                    key: WelcomeUiKeys.openProjectDialogCloseButton,
-                    icon: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Gs3dTokens.textSecondary,
-                    ),
-                    onPressed: _isLoading
-                        ? null
-                        : () => Navigator.of(context).pop(),
+    // compact/tablet 档由 Gs3dResponsiveDialog 的 bottom sheet 提供外壳与标题，
+    // 内容组件不再自带 Dialog 包装，避免双层嵌套。
+    final inSheet = context.gs3dFormFactor != Gs3dFormFactorSlot.expanded;
+    final body = Container(
+      width: inSheet ? null : 520,
+      padding: const EdgeInsets.all(Gs3dTokens.space24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!inSheet)
+            Row(
+              children: [
+                const _DialogIcon(icon: Icons.folder_open_rounded),
+                const SizedBox(width: Gs3dTokens.space12),
+                const Text('打开工程数据包', style: Gs3dType.title2),
+                const Spacer(),
+                IconButton(
+                  key: WelcomeUiKeys.openProjectDialogCloseButton,
+                  icon: const Icon(
+                    Icons.close,
+                    size: 18,
+                    color: Gs3dTokens.textSecondary,
                   ),
-                ],
-              ),
-              const SizedBox(height: Gs3dTokens.space16),
-              Text(
+                  onPressed: _isLoading
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          if (!inSheet) const SizedBox(height: Gs3dTokens.space16),
+          Text(
                 '支持 GS3D v2 单体二进制文件 (.gs3d) 或金字塔多分辨率工区包 (.gs3d.bundle 目录)：',
                 style: Gs3dType.body.copyWith(color: Gs3dTokens.textSecondary),
               ),
@@ -148,50 +156,53 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               ),
               const SizedBox(height: Gs3dTokens.space12),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: WelcomeUiKeys.openProjectDialogBrowseFileButton,
-                      icon: const Icon(
-                        Icons.file_open_outlined,
-                        size: 15,
-                        color: Gs3dTokens.accent,
+              // Windows 使用 C-ABI 选择器，Android 使用系统 SAF。
+              if (Platform.isWindows || Platform.isAndroid) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: WelcomeUiKeys.openProjectDialogBrowseFileButton,
+                        icon: const Icon(
+                          Icons.file_open_outlined,
+                          size: 15,
+                          color: Gs3dTokens.accent,
+                        ),
+                        label: Text(
+                          _isPicking ? '正在选择…' : '选择文件 (.gs3d)',
+                          style: TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Gs3dTokens.border),
+                        ),
+                        onPressed: _isPicking ? null : _browseFile,
                       ),
-                      label: const Text(
-                        '选择文件 (.gs3d)',
-                        style: TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Gs3dTokens.border),
-                      ),
-                      onPressed: _browseFile,
                     ),
-                  ),
-                  const SizedBox(width: Gs3dTokens.space8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: WelcomeUiKeys.openProjectDialogBrowseFolderButton,
-                      icon: const Icon(
-                        Icons.folder_open_rounded,
-                        size: 15,
-                        color: Gs3dTokens.accent,
+                    const SizedBox(width: Gs3dTokens.space8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: WelcomeUiKeys.openProjectDialogBrowseFolderButton,
+                        icon: const Icon(
+                          Icons.folder_open_rounded,
+                          size: 15,
+                          color: Gs3dTokens.accent,
+                        ),
+                        label: Text(
+                          _isPicking ? '正在选择…' : '选择工区包 (.gs3d.bundle)',
+                          style: TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Gs3dTokens.border),
+                        ),
+                        onPressed: _isPicking ? null : _browseFolder,
                       ),
-                      label: const Text(
-                        '选择工区包 (.gs3d.bundle)',
-                        style: TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Gs3dTokens.border),
-                      ),
-                      onPressed: _browseFolder,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: Gs3dTokens.space12),
+                  ],
+                ),
+                const SizedBox(height: Gs3dTokens.space12),
+              ],
 
               Row(
                 children: [
@@ -261,8 +272,20 @@ class _OpenProjectDialogState extends State<OpenProjectDialog> {
               ),
             ],
           ),
-        ),
-      ),
+        );
+
+    return PopScope(
+      canPop: !_isLoading,
+      child: inSheet
+          ? body
+          : Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
+              ),
+              backgroundColor: Gs3dTokens.surface,
+              surfaceTintColor: Colors.transparent,
+              child: body,
+            ),
     );
   }
 

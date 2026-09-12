@@ -12,10 +12,7 @@ import 'export_dialog.dart';
 class TopMenuBar extends StatelessWidget {
   final GeoScatter3dService service;
 
-  const TopMenuBar({
-    super.key,
-    required this.service,
-  });
+  const TopMenuBar({super.key, required this.service});
 
   // 对话框弹出统一收敛到 Gs3dResponsiveDialog：expanded 档保持居中模态
   // （桌面行为零变化），compact/tablet 档自动落底部 sheet（拇指可达）。
@@ -51,6 +48,17 @@ class TopMenuBar extends StatelessWidget {
     );
   }
 
+  Future<void> _loadBuiltInSample(BuildContext context) async {
+    final result = await service.executeActionAsync('welcome.quick_demo');
+    if (!context.mounted || result['success'] == true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] as String? ?? '内置示例加载失败'),
+        backgroundColor: Gs3dTokens.danger,
+      ),
+    );
+  }
+
   void _showDocsDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -61,7 +69,10 @@ class TopMenuBar extends StatelessWidget {
           children: [
             Icon(Icons.menu_book_rounded, color: Gs3dTokens.accent, size: 22),
             SizedBox(width: 10),
-            Text('操作指南与技术标准', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text(
+              '操作指南与技术标准',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: const SizedBox(
@@ -72,28 +83,48 @@ class TopMenuBar extends StatelessWidget {
             children: [
               Text(
                 '1. 数据格式规范 (GS3D v2)',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Gs3dTokens.textPrimary),
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Gs3dTokens.textPrimary,
+                ),
               ),
               SizedBox(height: 4),
               Text(
                 '• 强制采用 GS3D v2 显式小端标准，支持单体二进制 (.gs3d) 与分层工区包 (.gs3d.bundle)。\n'
                 '• 数据块严格按 point_stride 校验内存对齐区间，杜绝格式损坏与静默容忍。',
-                style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody, height: 1.5),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Gs3dTokens.textBody,
+                  height: 1.5,
+                ),
               ),
               SizedBox(height: 12),
               Text(
                 '2. 空间索引与海量点云渲染',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Gs3dTokens.textPrimary),
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Gs3dTokens.textPrimary,
+                ),
               ),
               SizedBox(height: 4),
               Text(
                 '• 采用动态多级八叉树 LOD 金字塔，按需流式加载与视锥裁剪，毫秒级响应上亿散点。',
-                style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody, height: 1.5),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Gs3dTokens.textBody,
+                  height: 1.5,
+                ),
               ),
               SizedBox(height: 12),
               Text(
                 '3. 视口交互控制快捷指南',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Gs3dTokens.textPrimary),
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Gs3dTokens.textPrimary,
+                ),
               ),
               SizedBox(height: 4),
               Text(
@@ -101,7 +132,11 @@ class TopMenuBar extends StatelessWidget {
                 '• 平移视口：鼠标右键/中键按住拖拽，或开启平移模式后左键拖拽\n'
                 '• 缩放视野：滚动鼠标滚轮 或 点击放大/缩小按钮\n'
                 '• 复位视角：快捷工具栏「复位视角 R」',
-                style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody, height: 1.5),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Gs3dTokens.textBody,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -130,9 +165,16 @@ class TopMenuBar extends StatelessWidget {
         backgroundColor: Gs3dTokens.surface,
         title: const Row(
           children: [
-            Icon(Icons.scatter_plot_rounded, color: Gs3dTokens.accent, size: 24),
+            Icon(
+              Icons.scatter_plot_rounded,
+              color: Gs3dTokens.accent,
+              size: 24,
+            ),
             SizedBox(width: 10),
-            Text('关于 GeoScatter3D', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text(
+              '关于 GeoScatter3D',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: Column(
@@ -141,7 +183,11 @@ class TopMenuBar extends StatelessWidget {
           children: [
             const Text(
               'GeoScatter3D 三维散点数据流式可视化系统',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Gs3dTokens.textPrimary),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Gs3dTokens.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -149,10 +195,20 @@ class TopMenuBar extends StatelessWidget {
               '• GS3D v2 显式小端标准与八叉树 LOD 金字塔\n'
               '• C-ABI 高性能 FFI 桥接，亿级点云零开销流式加载\n'
               '• 全异步多线程解耦与 AI JSON-RPC 控制面',
-              style: TextStyle(fontSize: 13, color: Gs3dTokens.textBody, height: 1.6),
+              style: TextStyle(
+                fontSize: 13,
+                color: Gs3dTokens.textBody,
+                height: 1.6,
+              ),
             ),
             const SizedBox(height: 12),
-            Text('引擎内核版本: ${service.engineVersion}', style: const TextStyle(fontSize: 12, color: Gs3dTokens.textSecondary)),
+            Text(
+              '引擎内核版本: ${service.engineVersion}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Gs3dTokens.textSecondary,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -184,9 +240,7 @@ class TopMenuBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: const BoxDecoration(
         color: Gs3dTokens.surfaceHeader,
-        border: Border(
-          bottom: BorderSide(color: Gs3dTokens.hairline),
-        ),
+        border: Border(bottom: BorderSide(color: Gs3dTokens.hairline)),
       ),
       child: Row(
         children: [
@@ -207,34 +261,18 @@ class TopMenuBar extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.home_outlined, size: 17, color: Gs3dTokens.accent),
+                  const Icon(
+                    Icons.home_outlined,
+                    size: 17,
+                    color: Gs3dTokens.accent,
+                  ),
                   const SizedBox(width: 6),
-                  RichText(
-                    // `RichText` 不像 `Text` 那样合并环境的 `DefaultTextStyle`，
-                    // 因此每个 span 都要显式带上设计字体族（否则品牌字标会退回
-                    // 系统默认字体，预览中直接渲染成方块）。
-                    text: const TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'GeoScatter ',
-                          style: TextStyle(
-                            fontFamily: Gs3dType.fontFamily,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Gs3dTokens.textPrimary,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '3D',
-                          style: TextStyle(
-                            fontFamily: Gs3dType.fontFamily,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Gs3dTokens.accent,
-                          ),
-                        ),
-                      ],
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('GeoScatter', style: Gs3dType.brand),
+                      const Text(' 3D', style: Gs3dType.brandAccent),
+                    ],
                   ),
                 ],
               ),
@@ -326,14 +364,26 @@ class TopMenuBar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.view_quilt_outlined, size: 14, color: Gs3dTokens.accent),
+                  const Icon(
+                    Icons.view_quilt_outlined,
+                    size: 14,
+                    color: Gs3dTokens.accent,
+                  ),
                   const SizedBox(width: 5),
                   Text(
                     service.layoutMode.displayName,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Gs3dTokens.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Gs3dTokens.textPrimary,
+                    ),
                   ),
                   const SizedBox(width: 4),
-                  const Icon(Icons.arrow_drop_down_rounded, size: 16, color: Gs3dTokens.textSecondary),
+                  const Icon(
+                    Icons.arrow_drop_down_rounded,
+                    size: 16,
+                    color: Gs3dTokens.textSecondary,
+                  ),
                 ],
               ),
             ),
@@ -348,9 +398,12 @@ class TopMenuBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             ),
             icon: const Icon(Icons.folder_open_rounded, size: 16),
-            label: const Text('载入示例', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            label: const Text(
+              '载入示例',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
             onPressed: () {
-              service.loadDataset('data/sample-points.gs3d.bundle');
+              _loadBuiltInSample(context);
             },
           ),
         ],
@@ -372,7 +425,7 @@ class TopMenuBar extends StatelessWidget {
             _showOpenProjectDialog(context);
             break;
           case 'load_sample':
-            service.loadDataset('data/sample-points.gs3d.bundle');
+            _loadBuiltInSample(context);
             break;
           case 'open_native':
             service.openViaNativeFileMenu();
@@ -411,7 +464,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'open_project',
           child: Row(
             children: [
-              Icon(Icons.folder_open_rounded, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.folder_open_rounded,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('打开工程...'),
             ],
@@ -422,7 +479,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'open_native',
           child: Row(
             children: [
-              Icon(Icons.file_open_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.file_open_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生打开数据文件'),
             ],
@@ -433,7 +494,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'open_bundle_native',
           child: Row(
             children: [
-              Icon(Icons.folder_zip_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.folder_zip_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生打开工区包'),
             ],
@@ -444,7 +509,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'load_sample',
           child: Row(
             children: [
-              Icon(Icons.scatter_plot_rounded, size: 16, color: Gs3dTokens.success),
+              Icon(
+                Icons.scatter_plot_rounded,
+                size: 16,
+                color: Gs3dTokens.success,
+              ),
               SizedBox(width: 8),
               Text('载入示例数据'),
             ],
@@ -456,7 +525,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'screenshot',
           child: Row(
             children: [
-              Icon(Icons.camera_alt_outlined, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.camera_alt_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('视口截图'),
             ],
@@ -478,7 +551,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'export',
           child: Row(
             children: [
-              Icon(Icons.file_download_outlined, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.file_download_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('导出点云 (PLY/CSV)...'),
             ],
@@ -490,7 +567,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'close',
           child: Row(
             children: [
-              Icon(Icons.home_outlined, size: 16, color: Gs3dTokens.textSecondary),
+              Icon(
+                Icons.home_outlined,
+                size: 16,
+                color: Gs3dTokens.textSecondary,
+              ),
               SizedBox(width: 8),
               Text('返回欢迎页'),
             ],
@@ -571,7 +652,9 @@ class TopMenuBar extends StatelessWidget {
                     ? Icons.link_rounded
                     : Icons.link_off_rounded,
                 size: 16,
-                color: service.cameraLinked ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.cameraLinked
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               Text(service.cameraLinked ? '关闭相机联动' : '开启相机联动'),
@@ -583,7 +666,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'new_view',
           child: const Row(
             children: [
-              Icon(Icons.add_to_photos_outlined, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.add_to_photos_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('新建原生视图'),
             ],
@@ -606,7 +693,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'theme_next',
           child: Row(
             children: [
-              const Icon(Icons.palette_outlined, size: 16, color: Gs3dTokens.accent),
+              const Icon(
+                Icons.palette_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               const SizedBox(width: 8),
               Text('切换主题 (${service.themeName})'),
             ],
@@ -618,7 +709,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'top',
           child: Row(
             children: [
-              Icon(Icons.border_top_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.border_top_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('顶视图 (Top)'),
             ],
@@ -629,7 +724,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'front',
           child: Row(
             children: [
-              Icon(Icons.stay_current_portrait_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.stay_current_portrait_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('前视图 (Front)'),
             ],
@@ -640,7 +739,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'side',
           child: Row(
             children: [
-              Icon(Icons.stay_current_landscape_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.stay_current_landscape_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('侧视图 (Side)'),
             ],
@@ -651,7 +754,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'iso',
           child: Row(
             children: [
-              Icon(Icons.view_in_ar_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.view_in_ar_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('等轴测 (Isometric)'),
             ],
@@ -664,9 +771,13 @@ class TopMenuBar extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                service.showMapAxis ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                service.showMapAxis
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
                 size: 16,
-                color: service.showMapAxis ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.showMapAxis
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               const Text('显示地图标尺轴'),
@@ -679,9 +790,13 @@ class TopMenuBar extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                service.showWorldAxis ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                service.showWorldAxis
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
                 size: 16,
-                color: service.showWorldAxis ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.showWorldAxis
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               const Text('显示世界参考轴'),
@@ -694,9 +809,13 @@ class TopMenuBar extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                service.showCrosshair ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                service.showCrosshair
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
                 size: 16,
-                color: service.showCrosshair ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.showCrosshair
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               const Text('显示中心十字准星'),
@@ -805,7 +924,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_dataset',
           child: Row(
             children: [
-              Icon(Icons.folder_shared_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.folder_shared_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: 项目'),
             ],
@@ -827,7 +950,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_perf',
           child: Row(
             children: [
-              Icon(Icons.monitor_heart_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.monitor_heart_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: 性能'),
             ],
@@ -849,7 +976,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_measure',
           child: Row(
             children: [
-              Icon(Icons.straighten_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.straighten_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: 测量'),
             ],
@@ -860,7 +991,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_stats',
           child: Row(
             children: [
-              Icon(Icons.analytics_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.analytics_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: 区域统计'),
             ],
@@ -871,7 +1006,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_tile',
           child: Row(
             children: [
-              Icon(Icons.view_module_outlined, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.view_module_outlined,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: 瓦片检查'),
             ],
@@ -882,7 +1021,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'panel_lod',
           child: Row(
             children: [
-              Icon(Icons.stacked_line_chart_rounded, size: 16, color: Gs3dTokens.textBody),
+              Icon(
+                Icons.stacked_line_chart_rounded,
+                size: 16,
+                color: Gs3dTokens.textBody,
+              ),
               SizedBox(width: 8),
               Text('原生面板: LOD 调试'),
             ],
@@ -929,7 +1072,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'layout_std',
           child: Row(
             children: [
-              Icon(Icons.dashboard_customize_outlined, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.dashboard_customize_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('标准工作台布局'),
             ],
@@ -951,7 +1098,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'layout_rail',
           child: Row(
             children: [
-              Icon(Icons.view_sidebar_outlined, size: 16, color: Gs3dTokens.success),
+              Icon(
+                Icons.view_sidebar_outlined,
+                size: 16,
+                color: Gs3dTokens.success,
+              ),
               SizedBox(width: 8),
               Text('暗色分析舱布局'),
             ],
@@ -964,9 +1115,13 @@ class TopMenuBar extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                service.leftDockVisible ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                service.leftDockVisible
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
                 size: 16,
-                color: service.leftDockVisible ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.leftDockVisible
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               const Text('左侧抽屉面板'),
@@ -979,9 +1134,13 @@ class TopMenuBar extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                service.rightDockVisible ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                service.rightDockVisible
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
                 size: 16,
-                color: service.rightDockVisible ? Gs3dTokens.accent : Gs3dTokens.textSecondary,
+                color: service.rightDockVisible
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textSecondary,
               ),
               const SizedBox(width: 8),
               const Text('右侧属性面板'),
@@ -994,7 +1153,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'new_workspace',
           child: Row(
             children: [
-              Icon(Icons.add_business_outlined, size: 16, color: Gs3dTokens.accent),
+              Icon(
+                Icons.add_business_outlined,
+                size: 16,
+                color: Gs3dTokens.accent,
+              ),
               SizedBox(width: 8),
               Text('新建工作窗口'),
             ],
@@ -1077,7 +1240,11 @@ class TopMenuBar extends StatelessWidget {
           value: 'about',
           child: Row(
             children: [
-              Icon(Icons.info_outline_rounded, size: 16, color: Gs3dTokens.textSecondary),
+              Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: Gs3dTokens.textSecondary,
+              ),
               SizedBox(width: 8),
               Text('关于 GeoScatter 3D...'),
             ],
@@ -1093,9 +1260,7 @@ class TopMenuBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(4),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)),
         child: Text(
           title,
           style: const TextStyle(
@@ -1113,15 +1278,17 @@ class TopMenuBar extends StatelessWidget {
   /// 抽屉开合由边缘把手直达（把手常驻可见），此处不重复放置抽屉开关，
   /// 避免与 TabletDrawerScaffold 的局部开合状态做跨组件同步。
   Widget _buildTouchToolbar(BuildContext context) {
+    if (context.gs3dFormFactor == Gs3dFormFactorSlot.compact) {
+      return _buildCompactTouchToolbar(context);
+    }
+
     return Container(
       key: WorkbenchUiKeys.topMenuBar,
       height: Gs3dTokens.topBarTouchHeight,
       padding: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space12),
       decoration: const BoxDecoration(
         color: Gs3dTokens.surfaceHeader,
-        border: Border(
-          bottom: BorderSide(color: Gs3dTokens.hairline),
-        ),
+        border: Border(bottom: BorderSide(color: Gs3dTokens.hairline)),
       ),
       child: Row(
         children: [
@@ -1150,30 +1317,12 @@ class TopMenuBar extends StatelessWidget {
                     color: Gs3dTokens.accent,
                   ),
                   const SizedBox(width: 6),
-                  RichText(
-                    // `RichText` 不合并环境 `DefaultTextStyle`，显式带字体族。
-                    text: const TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'GeoScatter ',
-                          style: TextStyle(
-                            fontFamily: Gs3dType.fontFamily,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Gs3dTokens.textPrimary,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '3D',
-                          style: TextStyle(
-                            fontFamily: Gs3dType.fontFamily,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Gs3dTokens.accent,
-                          ),
-                        ),
-                      ],
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('GeoScatter', style: Gs3dType.brand),
+                      const Text(' 3D', style: Gs3dType.brandAccent),
+                    ],
                   ),
                 ],
               ),
@@ -1263,9 +1412,7 @@ class TopMenuBar extends StatelessWidget {
             builder: (context, _) {
               return Flexible(
                 child: Text(
-                  service.summary.name.isEmpty
-                      ? '未载入工程'
-                      : service.summary.name,
+                  service.summary.name.isEmpty ? '未载入工程' : service.summary.name,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
@@ -1286,9 +1433,10 @@ class TopMenuBar extends StatelessWidget {
             label: '命令',
             icon: Icons.terminal,
             touchTarget: true,
-            onPressed: () =>
-                service.executeAction('workbench.overlay.command_palette',
-                    {'open': true}),
+            onPressed: () => service.executeAction(
+              'workbench.overlay.command_palette',
+              {'open': true},
+            ),
           ),
           const SizedBox(width: Gs3dTokens.space8),
 
@@ -1298,13 +1446,166 @@ class TopMenuBar extends StatelessWidget {
             label: '载入示例',
             icon: Icons.folder_open_rounded,
             touchTarget: true,
-            onPressed: () {
-              service.loadDataset('data/sample-points.gs3d.bundle');
-            },
+            onPressed: () => _loadBuiltInSample(context),
           ),
         ],
       ),
     );
   }
-}
 
+  /// 紧凑手机工具条：只保留图标入口，把工程名交给中间的弹性区域。
+  ///
+  /// 手机宽度可能只有 320～360 logical px，继续排列桌面端的品牌文字、
+  /// 布局文字和两个长标签按钮会把状态栏直接撑出屏幕。所有主要动作仍然
+  /// 保留原有语义 key，Maestro 与无障碍入口不变。
+  Widget _buildCompactTouchToolbar(BuildContext context) {
+    return Container(
+      key: WorkbenchUiKeys.topMenuBar,
+      height: Gs3dTokens.topBarTouchHeight,
+      padding: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space4),
+      decoration: const BoxDecoration(
+        color: Gs3dTokens.surfaceHeader,
+        border: Border(bottom: BorderSide(color: Gs3dTokens.hairline)),
+      ),
+      child: Row(
+        children: [
+          _buildCompactIconAction(
+            key: WorkbenchUiKeys.homeButton,
+            icon: Icons.home_outlined,
+            tooltip: '返回欢迎页',
+            onPressed: service.closeWorkbench,
+            onLongPress: () => service.toggleCommandPalette(true),
+          ),
+          const SizedBox(width: Gs3dTokens.space4),
+          PopupMenuButton<WorkbenchLayoutMode>(
+            key: WorkbenchUiKeys.layoutSwitcher,
+            tooltip: '切换工作区布局模式',
+            initialValue: service.layoutMode,
+            onSelected: service.setLayoutMode,
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutStandard,
+                value: WorkbenchLayoutMode.standard,
+                child: Gs3dMenuItem(
+                  label: '标准工作台 (触控)',
+                  icon: Icons.dashboard_customize_outlined,
+                  iconColor: Gs3dTokens.accent,
+                ),
+              ),
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutFloating,
+                value: WorkbenchLayoutMode.floatingDock,
+                child: Gs3dMenuItem(
+                  label: '悬浮胶囊 Dock (桌面专属)',
+                  icon: Icons.layers_outlined,
+                  iconColor: Gs3dTokens.accent,
+                ),
+              ),
+              PopupMenuItem(
+                key: WorkbenchUiKeys.menuItemLayoutAnalysis,
+                value: WorkbenchLayoutMode.analysisRail,
+                child: Gs3dMenuItem(
+                  label: '暗色分析舱 (桌面专属)',
+                  icon: Icons.view_sidebar_outlined,
+                  iconColor: Gs3dTokens.success,
+                ),
+              ),
+            ],
+            child: Semantics(
+              button: true,
+              label: '切换布局：${service.layoutMode.displayName}',
+              child: _buildCompactToolbarIcon(Icons.view_quilt_outlined),
+            ),
+          ),
+          const SizedBox(width: Gs3dTokens.space4),
+          Expanded(
+            child: ListenableBuilder(
+              listenable: service,
+              builder: (context, _) => Text(
+                service.summary.name.isEmpty ? '未载入工程' : service.summary.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Gs3dType.micro.copyWith(
+                  color: Gs3dTokens.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: Gs3dTokens.space4),
+          _buildCompactIconAction(
+            key: const ValueKey('workbench.menu.command'),
+            icon: Icons.terminal,
+            tooltip: '命令面板',
+            onPressed: () => service.executeAction(
+              'workbench.overlay.command_palette',
+              {'open': true},
+            ),
+          ),
+          _buildCompactIconAction(
+            key: WorkbenchUiKeys.quickLoadDemoButton,
+            icon: Icons.folder_open_rounded,
+            tooltip: '载入示例',
+            onPressed: () => _loadBuiltInSample(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactIconAction({
+    required Key key,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    VoidCallback? onLongPress,
+  }) {
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: Gs3dPressable(
+          key: key,
+          onTap: onPressed,
+          onLongPress: onLongPress,
+          hoverScale: 0,
+          minTouchSize: Gs3dTokens.hitTargetTouch,
+          builder: (context, state) => AnimatedContainer(
+            duration: Gs3dMotion.micro,
+            curve: Gs3dMotion.standardCurve,
+            width: Gs3dTokens.hitTargetTouch,
+            height: Gs3dTokens.hitTargetTouch,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: state == Gs3dInteractionState.idle
+                  ? Colors.transparent
+                  : Gs3dTokens.surfaceHover,
+              borderRadius: BorderRadius.circular(Gs3dTokens.radiusMd),
+            ),
+            child: Icon(
+              icon,
+              size: Gs3dTokens.iconSizeMd,
+              color: Gs3dTokens.textBody,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactToolbarIcon(IconData icon) {
+    return SizedBox(
+      width: Gs3dTokens.hitTargetTouch,
+      height: Gs3dTokens.hitTargetTouch,
+      child: Center(
+        child: Icon(
+          icon,
+          size: Gs3dTokens.iconSizeMd,
+          color: Gs3dTokens.textBody,
+        ),
+      ),
+    );
+  }
+}

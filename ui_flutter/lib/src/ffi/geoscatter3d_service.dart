@@ -9,11 +9,13 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import '../models/dataset_model.dart';
 import '../models/gpu_info_model.dart';
 import '../models/point_cloud_model.dart';
 import '../models/recent_project_model.dart';
 import '../models/measurement_line_model.dart';
+import '../platform/mobile_document_picker.dart';
 import 'geoscatter3d_bindings.dart';
 
 part 'welcome_backend.dart';
@@ -110,8 +112,7 @@ enum EngineAvailability {
   /// 内核已随平台部署且加载成功。
   available,
 
-  /// 内核在本平台不可用（如 Android 未移植）——依赖引擎的动作保持可达，
-  /// 但执行时返回显式错误反馈。
+  /// 内核在本平台不可用——依赖引擎的动作保持可达，但执行时返回显式错误反馈。
   unavailable,
 }
 
@@ -120,6 +121,76 @@ class GeoScatter3dService extends ChangeNotifier {
   factory GeoScatter3dService() => _instance;
   GeoScatter3dService._internal();
   GeoScatter3dService.detached();
+
+  static Future<void>? _storagePreparation;
+  static String? _mobileProjectsDirectory;
+
+  /// 准备移动端持久化工程目录。
+  ///
+  /// Android/iOS 的临时目录可能被系统清理，不能承载用户工程；应用支持
+  /// 目录位于沙盒持久区，不需要申请外部存储权限。桌面端继续使用原有
+  /// 环境变量 / 仓库目录解析逻辑。
+  static Future<void> prepareStorage() {
+    return _storagePreparation ??= _prepareStorage();
+  }
+
+  /// 在首帧之后准备移动端存储并初始化原生引擎。
+  ///
+  /// 启动阶段不能同步阻塞 [runApp]，否则 Android 冷启动期间只会看到系统栏。
+  Future<void> bootstrap() async {
+    await prepareStorage();
+    // 给 Flutter 首帧一个调度机会，随后再执行可能较慢的动态库初始化。
+    await Future<void>.delayed(Duration.zero);
+    initialize();
+  }
+
+  static Future<void> _prepareStorage() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    try {
+      var persistentRoot = _mobilePersistentRoot();
+      if (Platform.isAndroid) {
+        // Android 原生返回准确的 filesDir；旧系统/嵌入式运行时失败时，
+        // _mobilePersistentRoot() 仍能从 cache/code_cache 同级推断 filesDir。
+        final nativeRoot = await MobileDocumentPicker.persistentDirectory();
+        if (nativeRoot != null && nativeRoot.trim().isNotEmpty) {
+          persistentRoot = nativeRoot.trim();
+        }
+      }
+      final projects = Directory('$persistentRoot/GeoScatter3D/projects');
+      await projects.create(recursive: true);
+      _mobileProjectsDirectory = projects.absolute.path;
+    } catch (error) {
+      // 目录准备失败时仍保留可诊断的临时回退，初始化阶段会显式报告
+      // 引擎错误；下次启动会再次尝试持久目录准备。
+      _storagePreparation = null;
+      debugPrint(
+        '[GeoScatter3D storage] persistent directory unavailable: $error',
+      );
+    }
+  }
+
+  /// 在不引入原生插件的前提下定位应用持久沙盒。
+  ///
+  /// Android 的 `Directory.systemTemp` 对应应用私有 `cache`，其同级
+  /// `files` 是持久区；iOS 的临时目录位于容器根下 `tmp`，应用支持目录
+  /// 位于同一容器的 `Library/Application Support`。这两个路径都不需要
+  /// 外部存储权限，且不会把数据写入 APK 或系统共享目录。
+  static String _mobilePersistentRoot() {
+    final temp = Directory.systemTemp.absolute.path.replaceAll('\\', '/');
+    if (Platform.isAndroid) {
+      for (final cacheSuffix in const ['/cache', '/code_cache']) {
+        if (temp.endsWith(cacheSuffix)) {
+          return '${temp.substring(0, temp.length - cacheSuffix.length)}/files';
+        }
+      }
+    }
+    if (Platform.isIOS && temp.endsWith('/tmp')) {
+      return '${temp.substring(0, temp.length - '/tmp'.length)}/Library/Application Support';
+    }
+    // 极少数嵌入式运行时可能不遵循标准容器命名；保留应用临时目录
+    // 作为最后回退，并让上层日志明确记录目录准备失败。
+    return '$temp/GeoScatter3D';
+  }
 
   GeoScatter3dBindings? _bindings;
   bool _initialized = false;
@@ -149,9 +220,11 @@ class GeoScatter3dService extends ChangeNotifier {
   );
   Uint8List? _nativeViewportPng;
   String? _nativeViewerError;
+  String? _nativeShaderDirectory;
   String? _loadedDatasetPath;
   DatasetSummary _summary = const DatasetSummary();
   List<RecentProjectItem> _recentProjects = [];
+  String _recentProjectFilter = 'all';
   List<GpuDeviceInfo> _gpus = [];
   int _activeGpuIndex = 0;
   bool _isWorkbenchActive = false;
@@ -268,7 +341,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// R3 统一降级反馈文案。
   static String get engineUnavailableMessage =>
-      '渲染内核在本平台不可用，无法执行该动作。请回到桌面版使用完整渲染功能。';
+      '渲染内核在本平台不可用，无法执行该动作。请检查设备 Vulkan 支持与应用原生库部署。';
   bool _welcomeBusy = false;
   String? _welcomeError;
   bool get welcomeBusy => _welcomeBusy;
@@ -279,8 +352,32 @@ class GeoScatter3dService extends ChangeNotifier {
     String action, [
     Map<String, dynamic> params = const {},
   ]) {
+    // Android 的导出需要等待 SAF 保存面板返回 Uri；命令面板走异步
+    // 控制面时也必须使用同一条移动端保存链路，不能退回桌面路径写盘。
+    if (Platform.isAndroid && action == 'workbench.export') {
+      return _executeAndroidExportAction(params);
+    }
     if (_welcomeBusy) return _executeWelcomeAction(action, params);
     return _welcomeTask = _executeWelcomeAction(action, params);
+  }
+
+  Future<Map<String, dynamic>> _executeAndroidExportAction(
+    Map<String, dynamic> params,
+  ) async {
+    final format = (params['format'] as String?)?.toLowerCase() == 'csv'
+        ? 'csv'
+        : 'ply';
+    final requestedPath =
+        (params['path'] as String?) ?? 'export_points.$format';
+    final success = await exportPointCloudThroughNativeViewer(
+      requestedPath,
+      format: format,
+    );
+    return {
+      'success': success,
+      'message': success ? '点云已保存到系统选择的位置' : '点云导出失败或已取消',
+      'data': {'format': format, 'suggested_name': requestedPath},
+    };
   }
 
   static String? get runtimeDirectory =>
@@ -289,6 +386,14 @@ class GeoScatter3dService extends ChangeNotifier {
     final configured = Platform.environment['GS3D_PROJECTS_DIR'];
     if (configured != null && configured.isNotEmpty) {
       return Directory(configured).absolute.path;
+    }
+    // 移动端没有仓库目录或 LOCALAPPDATA；正常启动时
+    // [_mobileProjectsDirectory] 已由 [prepareStorage] 指向持久化沙盒。
+    // 原生桥接初始化失败时仍使用 cache/code_cache 同级的 files 推断，
+    // 避免静默回退到可被系统清理的缓存目录。
+    if (Platform.isAndroid || Platform.isIOS) {
+      return _mobileProjectsDirectory ??
+          '${_mobilePersistentRoot()}/GeoScatter3D/projects';
     }
     final root = resolveRepoRoot();
     if (File('$root/CMakeLists.txt').existsSync()) return '$root/data';
@@ -310,8 +415,49 @@ class GeoScatter3dService extends ChangeNotifier {
       : '原生数据引擎未连接';
   DatasetSummary get summary => _summary;
   List<RecentProjectItem> get recentProjects => _recentProjects;
+  String get recentProjectFilter => _recentProjectFilter;
+  List<RecentProjectItem> get filteredRecentProjects {
+    final filter = _recentProjectFilter;
+    if (filter == 'all') return List<RecentProjectItem>.of(recentProjects);
+    return recentProjects
+        .where((item) {
+          final path = item.path.toLowerCase();
+          switch (filter) {
+            case 'bundle':
+              return path.endsWith('.gs3d.bundle');
+            case 'gs3d':
+              return path.endsWith('.gs3d') && !path.endsWith('.gs3d.bundle');
+            default:
+              return true;
+          }
+        })
+        .toList(growable: false);
+  }
+
+  void setRecentProjectFilter(String filter) {
+    final normalized = switch (filter) {
+      'bundle' => 'bundle',
+      'gs3d' => 'gs3d',
+      _ => 'all',
+    };
+    if (_recentProjectFilter == normalized) return;
+    _recentProjectFilter = normalized;
+    notifyListeners();
+  }
+
   List<GpuDeviceInfo> get gpus => _gpus;
   int get activeGpuIndex => _activeGpuIndex;
+
+  /// 当前活跃 GPU 的真实名称；没有引擎探测结果时不伪造桌面硬件型号。
+  String get activeGpuDisplayName {
+    final index = activeGpuIndex;
+    if (index >= 0 && index < gpus.length) {
+      final name = gpus[index].name.trim();
+      if (name.isNotEmpty) return name;
+    }
+    return '未探测到 Vulkan 设备';
+  }
+
   bool get isWorkbenchActive => _isWorkbenchActive;
   WorkbenchLayoutMode get layoutMode => _layoutMode;
 
@@ -439,6 +585,7 @@ class GeoScatter3dService extends ChangeNotifier {
 
   bool get leftDockVisible => _leftDockVisible;
   bool get rightDockVisible => _rightDockVisible;
+
   /// 双进程已移除；保留 getter 供 UI 编译。
   bool get isDualProcessNative => false;
   bool get isEngineNative => _engineHandle != null;
@@ -960,13 +1107,44 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   Future<void> _captureEngineScreenshot() async {
-    final path = await captureEngineFramePng();
-    if (path == null) {
-      _nativeViewerError = '引擎帧尚未就绪，无法编码 PNG 截图';
-      notifyListeners();
-      return;
+    String? path;
+    try {
+      final timestamp = DateTime.now().microsecondsSinceEpoch;
+      final temporaryPath = Platform.isAndroid
+          ? '${Directory.systemTemp.path}/GeoScatter3D/exports/'
+                'screenshot_$timestamp.png'
+          : null;
+      path = await captureEngineFramePng(outputPath: temporaryPath);
+      if (path == null) {
+        _nativeViewerError = '引擎帧尚未就绪，无法编码 PNG 截图';
+        notifyListeners();
+        return;
+      }
+      if (Platform.isAndroid) {
+        final saved = await saveFileToDevice(
+          sourcePath: path,
+          suggestedName: 'geoscatter3d_viewport_$timestamp.png',
+          mimeType: 'image/png',
+        );
+        if (saved) {
+          onScreenshotSaved?.call('geoscatter3d_viewport_$timestamp.png');
+        } else {
+          _nativeViewerError = '视口截图已取消或保存失败';
+          notifyListeners();
+        }
+        return;
+      }
+      onScreenshotSaved?.call(path);
+    } finally {
+      if (Platform.isAndroid && path != null) {
+        try {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        } catch (_) {
+          // 截图已经交给系统后，临时文件清理失败不覆盖用户结果。
+        }
+      }
     }
-    onScreenshotSaved?.call(path);
   }
 
   /// 读取引擎当前帧 → PNG → 写入 `tmp/`（或指定路径）。
@@ -1040,8 +1218,14 @@ class GeoScatter3dService extends ChangeNotifier {
       _nativeViewerError = '停止旧渲染器时出错: $error';
     }
     if (_bindings?.hasEngineApi != true) {
-      _nativeViewerError =
-          '需要 gs3d_engine_* 单进程内核（请重建并部署 gs3d_ffi.dll）';
+      _nativeViewerError = '需要 gs3d_engine_* 单进程内核（请重建并部署 gs3d_ffi.dll）';
+      notifyListeners();
+      return false;
+    }
+    try {
+      await _ensureNativeShaderDirectory();
+    } catch (error) {
+      _nativeViewerError = '移动端着色器资源准备失败: $error';
       notifyListeners();
       return false;
     }
@@ -1064,6 +1248,7 @@ class GeoScatter3dService extends ChangeNotifier {
     }
     final w = (_lastSyncedNativeW ?? 1280).clamp(64, 4096);
     final h = (_lastSyncedNativeH ?? 720).clamp(64, 4096);
+    final shaderDirectory = _nativeShaderDirectory;
     try {
       // create/load 可能阻塞；Isolate 内重新打开库，避免跨 isolate 捕获 FFI 对象。
       final addr = await Isolate.run(() {
@@ -1076,16 +1261,18 @@ class GeoScatter3dService extends ChangeNotifier {
         Pointer<Void> e;
         final fullCreate = b.engine_create_opt;
         if (fullCreate != null) {
+          final shaderPtr = shaderDirectory?.toNativeUtf8();
           final cfg = calloc<Gs3dEngineConfig>();
           try {
             cfg.ref.preferred_gpu_uuid = nullptr; // 空 = auto，由内核解析偏好
             cfg.ref.viewport_width = w;
             cfg.ref.viewport_height = h;
-            cfg.ref.shader_dir = nullptr; // 相对默认着色器目录
+            cfg.ref.shader_dir = shaderPtr ?? nullptr;
             cfg.ref.enable_validation = 0;
             e = fullCreate(cfg);
           } finally {
             calloc.free(cfg);
+            if (shaderPtr != null) calloc.free(shaderPtr);
           }
         } else {
           final simpleCreate = b.engine_create_simple_opt;
@@ -1108,9 +1295,7 @@ class GeoScatter3dService extends ChangeNotifier {
         return e.address;
       });
       if (addr == 0) {
-        final err = outer.engine_last_global_error_opt
-            ?.call()
-            .toDartString();
+        final err = outer.engine_last_global_error_opt?.call().toDartString();
         _nativeViewerError = '单进程引擎启动失败: ${err ?? 'unknown'}';
         return false;
       }
@@ -1147,6 +1332,33 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  /// 将 Flutter asset 中的 SPIR-V 解压到应用沙盒，供 C++ 通过文件系统读取。
+  /// Android APK 内资源可能被压缩，原生 Vulkan 内核不能直接把 asset 名称当路径。
+  Future<String?> _ensureNativeShaderDirectory() async {
+    if (!Platform.isAndroid) return null;
+    final directory = Directory(
+      '${Directory.systemTemp.path}/GeoScatter3D/shaders',
+    );
+    await directory.create(recursive: true);
+    const assets = <String>[
+      'assets/shaders/point.vert.spv',
+      'assets/shaders/point.frag.spv',
+    ];
+    for (final asset in assets) {
+      final data = await rootBundle.load(asset);
+      final bytes = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+      final file = File('${directory.path}/${asset.split('/').last}');
+      if (!await file.exists() || await file.length() != bytes.length) {
+        await file.writeAsBytes(bytes, flush: true);
+      }
+    }
+    _nativeShaderDirectory = directory.path;
+    return directory.path;
+  }
+
   /// 异步渲染一帧 engine RGBA → ui.Image（不阻塞 UI 超过必要拷贝）。
   Future<void> _renderEngineFrame() async {
     final e = _engineHandle;
@@ -1174,9 +1386,7 @@ class GeoScatter3dService extends ChangeNotifier {
           }
           final ow = outW.value;
           final oh = outH.value;
-          final bytes = Uint8List.fromList(
-            buf.asTypedList(ow * oh * 4),
-          );
+          final bytes = Uint8List.fromList(buf.asTypedList(ow * oh * 4));
           return <Object>['ok', ow, oh, bytes];
         } finally {
           calloc.free(buf);
@@ -1378,12 +1588,14 @@ class GeoScatter3dService extends ChangeNotifier {
       _engineRenderQueued = true;
       return;
     }
-    unawaited(_renderEngineFrame().then((_) {
-      if (_engineRenderQueued && _engineHandle != null) {
-        _engineRenderQueued = false;
-        _scheduleEngineRender();
-      }
-    }));
+    unawaited(
+      _renderEngineFrame().then((_) {
+        if (_engineRenderQueued && _engineHandle != null) {
+          _engineRenderQueued = false;
+          _scheduleEngineRender();
+        }
+      }),
+    );
   }
 
   int? _lastSyncedNativeW;
@@ -1583,7 +1795,9 @@ class GeoScatter3dService extends ChangeNotifier {
     final b = _bindings;
     if (engine == null || b == null) return;
     try {
-      final snapRaw = b.engine_get_snapshot_json_opt?.call(engine).toDartString();
+      final snapRaw = b.engine_get_snapshot_json_opt
+          ?.call(engine)
+          .toDartString();
       if (snapRaw != null && snapRaw.isNotEmpty) {
         final decoded = jsonDecode(snapRaw);
         if (decoded is Map) {
@@ -1595,8 +1809,9 @@ class GeoScatter3dService extends ChangeNotifier {
               (decoded['point_count'] as num?)?.toInt() ?? _visiblePoints;
         }
       }
-      final diagRaw =
-          b.engine_get_diagnostics_json_opt?.call(engine).toDartString();
+      final diagRaw = b.engine_get_diagnostics_json_opt
+          ?.call(engine)
+          .toDartString();
       if (diagRaw != null && diagRaw.isNotEmpty) {
         final decoded = jsonDecode(diagRaw);
         if (decoded is Map) {
@@ -1633,20 +1848,9 @@ class GeoScatter3dService extends ChangeNotifier {
     if (engine != null && enginePick != null) {
       final pOut = calloc<ffi.Float>(4);
       try {
-        final res = enginePick(
-          engine,
-          screenX,
-          screenY,
-          tolerancePx,
-          pOut,
-        );
+        final res = enginePick(engine, screenX, screenY, tolerancePx, pOut);
         if (res == 1) {
-          return Point3D(
-            x: pOut[0],
-            y: pOut[1],
-            z: pOut[2],
-            value: pOut[3],
-          );
+          return Point3D(x: pOut[0], y: pOut[1], z: pOut[2], value: pOut[3]);
         }
       } catch (_) {
       } finally {
@@ -1721,18 +1925,7 @@ class GeoScatter3dService extends ChangeNotifier {
     final posX = centerX + dist * math.cos(el) * math.cos(az);
     final posY = centerY + dist * math.cos(el) * math.sin(az);
     final posZ = centerZ + dist * math.sin(el);
-    lookAt(
-      engine,
-      posX,
-      posY,
-      posZ,
-      centerX,
-      centerY,
-      centerZ,
-      0,
-      0,
-      1,
-    );
+    lookAt(engine, posX, posY, posZ, centerX, centerY, centerZ, 0, 0, 1);
     _scheduleEngineRender();
   }
 
@@ -1974,7 +2167,69 @@ class GeoScatter3dService extends ChangeNotifier {
     String outputPath, {
     String format = 'ply',
   }) async {
+    if (Platform.isAndroid) {
+      final normalizedFormat = format.toLowerCase() == 'csv' ? 'csv' : 'ply';
+      final suggestedName = _androidExportSuggestedName(
+        outputPath,
+        normalizedFormat,
+      );
+      final exportDirectory = Directory(
+        '${Directory.systemTemp.path}/GeoScatter3D/exports',
+      );
+      await exportDirectory.create(recursive: true);
+      final sourcePath =
+          '${exportDirectory.path}/export_${DateTime.now().microsecondsSinceEpoch}.$normalizedFormat';
+      final source = File(sourcePath);
+      try {
+        if (!exportPointCloud(sourcePath, format: normalizedFormat)) {
+          return false;
+        }
+        return await saveFileToDevice(
+          sourcePath: sourcePath,
+          suggestedName: suggestedName,
+          mimeType: normalizedFormat == 'csv'
+              ? 'text/csv'
+              : 'application/octet-stream',
+        );
+      } finally {
+        try {
+          if (await source.exists()) await source.delete();
+        } catch (_) {
+          // 临时文件清理失败不应覆盖已经完成的系统保存结果。
+        }
+      }
+    }
     return exportPointCloud(outputPath, format: format);
+  }
+
+  /// 把应用私有临时文件交给 Android 系统保存面板。
+  ///
+  /// C++/FFI 只接收普通文件路径；系统 Uri 只在 Kotlin 桥接层出现，
+  /// 避免图形/文件句柄穿透到 UI 或原生引擎。
+  Future<bool> saveFileToDevice({
+    required String sourcePath,
+    required String suggestedName,
+    required String mimeType,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    return MobileDocumentPicker.saveFile(
+      sourcePath: sourcePath,
+      suggestedName: suggestedName,
+      mimeType: mimeType,
+    );
+  }
+
+  String _androidExportSuggestedName(String outputPath, String format) {
+    final rawName = outputPath.replaceAll('\\', '/').split('/').last.trim();
+    final cleaned = rawName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final withoutKnownExtension = cleaned.replaceFirst(
+      RegExp(r'\.(ply|csv)$', caseSensitive: false),
+      '',
+    );
+    final baseName = withoutKnownExtension.trim().isEmpty
+        ? 'export_points'
+        : withoutKnownExtension.trim();
+    return '$baseName.$format';
   }
 
   void setLayoutMode(WorkbenchLayoutMode mode) {
@@ -2233,6 +2488,37 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 可注入的目录选择回调（用于自动化测试或无头运行环境模拟选择）
   String? Function()? folderPickerOverride;
 
+  /// 移动端通过 Android SAF 选择文件并复制到应用私有持久目录；桌面端
+  /// 继续复用原有 C-ABI 文件选择器。覆盖回调优先用于 widget 测试。
+  Future<String?> pickFileAsync([String filterType = 'point_cloud']) async {
+    if (filePickerOverride != null) return pickFile(filterType);
+    if (Platform.isAndroid) {
+      try {
+        final picked = await MobileDocumentPicker.pickFile();
+        return picked?.replaceAll('\\', '/');
+      } catch (error) {
+        debugPrint('[GeoScatter3D mobile pickFile error]: $error');
+        return null;
+      }
+    }
+    return pickFile(filterType);
+  }
+
+  /// 移动端通过 Android SAF 选择 Bundle 目录；桌面端复用 C-ABI 目录选择器。
+  Future<String?> pickFolderAsync() async {
+    if (folderPickerOverride != null) return pickFolder();
+    if (Platform.isAndroid) {
+      try {
+        final picked = await MobileDocumentPicker.pickDirectory();
+        return picked?.replaceAll('\\', '/');
+      } catch (error) {
+        debugPrint('[GeoScatter3D mobile pickFolder error]: $error');
+        return null;
+      }
+    }
+    return pickFolder();
+  }
+
   /// 原生调用系统文件选择对话框（支持 Windows 原生 Explorer 文件选择）
   String? pickFile([String filterType = 'point_cloud']) {
     if (filePickerOverride != null) {
@@ -2441,6 +2727,25 @@ class GeoScatter3dService extends ChangeNotifier {
     await stopNativeRenderer();
     await startNativeRenderer();
   }
+
+  /// CSV 预处理（编译入 .so，供移动端免外部可执行文件）。
+  int preprocessCsv(
+    String csvPath,
+    String outputPath, {
+    int threads = 2,
+    int finestTargetPoints = 50000,
+  }) {
+    if (_bindings == null) return -99;
+    return _bindings!.preprocessCsv(
+      csvPath,
+      outputPath,
+      threads: threads,
+      finestTargetPoints: finestTargetPoints,
+    );
+  }
+
+  String get lastPreprocessError =>
+      _bindings?.lastPreprocessError ?? 'FFI 未初始化';
 
   void _updateSummary() {
     if (_bindings == null) return;
@@ -3242,7 +3547,10 @@ class GeoScatter3dService extends ChangeNotifier {
         parameterSchema: {
           'type': 'object',
           'properties': {
-            'mode': {'type': 'string', 'enum': ['3d', '2d', 'both']},
+            'mode': {
+              'type': 'string',
+              'enum': ['3d', '2d', 'both'],
+            },
           },
           'required': ['mode'],
         },
@@ -3322,7 +3630,8 @@ class GeoScatter3dService extends ChangeNotifier {
         _isEngineDependentAction(actionId)) {
       return {
         'success': false,
-        'message': '${GeoScatter3dService.engineUnavailableMessage}'
+        'message':
+            '${GeoScatter3dService.engineUnavailableMessage}'
             ' ($_initializationError)',
         'engine_available': false,
       };
@@ -4056,7 +4365,11 @@ class GeoScatter3dService extends ChangeNotifier {
           return {'success': false, 'message': '缺少 index 或 id'};
         }
         toggleMeasurementLineFixed(id);
-        return {'success': true, 'message': '已切换测量线固定状态', 'data': {'id': id}};
+        return {
+          'success': true,
+          'message': '已切换测量线固定状态',
+          'data': {'id': id},
+        };
 
       case 'workbench.camera.focus_point':
         final x = (p['x'] as num?)?.toDouble();
@@ -4301,6 +4614,12 @@ class GeoScatter3dService extends ChangeNotifier {
       default:
         return null;
     }
+  }
+
+  @visibleForTesting
+  void setSummaryForTest(DatasetSummary s) {
+    _summary = s;
+    notifyListeners();
   }
 
   void shutdown() {

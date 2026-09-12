@@ -1,6 +1,6 @@
-# GeoScatter3D Flutter Desktop 前端
+# GeoScatter3D Flutter Desktop 与 Android 移动端前端
 
-GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop 框架构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库 (`gs3d_ffi.dll`) 调用原生 C++20 / Vulkan 1.3 引擎：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
+GeoScatter3D 的 Windows 桌面端与 Android 平板/移动端应用前端，采用 Flutter 构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用原生 C++20 / Vulkan 1.3 引擎：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
 
 本项目遵循严格的架构解耦与工程护栏：**UI 纯只读投影或产生纯数据命令（UiActions）、图形句柄不穿透、临时中间产物收敛至 `tmp/`**。
 
@@ -38,6 +38,7 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 - **测量线段管理**：记录多组测量结果，支持图钉固定、单项删除、清空全部与 2D/3D 显示切换。
 - **局部统计卡片**：动态展示选区统计指标，并支持一键复制统计数据文本。
 - **动态底部状态栏**：实时绑定引擎 FPS、单帧耗时、可见点数、显存占用与瓦片流式加载水位；支持点击快捷唤出诊断面板。
+- **移动端安全区与紧凑布局**：Android Edge-to-Edge 下由 `SafeArea` 避让状态栏和底部手势区；手机档顶部工具条使用图标入口，左右抽屉按可用宽度自适应收缩。
 
 ### 5. 全局视察器与命令套件 (Overlays & Inspectors)
 - **命令面板 (`CommandPalette` - `Ctrl+P`)**：居中模糊搜索框，快速检索全量动作、视角预设、色标方案并回车即时分发。
@@ -48,7 +49,7 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 
 ### 6. 统一动作引擎与单进程控制 (Action Engine)
 
-- 注册了 **45 个统一高层 UI 动作**，覆盖欢迎页、工作台、视口控制、测量、诊断及数据导出。
+- 注册了 **61 个统一高层 UI 动作**（15 个欢迎页动作 + 46 个工作台动作），覆盖欢迎页、工作台、视口控制、测量、诊断及数据导出。
 - **单进程引擎路径**：
   - `hasEngineApi` 时经 `gs3d_engine_*` 直连 `HeadlessRenderKernel`（渲染 + 拾取 + Gizmo + 导出 + PNG），RGBA 帧呈现，不 spawn 子进程；
   - 引擎不可用时显式报错；拾取/统计可走 A 组 C-ABI 或返回空；无纯 Dart 软件点云预览。
@@ -60,11 +61,11 @@ GeoScatter3D 的现代 Windows 桌面端应用前端，采用 Flutter Desktop �
 ```text
 ui_flutter/
 ├── lib/
-│   ├── main.dart                             # 桌面应用入口，全局模态浮层与快捷键监听挂载
+│   ├── main.dart                             # 桌面/Android 应用入口，全局模态浮层与快捷键监听挂载
 │   └── src/
 │       ├── ffi/
 │       │   ├── geoscatter3d_bindings.dart    # 纯 C-ABI 动态链接库原生函数签名绑定
-│       │   └── geoscatter3d_service.dart     # 核心状态中枢、45项动作调度器与指标轮询引擎
+│       │   └── geoscatter3d_service.dart     # 核心状态中枢、61项动作调度器与指标轮询引擎
 │       ├── panels/
 │       │   ├── center_viewport.dart          # 3D 视口画布、射线拾取、测距连线、框选与罗盘
 │       │   ├── left_dock_panel.dart          # 左侧抽屉：2D小地图、空间测量线列表、选区统计
@@ -98,13 +99,13 @@ ui_flutter/
 ## 三、开发与验证指南
 
 ### 1. 运行自动化测试套件
-项目包含 50 项前台单元与组件集成测试，包含完整的离线回退与临时文件自清理机制：
+项目包含 Flutter 前台单元与组件集成测试，包含引擎不可用时的显式错误状态与临时文件自清理机制：
 
 ```powershell
 cd ui_flutter
 flutter test
 ```
-*预期输出：`All tests passed! (50/50 通过)`*
+*当前基线：普通测试 90 项通过、3 项跳过；设置 `GS3D_ENGINE_E2E=1` 后为 92 项通过、1 项跳过。*
 
 ### 2. 本地开发调试运行
 推荐用 VS Code 打开仓库根目录，选择 `GeoScatter3D (Flutter + Native)` 后按 F5。
@@ -118,7 +119,7 @@ flutter run -d windows
 实际功能接线及 ImGui 残留结论见 [集成检查报告](../docs/flutter-integration-audit.md)。
 
 ### 3. 一键编译与发布构建 (Release Build)
-推荐通过工程根目录的一键自动化部署脚本进行发布构建。该脚本会自动编译 C++ 原生动态库 `gs3d_ffi.dll` 与 `GeoScatter3D.exe`，打包 Shader 与中文字体资源，并完整部署至 Flutter 输出目录：
+推荐通过工程根目录的一键自动化部署脚本进行桌面发布构建。该脚本会自动编译 C++ 原生动态库 `gs3d_ffi.dll`，打包 Shader 与中文字体资源，并完整部署至 Flutter Windows Runner：
 
 ```powershell
 ./scripts/build_flutter_windows.ps1 -Config Release
@@ -126,6 +127,31 @@ flutter run -d windows
 
 构建产物生成于：
 `ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe`
+
+Android Debug APK（Maestro/本地联调）：
+
+```powershell
+cd ui_flutter
+flutter build apk --debug
+```
+
+应用商店发布使用 AAB：
+
+```powershell
+../scripts/build_android_release.ps1
+```
+
+该脚本要求先配置 `android/key.properties` 和生产 keystore，并会校验 AAB
+不能使用 Android Debug 证书，同时确认 arm64/x86_64 原生库、SPIR-V 着色器和
+示例数据均已打包。Release 构建不会在缺少 keystore 时回退到 Debug
+签名；未配置密钥时请使用上面的 Debug APK 做本地 smoke test。
+
+移动端工程写入应用持久沙盒，Android 不申请外部存储权限；由于渲染内核无软件兜底，
+Android Manifest 声明设备必须支持 Vulkan 1.3。原生
+`libgs3d_ffi.so` 与 SPIR-V 着色器随 APK 部署。正式发布 Android 包时，复制
+`android/key.properties.example` 为 `android/key.properties`，将生产 keystore 放在
+`android/` 目录（或填写绝对路径），再构建 AAB；`key.properties`、`.jks` 和
+`.keystore` 已加入忽略规则。只有经过该脚本校验的生产签名 AAB 才能上传应用商店。
 
 ---
 

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- GeoScatter3D 点云品牌标记；保留在安全区内，兼容自适应图标裁切。 -->
+    <path
+        android:fillColor="@color/gs3d_launcher_background"
+        android:pathData="M20,7 H88 C95.2,7 101,12.8 101,20 V88 C101,95.2 95.2,101 88,101 H20 C12.8,101 7,95.2 7,88 V20 C7,12.8 12.8,7 20,7 Z" />
+
+    <!-- 远景点云 -->
+    <path android:fillColor="#3F6FA1" android:pathData="M24,62 A4,4 0,1 1,16 62 A4,4 0,1 1,24 62 Z" />
+    <path android:fillColor="#3F6FA1" android:pathData="M34,78 A3,3 0,1 1,28 78 A3,3 0,1 1,34 78 Z" />
+    <path android:fillColor="#3F6FA1" android:pathData="M48,25 A3,3 0,1 1,42 25 A3,3 0,1 1,48 25 Z" />
+    <path android:fillColor="#3F6FA1" android:pathData="M78,31 A3,3 0,1 1,72 31 A3,3 0,1 1,78 31 Z" />
+    <path android:fillColor="#3F6FA1" android:pathData="M82,76 A4,4 0,1 1,74 76 A4,4 0,1 1,82 76 Z" />
+
+    <!-- 近景点云 -->
+    <path android:fillColor="#9FD1EF" android:pathData="M36,48 A6,6 0,1 1,24 48 A6,6 0,1 1,36 48 Z" />
+    <path android:fillColor="#6F9FD0" android:pathData="M48,36 A5,5 0,1 1,38 36 A5,5 0,1 1,48 36 Z" />
+    <path android:fillColor="#9FD1EF" android:pathData="M79,48 A5,5 0,1 1,69 48 A5,5 0,1 1,79 48 Z" />
+    <path android:fillColor="#6F9FD0" android:pathData="M39,72 A5,5 0,1 1,29 72 A5,5 0,1 1,39 72 Z" />
+
+    <!-- 被拾取点与琥珀色定位环 -->
+    <path
+        android:fillColor="#EFD28A"
+        android:pathData="M65,54 A11,11 0,1 1,43 54 A11,11 0,1 1,65 54 Z" />
+    <path
+        android:fillColor="#FFFAF0"
+        android:pathData="M59,54 A5,5 0,1 1,49 54 A5,5 0,1 1,59 54 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#E7C36E"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M54,25 A29,29 0,1 1,53.9 25 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#F1D998"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M54,17 V27 M91,54 H81 M54,91 V81 M17,54 H27" />
+</vector>

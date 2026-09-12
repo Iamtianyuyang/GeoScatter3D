@@ -1,6 +1,5 @@
 #pragma once
 
-#include "platform/Window.hpp"
 #include "render/GpuFrameTimer.hpp"
 #include "render/VulkanContext.hpp"
 #include "render/VulkanSwapchain.hpp"
@@ -11,6 +10,8 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
+
+namespace gs3d::platform { class Window; }
 
 namespace gs3d::render {
 

@@ -1,7 +1,8 @@
 # GeoScatter3D
 
-GeoScatter3D 是一个面向大规模三维散点/点云数据的现代桌面端高可用可视化与分析系统。
-底层由 C++20 / Vulkan 1.3 核心引擎提供海量数据流式处理与离屏图形计算，前端采用现代 **Flutter Desktop (Windows)** 框架构建，经纯 C-ABI 动态链接库 (`gs3d_ffi.dll`) 调用**单进程离屏渲染内核**（默认）；旧双进程 JSON-RPC 控制面保留为兼容回退。
+GeoScatter3D 是一个面向大规模三维散点/点云数据的现代 Flutter 桌面端与 Android 平板可视化、分析系统。
+底层由 C++20 / Vulkan 1.3 核心引擎提供海量数据流式处理与离屏图形计算，前端经纯 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用**单进程 `gs3d_engine_*` 渲染内核**；JSON-RPC 仅作为标准控制面协议，不再启动独立 Viewer。
+Android 发布包声明必须具备 Vulkan 1.3；引擎不可用时不使用 Dart 软渲染替代。
 
 ---
 
@@ -33,7 +34,8 @@ GeoScatter3D 是一个面向大规模三维散点/点云数据的现代桌面端
 
 ### 3. 严谨的架构解耦与工程护栏
 - **图形句柄不穿透**：UI 纯只读投影或产出 `UiActions` 纯数据命令，严禁直接持有 Vulkan 句柄；
-- **双轨运行机制**：原生引擎 TCP 控制面联动 + 离线 Dart 高精度数学回退，确保无论在无头自动化测试还是桌面真机环境下均 100% 健壮运行；
+- **显式引擎能力**：工作台渲染、拾取、相机与截图走 `gs3d_engine_*` C-ABI；引擎不可用时明确报告错误，不伪造 Dart 点云预览；
+- **统一控制面**：前台动作统一由 `GeoScatter3dService` 调度，并可通过 JSON-RPC 2.0 `ui_action` 调用；
 - **文件隔离纪律**：测试与运行时临时产物严格收敛于 `tmp/` 目录，并配置自动化测试自清理，杜绝 Git 工作树污染。
 
 ---
@@ -44,8 +46,8 @@ GeoScatter3D 是一个面向大规模三维散点/点云数据的现代桌面端
 
 用 VS Code 打开仓库根目录，安装推荐的 Dart/Flutter 扩展，选择
 `GeoScatter3D (Flutter + Native)` 后按 F5。预启动任务自动构建 Debug 版
-FFI、Vulkan 查看器和预处理器；Flutter 构建时部署 DLL、shader、字体及配置。
-打开数据集后自动连接隐藏的原生查看器。停止调试后可再次按 F5。
+FFI、Vulkan 引擎和预处理器；Flutter 构建时部署 DLL、shader、字体及配置。
+打开数据集后由同一进程的 `gs3d_engine_*` 内核提供离屏帧回读。停止调试后可再次按 F5。
 首次运行需要 Flutter SDK、Visual Studio C++ 桌面工具、CMake 3.28+、Vulkan SDK
 以及 GLFW/nlohmann-json 依赖；新构建优先使用 `VCPKG_ROOT`，已有构建沿用 CMake 缓存。
 
@@ -53,7 +55,7 @@ FFI、Vulkan 查看器和预处理器；Flutter 构建时部署 DLL、shader、�
 
 ### 1. 快速开始（一键编译与完整发布）
 
-推荐使用根目录自带的一键自动化编译部署脚本。该脚本会自动构建 C++ 原生 FFI 动态库 (`gs3d_ffi.dll`)、渲染器主程序 (`GeoScatter3D.exe`)，打包 Shader 与中文字体资源，并完成 Flutter Windows 桌面端最终打包：
+推荐使用根目录自带的一键自动化编译部署脚本。该脚本会自动构建 C++ 原生 FFI 动态库 (`gs3d_ffi.dll`)，打包 Shader 与中文字体资源，并完成 Flutter Windows 桌面端最终打包：
 
 ```powershell
 ./scripts/build_flutter_windows.ps1 -Config Release
@@ -64,9 +66,26 @@ FFI、Vulkan 查看器和预处理器；Flutter 构建时部署 DLL、shader、�
 ./ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe
 ```
 
+Android 正式发布使用带签名校验的一键脚本：
+```powershell
+./scripts/build_android_release.ps1
+```
+运行前请按 `ui_flutter/android/key.properties.example` 配置生产 keystore；
+脚本会拒绝缺失、占位值或 debug 证书，并校验 AAB 内包含两种 Android ABI、
+SPIR-V 着色器与内置示例数据。
+
+Android 实机 Maestro 回归使用：
+
+```powershell
+./scripts/run_maestro_android.ps1 -Device emulator-5554 -Suite all
+```
+
+脚本会把 `tmp/maestro/geoscatter3d-import-test.csv` 作为 SAF 流程前置文件推送到
+模拟器 Downloads，并将本次运行产物统一写入 `tmp/maestro/`。
+
 ### 2. 独立开发与测试
 
-#### 运行 Flutter 前台自动化测试（58 项测试通过）
+#### 运行 Flutter 前台自动化测试
 涵盖 FFI 动态加载、欢迎页向导、三套布局路由、视口深度交互、命令弹窗及导出对话框：
 ```powershell
 cd ui_flutter
@@ -86,7 +105,7 @@ cd ui_flutter
 flutter run -d windows
 ```
 
-#### 运行 C++ 底层单元测试与工程质量门禁（44 项测试通过）
+#### 运行 C++ 底层单元测试与工程质量门禁（当前 43 项通过）
 ```powershell
 # 1. 静态头文件依赖拓扑与单向依赖合规检查
 python scripts/check_include_deps.py
@@ -104,13 +123,13 @@ ctest --test-dir tmp/build-win -C Release --output-on-failure
 
 ```text
 GeoScatter3D/
-├── ui_flutter/                               # [前端表现层 UI] 现代 Flutter Desktop 桌面端应用
+├── ui_flutter/                               # [前端表现层 UI] Flutter Desktop 与 Android 移动端应用
 │   ├── lib/main.dart                         # 桌面应用根入口与全局模态浮层挂载
 │   ├── lib/src/ffi/                          # C-ABI FFI 绑定与核心调度服务 (geoscatter3d_service.dart)
-│   ├── lib/src/native/                       # 本地原生查看器 TCP + JSON-RPC 双向控制面客户端
+│   ├── lib/src/platform/                     # Android SAF 等平台桥接
 │   ├── lib/src/panels/                       # 3D视口画布、小地图、测量统计、菜单栏与诊断对话框
 │   ├── lib/src/widgets/                      # 命令面板、快捷键帮助、三种工作台布局组件
-│   └── test/                                 # 50 项前端单元与组件集成测试套件
+│   └── test/                                 # Flutter 单元与组件集成测试套件
 │
 ├── include/ & src/
 │   ├── [跨语言桥接层 FFI]

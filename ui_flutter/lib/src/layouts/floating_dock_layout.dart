@@ -148,14 +148,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           Tooltip(
             message: '复位视角',
             child: InkWell(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('视角已重置为俯瞰默认姿态'),
-                    duration: Duration(milliseconds: 900),
-                  ),
-                );
-                  },
+              onTap: () => widget.service.executeAction('workbench.camera.reset'),
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     padding: const EdgeInsets.all(8),
@@ -476,7 +469,7 @@ class _FloatingDockLayoutState extends State<FloatingDockLayout> {
           ),
           const SizedBox(width: 6),
           Text(
-            '${widget.service.points.length} 测点 | 60 FPS | 沉浸 Dock',
+            '${widget.service.points.length} 测点 | ${widget.service.fps.toStringAsFixed(1)} FPS | 沉浸 Dock',
             style: const TextStyle(
               color: Gs3dDark.textSecondary,
               fontSize: 11,

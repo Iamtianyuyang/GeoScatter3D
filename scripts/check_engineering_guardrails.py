@@ -233,6 +233,45 @@ def is_ignored(root: pathlib.Path, candidate: str) -> bool:
     return result.returncode == 0
 
 
+def check_android_release_contract(
+    root: pathlib.Path,
+    violations: list[str],
+) -> None:
+    """Validate Android store filtering and release-signing invariants."""
+    manifest_path = root / "ui_flutter/android/app/src/main/AndroidManifest.xml"
+    gradle_path = root / "ui_flutter/android/app/build.gradle.kts"
+
+    if not manifest_path.is_file():
+        violations.append("Android manifest is missing")
+    else:
+        manifest = manifest_path.read_text(encoding="utf-8")
+        vulkan_feature = re.search(
+            r"<uses-feature\b[^>]*android:name=\"android\.hardware\.vulkan\.version\""
+            r"[^>]*/>",
+            manifest,
+            flags=re.DOTALL,
+        )
+        if vulkan_feature is None:
+            violations.append("Android manifest must require Vulkan 1.3")
+        else:
+            feature = vulkan_feature.group(0)
+            if 'android:version="0x00403000"' not in feature:
+                violations.append("Android manifest Vulkan feature is below Vulkan 1.3")
+            if 'android:required="true"' not in feature:
+                violations.append("Android Vulkan feature must be required")
+
+    if not gradle_path.is_file():
+        violations.append("Android app Gradle build file is missing")
+    else:
+        gradle = gradle_path.read_text(encoding="utf-8")
+        if 'signingConfigs.getByName("debug")' in gradle:
+            violations.append("Android release build must not fall back to the debug signing config")
+        if "releaseTaskRequested" not in gradle:
+            violations.append("Android release build must guard missing production signing config")
+        if 'signingConfig = signingConfigs.getByName("release")' not in gradle:
+            violations.append("Android release build must use the production release signing config")
+
+
 def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
     tracked = tracked_files(root)
@@ -287,6 +326,8 @@ def main() -> int:
     for candidate in IGNORE_SCOPE_PROBES:
         if is_ignored(root, candidate):
             violations.append(f"overly broad ignore rule: {candidate}")
+
+    check_android_release_contract(root, violations)
 
     viewer_path = root / "src/app/ViewerApp.cpp"
     app_config_path = root / "src/app/AppConfig.cpp"

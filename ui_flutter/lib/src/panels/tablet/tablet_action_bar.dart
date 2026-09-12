@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../ffi/geoscatter3d_service.dart';
+import '../../theme/gs3d_form_factor.dart';
 import '../../theme/gs3d_tokens.dart';
 import '../../widgets/fluid.dart';
 
@@ -16,16 +17,71 @@ class TabletActionBar extends StatelessWidget {
   final GeoScatter3dService service;
 
   /// 执行动作并统一反馈：失败（含 R3 引擎降级）弹显式 SnackBar。
-  void _run(BuildContext context, String actionId,
-      [Map<String, dynamic>? params]) {
+  void _run(
+    BuildContext context,
+    String actionId, [
+    Map<String, dynamic>? params,
+  ]) {
     final result = service.executeAction(actionId, params);
-    if (result['success'] == true) return;
+    if (result['success'] == true) {
+      if (actionId == 'workbench.stats.get') {
+        final data = result['data'];
+        final count = data is Map ? data['count'] : null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(count is num ? '统计完成：$count 个有效点' : '属性统计指标计算完成'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
     final message = result['message'] as String? ?? '动作执行失败';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showLayoutMenu(BuildContext context) {
+    Gs3dResponsiveDialog.show(
+      context,
+      title: '切换工作区布局',
+      builder: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: WorkbenchLayoutMode.values
+            .map((mode) {
+              final selected = service.layoutMode == mode;
+              return Material(
+                type: MaterialType.transparency,
+                child: ListTile(
+                  key: ValueKey('tablet.layout.option.${mode.name}'),
+                  leading: Icon(
+                    selected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: selected
+                        ? Gs3dTokens.accent
+                        : Gs3dTokens.textSecondary,
+                  ),
+                  title: Text(mode.displayName),
+                  subtitle: Text(
+                    mode == WorkbenchLayoutMode.standard
+                        ? 'Android / 平板触控推荐'
+                        : '桌面布局，触控设备会保持触控工作台',
+                  ),
+                  onTap: () {
+                    Navigator.of(dialogContext).pop();
+                    _run(context, 'workbench.layout.set', {'mode': mode.name});
+                  },
+                ),
+              );
+            })
+            .toList(growable: false),
       ),
     );
   }
@@ -42,94 +98,109 @@ class TabletActionBar extends StatelessWidget {
       child: ListenableBuilder(
         listenable: service,
         builder: (context, _) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: Gs3dTokens.space8,
-            ),
-            child: Row(
-              children: [
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.reset_camera'),
-                  icon: Icons.refresh_rounded,
-                  label: '复位视角',
-                  onTap: () => _run(context, 'workbench.camera.reset'),
+          final actionRow = Row(
+            children: [
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.reset_camera'),
+                icon: Icons.refresh_rounded,
+                label: '复位视角',
+                onTap: () => _run(context, 'workbench.camera.reset'),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.zoom_in'),
+                icon: Icons.zoom_in_rounded,
+                label: '放大',
+                onTap: () => _run(context, 'workbench.camera.set_view', {
+                  'zoom': (service.cameraZoom * 1.2).clamp(0.05, 50.0),
+                }),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.zoom_out'),
+                icon: Icons.zoom_out_rounded,
+                label: '缩小',
+                onTap: () => _run(context, 'workbench.camera.set_view', {
+                  'zoom': (service.cameraZoom / 1.2).clamp(0.05, 50.0),
+                }),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.pan_toggle'),
+                icon: Icons.open_with_rounded,
+                label: '平移模式',
+                active: service.isPanning,
+                onTap: () => _run(context, 'workbench.camera.set_panning', {
+                  'panning': !service.isPanning,
+                }),
+              ),
+              _divider,
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.measure_mode'),
+                icon: Icons.straighten_rounded,
+                label: '标尺测距',
+                active: service.isMeasurementMode,
+                onTap: () => _run(context, 'workbench.measure.mode'),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.stats'),
+                icon: Icons.bar_chart_rounded,
+                label: '统计',
+                onTap: () => _run(context, 'workbench.stats.get'),
+              ),
+              _divider,
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.theme_cycle'),
+                icon: Icons.palette_outlined,
+                label: '主题',
+                onTap: () => _run(context, 'workbench.theme.cycle'),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.screenshot'),
+                icon: Icons.camera_alt_outlined,
+                label: '截图',
+                onTap: () => _run(context, 'workbench.screenshot'),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.layout'),
+                icon: Icons.view_quilt_outlined,
+                label: '布局',
+                onTap: () => _showLayoutMenu(context),
+              ),
+              _divider,
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.command'),
+                icon: Icons.terminal,
+                label: '命令',
+                accent: true,
+                onTap: () => _run(
+                  context,
+                  'workbench.overlay.command_palette',
+                  {'open': true},
                 ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.zoom_in'),
-                  icon: Icons.zoom_in_rounded,
-                  label: '放大',
-                  onTap: () => _run(context, 'workbench.camera.set_view',
-                      {'zoom': (service.cameraZoom * 1.2).clamp(0.05, 50.0)}),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.zoom_out'),
-                  icon: Icons.zoom_out_rounded,
-                  label: '缩小',
-                  onTap: () => _run(context, 'workbench.camera.set_view',
-                      {'zoom': (service.cameraZoom / 1.2).clamp(0.05, 50.0)}),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.pan_toggle'),
-                  icon: Icons.open_with_rounded,
-                  label: '平移模式',
-                  active: service.isPanning,
-                  onTap: () => _run(context, 'workbench.camera.set_panning',
-                      {'panning': !service.isPanning}),
-                ),
-                _divider,
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.measure_mode'),
-                  icon: Icons.straighten_rounded,
-                  label: '标尺测距',
-                  active: service.isMeasurementMode,
-                  onTap: () => _run(context, 'workbench.measure.mode'),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.stats'),
-                  icon: Icons.bar_chart_rounded,
-                  label: '统计',
-                  onTap: () => _run(context, 'workbench.stats.get'),
-                ),
-                _divider,
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.theme_cycle'),
-                  icon: Icons.palette_outlined,
-                  label: '主题',
-                  onTap: () => _run(context, 'workbench.theme.cycle'),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.screenshot'),
-                  icon: Icons.camera_alt_outlined,
-                  label: '截图',
-                  onTap: () => _run(context, 'workbench.screenshot'),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.layout'),
-                  icon: Icons.view_quilt_outlined,
-                  label: '布局',
-                  onTap: () => _run(context, 'workbench.layout.set',
-                      {'mode': service.layoutMode.name}),
-                ),
-                _divider,
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.command'),
-                  icon: Icons.terminal,
-                  label: '命令',
-                  accent: true,
-                  onTap: () => _run(context, 'workbench.overlay.command_palette',
-                      {'open': true}),
-                ),
-                _ActionBarButton(
-                  key: const ValueKey('tablet.actionbar.shortcuts'),
-                  icon: Icons.keyboard_alt_outlined,
-                  label: '快捷键',
-                  onTap: () =>
-                      _run(context, 'workbench.overlay.shortcut_help',
-                          {'open': true}),
-                ),
-              ],
-            ),
+              ),
+              _ActionBarButton(
+                key: const ValueKey('tablet.actionbar.shortcuts'),
+                icon: Icons.keyboard_alt_outlined,
+                label: '快捷键',
+                onTap: () => _run(context, 'workbench.overlay.shortcut_help', {
+                  'open': true,
+                }),
+              ),
+            ],
+          );
+
+          // 平板内屏有足够宽度容纳完整动作条；去掉滚动手势竞争，保证
+          // 点击按钮稳定进入 Gs3dPressable。窄手机仍允许横向浏览全部动作。
+          if (context.gs3dFormFactor == Gs3dFormFactorSlot.compact) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Gs3dTokens.space8,
+              ),
+              child: actionRow,
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space8),
+            child: actionRow,
           );
         },
       ),
@@ -137,11 +208,11 @@ class TabletActionBar extends StatelessWidget {
   }
 
   Widget get _divider => Container(
-        width: 1,
-        height: Gs3dTokens.space24 + 4,
-        margin: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space4),
-        color: Gs3dTokens.hairline,
-      );
+    width: 1,
+    height: Gs3dTokens.space24 + 4,
+    margin: const EdgeInsets.symmetric(horizontal: Gs3dTokens.space4),
+    color: Gs3dTokens.hairline,
+  );
 }
 
 /// 动作条按钮：图标 + 文字，视觉紧凑、命中区 ≥48（Gs3dTouchTarget）。

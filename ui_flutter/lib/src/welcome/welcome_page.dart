@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -85,8 +87,9 @@ class _WelcomePageState extends State<WelcomePage> {
 
   /// 唤起命令面板（等价 Ctrl+K/P 入口；无键盘设备可达，R2 走 executeAction）。
   void _openCommandPalette() {
-    widget.service.executeAction('workbench.overlay.command_palette',
-        {'open': true});
+    widget.service.executeAction('workbench.overlay.command_palette', {
+      'open': true,
+    });
   }
 
   @override
@@ -113,155 +116,163 @@ class _WelcomePageState extends State<WelcomePage> {
           body: Stack(
             children: [
               Column(
-            children: [
-              // 1. 统一顶栏（居中标题，左右对称，永不溢出）。
-              Container(
-                height: Gs3dTokens.titleBarHeight,
-                color: Gs3dMaterial.bar.tint,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Gs3dTokens.space12 + 2,
-                ),
-                child: Row(
-                  children: [
-                    const MacTrafficLights(),
-                    const Spacer(),
-                    // 品牌区：长按唤起命令面板（触屏等价快捷键入口）。
-                    // KB-02：超窄视口下用 Flexible 收缩 + 省略号，避免顶栏
-                    // 横向溢出；桌面宽度充裕时视觉零变化。
-                    Flexible(
-                      child: GestureDetector(
-                        onLongPress: _openCommandPalette,
-                        child: Text(
-                          'GeoScatter3D · v0.1.0',
-                          style: Gs3dType.bodyStrong,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+                children: [
+                  // 1. 统一顶栏（居中标题，左右对称，永不溢出）。
+                  Container(
+                    height: Gs3dTokens.titleBarHeight,
+                    color: Gs3dMaterial.bar.tint,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Gs3dTokens.space12 + 2,
                     ),
-                    const Spacer(),
-                    // 触控档常驻「命令」按钮（等价 Ctrl+K/P）。
-                    if (touchPreferred)
-                      IconButton(
-                        key: const ValueKey('welcome.topbar.command'),
-                        tooltip: '命令面板',
-                        icon: const Icon(
-                          Icons.terminal,
-                          size: 18,
-                          color: Gs3dTokens.textSecondary,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: Gs3dTokens.hitTargetTouch,
-                          minHeight: Gs3dTokens.hitTargetTouch,
-                        ),
-                        onPressed: _openCommandPalette,
-                      ),
-                    const SizedBox(width: 47),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, thickness: 1, color: Gs3dTokens.hairline),
-
-              // 2. 主工作区：左侧抽屉 + 右侧内容。
-              Expanded(
-                child: Row(
-                  children: [
-                    WelcomeSidebar(
-                      service: widget.service,
-                      selectedIndex: _selectedNavIndex,
-                      onSelectIndex: (idx) {
-                        setState(() => _selectedNavIndex = idx);
-                      },
-                      isCollapsed: collapsed,
-                      onToggleCollapse: () {
-                        setState(() => _isDrawerCollapsed = !_isDrawerCollapsed);
-                      },
-                    ),
-
-                    const VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Gs3dTokens.hairline,
-                    ),
-
-                    Expanded(
-                      child: Column(
-                        children: [
-                          // 异常 / 忙碌横幅。
-                          ListenableBuilder(
-                            listenable: widget.service,
-                            builder: (context, _) {
-                              final service = widget.service;
-                              if (!service.welcomeBusy &&
-                                  service.welcomeError == null) {
-                                return const SizedBox.shrink();
-                              }
-                              final hasError = service.welcomeError != null;
-                              return AnimatedContainer(
-                                duration: Gs3dMotion.micro,
-                                curve: Gs3dMotion.standardCurve,
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: Gs3dTokens.space16,
-                                  vertical: Gs3dTokens.space8,
-                                ),
-                                color: hasError
-                                    ? Gs3dTokens.dangerSubtle
-                                    : Gs3dTokens.infoSubtle,
-                                child: Row(
-                                  children: [
-                                    if (service.welcomeBusy)
-                                      const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    const SizedBox(width: Gs3dTokens.space8),
-                                    Expanded(
-                                      child: Text(
-                                        service.welcomeError ??
-                                            service.backendStatus,
-                                        style: Gs3dType.caption.copyWith(
-                                          color: hasError
-                                              ? Gs3dTokens.danger
-                                              : Gs3dTokens.textBody,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-
-                          // 内容滚动区（最大宽度 1080 并居中，杜绝超宽屏拉伸）。
-                          Expanded(
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 48,
-                                vertical: 40,
-                              ),
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 1080,
-                                  ),
-                                  child: _buildSelectedTabView(),
-                                ),
-                              ),
+                    child: Row(
+                      children: [
+                        const MacTrafficLights(),
+                        const Spacer(),
+                        // 品牌区：长按唤起命令面板（触屏等价快捷键入口）。
+                        // KB-02：超窄视口下用 Flexible 收缩 + 省略号，避免顶栏
+                        // 横向溢出；桌面宽度充裕时视觉零变化。
+                        Flexible(
+                          child: GestureDetector(
+                            onLongPress: _openCommandPalette,
+                            child: Text(
+                              'GeoScatter3D · v0.1.0',
+                              style: Gs3dType.bodyStrong,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const Spacer(),
+                        // 触控档常驻「命令」按钮（等价 Ctrl+K/P）。
+                        if (touchPreferred)
+                          IconButton(
+                            key: const ValueKey('welcome.topbar.command'),
+                            tooltip: '命令面板',
+                            icon: const Icon(
+                              Icons.terminal,
+                              size: 18,
+                              color: Gs3dTokens.textSecondary,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: Gs3dTokens.hitTargetTouch,
+                              minHeight: Gs3dTokens.hitTargetTouch,
+                            ),
+                            onPressed: _openCommandPalette,
+                          ),
+                        const SizedBox(width: 47),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: Gs3dTokens.hairline,
+                  ),
+
+                  // 2. 主工作区：左侧抽屉 + 右侧内容。
+                  Expanded(
+                    child: Row(
+                      children: [
+                        WelcomeSidebar(
+                          service: widget.service,
+                          selectedIndex: _selectedNavIndex,
+                          onSelectIndex: (idx) {
+                            setState(() => _selectedNavIndex = idx);
+                          },
+                          isCollapsed: collapsed,
+                          onToggleCollapse: () {
+                            setState(
+                              () => _isDrawerCollapsed = !_isDrawerCollapsed,
+                            );
+                          },
+                        ),
+
+                        const VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: Gs3dTokens.hairline,
+                        ),
+
+                        Expanded(
+                          child: Column(
+                            children: [
+                              // 异常 / 忙碌横幅。
+                              ListenableBuilder(
+                                listenable: widget.service,
+                                builder: (context, _) {
+                                  final service = widget.service;
+                                  if (!service.welcomeBusy &&
+                                      service.welcomeError == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final hasError = service.welcomeError != null;
+                                  return AnimatedContainer(
+                                    duration: Gs3dMotion.micro,
+                                    curve: Gs3dMotion.standardCurve,
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: Gs3dTokens.space16,
+                                      vertical: Gs3dTokens.space8,
+                                    ),
+                                    color: hasError
+                                        ? Gs3dTokens.dangerSubtle
+                                        : Gs3dTokens.infoSubtle,
+                                    child: Row(
+                                      children: [
+                                        if (service.welcomeBusy)
+                                          const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        const SizedBox(
+                                          width: Gs3dTokens.space8,
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            service.welcomeError ??
+                                                service.backendStatus,
+                                            style: Gs3dType.caption.copyWith(
+                                              color: hasError
+                                                  ? Gs3dTokens.danger
+                                                  : Gs3dTokens.textBody,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+
+                              // 内容滚动区（最大宽度 1080 并居中，杜绝超宽屏拉伸）。
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 48,
+                                    vertical: 40,
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 1080,
+                                      ),
+                                      child: _buildSelectedTabView(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
 
               // 全局命令面板覆盖层（触控入口按钮化后，欢迎页同样可达）。
               ListenableBuilder(
@@ -312,29 +323,54 @@ class _WelcomePageState extends State<WelcomePage> {
 
   // 2. 最近项目管理视图。
   Widget _buildRecentsView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _ViewHeader(
-          icon: Icons.access_time_rounded,
-          title: '最近项目管理',
-          subtitle: '管理本地历史加载的全部空间数据包与散点工程，支持快速定位与清理',
-        ),
-        const SizedBox(height: Gs3dTokens.space20),
-
-        Row(
+    return ListenableBuilder(
+      listenable: widget.service,
+      builder: (context, _) {
+        final filter = widget.service.recentProjectFilter;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Gs3dPillButton(label: '全部工程', onPressed: () {}, active: true),
-            const SizedBox(width: Gs3dTokens.space8),
-            Gs3dPillButton(label: '分层工区包 (.bundle)', onPressed: () {}),
-            const SizedBox(width: Gs3dTokens.space8),
-            Gs3dPillButton(label: '单体点云 (.gs3d)', onPressed: () {}),
-          ],
-        ),
-        const SizedBox(height: Gs3dTokens.space16),
+            const _ViewHeader(
+              icon: Icons.access_time_rounded,
+              title: '最近项目管理',
+              subtitle: '管理本地历史加载的全部空间数据包与散点工程，支持快速定位与清理',
+            ),
+            const SizedBox(height: Gs3dTokens.space20),
 
-        RecentProjectsCard(service: widget.service),
-      ],
+            Wrap(
+              spacing: Gs3dTokens.space8,
+              runSpacing: Gs3dTokens.space8,
+              children: [
+                Gs3dPillButton(
+                  label: '全部工程',
+                  onPressed: () => widget.service.setRecentProjectFilter('all'),
+                  active: filter == 'all',
+                ),
+                Gs3dPillButton(
+                  label: '分层工区包 (.bundle)',
+                  onPressed: () =>
+                      widget.service.setRecentProjectFilter('bundle'),
+                  active: filter == 'bundle',
+                ),
+                Gs3dPillButton(
+                  label: '单体点云 (.gs3d)',
+                  onPressed: () =>
+                      widget.service.setRecentProjectFilter('gs3d'),
+                  active: filter == 'gs3d',
+                ),
+              ],
+            ),
+            const SizedBox(height: Gs3dTokens.space16),
+
+            RecentProjectsCard(
+              service: widget.service,
+              projects: widget.service.filteredRecentProjects,
+              emptyMessage: filter == 'all' ? '暂无最近打开的项目记录' : '该格式暂无最近打开的项目记录',
+              showEmptyDemoButton: filter == 'all',
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -346,55 +382,24 @@ class _WelcomePageState extends State<WelcomePage> {
         const _ViewHeader(
           icon: Icons.view_in_ar_rounded,
           title: '示例工程库',
-          subtitle: '开箱即用的官方高精度点云与地质模型，用于验证 Vulkan 密集着色管线与八叉树 LOD 性能',
+          subtitle: '安装包内置的可验证点云示例，用于检查数据加载、八叉树 LOD 与 Vulkan 视口',
         ),
         const SizedBox(height: Gs3dTokens.space24),
 
         _buildSampleCard(
           icon: Icons.scatter_plot_rounded,
           iconColor: Gs3dTokens.accent,
-          title: '高斯散点示范包 (Gaussian Point Cloud Bundle)',
-          badge: '官方示范',
+          title: '内置点云示例工程 (GS3D Bundle)',
+          badge: '可直接载入',
           badgeColor: Gs3dTokens.accent,
-          desc: '轻量高斯随机分布与多面体散斑数据，秒级启动工作台，用于视口交互基准测试。',
+          desc: '安装包内置 sample-points.csv，可在首次体验时自动构建并载入工程。',
           specs: const [
-            ('25 万散点', Icons.circle_outlined),
-            ('8 层八叉树', Icons.account_tree_outlined),
-            ('.gs3d.bundle 空间包', Icons.folder_zip_outlined),
+            ('25 个示例点', Icons.circle_outlined),
+            ('真实 CSV 资源', Icons.table_chart_outlined),
+            ('自动生成 LOD', Icons.account_tree_outlined),
           ],
-          onLaunch: () => widget.service.executeActionAsync('welcome.quick_demo'),
-        ),
-        const SizedBox(height: Gs3dTokens.space12 + 2),
-
-        _buildSampleCard(
-          icon: Icons.location_city_rounded,
-          iconColor: Gs3dTokens.success,
-          title: '城市建筑激光雷达机载点云 (Urban LiDAR Survey)',
-          badge: '真实测绘',
-          badgeColor: Gs3dTokens.success,
-          desc: '包含地表高程分类与建筑物边界的大范围地理空间数据集，测试视锥剔除与空间索引。',
-          specs: const [
-            ('125 万散点', Icons.circle_outlined),
-            ('12 层八叉树', Icons.account_tree_outlined),
-            ('RGB 真彩色', Icons.palette_outlined),
-          ],
-          onLaunch: () => widget.service.executeActionAsync('welcome.quick_demo'),
-        ),
-        const SizedBox(height: Gs3dTokens.space12 + 2),
-
-        _buildSampleCard(
-          icon: Icons.terrain_rounded,
-          iconColor: Gs3dPalette.systemPurple,
-          title: '深层地质断层带结构散点 (Fault Line Structural Model)',
-          badge: '深地勘探',
-          badgeColor: Gs3dPalette.systemPurple,
-          desc: '面向地质勘探场景的断层面海量散点模型，验证 Vulkan 密集着色管线与动态流式加载。',
-          specs: const [
-            ('480 万散点', Icons.circle_outlined),
-            ('16 层八叉树', Icons.account_tree_outlined),
-            ('断层属性场', Icons.view_in_ar_outlined),
-          ],
-          onLaunch: () => widget.service.executeActionAsync('welcome.quick_demo'),
+          onLaunch: () =>
+              widget.service.executeActionAsync('welcome.quick_demo'),
         ),
       ],
     );
@@ -445,7 +450,9 @@ class _WelcomePageState extends State<WelcomePage> {
                       ),
                       decoration: BoxDecoration(
                         color: badgeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(Gs3dTokens.radiusXs),
+                        borderRadius: BorderRadius.circular(
+                          Gs3dTokens.radiusXs,
+                        ),
                       ),
                       child: Text(
                         badge,
@@ -569,11 +576,18 @@ class _WelcomePageState extends State<WelcomePage> {
     return ListenableBuilder(
       listenable: widget.service,
       builder: (context, _) {
-        final gpus = widget.service.gpus;
-        final activeIdx = widget.service.activeGpuIndex;
-        final gpuLabel = (activeIdx >= 0 && activeIdx < gpus.length)
-            ? gpus[activeIdx].name
-            : '未探测到 Vulkan 设备';
+        final gpuLabel = widget.service.activeGpuDisplayName;
+        final platformLabel = Platform.isWindows
+            ? 'Flutter Desktop (Windows)'
+            : Platform.isAndroid
+            ? 'Flutter (Android)'
+            : Platform.isIOS
+            ? 'Flutter (iOS)'
+            : 'Flutter Desktop';
+        final platformEdition =
+            Platform.isWindows || Platform.isLinux || Platform.isMacOS
+            ? 'Multiplatform Desktop'
+            : 'Mobile';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -610,7 +624,10 @@ class _WelcomePageState extends State<WelcomePage> {
                             borderRadius: BorderRadius.circular(
                               Gs3dTokens.radiusLg,
                             ),
-                            boxShadow: Gs3dTokens.accentGlow(alpha: 0.3, blur: 8),
+                            boxShadow: Gs3dTokens.accentGlow(
+                              alpha: 0.3,
+                              blur: 8,
+                            ),
                           ),
                           alignment: Alignment.center,
                           child: const Text(
@@ -623,10 +640,10 @@ class _WelcomePageState extends State<WelcomePage> {
                           ),
                         ),
                         const SizedBox(width: Gs3dTokens.space16),
-                        const Column(
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            const Text(
                               'GeoScatter3D Studio',
                               style: TextStyle(
                                 fontSize: 18,
@@ -636,7 +653,7 @@ class _WelcomePageState extends State<WelcomePage> {
                               ),
                             ),
                             Text(
-                              '版本 0.1.0 · Multiplatform Desktop',
+                              '版本 0.1.0 · $platformEdition',
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: Gs3dTokens.textDisabled,
@@ -649,13 +666,14 @@ class _WelcomePageState extends State<WelcomePage> {
                     const SizedBox(height: Gs3dTokens.space20),
                     const Gs3dDivider(height: 1),
                     const SizedBox(height: Gs3dTokens.space12),
-                    const _SpecRow(
-                      label: '用户界面框架',
-                      value: 'Flutter Desktop (Windows)',
-                    ),
-                    const _SpecRow(
+                    _SpecRow(label: '用户界面框架', value: platformLabel),
+                    _SpecRow(
                       label: '渲染计算内核',
-                      value: 'Vulkan 1.3 / Pure C-ABI FFI',
+                      value: Platform.isAndroid
+                          ? 'Vulkan 1.3 / Native C-ABI FFI'
+                          : Platform.isIOS
+                          ? 'iOS 原生渲染后端待接入'
+                          : 'Vulkan 1.3 / Pure C-ABI FFI',
                     ),
                     const _SpecRow(
                       label: '空间组织引擎',

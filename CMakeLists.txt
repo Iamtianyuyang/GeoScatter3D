@@ -36,7 +36,9 @@ if(BUILD_TESTING)
 endif()
 
 # ---------------------------------------------------------------------------
-# Packaging & Distribution (install & CPack)
+# Packaging & Distribution (install & CPack) — desktop only
 # ---------------------------------------------------------------------------
 
-include(cmake/Packaging.cmake)
+if(NOT ANDROID)
+    include(cmake/Packaging.cmake)
+endif()

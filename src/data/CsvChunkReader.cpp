@@ -39,6 +39,12 @@ bool parse_float(std::string_view text, float& value) {
         return false;
     }
 
+#if defined(__ANDROID__)
+    std::string tmp(trimmed);
+    char* end = nullptr;
+    value = std::strtof(tmp.c_str(), &end);
+    return end == tmp.c_str() + tmp.size();
+#else
     const auto result = std::from_chars(
         trimmed.data(),
         trimmed.data() + trimmed.size(),
@@ -47,6 +53,7 @@ bool parse_float(std::string_view text, float& value) {
 
     return result.ec == std::errc{} &&
            result.ptr == trimmed.data() + trimmed.size();
+#endif
 }
 
 bool parse_double(std::string_view text, double& value) {
@@ -55,6 +62,12 @@ bool parse_double(std::string_view text, double& value) {
         return false;
     }
 
+#if defined(__ANDROID__)
+    std::string tmp(trimmed);
+    char* end = nullptr;
+    value = std::strtod(tmp.c_str(), &end);
+    return end == tmp.c_str() + tmp.size();
+#else
     const auto result = std::from_chars(
         trimmed.data(),
         trimmed.data() + trimmed.size(),
@@ -63,6 +76,7 @@ bool parse_double(std::string_view text, double& value) {
 
     return result.ec == std::errc{} &&
            result.ptr == trimmed.data() + trimmed.size();
+#endif
 }
 
 struct RequiredFieldViews {

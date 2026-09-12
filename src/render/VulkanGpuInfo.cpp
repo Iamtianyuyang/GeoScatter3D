@@ -13,6 +13,19 @@ namespace gs3d::render {
 
 namespace {
 
+// Android NDK 的 libvulkan.so 不直接导出 vkGetPhysicalDeviceProperties2
+// （Vulkan 1.1 核心函数）；通过 vkGetInstanceProcAddr 动态加载。
+#if defined(__ANDROID__)
+PFN_vkGetPhysicalDeviceProperties2 load_props2(VkInstance instance) {
+    static PFN_vkGetPhysicalDeviceProperties2 fn = nullptr;
+    if (!fn && instance) {
+        fn = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+            vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2"));
+    }
+    return fn;
+}
+#endif
+
 constexpr const char* kRequiredDeviceExtensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
@@ -207,7 +220,27 @@ std::vector<VulkanGpuInfo> enumerate_gpus(
         id_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
 
         props2.pNext = &id_props;
+#if defined(__ANDROID__)
+        // Android：通过 vkGetInstanceProcAddr 动态加载 Vulkan 1.1 函数。
+        // 需要一个临时 instance 来获取函数指针；enumerate_gpus 已有 instance 参数。
+        // 这里用全局缓存的指针（由 VulkanContext 构造时预热）。
+        {
+            static PFN_vkGetPhysicalDeviceProperties2 props2_fn = nullptr;
+            if (!props2_fn) {
+                // 尝试从当前进程的 Vulkan loader 获取
+                props2_fn = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+                    vkGetInstanceProcAddr(VK_NULL_HANDLE,
+                        "vkGetPhysicalDeviceProperties2"));
+            }
+            if (props2_fn) {
+                props2_fn(device, &props2);
+            } else {
+                vkGetPhysicalDeviceProperties(device, &props2.properties);
+            }
+        }
+#else
         vkGetPhysicalDeviceProperties2(device, &props2);
+#endif
 
         info.name = props2.properties.deviceName;
         info.device_uuid = device_uuid_from_properties(id_props);

@@ -1,5 +1,5 @@
 name: ui_flutter
-description: "A new Flutter project."
+description: "GeoScatter3D mobile and desktop point-cloud visualization workspace."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.12.1
@@ -58,10 +58,21 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - assets/data/sample-points.csv
+    - assets/shaders/point.vert.spv
+    - assets/shaders/point.frag.spv
+
   fonts:
     - family: NotoSansCJKsc
       fonts:
         - asset: assets/fonts/NotoSansCJKsc-Regular.otf
           weight: 400
         - asset: assets/fonts/NotoSansCJKsc-Bold.otf
+          weight: 700
+    - family: GeoSans
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto-Bold.ttf
           weight: 700

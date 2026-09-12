@@ -1,6 +1,5 @@
 #pragma once
 
-#include "platform/Window.hpp"
 #include "render/VulkanGpuInfo.hpp"
 
 #include <vulkan/vulkan.h>
@@ -35,12 +34,7 @@ struct VulkanContextConfig {
 
 class VulkanContext {
 public:
-    VulkanContext(
-        const gs3d::platform::Window& window,
-        VulkanContextConfig config = {}
-    );
-
-    // 无 GLFW/surface 的离屏上下文（单进程 FFI 内核 / 多端）。
+    // 无 surface 的离屏上下文（单进程 FFI 内核 / 多端）。
     explicit VulkanContext(VulkanContextConfig config);
 
     ~VulkanContext();
@@ -60,12 +54,6 @@ public:
     [[nodiscard]]
     VkPhysicalDevice physical_device() const noexcept;
 
-    /*
-     * 物理设备是否支持 independentBlend（S2 修复，TIA-91）。
-     * PointPipeline 的 3 个 color attachment 使用不同 colorWriteMask
-     * （RGBA / R / R），仅在启用该 feature 时合法（否则违反
-     * VUID-VkPipelineColorBlendStateCreateInfo-pAttachments-00605）。
-     */
     [[nodiscard]]
     bool independent_blend_supported() const noexcept;
 
@@ -84,20 +72,15 @@ public:
     [[nodiscard]]
     std::string physical_device_name() const;
 
-    // All enumerated GPUs (populated after construction).
     [[nodiscard]]
     const std::vector<VulkanGpuInfo>& gpu_list() const noexcept;
 
-    // Index into gpu_list() of the actually-selected device.
     [[nodiscard]]
     std::size_t active_gpu_index() const noexcept;
 
-    // Whether the active GPU was selected by explicit UUID match
-    // (vs. auto-selection or fallback).
     [[nodiscard]]
     bool active_gpu_is_preferred() const noexcept;
 
-    // Human-readable summary of how the GPU was chosen.
     [[nodiscard]]
     const std::string& selection_summary() const noexcept;
 
@@ -109,7 +92,6 @@ private:
     VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
 
-    // 选中物理设备后查询一次，供 feature 启用决策（independentBlend）使用。
     VkPhysicalDeviceFeatures supported_features_{};
 
     VkQueue graphics_queue_ = VK_NULL_HANDLE;
@@ -124,7 +106,6 @@ private:
 
 private:
     void create_instance();
-    void create_surface(const gs3d::platform::Window& window);
     void pick_physical_device();
     void create_logical_device();
 

@@ -44,7 +44,9 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
   Widget build(BuildContext context) {
     final collapsed = widget.isCollapsed;
     // 触控档：导航项与 GPU 卡片命中区撑到 ≥48（桌面档 36/42 不变）。
-    final touchMin = context.isTouchPreferred ? Gs3dTokens.hitTargetTouch : 36.0;
+    final touchMin = context.isTouchPreferred
+        ? Gs3dTokens.hitTargetTouch
+        : 36.0;
     final gpuMin = context.isTouchPreferred ? Gs3dTokens.hitTargetTouch : 42.0;
     final targetWidth = collapsed
         ? Gs3dTokens.sidebarCollapsed
@@ -198,13 +200,16 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                       child: ListenableBuilder(
                         listenable: widget.service,
                         builder: (context, _) {
-                          final gpus = widget.service.gpus;
-                          final activeIdx = widget.service.activeGpuIndex;
                           final activeGpuName =
-                              (activeIdx >= 0 && activeIdx < gpus.length)
-                              ? gpus[activeIdx].name
-                              : '默认图形适配器';
+                              widget.service.activeGpuDisplayName;
                           final status = widget.service.backendStatus;
+                          final statusColor =
+                              widget.service.engineAvailability ==
+                                      EngineAvailability.unavailable
+                                  ? Gs3dTokens.danger
+                                  : widget.service.isInitialized
+                                  ? Gs3dTokens.success
+                                  : Gs3dTokens.warning;
 
                           if (isNarrow) {
                             return Center(
@@ -241,7 +246,7 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                                           right: 8,
                                           top: 8,
                                           child: Gs3dStatusDot(
-                                            color: Gs3dTokens.success,
+                                            color: statusColor,
                                             size: 6,
                                           ),
                                         ),
@@ -274,8 +279,8 @@ class _WelcomeSidebarState extends State<WelcomeSidebar> {
                               ),
                               child: Row(
                                 children: [
-                                  const Gs3dStatusDot(
-                                    color: Gs3dTokens.success,
+                                  Gs3dStatusDot(
+                                    color: statusColor,
                                     size: 7,
                                   ),
                                   const SizedBox(width: Gs3dTokens.space8),
@@ -433,7 +438,9 @@ class _SidebarNavItem extends StatelessWidget {
                         label,
                         style: Gs3dType.body.copyWith(
                           fontSize: 13.5,
-                          fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                          fontWeight: active
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                           color: fg,
                         ),
                         overflow: TextOverflow.ellipsis,

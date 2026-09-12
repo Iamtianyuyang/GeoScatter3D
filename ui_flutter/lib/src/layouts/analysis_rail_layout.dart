@@ -46,10 +46,7 @@ enum RailTabType {
 class AnalysisRailLayout extends StatefulWidget {
   final GeoScatter3dService service;
 
-  const AnalysisRailLayout({
-    super.key,
-    required this.service,
-  });
+  const AnalysisRailLayout({super.key, required this.service});
 
   @override
   State<AnalysisRailLayout> createState() => _AnalysisRailLayoutState();
@@ -92,13 +89,10 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
         ),
 
         // 3. 中央宽广 3D 渲染视口
-        Expanded(
-          child: CenterViewport(service: widget.service),
-        ),
+        Expanded(child: CenterViewport(service: widget.service)),
 
         // 4. 右侧快捷属性栏 (带收起/展开控制)
-        if (_showRightPanel)
-          RightDockPanel(service: widget.service),
+        if (_showRightPanel) RightDockPanel(service: widget.service),
       ],
     );
   }
@@ -108,9 +102,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
       width: 54,
       decoration: const BoxDecoration(
         color: Gs3dDark.cabinBg,
-        border: Border(
-          right: BorderSide(color: Gs3dDark.cabinBorder),
-        ),
+        border: Border(right: BorderSide(color: Gs3dDark.cabinBorder)),
       ),
       child: Column(
         children: [
@@ -223,9 +215,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
       width: 320,
       decoration: const BoxDecoration(
         color: Gs3dDark.railBg,
-        border: Border(
-          right: BorderSide(color: Gs3dDark.railBorder),
-        ),
+        border: Border(right: BorderSide(color: Gs3dDark.railBorder)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -234,9 +224,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Gs3dDark.railBorder),
-              ),
+              border: Border(bottom: BorderSide(color: Gs3dDark.railBorder)),
             ),
             child: Row(
               children: [
@@ -268,9 +256,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           ),
 
           // 抽屉主体 (直连 LeftDockPanel，内部自包含滚动视口)
-          Expanded(
-            child: _buildDrawerBody(tab),
-          ),
+          Expanded(child: _buildDrawerBody(tab)),
         ],
       ),
     );
@@ -289,7 +275,11 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
           children: [
             const Text(
               '首选项与运行环境',
-              style: TextStyle(color: Gs3dDark.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Gs3dDark.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 12),
             _buildSettingItem(
@@ -299,9 +289,7 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
             ),
             _buildSettingItem(
               '活跃 GPU 设备',
-              widget.service.gpus.isNotEmpty
-                  ? widget.service.gpus[widget.service.activeGpuIndex].name
-                  : 'NVIDIA RTX 4070 Laptop',
+              widget.service.activeGpuDisplayName,
               Icons.memory_rounded,
             ),
             _buildSettingItem(
@@ -338,7 +326,11 @@ class _AnalysisRailLayoutState extends State<AnalysisRailLayout> {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(color: Gs3dDark.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    color: Gs3dDark.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),

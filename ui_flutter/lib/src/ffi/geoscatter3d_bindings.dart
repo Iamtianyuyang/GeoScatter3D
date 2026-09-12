@@ -270,6 +270,25 @@ typedef _c_export_dataset =
 typedef _dart_export_dataset =
     int Function(ffi.Pointer<Utf8> target_path, ffi.Pointer<Utf8> format_type);
 
+// CSV 预处理接口（移动端直接复用编译进 .so 的 C-ABI）。
+typedef _c_preprocess_csv =
+    ffi.Int32 Function(
+      ffi.Pointer<Utf8> csv_path,
+      ffi.Pointer<Utf8> output_gs3d_path,
+      ffi.Uint32 threads,
+      ffi.Uint32 finest_target_points,
+    );
+typedef _dart_preprocess_csv =
+    int Function(
+      ffi.Pointer<Utf8> csv_path,
+      ffi.Pointer<Utf8> output_gs3d_path,
+      int threads,
+      int finest_target_points,
+    );
+
+typedef _c_get_last_error = ffi.Pointer<Utf8> Function();
+typedef _dart_get_last_error = ffi.Pointer<Utf8> Function();
+
 // ── 单进程渲染内核 ─────────────────────────────────────────────────
 typedef _c_engine_create_simple =
     ffi.Pointer<ffi.Void> Function(ffi.Uint32 width, ffi.Uint32 height);
@@ -504,6 +523,8 @@ class GeoScatter3dBindings {
   late final _dart_calculate_region_stats calculate_region_stats;
   late final _dart_get_nav_map_thumbnail get_nav_map_thumbnail;
   late final _dart_export_dataset export_dataset;
+  late final _dart_preprocess_csv _preprocessCsv;
+  late final _dart_get_last_error _getLastPreprocessError;
 
   /// 引擎交互内核是否可用：create/load/render/camera 四项必须齐全，
   /// 否则视为不具备单进程渲染能力（R3：不静默降级为 Dart 预览）。
@@ -725,6 +746,14 @@ class GeoScatter3dBindings {
     export_dataset = dylib
         .lookupFunction<_c_export_dataset, _dart_export_dataset>(
           'gs3d_ffi_export_dataset',
+        );
+    _preprocessCsv = dylib
+        .lookupFunction<_c_preprocess_csv, _dart_preprocess_csv>(
+          'gs3d_ffi_preprocess_csv',
+        );
+    _getLastPreprocessError = dylib
+        .lookupFunction<_c_get_last_error, _dart_get_last_error>(
+          'gs3d_ffi_get_last_error',
         );
 
     T? optLookup<T extends Function>(
@@ -950,5 +979,24 @@ class GeoScatter3dBindings {
       return GeoScatter3dBindings(ffi.DynamicLibrary.process());
     }
     throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+  }
+
+  /// CSV 预处理（编译入 .so，供移动端免外部可执行文件）。
+  /// 返回 0 成功；错误经 [lastPreprocessError] 获取。
+  int preprocessCsv(String csvPath, String outputPath,
+      {int threads = 2, int finestTargetPoints = 50000}) {
+    final csvPtr = csvPath.toNativeUtf8();
+    final outPtr = outputPath.toNativeUtf8();
+    try {
+      return _preprocessCsv(csvPtr, outPtr, threads, finestTargetPoints);
+    } finally {
+      calloc.free(csvPtr);
+      calloc.free(outPtr);
+    }
+  }
+
+  String get lastPreprocessError {
+    final ptr = _getLastPreprocessError();
+    return ptr == ffi.nullptr ? '' : ptr.toDartString();
   }
 }

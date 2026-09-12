@@ -263,24 +263,6 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
                       color: Gs3dTokens.textPrimary,
                     ),
                   ),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(4),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('导航图视口已最大化'),
-                          duration: Duration(milliseconds: 800),
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(3.0),
-                      child: CustomPaint(
-                        size: const Size(14, 14),
-                        painter: ViewfinderCornerPainter(color: Gs3dTokens.textSecondary),
-                      ),
-                    ),
-                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -938,40 +920,6 @@ class _LeftDockPanelState extends State<LeftDockPanel> {
       onPressed: onPressed,
     );
   }
-}
-
-/// 绘制右上角 [ ] 取景框四角图标
-class ViewfinderCornerPainter extends CustomPainter {
-  final Color color;
-  const ViewfinderCornerPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.3
-      ..style = PaintingStyle.stroke;
-
-    const arm = 3.5;
-    // ┌
-    canvas.drawLine(const Offset(0, arm), const Offset(0, 0), paint);
-    canvas.drawLine(const Offset(0, 0), const Offset(arm, 0), paint);
-
-    // ┐
-    canvas.drawLine(Offset(size.width - arm, 0), Offset(size.width, 0), paint);
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width, arm), paint);
-
-    // └
-    canvas.drawLine(Offset(0, size.height - arm), Offset(0, size.height), paint);
-    canvas.drawLine(Offset(0, size.height), Offset(arm, size.height), paint);
-
-    // ┘
-    canvas.drawLine(Offset(size.width - arm, size.height), Offset(size.width, size.height), paint);
-    canvas.drawLine(Offset(size.width, size.height - arm), Offset(size.width, size.height), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 无原生缩略图时的软件投影兜底（真实点集 XY 投影，非装饰渐变）

@@ -1,8 +1,6 @@
 #include "render/VulkanContext.hpp"
 #include "util/Log.hpp"
 
-#include <GLFW/glfw3.h>
-
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -23,25 +21,6 @@ void check_vk(VkResult result, const char* message) {
 }
 
 } // namespace
-
-VulkanContext::VulkanContext(
-    const gs3d::platform::Window& window,
-    VulkanContextConfig config
-)
-    : config_(std::move(config))
-{
-#ifndef NDEBUG
-    config_.enable_validation_layers = config_.enable_validation_layers;
-#else
-    config_.enable_validation_layers = false;
-#endif
-    config_.headless = false;
-
-    create_instance();
-    create_surface(window);
-    pick_physical_device();
-    create_logical_device();
-}
 
 VulkanContext::VulkanContext(VulkanContextConfig config)
     : config_(std::move(config))
@@ -156,20 +135,6 @@ void VulkanContext::create_instance() {
     check_vk(
         vkCreateInstance(&create_info, nullptr, &instance_),
         "VulkanContext: failed to create Vulkan instance"
-    );
-}
-
-void VulkanContext::create_surface(
-    const gs3d::platform::Window& window
-) {
-    check_vk(
-        glfwCreateWindowSurface(
-            instance_,
-            window.native_handle(),
-            nullptr,
-            &surface_
-        ),
-        "VulkanContext: failed to create GLFW Vulkan surface"
     );
 }
 
@@ -326,27 +291,8 @@ void VulkanContext::create_logical_device() {
 }
 
 std::vector<const char*> VulkanContext::required_instance_extensions() const {
-    if (config_.headless) {
-        // 离屏内核：不依赖窗口系统扩展。
-        return {};
-    }
-
-    std::uint32_t glfw_extension_count = 0;
-    const char** glfw_extensions =
-        glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
-    if (!glfw_extensions || glfw_extension_count == 0) {
-        throw std::runtime_error(
-            "VulkanContext: GLFW did not return required Vulkan extensions"
-        );
-    }
-
-    std::vector<const char*> extensions(
-        glfw_extensions,
-        glfw_extensions + glfw_extension_count
-    );
-
-    return extensions;
+    // 离屏内核：不依赖窗口系统扩展。
+    return {};
 }
 
 bool VulkanContext::validation_layers_supported() const {

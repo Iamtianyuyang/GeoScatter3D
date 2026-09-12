@@ -21,27 +21,12 @@ import 'support/welcome_ui_test_service.dart';
 void main() {
   group('断点档位推导（单一事实源）', () {
     test('500 / 800 / 1400 宽分别命中 compact / tablet / expanded', () {
-      expect(
-        TabletSurface.slotForWidth(500),
-        Gs3dFormFactorSlot.compact,
-      );
-      expect(
-        TabletSurface.slotForWidth(800),
-        Gs3dFormFactorSlot.tablet,
-      );
-      expect(
-        TabletSurface.slotForWidth(1400),
-        Gs3dFormFactorSlot.expanded,
-      );
+      expect(TabletSurface.slotForWidth(500), Gs3dFormFactorSlot.compact);
+      expect(TabletSurface.slotForWidth(800), Gs3dFormFactorSlot.tablet);
+      expect(TabletSurface.slotForWidth(1400), Gs3dFormFactorSlot.expanded);
       // 平板基准分辨率。
-      expect(
-        TabletSurface.slotForWidth(1192),
-        Gs3dFormFactorSlot.tablet,
-      );
-      expect(
-        TabletSurface.slotForWidth(2208),
-        Gs3dFormFactorSlot.expanded,
-      );
+      expect(TabletSurface.slotForWidth(1192), Gs3dFormFactorSlot.tablet);
+      expect(TabletSurface.slotForWidth(2208), Gs3dFormFactorSlot.expanded);
     });
   });
 
@@ -82,8 +67,7 @@ void main() {
       await dismissGuideIfPresent(tester);
     }
 
-    testWidgets('tablet 档：抽屉默认收起、把手可唤出、动作条命中 ≥48、命令按钮可达',
-        (tester) async {
+    testWidgets('tablet 档：抽屉默认收起、把手可唤出、动作条命中 ≥48、命令按钮可达', (tester) async {
       await pumpWorkbench(tester);
 
       // 断点档位正确。
@@ -99,22 +83,15 @@ void main() {
       );
 
       // 唤出左抽屉 → LeftDockPanel 出现；再收起。
-      await tester.tap(
-        find.byKey(const ValueKey('tablet.drawer.handle.left')),
-      );
+      await tester.tap(find.byKey(const ValueKey('tablet.drawer.handle.left')));
       await tester.pumpAndSettle();
       expect(find.byType(LeftDockPanel), findsOneWidget);
-      await tester.tap(
-        find.byKey(const ValueKey('tablet.drawer.close.left')),
-      );
+      await tester.tap(find.byKey(const ValueKey('tablet.drawer.close.left')));
       await tester.pumpAndSettle();
       expect(find.byType(LeftDockPanel), findsNothing);
 
       // 底部动作条存在且命令按钮命中区 ≥48。
-      expect(
-        find.byKey(const ValueKey('tablet.action_bar')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('tablet.action_bar')), findsOneWidget);
       final cmdSize = tester.getSize(
         find.byKey(const ValueKey('tablet.actionbar.command')),
       );
@@ -246,8 +223,34 @@ void main() {
       expect(service.isCommandPaletteOpen, isTrue);
     });
 
-    testWidgets('桌面专属布局入口守卫：tablet 档切 floatingDock 回退触控工作台',
-        (tester) async {
+    testWidgets('布局按钮打开选择器并提交真实布局动作', (tester) async {
+      await pumpWorkbench(tester);
+
+      await tester.tap(find.byKey(const ValueKey('tablet.actionbar.layout')));
+      await tester.pumpAndSettle();
+      expect(find.text('切换工作区布局'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('tablet.layout.option.standard')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('tablet.layout.option.floatingDock')),
+      );
+      await tester.pumpAndSettle();
+      expect(service.layoutMode, WorkbenchLayoutMode.floatingDock);
+    });
+
+    testWidgets('统计按钮显示实际统计结果反馈', (tester) async {
+      await pumpWorkbench(tester);
+
+      await tester.tap(find.byKey(const ValueKey('tablet.actionbar.stats')));
+      await tester.pump();
+      expect(find.textContaining('无法执行该动作'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('桌面专属布局入口守卫：tablet 档切 floatingDock 回退触控工作台', (tester) async {
       await pumpWorkbench(tester);
 
       service.setLayoutMode(WorkbenchLayoutMode.floatingDock);
@@ -300,6 +303,51 @@ void main() {
       expect(find.byKey(WelcomeUiKeys.footerAboutButton), findsOneWidget);
       expect(find.byKey(WelcomeUiKeys.footerGpuButton), findsOneWidget);
     });
+
+    testWidgets('工作台左右抽屉均不超出紧凑屏幕', (tester) async {
+      final service = WelcomeUiTestService();
+      service.markEngineUnavailable('libgs3d_ffi.so not found');
+      TabletDrawerScaffold.resetGestureGuide();
+
+      await TabletSurface.pumpTabletApp(
+        tester,
+        service,
+        surface: const Size(328, 525),
+      );
+      service.executeAction('welcome.quick_demo');
+      await tester.pumpAndSettle();
+      if (find
+          .byKey(const ValueKey('tablet.gesture_guide.dismiss'))
+          .evaluate()
+          .isNotEmpty) {
+        await tester.tap(
+          find.byKey(const ValueKey('tablet.gesture_guide.dismiss')),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      final viewportWidth = tester.getSize(find.byType(Scaffold).first).width;
+      await tester.tap(find.byKey(const ValueKey('tablet.drawer.handle.left')));
+      await tester.pumpAndSettle();
+      final leftPanel = tester.getRect(
+        find.byKey(const ValueKey('tablet.drawer.panel.left')),
+      );
+      expect(leftPanel.left, greaterThanOrEqualTo(0));
+      expect(leftPanel.right, lessThanOrEqualTo(viewportWidth));
+
+      await tester.tap(find.byKey(const ValueKey('tablet.drawer.close.left')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('tablet.drawer.handle.right')),
+      );
+      await tester.pumpAndSettle();
+      final rightPanel = tester.getRect(
+        find.byKey(const ValueKey('tablet.drawer.panel.right')),
+      );
+      expect(rightPanel.left, greaterThanOrEqualTo(0));
+      expect(rightPanel.right, lessThanOrEqualTo(viewportWidth));
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('2208×1840 横向平板命中 expanded，桌面布局照旧', () {
@@ -323,10 +371,7 @@ void main() {
         find.byKey(const ValueKey('tablet.drawer.handle.left')),
         findsNothing,
       );
-      expect(
-        find.byKey(const ValueKey('tablet.action_bar')),
-        findsNothing,
-      );
+      expect(find.byKey(const ValueKey('tablet.action_bar')), findsNothing);
       // 桌面顶栏菜单仍存在（桌面行为零回退）。
       expect(find.byKey(WorkbenchUiKeys.menuFile), findsOneWidget);
       expect(

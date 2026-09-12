@@ -303,6 +303,21 @@ GS3D_FFI_API const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 GS3D_FFI_API uint64_t gs3d_engine_point_count(gs3d_engine* e);
 
+// ============================================================================
+// 21. CSV 预处理（编译入 .so，供移动端免外部可执行文件）
+// ============================================================================
+
+/// CSV → .gs3d 单文件转换（单趟，含质心原点变换）。
+/// 成功返回 0，失败返回负值；错误详情经 gs3d_ffi_get_last_error() 获取。
+GS3D_FFI_API int32_t gs3d_ffi_preprocess_csv(
+    const char* csv_path,
+    const char* output_gs3d_path,
+    uint32_t threads,
+    uint32_t finest_target_points);
+
+/// 获取最近一次预处理的错误信息。
+GS3D_FFI_API const char* gs3d_ffi_get_last_error(void);
+
 #ifdef __cplusplus
 }
 #endif

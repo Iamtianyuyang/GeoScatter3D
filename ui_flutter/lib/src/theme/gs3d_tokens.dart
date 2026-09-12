@@ -202,6 +202,9 @@ abstract final class Gs3dTokens {
   /// 顶部标题栏高度。
   static const double titleBarHeight = 40.0;
 
+  /// 紧凑触控工具条图标尺寸。
+  static const double iconSizeMd = 20.0;
+
   /// 底部状态栏高度。
   static const double statusBarHeight = 26.0;
 
@@ -251,14 +254,19 @@ abstract final class Gs3dTokens {
   ];
 
   /// 强调色辉光（用于主按钮、Hero 图标）。
-  static List<BoxShadow> accentGlow({double alpha = 0.28, double blur = 26}) => [
-    BoxShadow(
-      color: accent.withValues(alpha: alpha),
-      blurRadius: blur,
-      offset: const Offset(0, 8),
-    ),
-    const BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
-  ];
+  static List<BoxShadow> accentGlow({double alpha = 0.28, double blur = 26}) =>
+      [
+        BoxShadow(
+          color: accent.withValues(alpha: alpha),
+          blurRadius: blur,
+          offset: const Offset(0, 8),
+        ),
+        const BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 6,
+          offset: Offset(0, 2),
+        ),
+      ];
 
   /// 兼容旧命名。
   static const List<BoxShadow> cardShadow = elevation1;
@@ -295,6 +303,24 @@ abstract final class Gs3dType {
     'PingFang SC',
     'sans-serif',
   ];
+
+  /// 品牌字标：使用随应用打包的 Roboto 变体，避免不同 Android 设备
+  /// 的 CJK 字体拉丁字宽回退造成字标重叠；中文界面正文仍使用 NotoSansCJKsc。
+  static const TextStyle brand = TextStyle(
+    fontFamily: 'GeoSans',
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0,
+    color: Gs3dTokens.textPrimary,
+  );
+
+  static const TextStyle brandAccent = TextStyle(
+    fontFamily: 'GeoSans',
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0,
+    color: Gs3dTokens.accent,
+  );
 
   /// 巨型展示标题（Hero）：32px / 紧字距 / 紧凑行高。
   static const TextStyle display = TextStyle(
@@ -640,7 +666,10 @@ abstract final class Gs3dMotion {
   static const Gs3dSpring fling = Gs3dSpring(dampingRatio: 0.8, response: 0.35);
 
   /// 快速反馈（悬停 / 按压）。
-  static const Gs3dSpring feedback = Gs3dSpring(dampingRatio: 1.0, response: 0.18);
+  static const Gs3dSpring feedback = Gs3dSpring(
+    dampingRatio: 1.0,
+    response: 0.18,
+  );
 
   /// 默认滚动减速率。
   static const double decelerationRate = 0.998;
@@ -662,8 +691,11 @@ abstract final class Gs3dMotion {
   /// 橡胶边界阻尼：越界越远，位移增量越小（Apple 橡皮筋公式）。
   ///
   /// [overshoot] 为超出边界的距离，[dimension] 为边界容器尺寸。
-  static double rubberBand(double overshoot, double dimension,
-      {double coefficient = 0.55}) {
+  static double rubberBand(
+    double overshoot,
+    double dimension, {
+    double coefficient = 0.55,
+  }) {
     if (dimension <= 0) return overshoot;
     final sign = overshoot.sign;
     final x = overshoot.abs();
@@ -773,11 +805,7 @@ class Gs3dA11y {
 
 /// 将 [Gs3dA11y] 注入 Widget 树，供任意层级读取。
 class Gs3dA11yScope extends InheritedWidget {
-  const Gs3dA11yScope({
-    super.key,
-    required this.a11y,
-    required super.child,
-  });
+  const Gs3dA11yScope({super.key, required this.a11y, required super.child});
 
   final Gs3dA11y a11y;
 
@@ -818,14 +846,16 @@ class Gs3dSpringCurve extends Curve {
     final tau = t * spring.response * 4.0; // 采样窗口覆盖约 4 倍响应时间
     if (zeta >= 1.0) {
       // 临界阻尼：y = 1 - (1 + ωt) e^{-ωt}
-      return (1 - (1 + omega * tau) * math.exp(-omega * tau))
-          .clamp(0.0, 1.0);
+      return (1 - (1 + omega * tau) * math.exp(-omega * tau)).clamp(0.0, 1.0);
     }
     // 欠阻尼：y = 1 - e^{-ζωt}(cos(ω_d t) + ζ/√(1-ζ²) sin(ω_d t))
     final wd = omega * math.sqrt(1 - zeta * zeta);
     final e = math.exp(-zeta * omega * tau);
     final value =
-        1 - e * (math.cos(wd * tau) + zeta / math.sqrt(1 - zeta * zeta) * math.sin(wd * tau));
+        1 -
+        e *
+            (math.cos(wd * tau) +
+                zeta / math.sqrt(1 - zeta * zeta) * math.sin(wd * tau));
     return value.clamp(0.0, 1.0);
   }
 }

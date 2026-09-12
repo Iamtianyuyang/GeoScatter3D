@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../theme/gs3d_form_factor.dart';
 import '../theme/gs3d_tokens.dart';
 import 'welcome_ui_keys.dart';
 
@@ -21,6 +24,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   double _threads = 16;
   bool get _isBuilding => widget.service.welcomeBusy;
   String? _errorMessage;
+  bool _isPicking = false;
 
   bool _showAdvanced = false;
   String _voxelMode = 'xyz';
@@ -65,15 +69,18 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     setState(() {});
   }
 
-  void _onBrowse() {
-    if (_isBuilding) return;
-    final selected = widget.service.pickFile('point_cloud');
+  Future<void> _onBrowse() async {
+    if (_isBuilding || _isPicking) return;
+    setState(() => _isPicking = true);
+    final selected = await widget.service.pickFileAsync('point_cloud');
+    if (!mounted) return;
     if (selected != null && selected.isNotEmpty) {
       setState(() {
         _pathController.text = selected;
         _onPathChanged(selected);
       });
     }
+    setState(() => _isPicking = false);
   }
 
   void _changed() {
@@ -101,59 +108,55 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isBuilding,
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
-        ),
-        backgroundColor: Gs3dTokens.surface,
-        surfaceTintColor: Colors.transparent,
-        child: Container(
-          width: 540,
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.88,
-          ),
-          padding: const EdgeInsets.all(Gs3dTokens.space24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 标题。
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(Gs3dTokens.space8),
-                      decoration: BoxDecoration(
-                        color: Gs3dTokens.accentSubtle,
-                        borderRadius: BorderRadius.circular(
-                          Gs3dTokens.radiusMd,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.add_chart_rounded,
-                        color: Gs3dTokens.accent,
-                        size: 20,
+    // compact/tablet 档由 Gs3dResponsiveDialog 的 bottom sheet 提供外壳与标题，
+    // 内容组件不再自带 Dialog 包装，避免双层嵌套。
+    final inSheet = context.gs3dFormFactor != Gs3dFormFactorSlot.expanded;
+    final body = Container(
+      width: inSheet ? null : 540,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
+      ),
+      padding: const EdgeInsets.all(Gs3dTokens.space24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题（仅 expanded 档显示；sheet 档由外壳提供）。
+            if (!inSheet)
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(Gs3dTokens.space8),
+                    decoration: BoxDecoration(
+                      color: Gs3dTokens.accentSubtle,
+                      borderRadius: BorderRadius.circular(
+                        Gs3dTokens.radiusMd,
                       ),
                     ),
-                    const SizedBox(width: Gs3dTokens.space12),
-                    const Text('新建三维散点工程', style: Gs3dType.title2),
-                    const Spacer(),
-                    IconButton(
-                      key: WelcomeUiKeys.newProjectDialogCloseButton,
-                      icon: const Icon(
-                        Icons.close,
-                        size: 18,
-                        color: Gs3dTokens.textSecondary,
-                      ),
-                      onPressed: _isBuilding
-                          ? null
-                          : () => Navigator.of(context).pop(),
+                    child: const Icon(
+                      Icons.add_chart_rounded,
+                      color: Gs3dTokens.accent,
+                      size: 20,
                     ),
-                  ],
-                ),
-                const SizedBox(height: Gs3dTokens.space16 + 2),
+                  ),
+                  const SizedBox(width: Gs3dTokens.space12),
+                  const Text('新建三维散点工程', style: Gs3dType.title2),
+                  const Spacer(),
+                  IconButton(
+                    key: WelcomeUiKeys.newProjectDialogCloseButton,
+                    icon: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Gs3dTokens.textSecondary,
+                    ),
+                    onPressed: _isBuilding
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            if (!inSheet) const SizedBox(height: Gs3dTokens.space16 + 2),
 
                 // 数据源路径。
                 const _FieldLabel('散点数据源路径 (CSV / DAT / GS3D / Bundle)'),
@@ -172,13 +175,16 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: Gs3dTokens.space8),
-                    OutlinedButton.icon(
-                      key: WelcomeUiKeys.newProjectDialogBrowseButton,
-                      icon: const Icon(Icons.folder_open, size: 16),
-                      label: const Text('浏览'),
-                      onPressed: _isBuilding ? null : _onBrowse,
-                    ),
+                    // Windows 使用 C-ABI 选择器，Android 使用系统 SAF。
+                    if (Platform.isWindows || Platform.isAndroid) ...[
+                      const SizedBox(width: Gs3dTokens.space8),
+                      OutlinedButton.icon(
+                        key: WelcomeUiKeys.newProjectDialogBrowseButton,
+                        icon: const Icon(Icons.folder_open, size: 16),
+                        label: Text(_isPicking ? '正在选择…' : '浏览'),
+                        onPressed: _isBuilding || _isPicking ? null : _onBrowse,
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: Gs3dTokens.space8),
@@ -540,8 +546,20 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
               ],
             ),
           ),
-        ),
-      ),
+        );
+
+    return PopScope(
+      canPop: !_isBuilding,
+      child: inSheet
+          ? body
+          : Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(Gs3dTokens.radiusXl),
+              ),
+              backgroundColor: Gs3dTokens.surface,
+              surfaceTintColor: Colors.transparent,
+              child: body,
+            ),
     );
   }
 

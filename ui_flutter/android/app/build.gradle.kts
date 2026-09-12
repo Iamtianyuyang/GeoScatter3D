@@ -1,3 +1,20 @@
+import java.util.Properties
+
+val releaseKeystorePropertiesFile = rootProject.file("key.properties")
+val releaseKeystoreProperties = Properties()
+val releaseSigningConfigured = releaseKeystorePropertiesFile.exists()
+val releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+if (releaseTaskRequested && !releaseSigningConfigured) {
+    throw GradleException(
+        "Missing android/key.properties; configure the production keystore before a release build."
+    )
+}
+if (releaseSigningConfigured) {
+    releaseKeystorePropertiesFile.inputStream().use { releaseKeystoreProperties.load(it) }
+}
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -15,7 +32,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.geoscatter3d.ui_flutter"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -25,11 +41,24 @@ android {
         versionName = flutter.versionName
     }
 
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                keyAlias = releaseKeystoreProperties["keyAlias"] as String
+                keyPassword = releaseKeystoreProperties["keyPassword"] as String
+                // key.properties 位于 android/ 根目录；相对路径也应相对
+                // android/ 解析，而不是相对 android/app/ 模块目录。
+                storeFile = rootProject.file(releaseKeystoreProperties["storeFile"] as String)
+                storePassword = releaseKeystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }

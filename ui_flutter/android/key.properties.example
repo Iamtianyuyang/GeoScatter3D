@@ -1,0 +1,7 @@
+# Copy this file to key.properties and replace every placeholder locally.
+# key.properties is gitignored and must never be committed.
+# 将 keystore 放在 android/ 目录时可填写文件名；也支持绝对路径。
+storePassword=REPLACE_WITH_STORE_PASSWORD
+keyPassword=REPLACE_WITH_KEY_PASSWORD
+keyAlias=REPLACE_WITH_KEY_ALIAS
+storeFile=geoscatter3d-release.jks

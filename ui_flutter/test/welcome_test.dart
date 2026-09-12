@@ -23,44 +23,84 @@ void main() {
       service.initialize();
     });
 
-    test('getAvailableActions returns all registered actions (15 welcome + 46 workbench)', () {
-      final actions = service.getAvailableActions();
-      expect(actions.length, equals(61));
-      final ids = actions.map((a) => a.id).toSet();
-      expect(ids, containsAll([
-        'welcome.quick_demo',
-        'welcome.open_project',
-        'welcome.new_project',
-        'welcome.browse_file',
-        'welcome.browse_folder',
-        'welcome.recent.open',
-        'welcome.recent.remove',
-        'welcome.recent.clear',
-        'welcome.gpu.set_preferred',
-        'welcome.gpu.get_list',
-        'welcome.drop_file',
-        'welcome.preprocess.cancel',
-        'welcome.get_state',
-        'welcome.about.get_info',
-        'welcome.docs.get_info',
-      ]));
-    });
+    test(
+      'getAvailableActions returns all registered actions (15 welcome + 46 workbench)',
+      () {
+        final actions = service.getAvailableActions();
+        expect(actions.length, equals(61));
+        final ids = actions.map((a) => a.id).toSet();
+        expect(
+          ids,
+          containsAll([
+            'welcome.quick_demo',
+            'welcome.open_project',
+            'welcome.new_project',
+            'welcome.browse_file',
+            'welcome.browse_folder',
+            'welcome.recent.open',
+            'welcome.recent.remove',
+            'welcome.recent.clear',
+            'welcome.gpu.set_preferred',
+            'welcome.gpu.get_list',
+            'welcome.drop_file',
+            'welcome.preprocess.cancel',
+            'welcome.get_state',
+            'welcome.about.get_info',
+            'welcome.docs.get_info',
+          ]),
+        );
+      },
+    );
 
-    test('executeAction welcome.browse_file returns selection result structure', () {
-      final res = service.executeAction('welcome.browse_file', {'type': 'point_cloud'});
-      expect(res, isMap);
-      expect(res.containsKey('success'), isTrue);
-      expect(res.containsKey('message'), isTrue);
-      expect(res.containsKey('data'), isTrue);
-    });
+    test(
+      'executeAction welcome.browse_file returns selection result structure',
+      () {
+        final res = service.executeAction('welcome.browse_file', {
+          'type': 'point_cloud',
+        });
+        expect(res, isMap);
+        expect(res.containsKey('success'), isTrue);
+        expect(res.containsKey('message'), isTrue);
+        expect(res.containsKey('data'), isTrue);
+      },
+    );
 
-    test('executeAction welcome.browse_folder returns selection result structure', () {
-      final res = service.executeAction('welcome.browse_folder');
-      expect(res, isMap);
-      expect(res.containsKey('success'), isTrue);
-      expect(res.containsKey('message'), isTrue);
-      expect(res.containsKey('data'), isTrue);
-    });
+    test(
+      'executeAction welcome.browse_folder returns selection result structure',
+      () {
+        final res = service.executeAction('welcome.browse_folder');
+        expect(res, isMap);
+        expect(res.containsKey('success'), isTrue);
+        expect(res.containsKey('message'), isTrue);
+        expect(res.containsKey('data'), isTrue);
+      },
+    );
+
+    test(
+      'executeActionAsync welcome browse actions honor injected pickers',
+      () async {
+        service.filePickerOverride = (filter) => 'tmp/async-picked.csv';
+        final fileResult = await service.executeActionAsync(
+          'welcome.browse_file',
+          {'type': 'point_cloud'},
+        );
+        expect(fileResult['success'], isTrue);
+        expect(
+          (fileResult['data'] as Map<String, dynamic>)['path'],
+          equals('tmp/async-picked.csv'),
+        );
+
+        service.folderPickerOverride = () => 'tmp/async-picked.gs3d.bundle';
+        final folderResult = await service.executeActionAsync(
+          'welcome.browse_folder',
+        );
+        expect(folderResult['success'], isTrue);
+        expect(
+          (folderResult['data'] as Map<String, dynamic>)['path'],
+          equals('tmp/async-picked.gs3d.bundle'),
+        );
+      },
+    );
 
     test('executeAction welcome.get_state returns full system snapshot', () {
       final res = service.executeAction('welcome.get_state');
@@ -71,75 +111,114 @@ void main() {
       expect(data['recent_project_count'], isNonNegative);
     });
 
-    test('executeAction welcome.about.get_info and welcome.docs.get_info return specifications', () {
-      final about = service.executeAction('welcome.about.get_info');
-      expect(about['success'], isTrue);
-      expect((about['data'] as Map)['app_name'], equals('GeoScatter3D'));
+    test(
+      'executeAction welcome.about.get_info and welcome.docs.get_info return specifications',
+      () {
+        final about = service.executeAction('welcome.about.get_info');
+        expect(about['success'], isTrue);
+        expect((about['data'] as Map)['app_name'], equals('GeoScatter3D'));
 
-      final docs = service.executeAction('welcome.docs.get_info');
-      expect(docs['success'], isTrue);
-      expect((docs['data'] as Map)['supported_formats'], contains('.gs3d.bundle'));
-    });
+        final docs = service.executeAction('welcome.docs.get_info');
+        expect(docs['success'], isTrue);
+        expect(
+          (docs['data'] as Map)['supported_formats'],
+          contains('.gs3d.bundle'),
+        );
+      },
+    );
 
-    test('executeAction welcome.gpu.get_list and welcome.gpu.set_preferred', () {
-      final listRes = service.executeAction('welcome.gpu.get_list');
-      expect(listRes['success'], isTrue);
-      final gpus = (listRes['data'] as Map)['gpus'] as List;
-      expect(gpus.isNotEmpty, isTrue);
+    test(
+      'executeAction welcome.gpu.get_list and welcome.gpu.set_preferred',
+      () {
+        final listRes = service.executeAction('welcome.gpu.get_list');
+        expect(listRes['success'], isTrue);
+        final gpus = (listRes['data'] as Map)['gpus'] as List;
+        expect(gpus.isNotEmpty, isTrue);
 
-      final setRes = service.executeAction('welcome.gpu.set_preferred', {'index': 0});
-      expect(setRes['success'], isTrue);
-      expect(service.activeGpuIndex, equals(0));
+        final setRes = service.executeAction('welcome.gpu.set_preferred', {
+          'index': 0,
+        });
+        expect(setRes['success'], isTrue);
+        expect(service.activeGpuIndex, equals(0));
 
-      final invalidRes = service.executeAction('welcome.gpu.set_preferred', {'index': 999});
-      expect(invalidRes['success'], isFalse);
-    });
+        final invalidRes = service.executeAction('welcome.gpu.set_preferred', {
+          'index': 999,
+        });
+        expect(invalidRes['success'], isFalse);
+      },
+    );
 
-    test('executeAction welcome.quick_demo loads dataset and activates workbench', () {
-      final res = service.executeAction('welcome.quick_demo');
-      expect(res['success'], isTrue);
-      expect(service.isWorkbenchActive, isTrue);
-      expect(service.summary.isLoaded, isTrue);
-      expect(service.summary.pointCount, equals(25));
-    });
+    test(
+      'GPU display name never invents a desktop adapter when probing is empty',
+      () {
+        final detached = GeoScatter3dService.detached();
+        expect(detached.activeGpuDisplayName, equals('未探测到 Vulkan 设备'));
+        expect(detached.activeGpuDisplayName, isNot(contains('4070')));
+      },
+    );
 
-    test('executeAction welcome.open_project handles valid and invalid paths', () {
-      final invalidRes = service.executeAction('welcome.open_project', {'path': 'non_existent_path.gs3d'});
-      expect(invalidRes['success'], isFalse);
+    test(
+      'executeAction welcome.quick_demo loads dataset and activates workbench',
+      () {
+        final res = service.executeAction('welcome.quick_demo');
+        expect(res['success'], isTrue);
+        expect(service.isWorkbenchActive, isTrue);
+        expect(service.summary.isLoaded, isTrue);
+        expect(service.summary.pointCount, equals(25));
+      },
+    );
 
-      final validRes = service.executeAction('welcome.open_project', {'path': 'data/sample-points.gs3d.bundle'});
-      expect(validRes['success'], isTrue);
-      expect(service.isWorkbenchActive, isTrue);
-    });
+    test(
+      'executeAction welcome.open_project handles valid and invalid paths',
+      () {
+        final invalidRes = service.executeAction('welcome.open_project', {
+          'path': 'non_existent_path.gs3d',
+        });
+        expect(invalidRes['success'], isFalse);
 
-    test('executeAction welcome.new_project handles paths and builds from csv', () {
-      final invalidRes = service.executeAction('welcome.new_project', {'path': ''});
-      expect(invalidRes['success'], isFalse);
+        final validRes = service.executeAction('welcome.open_project', {
+          'path': 'data/sample-points.gs3d.bundle',
+        });
+        expect(validRes['success'], isTrue);
+        expect(service.isWorkbenchActive, isTrue);
+      },
+    );
 
-      final validRes = service.executeAction('welcome.new_project', {
-        'path': 'data/sample-points.gs3d.bundle',
-        'name': 'test_proj',
-        'threads': 8,
-      });
-      expect(validRes['success'], isTrue);
+    test(
+      'executeAction welcome.new_project handles paths and builds from csv',
+      () {
+        final invalidRes = service.executeAction('welcome.new_project', {
+          'path': '',
+        });
+        expect(invalidRes['success'], isFalse);
 
-      final csvRes = service.executeAction('welcome.new_project', {
-        'path': 'examples/sample-points.csv',
-        'name': 'sample_csv_build',
-        'threads': 4,
-      });
-      expect(csvRes['success'], isTrue);
-      expect(service.isWorkbenchActive, isTrue);
-      expect(service.summary.isLoaded, isTrue);
-      expect(service.summary.pointCount, equals(25));
-    });
+        final validRes = service.executeAction('welcome.new_project', {
+          'path': 'data/sample-points.gs3d.bundle',
+          'name': 'test_proj',
+          'threads': 8,
+        });
+        expect(validRes['success'], isTrue);
+
+        final csvRes = service.executeAction('welcome.new_project', {
+          'path': 'examples/sample-points.csv',
+          'name': 'sample_csv_build',
+          'threads': 4,
+        });
+        expect(csvRes['success'], isTrue);
+        expect(service.isWorkbenchActive, isTrue);
+        expect(service.summary.isLoaded, isTrue);
+        expect(service.summary.pointCount, equals(25));
+      },
+    );
 
     test('executeAction welcome.recent.clear and welcome.recent.open', () {
       final clearRes = service.executeAction('welcome.recent.clear');
       expect(clearRes['success'], isTrue);
       expect(service.recentProjects.isEmpty, isTrue);
 
-      final openInvalidRes = service.executeAction('welcome.recent.open', {'index': 0});
+      final openInvalidRes = service.executeAction('welcome.recent.open', {
+        'index': 0,
+      });
       expect(openInvalidRes['success'], isFalse);
     });
 
@@ -147,14 +226,18 @@ void main() {
       if (service.recentProjects.isNotEmpty) {
         final path = service.recentProjects.first.path;
         final initialCount = service.recentProjects.length;
-        final res = service.executeAction('welcome.recent.remove', {'path': path});
+        final res = service.executeAction('welcome.recent.remove', {
+          'path': path,
+        });
         expect(res['success'], isTrue);
         expect(service.recentProjects.length, equals(initialCount - 1));
       }
     });
 
     test('executeAction welcome.drop_file processes dropped path', () {
-      final res = service.executeAction('welcome.drop_file', {'path': 'data/sample-points.gs3d.bundle'});
+      final res = service.executeAction('welcome.drop_file', {
+        'path': 'data/sample-points.gs3d.bundle',
+      });
       expect(res['success'], isTrue);
       expect(service.isWorkbenchActive, isTrue);
     });
@@ -170,27 +253,28 @@ void main() {
       expect(res['message'], contains('未知的动作 ID'));
     });
 
-    test('executeJsonRpc dispatches list_ui_actions and ui_action properly', () {
-      final listRpc = jsonEncode({
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'list_ui_actions',
-      });
-      final listRes = jsonDecode(service.executeJsonRpc(listRpc));
-      expect(listRes['result'], isList);
-      expect((listRes['result'] as List).length, equals(61));
+    test(
+      'executeJsonRpc dispatches list_ui_actions and ui_action properly',
+      () {
+        final listRpc = jsonEncode({
+          'jsonrpc': '2.0',
+          'id': 1,
+          'method': 'list_ui_actions',
+        });
+        final listRes = jsonDecode(service.executeJsonRpc(listRpc));
+        expect(listRes['result'], isList);
+        expect((listRes['result'] as List).length, equals(61));
 
-      final actionRpc = jsonEncode({
-        'jsonrpc': '2.0',
-        'id': 2,
-        'method': 'ui_action',
-        'params': {
-          'action': 'welcome.get_state',
-        },
-      });
-      final actionRes = jsonDecode(service.executeJsonRpc(actionRpc));
-      expect(actionRes['result']['success'], isTrue);
-    });
+        final actionRpc = jsonEncode({
+          'jsonrpc': '2.0',
+          'id': 2,
+          'method': 'ui_action',
+          'params': {'action': 'welcome.get_state'},
+        });
+        final actionRes = jsonDecode(service.executeJsonRpc(actionRpc));
+        expect(actionRes['result']['success'], isTrue);
+      },
+    );
   });
 
   group('Welcome Page UI Keys and Interactive Component Tests', () {
@@ -201,7 +285,9 @@ void main() {
       service.initialize();
     });
 
-    testWidgets('WelcomeHero contains heroLogo key and brand texts', (WidgetTester tester) async {
+    testWidgets('WelcomeHero contains heroLogo key and brand texts', (
+      WidgetTester tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 720);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -210,9 +296,7 @@ void main() {
       });
 
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(body: WelcomeHero()),
-        ),
+        const MaterialApp(home: Scaffold(body: WelcomeHero())),
       );
       await tester.pump(const Duration(milliseconds: 100));
 
@@ -223,73 +307,120 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('WelcomeActionCards contains action keys and triggers quick demo', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: WelcomeActionCards(service: service)),
-        ),
-      );
-      await tester.pump();
+    testWidgets(
+      'WelcomeActionCards contains action keys and triggers quick demo',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: WelcomeActionCards(service: service)),
+          ),
+        );
+        await tester.pump();
 
-      expect(find.byKey(WelcomeUiKeys.newProjectAction), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectAction), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.quickDemoAction), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.newProjectAction), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.openProjectAction), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.quickDemoAction), findsOneWidget);
 
-      await tester.tap(find.byKey(WelcomeUiKeys.quickDemoAction));
-      await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(find.byKey(WelcomeUiKeys.quickDemoAction));
+        await tester.pump(const Duration(milliseconds: 300));
 
-      expect(service.isWorkbenchActive, isTrue);
-      expect(service.summary.isLoaded, isTrue);
-    });
+        expect(service.isWorkbenchActive, isTrue);
+        expect(service.summary.isLoaded, isTrue);
+      },
+    );
 
-    testWidgets('OpenProjectDialog binds all keys, supports file/folder browse, and sample chip fills path', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: OpenProjectDialog(service: service)),
-        ),
-      );
-      await tester.pump();
+    testWidgets(
+      'OpenProjectDialog binds all keys, supports file/folder browse, and sample chip fills path',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: OpenProjectDialog(service: service)),
+          ),
+        );
+        await tester.pump();
 
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogCloseButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogPathInput), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogSampleChip), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogCancelButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogSubmitButton), findsOneWidget);
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogCloseButton),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogPathInput),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogSampleChip),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogCancelButton),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.openProjectDialogSubmitButton),
+          findsOneWidget,
+        );
 
-      // 测试选择文件回调
-      service.filePickerOverride = (filter) => 'examples/picked_test.gs3d';
-      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton));
-      await tester.pump();
-      var textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
-      expect(textField.controller?.text, equals('examples/picked_test.gs3d'));
+        // 测试选择文件回调
+        service.filePickerOverride = (filter) => 'examples/picked_test.gs3d';
+        await tester.tap(
+          find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton),
+        );
+        await tester.pump();
+        var textField = tester.widget<TextField>(
+          find.byKey(WelcomeUiKeys.openProjectDialogPathInput),
+        );
+        expect(textField.controller?.text, equals('examples/picked_test.gs3d'));
 
-      // 测试选择文件夹回调
-      service.folderPickerOverride = () => 'data/picked_bundle.gs3d.bundle';
-      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton));
-      await tester.pump();
-      textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
-      expect(textField.controller?.text, equals('data/picked_bundle.gs3d.bundle'));
+        // 测试选择文件夹回调
+        service.folderPickerOverride = () => 'data/picked_bundle.gs3d.bundle';
+        await tester.tap(
+          find.byKey(WelcomeUiKeys.openProjectDialogBrowseFolderButton),
+        );
+        await tester.pump();
+        textField = tester.widget<TextField>(
+          find.byKey(WelcomeUiKeys.openProjectDialogPathInput),
+        );
+        expect(
+          textField.controller?.text,
+          equals('data/picked_bundle.gs3d.bundle'),
+        );
 
-      service.filePickerOverride = null;
-      service.folderPickerOverride = null;
+        service.filePickerOverride = null;
+        service.folderPickerOverride = null;
 
-      // 点击快捷填充示例 Chip
-      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogSampleChip));
-      await tester.pump();
+        // 点击快捷填充示例 Chip
+        await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogSampleChip));
+        await tester.pump();
 
-      textField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.openProjectDialogPathInput));
-      expect(textField.controller?.text, equals('data/sample-points.gs3d.bundle'));
+        textField = tester.widget<TextField>(
+          find.byKey(WelcomeUiKeys.openProjectDialogPathInput),
+        );
+        expect(
+          textField.controller?.text,
+          equals('data/sample-points.gs3d.bundle'),
+        );
 
-      // 提交并载入
-      await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogSubmitButton));
-      await tester.pump(const Duration(milliseconds: 200));
+        // 提交并载入
+        await tester.tap(
+          find.byKey(WelcomeUiKeys.openProjectDialogSubmitButton),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
 
-      expect(service.isWorkbenchActive, isTrue);
-    });
+        expect(service.isWorkbenchActive, isTrue);
+      },
+    );
 
-    testWidgets('NewProjectDialog binds all keys and sliders', (WidgetTester tester) async {
+    testWidgets('NewProjectDialog binds all keys and sliders', (
+      WidgetTester tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -304,28 +435,68 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogCloseButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogPathInput), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogBrowseButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogSampleChip), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogNameInput), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogThreadsSlider), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogCancelButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogSubmitButton), findsOneWidget);
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogCloseButton),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogPathInput),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogBrowseButton),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogSampleChip),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogNameInput),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogThreadsSlider),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogCancelButton),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogSubmitButton),
+        findsOneWidget,
+      );
 
       // 测试高级选项折叠与展开
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown), findsNothing);
-      await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle));
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(WelcomeUiKeys.newProjectDialogAdvancedToggle),
+      );
       await tester.pump();
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogPointsPerTileSlider), findsOneWidget);
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogVoxelModeDropdown),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogPointsPerTileSlider),
+        findsOneWidget,
+      );
 
       // 点击快捷填充示例 Chip
       await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogSampleChip));
       await tester.pump();
 
-      final pathField = tester.widget<TextField>(find.byKey(WelcomeUiKeys.newProjectDialogPathInput));
+      final pathField = tester.widget<TextField>(
+        find.byKey(WelcomeUiKeys.newProjectDialogPathInput),
+      );
       expect(pathField.controller?.text, equals('examples/sample-points.csv'));
 
       // 点击提交创建工程
@@ -335,7 +506,9 @@ void main() {
       expect(service.isWorkbenchActive, isTrue);
     });
 
-    testWidgets('RecentProjectsCard removes single item', (WidgetTester tester) async {
+    testWidgets('RecentProjectsCard removes single item', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: RecentProjectsCard(service: service)),
@@ -352,45 +525,56 @@ void main() {
       }
     });
 
-    testWidgets('RecentProjectsCard supports clear-all and empty-state demo button', (WidgetTester tester) async {
-      if (service.recentProjects.isEmpty) {
-        service.executeAction('welcome.quick_demo');
-        service.closeWorkbench();
-      }
+    testWidgets(
+      'RecentProjectsCard supports clear-all and empty-state demo button',
+      (WidgetTester tester) async {
+        if (service.recentProjects.isEmpty) {
+          service.executeAction('welcome.quick_demo');
+          service.closeWorkbench();
+        }
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: RecentProjectsCard(service: service)),
-        ),
-      );
-      await tester.pump();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: RecentProjectsCard(service: service)),
+          ),
+        );
+        await tester.pump();
 
-      // 清空记录前有历史项
-      expect(find.byKey(WelcomeUiKeys.recentClearButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsOneWidget);
+        // 清空记录前有历史项
+        expect(find.byKey(WelcomeUiKeys.recentClearButton), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsOneWidget);
 
-      // 点击清空全部
-      await tester.tap(find.byKey(WelcomeUiKeys.recentClearButton));
-      await tester.pump(const Duration(milliseconds: 200));
+        // 点击清空全部
+        await tester.tap(find.byKey(WelcomeUiKeys.recentClearButton));
+        await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.byKey(WelcomeUiKeys.recentCancelClearButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.recentConfirmClearButton), findsOneWidget);
+        expect(
+          find.byKey(WelcomeUiKeys.recentCancelClearButton),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(WelcomeUiKeys.recentConfirmClearButton),
+          findsOneWidget,
+        );
 
-      // 确认清空
-      await tester.tap(find.byKey(WelcomeUiKeys.recentConfirmClearButton));
-      await tester.pump(const Duration(milliseconds: 200));
+        // 确认清空
+        await tester.tap(find.byKey(WelcomeUiKeys.recentConfirmClearButton));
+        await tester.pump(const Duration(milliseconds: 200));
 
-      // 验证空态及其一键体验按钮
-      expect(find.byKey(WelcomeUiKeys.recentEmptyDemoButton), findsOneWidget);
+        // 验证空态及其一键体验按钮
+        expect(find.byKey(WelcomeUiKeys.recentEmptyDemoButton), findsOneWidget);
 
-      // 点击空态体验按钮
-      await tester.tap(find.byKey(WelcomeUiKeys.recentEmptyDemoButton));
-      await tester.pump(const Duration(milliseconds: 200));
+        // 点击空态体验按钮
+        await tester.tap(find.byKey(WelcomeUiKeys.recentEmptyDemoButton));
+        await tester.pump(const Duration(milliseconds: 200));
 
-      expect(service.isWorkbenchActive, isTrue);
-    });
+        expect(service.isWorkbenchActive, isTrue);
+      },
+    );
 
-    testWidgets('GpuSelectionDialog binds keys and switches preferred GPU', (WidgetTester tester) async {
+    testWidgets('GpuSelectionDialog binds keys and switches preferred GPU', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: GpuSelectionDialog(service: service)),
@@ -414,47 +598,55 @@ void main() {
       }
     });
 
-    testWidgets('WelcomeFooter displays GPU, Docs, and About dialogs with keys', (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1280, 720);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'WelcomeFooter displays GPU, Docs, and About dialogs with keys',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 720);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            bottomNavigationBar: WelcomeFooter(service: service),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              bottomNavigationBar: WelcomeFooter(service: service),
+            ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      expect(find.byKey(WelcomeUiKeys.footerGpuButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.footerDocsButton), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.footerAboutButton), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.footerGpuButton), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.footerDocsButton), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.footerAboutButton), findsOneWidget);
 
-      // 测试技术指南弹窗
-      await tester.tap(find.byKey(WelcomeUiKeys.footerDocsButton));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('操作指南与技术标准'), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.docsDialogCloseButton), findsOneWidget);
-      await tester.tap(find.byKey(WelcomeUiKeys.docsDialogCloseButton));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('操作指南与技术标准'), findsNothing);
+        // 测试技术指南弹窗
+        await tester.tap(find.byKey(WelcomeUiKeys.footerDocsButton));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('操作指南与技术标准'), findsOneWidget);
+        expect(find.byKey(WelcomeUiKeys.docsDialogCloseButton), findsOneWidget);
+        await tester.tap(find.byKey(WelcomeUiKeys.docsDialogCloseButton));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('操作指南与技术标准'), findsNothing);
 
-      // 测试关于系统弹窗
-      await tester.tap(find.byKey(WelcomeUiKeys.footerAboutButton));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('关于 GeoScatter3D'), findsOneWidget);
-      expect(find.byKey(WelcomeUiKeys.aboutDialogCloseButton), findsOneWidget);
-      await tester.tap(find.byKey(WelcomeUiKeys.aboutDialogCloseButton));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('关于 GeoScatter3D'), findsNothing);
-    });
+        // 测试关于系统弹窗
+        await tester.tap(find.byKey(WelcomeUiKeys.footerAboutButton));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('关于 GeoScatter3D'), findsOneWidget);
+        expect(
+          find.byKey(WelcomeUiKeys.aboutDialogCloseButton),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(WelcomeUiKeys.aboutDialogCloseButton));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('关于 GeoScatter3D'), findsNothing);
+      },
+    );
 
-    testWidgets('WelcomePage integration renders all main sections', (WidgetTester tester) async {
+    testWidgets('WelcomePage integration renders all main sections', (
+      WidgetTester tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 720);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -462,11 +654,7 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: WelcomePage(service: service),
-        ),
-      );
+      await tester.pumpWidget(MaterialApp(home: WelcomePage(service: service)));
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byKey(WelcomeUiKeys.heroLogo), findsOneWidget);
@@ -481,7 +669,9 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('WelcomePage handles onFileDropped and keyboard shortcuts', (WidgetTester tester) async {
+    testWidgets('WelcomePage handles onFileDropped and keyboard shortcuts', (
+      WidgetTester tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 720);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -489,11 +679,7 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: WelcomePage(service: service),
-        ),
-      );
+      await tester.pumpWidget(MaterialApp(home: WelcomePage(service: service)));
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byKey(WelcomeUiKeys.welcomeDragDropTarget), findsOneWidget);
@@ -501,8 +687,14 @@ void main() {
       // 模拟文件拖放通知
       service.handleDroppedPath('data/sample-points.gs3d.bundle');
       await tester.pump(const Duration(milliseconds: 200));
-      expect((service as WelcomeUiTestService).lastAction, 'welcome.open_project');
-      expect((service as WelcomeUiTestService).lastParams['path'], 'data/sample-points.gs3d.bundle');
+      expect(
+        (service as WelcomeUiTestService).lastAction,
+        'welcome.open_project',
+      );
+      expect(
+        (service as WelcomeUiTestService).lastParams['path'],
+        'data/sample-points.gs3d.bundle',
+      );
 
       // 模拟 Ctrl+N 打开新建工程对话框
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -510,7 +702,10 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byKey(WelcomeUiKeys.newProjectDialogNameInput), findsOneWidget);
+      expect(
+        find.byKey(WelcomeUiKeys.newProjectDialogNameInput),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(WelcomeUiKeys.newProjectDialogCloseButton));
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -520,7 +715,10 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton), findsOneWidget);
+      expect(
+        find.byKey(WelcomeUiKeys.openProjectDialogBrowseFileButton),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(WelcomeUiKeys.openProjectDialogCloseButton));
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -528,66 +726,85 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('WelcomePage drawer toggles smoothly and tab switching renders all 5 views', (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1280, 720);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'WelcomePage drawer toggles smoothly and tab switching renders all 5 views',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 720);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: WelcomePage(service: service),
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpWidget(
+          MaterialApp(home: WelcomePage(service: service)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
 
-      // 1. 验证默认处于「文件」视图
-      expect(find.text('新建工程'), findsOneWidget);
+        // 1. 验证默认处于「文件」视图
+        expect(find.text('新建工程'), findsOneWidget);
 
-      // 2. 切换至「最近项目」视图
-      await tester.tap(find.text('最近项目'));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('最近项目管理'), findsOneWidget);
-      expect(find.text('全部工程'), findsOneWidget);
+        // 2. 切换至「最近项目」视图
+        await tester.tap(find.text('最近项目'));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('最近项目管理'), findsOneWidget);
+        expect(find.text('全部工程'), findsOneWidget);
 
-      // 3. 切换至「示例」视图并验证卡片与按钮
-      await tester.tap(find.text('示例'));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('示例工程库'), findsOneWidget);
-      expect(find.text('高斯散点示范包 (Gaussian Point Cloud Bundle)'), findsOneWidget);
-      expect(find.text('城市建筑激光雷达机载点云 (Urban LiDAR Survey)'), findsOneWidget);
-      expect(find.text('深层地质断层带结构散点 (Fault Line Structural Model)'), findsOneWidget);
-      expect(find.text('载入视口'), findsNWidgets(3));
+        // 过滤按钮必须真正改变列表，而不是只有选中样式变化。
+        expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsOneWidget);
+        await tester.tap(find.text('单体点云 (.gs3d)'));
+        await tester.pump();
+        expect(service.recentProjectFilter, equals('gs3d'));
+        expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsNothing);
+        expect(find.text('该格式暂无最近打开的项目记录'), findsOneWidget);
 
-      // 4. 测试抽屉折叠 (快捷键 Ctrl+B)
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('分层工区包 (.bundle)'));
+        await tester.pump();
+        expect(service.recentProjectFilter, equals('bundle'));
+        expect(find.byKey(WelcomeUiKeys.recentItem(0)), findsOneWidget);
 
-      // 验证处于折叠态且无任何布局溢出
-      expect(tester.takeException(), isNull);
+        await tester.tap(find.text('全部工程'));
+        await tester.pump();
+        expect(service.recentProjectFilter, equals('all'));
 
-      // 5. 再次触发 Ctrl+B 重新展开抽屉
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+        // 3. 切换至「示例」视图并验证卡片与按钮
+        await tester.tap(find.text('示例'));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('示例工程库'), findsOneWidget);
+        expect(find.text('内置点云示例工程 (GS3D Bundle)'), findsOneWidget);
+        expect(find.text('载入视口'), findsOneWidget);
+        await tester.tap(find.text('载入视口'));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(service.isWorkbenchActive, isTrue);
 
-      // 6. 切换至「帮助」与「关于」
-      await tester.tap(find.byKey(WelcomeUiKeys.footerDocsButton));
-      await tester.pumpAndSettle();
-      expect(find.text('帮助与技术规范'), findsOneWidget);
+        // 4. 测试抽屉折叠 (快捷键 Ctrl+B)
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(WelcomeUiKeys.footerAboutButton));
-      await tester.pumpAndSettle();
-      expect(find.text('GeoScatter3D Studio'), findsOneWidget);
+        // 验证处于折叠态且无任何布局溢出
+        expect(tester.takeException(), isNull);
 
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump();
-    });
+        // 5. 再次触发 Ctrl+B 重新展开抽屉
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        // 6. 切换至「帮助」与「关于」
+        await tester.tap(find.byKey(WelcomeUiKeys.footerDocsButton));
+        await tester.pumpAndSettle();
+        expect(find.text('帮助与技术规范'), findsOneWidget);
+
+        await tester.tap(find.byKey(WelcomeUiKeys.footerAboutButton));
+        await tester.pumpAndSettle();
+        expect(find.text('GeoScatter3D Studio'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      },
+    );
   });
 }

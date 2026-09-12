@@ -134,11 +134,7 @@ class WelcomeFooter extends StatelessWidget {
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final gpus = service.gpus;
-        final activeIdx = service.activeGpuIndex;
-        final activeGpuName = (activeIdx >= 0 && activeIdx < gpus.length)
-            ? gpus[activeIdx].name
-            : '默认图形适配器';
+        final activeGpuName = service.activeGpuDisplayName;
 
         return Container(
           padding: const EdgeInsets.symmetric(
@@ -147,9 +143,7 @@ class WelcomeFooter extends StatelessWidget {
           ),
           decoration: const BoxDecoration(
             color: Gs3dTokens.surfaceHeader,
-            border: Border(
-              top: BorderSide(color: Gs3dTokens.hairline),
-            ),
+            border: Border(top: BorderSide(color: Gs3dTokens.hairline)),
           ),
           child: Row(
             children: [
@@ -251,7 +245,12 @@ class _FooterAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Gs3dPillButton(label: label, icon: icon, onPressed: onTap, dense: true);
+    return Gs3dPillButton(
+      label: label,
+      icon: icon,
+      onPressed: onTap,
+      dense: true,
+    );
   }
 }
 

@@ -55,52 +55,51 @@ class BottomStatusBar extends StatelessWidget {
       child: ListenableBuilder(
         listenable: service,
         builder: (context, _) {
-          final gpus = service.gpus;
-          final activeIdx = service.activeGpuIndex;
-          final gpuName = (activeIdx >= 0 && activeIdx < gpus.length)
-              ? gpus[activeIdx].name
-              : 'Vulkan 1.3';
+          final gpuName = service.activeGpuDisplayName;
 
+          final statusRow = Row(
+            children: [
+              _StatusItem(
+                icon: Icons.speed_rounded,
+                label: '${service.fps.toStringAsFixed(1)} FPS',
+                value: '${service.frameTimeMs.toStringAsFixed(2)} ms',
+                accent: true,
+                onTap: service.togglePerformancePanel,
+              ),
+              _sep,
+              _StatusItem(
+                icon: Icons.grain_rounded,
+                label: '${service.summary.pointCount} 可见点',
+              ),
+              _sep,
+              _StatusItem(
+                icon: Icons.grid_view_rounded,
+                label: '瓦片 ${service.loadedTiles}',
+                value: '命中 ${service.cacheHitRate.toStringAsFixed(1)}%',
+                onTap: service.toggleTileInspector,
+              ),
+              _sep,
+              _StatusItem(icon: Icons.memory_rounded, label: gpuName),
+              _sep,
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Gs3dStatusDot(color: Gs3dTokens.success, size: 7),
+                  SizedBox(width: Gs3dTokens.space4 + 2),
+                  Text('就绪', style: _meta),
+                ],
+              ),
+              const SizedBox(width: Gs3dTokens.space16),
+              Text(service.cameraCoordsString, style: _mono),
+              const SizedBox(width: Gs3dTokens.space8),
+              const Text('本地坐标 / 空间参考系', style: _meta),
+            ],
+          );
+          // 状态栏内容包含可变长度的 GPU 名称与坐标；保持横向滚动，
+          // 避免窄窗口 / 独立组件测试中把遥测文本挤出 RenderFlex。
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _StatusItem(
-                  icon: Icons.speed_rounded,
-                  label: '${service.fps.toStringAsFixed(1)} FPS',
-                  value: '${service.frameTimeMs.toStringAsFixed(2)} ms',
-                  accent: true,
-                  onTap: service.togglePerformancePanel,
-                ),
-                _sep,
-                _StatusItem(
-                  icon: Icons.grain_rounded,
-                  label: '${service.summary.pointCount} 可见点',
-                ),
-                _sep,
-                _StatusItem(
-                  icon: Icons.grid_view_rounded,
-                  label: '瓦片 ${service.loadedTiles}',
-                  value: '命中 ${service.cacheHitRate.toStringAsFixed(1)}%',
-                  onTap: service.toggleTileInspector,
-                ),
-                _sep,
-                _StatusItem(icon: Icons.memory_rounded, label: gpuName),
-                _sep,
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Gs3dStatusDot(color: Gs3dTokens.success, size: 7),
-                    SizedBox(width: Gs3dTokens.space4 + 2),
-                    Text('就绪', style: _meta),
-                  ],
-                ),
-                const SizedBox(width: Gs3dTokens.space16),
-                Text(service.cameraCoordsString, style: _mono),
-                const SizedBox(width: Gs3dTokens.space8),
-                const Text('本地坐标 / 空间参考系', style: _meta),
-              ],
-            ),
+            child: statusRow,
           );
         },
       ),

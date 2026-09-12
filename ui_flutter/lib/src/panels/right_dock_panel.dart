@@ -63,9 +63,7 @@ class RightDockPanel extends StatelessWidget {
                 final colormap = service.colormap;
                 final scalarMin = service.scalarMin;
                 final scalarMax = service.scalarMax;
-                final attrs = service.summary.attributes.isNotEmpty
-                    ? service.summary.attributes
-                    : ['field_statics', 'elevation'];
+                final attrs = List<String>.of(service.summary.attributes);
 
                 return ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -157,14 +155,23 @@ class RightDockPanel extends StatelessWidget {
                           // 着色字段
                           const Text('着色字段', style: TextStyle(fontSize: 12.5, color: Gs3dTokens.textBody)),
                           const SizedBox(height: 4),
-                          _buildDropdown(
-                            key: WorkbenchUiKeys.rightDockColorAttrDropdown,
-                            items: attrs,
-                            value: attrs.contains(colorAttr) ? colorAttr : attrs.first,
-                            onChanged: (v) {
-                              if (v != null) service.setColorAttribute(v);
-                            },
-                          ),
+                          if (attrs.isEmpty)
+                            const Text(
+                              '当前数据集没有可用属性',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Gs3dTokens.textTertiary,
+                              ),
+                            )
+                          else
+                            _buildDropdown(
+                              key: WorkbenchUiKeys.rightDockColorAttrDropdown,
+                              items: attrs,
+                              value: attrs.contains(colorAttr) ? colorAttr : attrs.first,
+                              onChanged: (v) {
+                                if (v != null) service.setColorAttribute(v);
+                              },
+                            ),
                         ],
                       ),
                     ),

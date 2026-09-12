@@ -1,6 +1,6 @@
 # Flutter 后端接入记录
 
-更新：2026-09-10。当前权威路径为**单进程渲染内核 FFI**；双进程 Viewer 桥已删除。工作台交互（拾取/Gizmo/清缓存/PNG）经 `gs3d_engine_*` 收口；主题/面板/测量线为 Dart 本地状态。
+更新：2026-09-12。当前权威路径为**单进程渲染内核 FFI**；双进程 Viewer 桥已删除。工作台交互（拾取/Gizmo/清缓存/PNG）经 `gs3d_engine_*` 收口；主题/面板/测量线为 Dart 本地状态。
 
 ## 连接路径（现行）
 
@@ -67,6 +67,12 @@ Flutter UI / GeoScatter3dService
 - **覆盖范围**：欢迎页（Hero、三联操作卡片、最近工程、抽屉侧栏、顶栏、
   页脚、五个弹窗）与三种工作台布局的全部组件均已令牌化；除三维视口 HUD
   与科学色表阶梯（领域专用色）外，源码中不再有裸色值字面量。
+- **Android 系统栏**：入口启用透明 Edge-to-Edge，外层使用工具栏表面填充
+  系统栏区域，`SafeArea` 为顶部状态栏和底部手势区让位；平板安全区回归测试
+  覆盖 24dp 顶部 / 34dp 底部 inset，避免底部状态栏再次与系统白条重叠。
+- **紧凑手机布局**：针对 328×525 logical px 增加回归用例；顶部工具条收敛为
+  图标入口，工程名弹性省略，左右抽屉按可用宽度收缩，视口标签与浮动工具条不再
+  产生 `RenderFlex` 溢出。
 
 ## 欢迎页已验证流程
 
@@ -90,13 +96,21 @@ Flutter UI / GeoScatter3dService
 检测到 Visual Studio 生成器变化时，将旧 Flutter 生成目录移入 tmp 保留，再重新配置。
 正常退出等待任务和原生进程；Runner 的 Windows Job Object 用于调试器停止时回收子进程。
 
-## 验证结果（2026-09-11）
+## 验证结果（2026-09-12）
 
-- Flutter：`flutter test` 55 项通过，3 项 e2e 按环境变量跳过。
-- 单进程 e2e：`GS3D_ENGINE_E2E=1` create→load→render→pick 命中→gizmo→clear→png→export ply/csv→destroy→重建 通过（RTX 4070）。
+- Flutter：普通 `flutter test` 90 项通过、3 项 e2e 按环境变量跳过；设置
+  `GS3D_ENGINE_E2E=1` 后 92 项通过、1 项跳过。
+- 单进程 e2e：`GS3D_ENGINE_E2E=1` create→load→render→pick 命中→gizmo→clear→png→export ply/csv→destroy→重建通过；日志中的 GPU 名称仅代表当前测试主机，不作为移动端硬件文案。
 - 重启流：`service_restart_flow_test` open→start→stop→re-open 通过。
 - CTest：43 项全部通过。
 - 两项工程护栏均为 OK。
+- Android Maestro：Pixel_10_Pro_Fold 模拟器最新 APK 的 smoke/system 5/5 和
+  data/SAF 6/6 flows 均通过，合计 11/11；覆盖欢迎页、平板手势、系统栏、SAF
+  文件/目录导入、PLY/CSV 导出和 PNG 保存；测试 fixture 运行后已从设备 Downloads
+  清理。
+- Android AAB：使用临时 QA keystore 验证 release 编译、资源打包和签名校验链路
+  通过；当前工作区未配置生产 `key.properties`/keystore，正式商店包仍必须注入生产
+  keystore 后再执行 release 构建。
 
 ## 清理与剩余边界
 

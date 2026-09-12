@@ -10,7 +10,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#if !defined(__ANDROID__)
 #include <syncstream>
+#endif
 
 namespace gs3d::util::log {
 
@@ -156,6 +158,19 @@ public:
             std::ostream& destination = level_ >= Level::Warning
                 ? std::cerr
                 : std::cout;
+#if defined(__ANDROID__)
+            // Android NDK libc++ 未实现 std::osyncstream；用 mutex 保证原子写。
+            static std::mutex log_mutex;
+            std::lock_guard<std::mutex> lock(log_mutex);
+            destination << '[' << level_name(level_) << ']';
+            if (channel_ == Channel::Benchmark) {
+                destination << "[benchmark]";
+            }
+            destination << ' ' << stream_.str();
+            if (stream_.str().empty() || stream_.str().back() != '\n') {
+                destination << '\n';
+            }
+#else
             std::osyncstream output(destination);
             output << '[' << level_name(level_) << ']';
             if (channel_ == Channel::Benchmark) {
@@ -165,6 +180,7 @@ public:
             if (stream_.str().empty() || stream_.str().back() != '\n') {
                 output << '\n';
             }
+#endif
         } catch (...) {
             // Logging must never turn an error-reporting path into terminate().
         }
