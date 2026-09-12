@@ -8,6 +8,8 @@ class TelemetryHud extends StatelessWidget {
   /// 原生渲染线程上“提交 + 回读”的实际耗时；0 表示不可用（不展示）。
   final double renderTimeMs;
   final int visiblePoints;
+  /// LOD 规模摘要（如 “39.3 万 / 1000 万 点 · LOD 6/6”）；空串则不展示。
+  final String lodSummary;
   final String gpuName;
   final String status;
 
@@ -17,6 +19,7 @@ class TelemetryHud extends StatelessWidget {
     required this.frameTimeMs,
     this.renderTimeMs = 0,
     required this.visiblePoints,
+    this.lodSummary = '',
     this.gpuName = 'Vulkan GPU',
     this.status = '就绪',
   });
@@ -120,6 +123,20 @@ class TelemetryHud extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
+
+              // LOD 规模：源点数远大于绘制量时出现，避免“看不到全量数据”的误解
+              if (lodSummary.isNotEmpty) ...[
+                Text(
+                  key: const ValueKey('viewport_lod'),
+                  lodSummary,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8), // Slate 400
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
 
               // 物理显卡信息
               ConstrainedBox(

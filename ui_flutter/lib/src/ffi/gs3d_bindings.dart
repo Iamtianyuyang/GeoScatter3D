@@ -45,6 +45,18 @@ typedef DartLoadDataset = int Function(Gs3dEnginePtr e, ffi.Pointer<Utf8> path);
 typedef CLoadSample = ffi.Int32 Function(Gs3dEnginePtr e);
 typedef DartLoadSample = int Function(Gs3dEnginePtr e);
 
+typedef CLoadSynthetic = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Uint64 pointCount);
+typedef DartLoadSynthetic = int Function(Gs3dEnginePtr e, int pointCount);
+
+typedef CSetPointBudget = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Uint64 maxPoints);
+typedef DartSetPointBudget = int Function(Gs3dEnginePtr e, int maxPoints);
+
+typedef CSourcePointCount = ffi.Uint64 Function(Gs3dEnginePtr e);
+typedef DartSourcePointCount = int Function(Gs3dEnginePtr e);
+
+typedef CDrawnPointCount = ffi.Uint64 Function(Gs3dEnginePtr e);
+typedef DartDrawnPointCount = int Function(Gs3dEnginePtr e);
+
 typedef CUnloadDataset = ffi.Int32 Function(Gs3dEnginePtr e);
 typedef DartUnloadDataset = int Function(Gs3dEnginePtr e);
 
@@ -160,6 +172,10 @@ class Gs3dBindings {
   late final DartDestroy destroy;
   late final DartLoadDataset loadDataset;
   late final DartLoadSample loadSample;
+  late final DartLoadSynthetic loadSynthetic;
+  late final DartSetPointBudget setPointBudget;
+  late final DartSourcePointCount sourcePointCount;
+  late final DartDrawnPointCount drawnPointCount;
   late final DartUnloadDataset unloadDataset;
   late final DartResize resize;
   late final DartSetPointSize setPointSize;
@@ -192,6 +208,18 @@ class Gs3dBindings {
     );
     loadSample = lib.lookupFunction<CLoadSample, DartLoadSample>(
       'gs3d_engine_load_sample',
+    );
+    loadSynthetic = lib.lookupFunction<CLoadSynthetic, DartLoadSynthetic>(
+      'gs3d_engine_load_synthetic',
+    );
+    setPointBudget = lib.lookupFunction<CSetPointBudget, DartSetPointBudget>(
+      'gs3d_engine_set_point_budget',
+    );
+    sourcePointCount = lib.lookupFunction<CSourcePointCount, DartSourcePointCount>(
+      'gs3d_engine_source_point_count',
+    );
+    drawnPointCount = lib.lookupFunction<CDrawnPointCount, DartDrawnPointCount>(
+      'gs3d_engine_drawn_point_count',
     );
     unloadDataset = lib.lookupFunction<CUnloadDataset, DartUnloadDataset>(
       'gs3d_engine_unload_dataset',

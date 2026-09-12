@@ -159,6 +159,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                 frameTimeMs: _service.frameTimeMs,
                 renderTimeMs: _service.renderTimeMs,
                 visiblePoints: _service.pointCount,
+                lodSummary: _service.lodSummary,
                 gpuName: _service.gpuName,
                 status: _service.status,
               ),

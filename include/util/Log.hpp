@@ -10,7 +10,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#if !defined(__ANDROID__)
+#if defined(__ANDROID__)
+#include <android/log.h>
+#else
 #include <syncstream>
 #endif
 
@@ -155,22 +157,37 @@ public:
         }
 
         try {
+#if defined(__ANDROID__)
+            /*
+             * Android 上 app 的 stdout/stderr 不进 logcat，引擎日志在真机上
+             * 等于丢失（排障只能靠猜）。这里改走 __android_log_write，
+             * 统一 tag 为 gs3d，可用 `adb logcat -s gs3d` 直接观察。
+             */
+            static std::mutex log_mutex;
+            std::lock_guard<std::mutex> lock(log_mutex);
+            std::string payload;
+            payload.reserve(stream_.str().size() + 16);
+            payload += '[';
+            payload += level_name(level_);
+            payload += ']';
+            if (channel_ == Channel::Benchmark) {
+                payload += "[benchmark]";
+            }
+            payload += ' ';
+            payload += stream_.str();
+            while (!payload.empty() &&
+                   (payload.back() == '\n' || payload.back() == '\r')) {
+                payload.pop_back();
+            }
+            const int priority = level_ >= Level::Error
+                ? ANDROID_LOG_ERROR
+                : (level_ >= Level::Warning ? ANDROID_LOG_WARN
+                                            : ANDROID_LOG_INFO);
+            __android_log_write(priority, "gs3d", payload.c_str());
+#else
             std::ostream& destination = level_ >= Level::Warning
                 ? std::cerr
                 : std::cout;
-#if defined(__ANDROID__)
-            // Android NDK libc++ 未实现 std::osyncstream；用 mutex 保证原子写。
-            static std::mutex log_mutex;
-            std::lock_guard<std::mutex> lock(log_mutex);
-            destination << '[' << level_name(level_) << ']';
-            if (channel_ == Channel::Benchmark) {
-                destination << "[benchmark]";
-            }
-            destination << ' ' << stream_.str();
-            if (stream_.str().empty() || stream_.str().back() != '\n') {
-                destination << '\n';
-            }
-#else
             std::osyncstream output(destination);
             output << '[' << level_name(level_) << ']';
             if (channel_ == Channel::Benchmark) {

@@ -653,6 +653,23 @@ if(NOT ANDROID)
     add_dependencies(GeoScatter3DEngineHostTests gs3d_shaders)
 endif()
 
+# 大规模点云 LOD 链（纯 CPU 逻辑，不依赖 Vulkan）。
+add_executable(GeoScatter3DLodBuilderTests
+    LodBuilderTests.cpp
+)
+target_include_directories(GeoScatter3DLodBuilderTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(GeoScatter3DLodBuilderTests PRIVATE
+    gs3d_engine_core
+    Vulkan::Vulkan
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.LodBuilder
+    COMMAND GeoScatter3DLodBuilderTests
+)
+
 # Python Script Quality Gate Tests
 
 add_test(

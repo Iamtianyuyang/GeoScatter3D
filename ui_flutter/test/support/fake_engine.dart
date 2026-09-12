@@ -7,6 +7,8 @@ class FakeEngine implements Gs3dEngine {
   int disposeCount = 0, loadCount = 0, renderCount = 0, resetCount = 0;
   int requestCount = 0, readCount = 0;
   int sampleResult = 0;
+  int? syntheticPoints;
+  int? pointBudget;
   List<(int, int)> sizes = [];
   Map<String, double>? input;
   Future<ui.Image?> Function()? render;
@@ -15,17 +17,56 @@ class FakeEngine implements Gs3dEngine {
   bool stallFrames = false;
 
   int _sequence = 0;
+  int _sourcePointCount = 10000;
+  int _drawnPointCount = 10000;
+  int _lodLevel = 0;
+  int _lodLevelCount = 1;
+
+  /// 模拟 LOD 生效：源点远大于绘制量。
+  void setLodScenario({
+    required int source,
+    required int drawn,
+    int level = 2,
+    int levelCount = 4,
+  }) {
+    _sourcePointCount = source;
+    _drawnPointCount = drawn;
+    _lodLevel = level;
+    _lodLevelCount = levelCount;
+  }
 
   @override
   bool get isDisposed => disposeCount > 0;
   @override
-  int get pointCount => 10000;
+  int get pointCount => _drawnPointCount;
+  @override
+  int get sourcePointCount => _sourcePointCount;
+  @override
+  int get drawnPointCount => _drawnPointCount;
   @override
   String get lastError => 'fixture native failure';
   @override
   Map<String, dynamic> get diagnostics => {
     'gpu': {'name': 'fixture GPU'},
+    'lod': {
+      'source_points': _sourcePointCount,
+      'drawn_points': _drawnPointCount,
+      'level_index': _lodLevel,
+      'level_count': _lodLevelCount,
+    },
   };
+
+  @override
+  int loadSynthetic(int pointCount) {
+    syntheticPoints = pointCount;
+    loadCount++;
+    return sampleResult;
+  }
+
+  @override
+  void setPointBudget(int maxPoints) {
+    pointBudget = maxPoints;
+  }
 
   @override
   int get frameSequence => _sequence;

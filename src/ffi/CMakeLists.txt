@@ -6,6 +6,7 @@ add_library(gs3d_engine_core STATIC
     EngineHost.cpp
     FrameChannel.cpp
     HeadlessRenderKernel.cpp
+    LodBuilder.cpp
 )
 
 set_target_properties(gs3d_engine_core PROPERTIES
@@ -49,6 +50,12 @@ target_link_libraries(gs3d_ffi PRIVATE
 
 if(WIN32)
     target_link_libraries(gs3d_ffi PRIVATE comdlg32 ole32 shell32 ws2_32)
+endif()
+
+if(ANDROID)
+    # util/Log.hpp 在 Android 上走 __android_log_write（app 的 stdout/stderr
+    # 不进 logcat）；该符号由 NDK 的 liblog 提供，必须显式链接。
+    target_link_libraries(gs3d_ffi PRIVATE log)
 endif()
 
 target_compile_definitions(gs3d_ffi PRIVATE GS3D_FFI_EXPORTS)

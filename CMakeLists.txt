@@ -25,6 +25,25 @@ include(cmake/Shaders.cmake)
 # Source domain modules & executables (platform, data, render, ui, app, etc.)
 add_subdirectory(src)
 
+# 合成基准 bundle 生成器（粗尺度 LOD + 细尺度 tile 的真机/桌面验证资产）。
+option(GS3D_BUILD_BENCH_BUNDLE_TOOL
+    "Build the synthetic bundle generator used for large-dataset verification"
+    ON
+)
+if(GS3D_BUILD_BENCH_BUNDLE_TOOL AND NOT ANDROID)
+    add_executable(gs3d_bench_bundle tools/gs3d_bench_bundle.cpp)
+    target_include_directories(gs3d_bench_bundle PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+    target_link_libraries(gs3d_bench_bundle PRIVATE
+        gs3d_data
+        gs3d_preprocess
+    )
+else()
+    # 保证 gs3d_shaders 等依赖目标在配置阶段即存在时行为一致。
+    set(GS3D_BUILD_BENCH_BUNDLE_TOOL OFF)
+endif()
+
 # ---------------------------------------------------------------------------
 # Testing Subsystem
 # ---------------------------------------------------------------------------

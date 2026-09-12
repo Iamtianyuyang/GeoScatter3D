@@ -2,6 +2,15 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'gs3d_engine.dart';
 
+/// 基准/压力测试入口：以 --dart-define=GS3D_BENCH_POINTS=10000000 构建，
+/// 启动后直接生成该点数的合成地形（用于真机验证千万级数据的 LOD 与帧预算）。
+const int kBenchPointCount = int.fromEnvironment('GS3D_BENCH_POINTS');
+
+/// 真机验证入口：`--dart-define=GS3D_BENCH_DATASET=<bundle 路径>`，
+/// 直接加载磁盘上的 .gs3d.bundle（带 lod.gs3dlod / tiles.gs3dtiles* 时
+/// 走“粗尺度 LOD + 细尺度 tile”路径）。
+const String kBenchDatasetPath = String.fromEnvironment('GS3D_BENCH_DATASET');
+
 /// 唯一视口状态中枢；拥有引擎、帧和控制动作，Widget 不直接执行 FFI。
 class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dService({
@@ -25,6 +34,8 @@ class GeoScatter3dService extends ChangeNotifier {
   ui.Image? _frame;
   String? _error;
   int _pointCount = 0;
+  int _sourcePointCount = 0;
+  String _lodSummary = '';
   int _frameNumber = 0;
   int _windowFrames = 0;
   int _lastSequence = 0;
@@ -39,6 +50,10 @@ class GeoScatter3dService extends ChangeNotifier {
   String? get error => _error;
   bool get ready => _ready && !_disposed && _error == null;
   int get pointCount => _pointCount;
+  /// 数据集总量（源点）；无 LOD 时等于 [pointCount]。
+  int get sourcePointCount => _sourcePointCount;
+  /// LOD 摘要（源点数远大于绘制量时才非空），用于 HUD 展示缩放后的规模。
+  String get lodSummary => _lodSummary;
   int get frameNumber => _frameNumber;
   double get fps => _fps;
   double get frameTimeMs => _frameTimeMs;
@@ -62,10 +77,24 @@ class GeoScatter3dService extends ChangeNotifier {
       if (size != null) {
         engine.resize(size.width.toInt(), size.height.toInt());
       }
-      if (loadSample && engine.loadSample() != 0) {
+      if (kBenchDatasetPath.isNotEmpty) {
+        // 真机/桌面基准：加载真实 bundle（可能带 LOD + tile sidecar）。
+        final rc = engine.loadDataset(kBenchDatasetPath);
+        if (rc != 0) {
+          throw StateError('数据集加载失败 ($rc): ${engine.lastError}');
+        }
+      } else if (kBenchPointCount > 0) {
+        // 压力测试：合成地形代替内置样例，避免依赖真机上的数据集文件。
+        final rc = engine.loadSynthetic(kBenchPointCount);
+        if (rc != 0) {
+          throw StateError('合成基准数据加载失败: ${engine.lastError}');
+        }
+      } else if (loadSample && engine.loadSample() != 0) {
         throw StateError('样例点云加载失败: ${engine.lastError}');
       }
-      _pointCount = engine.pointCount;
+      _sourcePointCount = engine.sourcePointCount;
+      _pointCount = engine.drawnPointCount;
+      _refreshLodSummary(engine);
       _gpuName = _resolveGpuName(engine);
       _ready = true;
       _fpsClock.start();
@@ -85,6 +114,63 @@ class GeoScatter3dService extends ChangeNotifier {
       if (name is String && name.isNotEmpty) return name;
     }
     return 'Vulkan GPU';
+  }
+
+  /// 由引擎诊断的 LOD 状态生成规模摘要；小数据集返回空串（HUD 不显示）。
+  void _refreshLodSummary(Gs3dEngine engine) {
+    final lod = engine.diagnostics['lod'];
+    if (lod is! Map) {
+      _lodSummary = '';
+      return;
+    }
+    final source = (lod['source_points'] as num?)?.toInt() ?? 0;
+    final drawn = (lod['drawn_points'] as num?)?.toInt() ?? 0;
+    final tilePoints = (lod['tile_drawn_points'] as num?)?.toInt() ?? 0;
+    final tilesResident = (lod['tile_resident'] as num?)?.toInt() ?? 0;
+    final tilesNeeded = (lod['tile_needed'] as num?)?.toInt() ?? 0;
+    final level = (lod['level_index'] as num?)?.toInt() ?? 0;
+    final levels = (lod['level_count'] as num?)?.toInt() ?? 1;
+
+    // 细尺度 tile 生效时：显示“全精度瓦片点数 + 驻留/需求”。
+    if (tilesNeeded > 0) {
+      final loadCost = _formatLoadCost(lod);
+      _lodSummary =
+          'tile ${formatPointCount(tilePoints)} 点'
+          ' · 驻留 $tilesResident/$tilesNeeded'
+          ' · LOD ${level + 1}/$levels'
+          '$loadCost';
+      return;
+    }
+    if (levels <= 1 || source <= drawn) {
+      _lodSummary = '';
+      return;
+    }
+    final loadSuffix = _formatLoadCost(lod);
+    _lodSummary =
+        '${formatPointCount(drawn)} / ${formatPointCount(source)} 点'
+        ' · LOD ${level + 1}/$levels$loadSuffix';
+  }
+
+  /// 建链 + 上传耗时（大数据的加载成本）；小数据不展示。
+  static String _formatLoadCost(Map lod) {
+    final buildMs = (lod['build_ms'] as num?)?.toDouble() ?? 0;
+    final uploadMs = (lod['upload_ms'] as num?)?.toDouble() ?? 0;
+    final totalMs = buildMs + uploadMs;
+    if (totalMs < 300) return '';
+    return ' · 加载 ${(totalMs / 1000).toStringAsFixed(1)}s';
+  }
+
+  /// 中文数量级压缩（HUD 宽度有限）：1000 万 / 1.2 亿。
+  @visibleForTesting
+  static String formatPointCount(int value) {
+    if (value >= 100000000) {
+      return '${(value / 100000000).toStringAsFixed(1)} 亿';
+    }
+    if (value >= 10000) {
+      final scaled = value / 10000;
+      return '${scaled.toStringAsFixed(scaled >= 100 ? 0 : 1)} 万';
+    }
+    return '$value';
   }
 
   void _fail(Object error) {
@@ -148,6 +234,12 @@ class GeoScatter3dService extends ChangeNotifier {
       _renderTimeMs = _engine!.lastRenderMs;
       _frameNumber++;
       _windowFrames++;
+      // LOD 层随视口/预算变化：每 30 帧刷新一次规模读数（避免每帧 JSON 开销）。
+      if (_frameNumber % 30 == 0) {
+        _pointCount = _engine!.drawnPointCount;
+        _sourcePointCount = _engine!.sourcePointCount;
+        _refreshLodSummary(_engine!);
+      }
       if (_fpsClock.elapsedMilliseconds >= 500) {
         _fps = _windowFrames * 1000000 / _fpsClock.elapsedMicroseconds;
         _windowFrames = 0;

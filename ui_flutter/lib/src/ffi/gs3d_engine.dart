@@ -110,6 +110,30 @@ class Gs3dEngine {
     return _bindings.loadSample(_ptr);
   }
 
+  /// 载入内置合成地形（基准/压力测试）：point_count 取接近的完全平方数。
+  int loadSynthetic(int pointCount) {
+    _checkDisposed();
+    return _bindings.loadSynthetic(_ptr, pointCount);
+  }
+
+  /// 每帧绘制点预算（0 = 按视口自动）；决定 LOD 选层。
+  void setPointBudget(int maxPoints) {
+    _checkDisposed();
+    _bindings.setPointBudget(_ptr, maxPoints);
+  }
+
+  /// 数据集总点数（源）。
+  int get sourcePointCount {
+    if (_disposed) return 0;
+    return _bindings.sourcePointCount(_ptr);
+  }
+
+  /// 最近一帧实际绘制点数（LOD 后）。
+  int get drawnPointCount {
+    if (_disposed) return 0;
+    return _bindings.drawnPointCount(_ptr);
+  }
+
   int loadDataset(String path) {
     _checkDisposed();
     final pUtf8 = path.toNativeUtf8();

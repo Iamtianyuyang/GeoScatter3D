@@ -3,6 +3,7 @@
 #include "camera/CameraController.hpp"
 #include "camera/MouseRay.hpp"
 #include "data/PointDataAdapters.hpp"
+#include "data/TileDataAdapters.hpp"
 #include "util/Log.hpp"
 
 #include <algorithm>
@@ -110,7 +111,17 @@ void HeadlessRenderKernel::destroy_gpu_resources() noexcept {
         vkDeviceWaitIdle(context_->device());
     }
     destroy_frame_resources();
-    cloud_ = gs3d::render::PointCloudGpu{};
+    lod_.destroy();
+    lod_chain_.clear();
+    drawn_point_count_ = 0;
+    gpu_point_count_ = 0;
+    tile_reader_.reset();
+    tile_cache_.reset();
+    tile_gpu_.clear();
+    tile_index_view_ = {};
+    tile_needed_ids_.clear();
+    tile_drawable_ids_.clear();
+    tile_drawn_points_ = 0;
     pipeline_.reset();
     framebuffer_.destroy();
     if (context_ && command_pool_ != VK_NULL_HANDLE) {
@@ -261,7 +272,9 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
             return -2;
         }
         // bundle 目录 → source.gs3d
+        std::filesystem::path bundle_directory;
         if (std::filesystem::is_directory(fs_path)) {
+            bundle_directory = fs_path;
             fs_path = fs_path / "source.gs3d";
             if (!std::filesystem::exists(fs_path)) {
                 set_error("bundle missing source.gs3d");
@@ -269,6 +282,9 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
             }
         }
 
+        // sidecar 与数据集同目录（bundle 为 lod.gs3dlod / tiles.gs3dtiles*）。
+        const std::filesystem::path dataset_path = fs_path;
+        const std::filesystem::path bundle_dir = bundle_directory;
         auto loaded = gs3d::data::Gs3dDatasetLoader::load(fs_path);
         if (!loaded.has_point_data() || loaded.empty()) {
             set_error("dataset has no point data");
@@ -278,8 +294,15 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
         point_count_ = dataset_.point_count();
         has_dataset_ = true;
 
-        const auto view = gs3d::data::make_point_data_view(dataset_.points());
-        cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
+        dataset_path_ = dataset_path;
+        bundle_dir_ = bundle_dir;
+        open_sidecars_locked(dataset_path, bundle_dir);
+
+        const int lod_rc = rebuild_lod_locked();
+        if (lod_rc != 0) {
+            has_dataset_ = false;
+            return lod_rc;
+        }
 
         reset_camera_to_bounds_locked();
         last_error_.clear();
@@ -291,67 +314,160 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
     }
 }
 
+void HeadlessRenderKernel::open_sidecars_locked(
+    const std::filesystem::path& dataset_path,
+    const std::filesystem::path& bundle_dir
+) {
+    tile_reader_.reset();
+    tile_cache_.reset();
+    tile_gpu_.clear();
+    tile_index_view_ = {};
+    tile_needed_ids_.clear();
+    tile_drawable_ids_.clear();
+    tile_clip_active_ = false;
+    tile_all_resident_ = false;
+    tile_drawn_points_ = 0;
+    tile_uploaded_bytes_frame_ = 0;
+
+    // 即使暂时关闭流式，也解析 sidecar：诊断/选取元数据仍要可见。
+    // bundle 目录用固定文件名；普通文件按同名前缀查找 sidecar。
+    std::filesystem::path index_path;
+    std::filesystem::path data_path;
+    if (bundle_dir.empty()) {
+        const auto parent = dataset_path.parent_path();
+        const auto stem = dataset_path.stem().string();
+        index_path = parent / (stem + ".gs3dtiles.index");
+        data_path = parent / (stem + ".gs3dtiles");
+    } else {
+        index_path = bundle_dir / "tiles.gs3dtiles.index";
+        data_path = bundle_dir / "tiles.gs3dtiles";
+    }
+
+    if (!std::filesystem::exists(index_path) ||
+        !std::filesystem::exists(data_path)) {
+        // 无 tile sidecar：退化为纯 LOD（当前行为）。
+        return;
+    }
+
+    try {
+        tile_reader_ = std::make_unique<gs3d::data::Gs3dTileReader>(
+            gs3d::data::Gs3dTileReader::open(
+                index_path,
+                data_path,
+                dataset_.header()
+            )
+        );
+    } catch (const std::exception& ex) {
+        gs3d::util::log::warning()
+            << "[HeadlessRenderKernel] tile sidecar unusable: " << ex.what()
+            << '\n';
+        tile_reader_.reset();
+        return;
+    }
+
+    if (!tile_reader_->valid()) {
+        tile_reader_.reset();
+        return;
+    }
+
+    tile_index_view_ = gs3d::data::make_tile_index_view(*tile_reader_);
+    tile_cache_ = std::make_unique<gs3d::app::TilePointCache>(
+        config_.tile_cpu_cache_bytes
+    );
+
+    gs3d::render::TileSelectionConfig selection_config;
+    selection_config.min_tile_pixel_size = config_.min_tile_pixel_size;
+    selection_config.height_source = static_cast<std::uint32_t>(height_source_);
+    selection_config.height_mult = height_mult_;
+    tile_selection_.set_config(selection_config);
+    tile_selection_.reset();
+
+    gs3d::util::log::info()
+        << "[HeadlessRenderKernel] tiles: count=" << tile_reader_->tile_count()
+        << " points=" << tile_reader_->total_point_count()
+        << " sse_px=" << config_.min_tile_pixel_size
+        << " upload_budget=" << config_.tile_upload_budget_bytes << '\n';
+}
+
+int HeadlessRenderKernel::generate_synthetic_grid(std::uint64_t point_count) {
+    // 基准/压力测试用的确定性地形：网格边长取平方根，点数为完全平方。
+    const std::uint64_t requested = std::max<std::uint64_t>(4, point_count);
+    const int grid_size = std::max(
+        2,
+        static_cast<int>(std::llround(std::sqrt(static_cast<double>(requested))))
+    );
+    const float range = 20.0f;
+
+    std::vector<gs3d::data::Gs3dPoint> points;
+    points.reserve(static_cast<std::size_t>(grid_size) * grid_size);
+
+    float min_x = 1e9f, max_x = -1e9f;
+    float min_y = 1e9f, max_y = -1e9f;
+    float min_z = 1e9f, max_z = -1e9f;
+
+    for (int i = 0; i < grid_size; ++i) {
+        const float x = -range + (2.0f * range * i) / (grid_size - 1);
+        for (int j = 0; j < grid_size; ++j) {
+            const float y = -range + (2.0f * range * j) / (grid_size - 1);
+            const float r = std::sqrt(x * x + y * y);
+            const float z = 6.0f * std::sin(r) / (r * 0.4f + 1.0f);
+
+            min_x = std::min(min_x, x);
+            max_x = std::max(max_x, x);
+            min_y = std::min(min_y, y);
+            max_y = std::max(max_y, y);
+            min_z = std::min(min_z, z);
+            max_z = std::max(max_z, z);
+
+            gs3d::data::Gs3dPoint p{};
+            p.x = x;
+            p.y = y;
+            p.z = z;
+            p.value = z;
+            points.push_back(p);
+        }
+    }
+
+    gs3d::data::Gs3dHeader header{};
+    std::memcpy(header.magic, gs3d::data::GS3D_MAGIC, 4);
+    header.version = gs3d::data::GS3D_VERSION;
+    header.header_size = gs3d::data::GS3D_HEADER_V2_SIZE;
+    header.point_data_offset = header.header_size;
+    header.point_count = points.size();
+    header.bbox_min_x = min_x; header.bbox_min_y = min_y; header.bbox_min_z = min_z;
+    header.bbox_max_x = max_x; header.bbox_max_y = max_y; header.bbox_max_z = max_z;
+    header.value_min = min_z;
+    header.value_max = max_z;
+
+    dataset_ = gs3d::data::Gs3dDataset(header, std::move(points), "built-in://synthetic");
+    point_count_ = dataset_.point_count();
+    has_dataset_ = true;
+    return 0;
+}
+
 int HeadlessRenderKernel::load_sample() {
+    return load_synthetic(10'000);
+}
+
+int HeadlessRenderKernel::load_synthetic(std::uint64_t point_count) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!context_) {
-        set_error("load_sample: engine not created");
-        return -3;
+        set_error("load_synthetic: engine not created");
+        return -2;
     }
     try {
-        const int grid_size = 100;
-        const float range = 20.0f;
-        std::vector<gs3d::data::Gs3dPoint> pts;
-        pts.reserve(grid_size * grid_size);
-
-        float min_x = 1e9f, max_x = -1e9f;
-        float min_y = 1e9f, max_y = -1e9f;
-        float min_z = 1e9f, max_z = -1e9f;
-        float min_val = 1e9f, max_val = -1e9f;
-
-        for (int i = 0; i < grid_size; ++i) {
-            const float x = -range + (2.0f * range * i) / (grid_size - 1);
-            for (int j = 0; j < grid_size; ++j) {
-                const float y = -range + (2.0f * range * j) / (grid_size - 1);
-                const float r = std::sqrt(x * x + y * y);
-                const float z = 6.0f * std::sin(r) / (r * 0.4f + 1.0f);
-                const float val = z;
-
-                min_x = std::min(min_x, x);
-                max_x = std::max(max_x, x);
-                min_y = std::min(min_y, y);
-                max_y = std::max(max_y, y);
-                min_z = std::min(min_z, z);
-                max_z = std::max(max_z, z);
-                min_val = std::min(min_val, val);
-                max_val = std::max(max_val, val);
-
-                gs3d::data::Gs3dPoint p{};
-                p.x = x;
-                p.y = y;
-                p.z = z;
-                p.value = val;
-                pts.push_back(p);
-            }
+        dataset_path_.clear();
+        bundle_dir_.clear();
+        const int rc = generate_synthetic_grid(point_count);
+        if (rc != 0) {
+            has_dataset_ = false;
+            return rc;
         }
-
-        gs3d::data::Gs3dHeader header{};
-        std::memcpy(header.magic, gs3d::data::GS3D_MAGIC, 4);
-        header.version = gs3d::data::GS3D_VERSION;
-        header.header_size = gs3d::data::GS3D_HEADER_V2_SIZE;
-        header.point_data_offset = header.header_size;
-        header.point_count = pts.size();
-        header.bbox_min_x = min_x; header.bbox_min_y = min_y; header.bbox_min_z = min_z;
-        header.bbox_max_x = max_x; header.bbox_max_y = max_y; header.bbox_max_z = max_z;
-        header.value_min = min_val;
-        header.value_max = max_val;
-
-        dataset_ = gs3d::data::Gs3dDataset(header, std::move(pts), "built-in://sample");
-        point_count_ = dataset_.point_count();
-        has_dataset_ = true;
-
-        const auto view = gs3d::data::make_point_data_view(dataset_.points());
-        cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
-
+        const int lod_rc = rebuild_lod_locked();
+        if (lod_rc != 0) {
+            has_dataset_ = false;
+            return lod_rc;
+        }
         reset_camera_to_bounds_locked();
         last_error_.clear();
         return 0;
@@ -360,14 +476,191 @@ int HeadlessRenderKernel::load_sample() {
         has_dataset_ = false;
         return -3;
     }
+}
+
+void HeadlessRenderKernel::set_point_budget(std::uint64_t max_points) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    point_budget_ = max_points;
+}
+
+std::uint64_t HeadlessRenderKernel::effective_point_budget() const {
+    if (point_budget_ != 0) {
+        return point_budget_;
+    }
+    // 自动预算：约每 6 个像素一个点（点尺寸 1–2 px 时视觉上已饱和），
+    // 并夹在 [64k, 4M]，避免小视口过度降采样、大视口无上限。
+    const std::uint64_t pixels =
+        static_cast<std::uint64_t>(config_.width) * config_.height;
+    const std::uint64_t budget = pixels / 6u;
+    return std::clamp<std::uint64_t>(budget, 64u * 1024u, 4u * 1024u * 1024u);
+}
+
+std::size_t HeadlessRenderKernel::choose_lod_index() const {
+    const std::size_t count = lod_.level_count();
+    if (count <= 1) {
+        return 0;
+    }
+    const std::uint64_t budget = effective_point_budget();
+    for (std::size_t index = 0; index < count; ++index) {
+        if (lod_.level(index).gpu_point_count <= budget) {
+            return index;
+        }
+    }
+    return count - 1;
+}
+
+int HeadlessRenderKernel::rebuild_lod_locked() {
+    lod_.destroy();
+    lod_chain_.clear();
+    drawn_level_ = 0;
+    drawn_point_count_ = 0;
+    gpu_point_count_ = 0;
+    estimated_spacing_ = 0.0f;
+    lod_build_ms_ = 0.0;
+    lod_upload_ms_ = 0.0;
+
+    const auto& points = dataset_.points();
+    if (points.empty()) {
+        return -2;
+    }
+
+    /*
+     * 1. 粗尺度层级：优先用预处理产出的 .gs3dlod（Potree 式分层由写作端决定，
+     *    层数/体素可复现），缺失时才在运行时按点间距现场建链。
+     */
+    lod_dataset_.reset();
+    std::filesystem::path lod_path;
+    if (!bundle_dir_.empty()) {
+        lod_path = bundle_dir_ / "lod.gs3dlod";
+    } else if (!dataset_path_.empty()) {
+        lod_path = dataset_path_.parent_path() /
+                   (dataset_path_.stem().string() + ".gs3dlod");
+    }
+
+    if (!config_.disable_lod && !lod_path.empty() &&
+        std::filesystem::exists(lod_path)) {
+        try {
+            auto read = gs3d::data::Gs3dLodReader::read(lod_path, dataset_.header());
+            if (read.stats.success && !read.dataset.empty()) {
+                for (const auto& level : read.dataset.levels()) {
+                    LodLevel gpu_level;
+                    gpu_level.points = level.points;
+                    gpu_level.voxel_size = level.voxel_size;
+                    gpu_level.source_point_count = level.source_point_count;
+                    lod_chain_.push_back(std::move(gpu_level));
+                }
+                estimated_spacing_ = lod_chain_.empty()
+                    ? 0.0f
+                    : lod_chain_.front().voxel_size / 2.0f;
+                gs3d::util::log::info()
+                    << "[HeadlessRenderKernel] lod sidecar: levels="
+                    << lod_chain_.size() << "\n";
+                lod_dataset_ = std::move(read.dataset);
+            }
+        } catch (const std::exception& ex) {
+            gs3d::util::log::warning()
+                << "[HeadlessRenderKernel] lod sidecar unusable: " << ex.what()
+                << "\n";
+            lod_chain_.clear();
+        }
+    }
+
+    if (!config_.disable_lod && lod_chain_.empty()) {
+        LodBuildConfig lod_config;
+        lod_config.min_points = std::max<std::uint64_t>(
+            LodBuildConfig{}.min_points,
+            effective_point_budget() / 2u
+        );
+        LodChain chain = LodBuilder::build(points, lod_config);
+        estimated_spacing_ = chain.estimated_spacing;
+        lod_build_ms_ = chain.build_ms;
+        lod_chain_ = std::move(chain.levels);
+    }
+
+    // 2. 组装 GPU 层级：跳过超过 max_gpu_points 的层，避免一次性显存峰值。
+    gs3d::render::PointCloudLodSource source;
+    const std::uint64_t max_gpu_points = config_.max_gpu_points;
+    const auto push_level = [&source, max_gpu_points](
+                                const std::vector<gs3d::data::Gs3dPoint>& level_points,
+                                float voxel_size,
+                                std::uint64_t source_count,
+                                std::uint32_t index) {
+        if (level_points.empty()) {
+            return;
+        }
+        const std::uint64_t count = level_points.size();
+        if (max_gpu_points != 0 && count > max_gpu_points) {
+            return;
+        }
+        gs3d::render::PointCloudLodSourceLevel level;
+        level.name = "lod" + std::to_string(index);
+        level.voxel_mode_name = "voxel";
+        level.level_index = index;
+        level.source_point_count = source_count;
+        level.target_point_count = count;
+        level.voxel_size = voxel_size;
+        level.points = gs3d::data::make_point_data_view(level_points);
+        source.levels.push_back(std::move(level));
+    };
+
+    push_level(points, 0.0f, static_cast<std::uint64_t>(points.size()), 0);
+    for (std::size_t index = 0; index < lod_chain_.size(); ++index) {
+        const auto& level = lod_chain_[index];
+        push_level(
+            level.points,
+            level.voxel_size,
+            level.source_point_count,
+            static_cast<std::uint32_t>(index + 1)
+        );
+    }
+
+    if (source.levels.empty()) {
+        set_error("no LOD level fits the GPU point budget");
+        return -3;
+    }
+
+    const auto upload_started = std::chrono::steady_clock::now();
+    lod_.upload(*context_, command_pool_, context_->graphics_queue(), source);
+    lod_upload_ms_ = std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - upload_started
+                     ).count();
+
+    for (std::size_t index = 0; index < lod_.level_count(); ++index) {
+        gpu_point_count_ += lod_.level(index).gpu_point_count;
+    }
+
+    drawn_level_ = choose_lod_index();
+    drawn_point_count_ = lod_.level(drawn_level_).gpu_point_count;
+
+    // 规模诊断：真机 logcat 可直接读到建链/上传成本与选层结果。
+    gs3d::util::log::info()
+        << "[HeadlessRenderKernel] LOD source=" << point_count_
+        << " gpu_levels=" << lod_.level_count()
+        << " gpu_points=" << gpu_point_count_
+        << " spacing=" << estimated_spacing_
+        << " build=" << lod_build_ms_ << "ms"
+        << " upload=" << lod_upload_ms_ << "ms"
+        << " draw_level=" << drawn_level_
+        << " draw_points=" << drawn_point_count_ << "\n";
+    return 0;
 }
 
 void HeadlessRenderKernel::unload_dataset() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (context_) {
         vkDeviceWaitIdle(context_->device());
-        cloud_ = gs3d::render::PointCloudGpu{};
+        lod_.destroy();
     }
+    lod_chain_.clear();
+    drawn_point_count_ = 0;
+    gpu_point_count_ = 0;
+    tile_reader_.reset();
+    tile_cache_.reset();
+    tile_gpu_.clear();
+    tile_index_view_ = {};
+    tile_needed_ids_.clear();
+    tile_drawable_ids_.clear();
+    tile_drawn_points_ = 0;
     dataset_ = {};
     has_dataset_ = false;
     point_count_ = 0;
@@ -456,6 +749,121 @@ int HeadlessRenderKernel::camera_input(
     (void)changed;
     update_push_from_camera();
     return 0;
+}
+
+void HeadlessRenderKernel::update_tile_streaming_locked() {
+    tile_uploaded_bytes_frame_ = 0;
+    tile_drawn_points_ = 0;
+    tile_drawable_ids_.clear();
+    tile_clip_active_ = false;
+    tile_all_resident_ = false;
+    tile_pins_.clear();
+
+    if (!tile_reader_ || !tile_reader_->valid() || !tile_cache_) {
+        tile_needed_ids_.clear();
+        return;
+    }
+    if (!config_.tile_streaming) {
+        // 流式未启用（见 Config::tile_streaming）：只保留 sidecar 元数据。
+        tile_needed_ids_.clear();
+        return;
+    }
+
+    // 1. 选取：视锥剔除 + 屏幕空间误差（投影宽度 ≥ min_tile_pixel_size 才要全精度）。
+    tile_selection_.set_config([&] {
+        gs3d::render::TileSelectionConfig cfg;
+        cfg.min_tile_pixel_size = config_.min_tile_pixel_size;
+        cfg.height_source = static_cast<std::uint32_t>(height_source_);
+        cfg.height_mult = height_mult_;
+        return cfg;
+    }());
+    const auto selection = tile_selection_.update(camera_, tile_index_view_);
+    tile_needed_ids_ = selection.enabled ? selection.tile_ids
+                                         : std::vector<std::uint64_t>{};
+
+    // 2. 按帧限流读取缺失瓦片（先读后传；已驻留的不重复读）。
+    std::vector<std::pair<std::uint64_t, gs3d::core::PointDataView>> uploads;
+    uploads.reserve(tile_needed_ids_.size());
+    tile_pins_.reserve(tile_needed_ids_.size());
+    std::uint32_t reads = 0;
+
+    for (const auto tile_id : tile_needed_ids_) {
+        auto cached = tile_cache_->get(tile_id);
+        if (!cached && !tile_gpu_.has_resident_tile(tile_id) &&
+            reads < config_.tile_max_reads_per_frame) {
+            try {
+                auto block = tile_reader_->read_tile_points_with_ids(tile_id);
+                auto points = std::make_shared<gs3d::app::TilePoints>();
+                points->points = std::move(block.points);
+                points->point_ids = std::move(block.point_ids);
+                cached = points;
+                tile_cache_->put(tile_id, points);
+                ++reads;
+            } catch (const std::exception& ex) {
+                set_error(std::string("tile read failed: ") + ex.what());
+                continue;
+            }
+        }
+        if (!cached) {
+            continue;
+        }
+        tile_pins_.push_back(cached);
+        uploads.emplace_back(
+            tile_id,
+            gs3d::data::make_point_data_view(
+                cached->points,
+                cached->point_ids.empty() ? nullptr : cached->point_ids.data()
+            )
+        );
+    }
+
+    // 3. 预算内上传（选择变化时不清空已驻留集合：新瓦片边到边替换）。
+    try {
+        const auto sync = tile_gpu_.sync_from_cached_tiles(
+            *context_,
+            command_pool_,
+            context_->graphics_queue(),
+            uploads,
+            tile_needed_ids_,
+            config_.tile_upload_budget_bytes
+        );
+        tile_uploaded_bytes_frame_ = sync.uploaded_bytes;
+    } catch (const std::exception& ex) {
+        set_error(std::string("tile upload failed: ") + ex.what());
+        return;
+    }
+
+    // 4. 可绘制集 + 裁剪盒（全部所需瓦片驻留时才允许裁剪 LOD）。
+    tile_all_resident_ = !tile_needed_ids_.empty();
+    bool any = false;
+    float min_x = 1e30f, min_y = 1e30f, min_z = 1e30f;
+    float max_x = -1e30f, max_y = -1e30f, max_z = -1e30f;
+
+    const auto& records = tile_reader_->records();
+    for (const auto tile_id : tile_needed_ids_) {
+        if (!tile_gpu_.has_resident_tile(tile_id)) {
+            tile_all_resident_ = false;
+            continue;
+        }
+        tile_drawable_ids_.push_back(tile_id);
+        if (tile_id < records.size()) {
+            const auto& record = records[static_cast<std::size_t>(tile_id)];
+            min_x = std::min(min_x, record.bbox_min_x);
+            min_y = std::min(min_y, record.bbox_min_y);
+            min_z = std::min(min_z, record.bbox_min_z);
+            max_x = std::max(max_x, record.bbox_max_x);
+            max_y = std::max(max_y, record.bbox_max_y);
+            max_z = std::max(max_z, record.bbox_max_z);
+            any = true;
+        }
+    }
+
+    tile_clip_active_ = tile_all_resident_ && any;
+    if (any) {
+        tile_clip_bounds_ = gs3d::core::Bounds3f{
+            min_x, min_y, min_z, max_x, max_y, max_z
+        };
+    }
 }
 
 void HeadlessRenderKernel::update_push_from_camera() {
@@ -597,7 +1005,7 @@ int HeadlessRenderKernel::render_rgba(
     std::uint32_t* out_h
 ) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!context_ || !pipeline_ || !has_dataset_) {
+    if (!context_ || !pipeline_ || !has_dataset_ || lod_.empty()) {
         set_error("render prerequisites missing");
         return -2;
     }
@@ -628,8 +1036,50 @@ int HeadlessRenderKernel::render_rgba(
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check_vk(vkBeginCommandBuffer(frame_command_, &begin), "begin cmd");
 
+        // 每帧按点预算选层：绘制量与会话数据量解耦（千万级数据的关键）。
+        drawn_level_ = choose_lod_index();
+        const gs3d::render::PointCloudGpu& cloud = lod_.gpu_cloud(drawn_level_);
+        drawn_point_count_ = cloud.point_count();
+
+        /*
+         * 合成顺序（与旧 Viewer 一致）：
+         *   1) 最粗一层兜底 —— 任何时刻不留空洞；
+         *   2) 选中 LOD 层 —— 全套所需 tile 驻留时按 tile 并集包围盒裁剪，
+         *      否则宁可重叠也不裁剪（避免出现洞）；
+         *   3) 细尺度 tile —— 全精度原始点叠加在上面。
+         */
+        update_tile_streaming_locked();
+
         framebuffer_.render(frame_command_, [&](VkCommandBuffer c) {
-            pipeline_->draw(c, cloud_, extent, push_);
+            const bool has_tiles = !tile_drawable_ids_.empty();
+            if (lod_.level_count() > 1) {
+                const auto& coarsest = lod_.lowest_detail().gpu_cloud;
+                if (!tile_clip_active_ ||
+                    coarsest.point_count() != cloud.point_count()) {
+                    pipeline_->draw(c, coarsest, extent, push_);
+                }
+            }
+
+            gs3d::render::PointPushConstants lod_push = push_;
+            if (tile_clip_active_) {
+                lod_push.flags |= gs3d::render::PointFlags::kSpatialClip;
+                lod_push.clip_min[0] = tile_clip_bounds_.min_x;
+                lod_push.clip_min[1] = tile_clip_bounds_.min_y;
+                lod_push.clip_min[2] = tile_clip_bounds_.min_z;
+                lod_push.clip_max[0] = tile_clip_bounds_.max_x;
+                lod_push.clip_max[1] = tile_clip_bounds_.max_y;
+                lod_push.clip_max[2] = tile_clip_bounds_.max_z;
+            }
+            pipeline_->draw(c, cloud, extent, lod_push);
+
+            if (has_tiles) {
+                pipeline_->bind_for_viewport(c, extent);
+                for (const auto tile_id : tile_drawable_ids_) {
+                    const auto& tile_cloud = tile_gpu_.gpu_cloud_for_tile(tile_id);
+                    pipeline_->draw_per_tile(c, tile_cloud, lod_push);
+                    tile_drawn_points_ += tile_cloud.point_count();
+                }
+            }
         });
 
         // 离屏 pass 结束于只读布局，回读前必须显式转换为传输源。
@@ -870,9 +1320,10 @@ int HeadlessRenderKernel::clear_tile_cache() {
     if (context_ && has_dataset_) {
         try {
             vkDeviceWaitIdle(context_->device());
-            cloud_ = gs3d::render::PointCloudGpu{};
-            const auto view = gs3d::data::make_point_data_view(dataset_.points());
-            cloud_.upload(*context_, command_pool_, context_->graphics_queue(), view);
+            const int rc = rebuild_lod_locked();
+            if (rc != 0) {
+                return rc;
+            }
         } catch (const std::exception& ex) {
             set_error(ex.what());
             return -3;
@@ -961,6 +1412,36 @@ HeadlessRenderKernel::GpuDiagnostics HeadlessRenderKernel::gpu_diagnostics() con
     }
     diag.selection = context_->selection_summary();
     return diag;
+}
+
+HeadlessRenderKernel::LodState HeadlessRenderKernel::lod_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    LodState state;
+    state.source_points = point_count_;
+    state.drawn_points = drawn_point_count_;
+    state.budget = effective_point_budget();
+    state.level_index = static_cast<int>(drawn_level_);
+    state.level_count = static_cast<int>(
+        std::max<std::size_t>(1, lod_.level_count())
+    );
+    state.gpu_points = gpu_point_count_;
+    state.estimated_spacing = estimated_spacing_;
+    state.build_ms = lod_build_ms_;
+    state.upload_ms = lod_upload_ms_;
+    state.automatic_budget = point_budget_ == 0;
+    state.tiles_available = tile_reader_ != nullptr && tile_reader_->valid();
+    if (state.tiles_available) {
+        state.tile_count = tile_reader_->tile_count();
+        state.tile_needed = tile_needed_ids_.size();
+        state.tile_resident = tile_gpu_.tile_count();
+        state.tile_drawn_points = tile_drawn_points_;
+        state.tile_uploaded_bytes_frame = tile_uploaded_bytes_frame_;
+        state.tile_clip_active = tile_clip_active_;
+        state.tiles_fully_resident =
+            !tile_needed_ids_.empty() &&
+            tile_drawable_ids_.size() == tile_needed_ids_.size();
+    }
+    return state;
 }
 
 float HeadlessRenderKernel::span_or_default() const {

@@ -249,6 +249,19 @@ GS3D_FFI_API void gs3d_engine_destroy(gs3d_engine* e);
 
 GS3D_FFI_API int32_t gs3d_engine_load_dataset(gs3d_engine* e, const char* path);
 GS3D_FFI_API int32_t gs3d_engine_load_sample(gs3d_engine* e);
+
+/// 生成内置合成地形（基准/压力测试）：point_count 取接近的完全平方数。
+/// 用于在真机/桌面上验证大规模数据的 LOD 与帧预算，不参与生产数据流。
+GS3D_FFI_API int32_t gs3d_engine_load_synthetic(
+    gs3d_engine* e, uint64_t point_count);
+
+/// 每帧绘制点预算（0 = 按视口自动）；决定 LOD 选层。
+GS3D_FFI_API int32_t gs3d_engine_set_point_budget(
+    gs3d_engine* e, uint64_t max_points);
+
+/// 数据集总点数（源）与最近一帧实际绘制点数（LOD 后）。
+GS3D_FFI_API uint64_t gs3d_engine_source_point_count(gs3d_engine* e);
+GS3D_FFI_API uint64_t gs3d_engine_drawn_point_count(gs3d_engine* e);
 GS3D_FFI_API int32_t gs3d_engine_unload_dataset(gs3d_engine* e);
 GS3D_FFI_API int32_t gs3d_engine_resize(gs3d_engine* e, uint32_t w, uint32_t h);
 
@@ -317,7 +330,6 @@ GS3D_FFI_API uint64_t gs3d_engine_frame_sequence(gs3d_engine* e);
 
 /// 最近一帧在渲染线程上的耗时（毫秒，含 GPU 提交与回读）。
 GS3D_FFI_API double gs3d_engine_last_render_ms(gs3d_engine* e);
-
 GS3D_FFI_API const char* gs3d_engine_get_snapshot_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);

@@ -139,6 +139,41 @@ int32_t gs3d_engine_load_sample(gs3d_engine* e) {
     });
 }
 
+int32_t gs3d_engine_load_synthetic(gs3d_engine* e, uint64_t point_count) {
+    if (e == nullptr) return -1;
+    return e->host.invoke([point_count](gs3d::ffi::HeadlessRenderKernel& k) {
+        return k.load_synthetic(point_count);
+    });
+}
+
+int32_t gs3d_engine_set_point_budget(gs3d_engine* e, uint64_t max_points) {
+    if (e == nullptr) return -1;
+    return e->host.invoke([max_points](gs3d::ffi::HeadlessRenderKernel& k) {
+        k.set_point_budget(max_points);
+        return 0;
+    });
+}
+
+uint64_t gs3d_engine_source_point_count(gs3d_engine* e) {
+    if (e == nullptr) return 0;
+    auto count = std::make_shared<std::uint64_t>(0);
+    const int rc = e->host.invoke([count](gs3d::ffi::HeadlessRenderKernel& k) {
+        *count = k.lod_state().source_points;
+        return 0;
+    });
+    return rc == 0 ? *count : 0;
+}
+
+uint64_t gs3d_engine_drawn_point_count(gs3d_engine* e) {
+    if (e == nullptr) return 0;
+    auto count = std::make_shared<std::uint64_t>(0);
+    const int rc = e->host.invoke([count](gs3d::ffi::HeadlessRenderKernel& k) {
+        *count = k.lod_state().drawn_points;
+        return 0;
+    });
+    return rc == 0 ? *count : 0;
+}
+
 int32_t gs3d_engine_unload_dataset(gs3d_engine* e) {
     if (e == nullptr) return -1;
     return e->host.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
@@ -353,10 +388,14 @@ const char* gs3d_engine_get_snapshot_json(gs3d_engine* e) {
         const auto cam = k.camera_state();
         const auto ren = k.render_state();
         const auto vp = k.viewport_state();
+        const auto lod = k.lod_state();
         nlohmann::json snap;
         snap["id"] = "engine.snapshot";
         snap["ready"] = k.has_dataset();
-        snap["point_count"] = k.point_count();
+        snap["point_count"] = lod.source_points;
+        snap["drawn_point_count"] = lod.drawn_points;
+        snap["lod_level"] = lod.level_index;
+        snap["lod_level_count"] = lod.level_count;
         snap["camera"] = {
             {"azimuth", cam.azimuth_deg},
             {"elevation", cam.elevation_deg},
@@ -397,10 +436,11 @@ const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e) {
     const int rc = e->host.invoke([e, payload](gs3d::ffi::HeadlessRenderKernel& k) {
         const auto vp = k.viewport_state();
         const auto gpu = k.gpu_diagnostics();
+        const auto lod = k.lod_state();
         nlohmann::json diag;
         diag["id"] = "engine.diagnostics";
         diag["ready"] = k.has_dataset();
-        diag["point_count"] = k.point_count();
+        diag["point_count"] = lod.source_points;
         diag["last_error"] = k.last_error();
         diag["frame_ready"] = vp.frame_ready;
         diag["fps"] = vp.fps;
@@ -408,6 +448,26 @@ const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e) {
         diag["render_thread"] = true;
         diag["frame_sequence"] = e->host.frame_sequence();
         diag["frame_time_ms"] = e->host.last_render_ms();
+        diag["lod"] = {
+            {"source_points", lod.source_points},
+            {"drawn_points", lod.drawn_points},
+            {"gpu_points", lod.gpu_points},
+            {"budget", lod.budget},
+            {"level_index", lod.level_index},
+            {"level_count", lod.level_count},
+            {"estimated_spacing", lod.estimated_spacing},
+            {"build_ms", lod.build_ms},
+            {"upload_ms", lod.upload_ms},
+            {"automatic_budget", lod.automatic_budget},
+            {"tiles_available", lod.tiles_available},
+            {"tile_count", lod.tile_count},
+            {"tile_needed", lod.tile_needed},
+            {"tile_resident", lod.tile_resident},
+            {"tile_drawn_points", lod.tile_drawn_points},
+            {"tile_uploaded_bytes_frame", lod.tile_uploaded_bytes_frame},
+            {"tile_clip_active", lod.tile_clip_active},
+            {"tiles_fully_resident", lod.tiles_fully_resident},
+        };
         diag["gpu"] = {
             {"name", gpu.name},
             {"type", gpu.type_label},

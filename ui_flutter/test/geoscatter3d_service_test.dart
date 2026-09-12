@@ -134,6 +134,33 @@ void main() {
     await service.initialize();
     expect(service.gpuName, 'fixture GPU');
   });
+  test('lod summary appears only when the source is scaled down', () async {
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    addTearDown(service.dispose);
+    await service.initialize();
+    // 10k 样例：绘制量等于源点，不显示 LOD 行。
+    expect(service.lodSummary, isEmpty);
+    expect(service.pointCount, 10000);
+    expect(service.sourcePointCount, 10000);
+  });
+  test('lod summary reports drawn vs source and level', () async {
+    final engine = FakeEngine()
+      ..setLodScenario(source: 10000000, drawn: 393216, level: 5, levelCount: 6);
+    final service = GeoScatter3dService(engine: engine);
+    addTearDown(service.dispose);
+    await service.initialize();
+    expect(service.pointCount, 393216);
+    expect(service.sourcePointCount, 10000000);
+    expect(service.lodSummary, '39.3 万 / 1000 万 点 · LOD 6/6');
+  });
+  test('point count formatting uses chinese scales', () {
+    expect(GeoScatter3dService.formatPointCount(9999), '9999');
+    expect(GeoScatter3dService.formatPointCount(10000), '1.0 万');
+    expect(GeoScatter3dService.formatPointCount(393216), '39.3 万');
+    expect(GeoScatter3dService.formatPointCount(10000000), '1000 万');
+    expect(GeoScatter3dService.formatPointCount(123456789), '1.2 亿');
+  });
   test(
     'actions forward inputs and reject invalid or unknown requests',
     () async {
