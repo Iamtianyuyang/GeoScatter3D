@@ -848,6 +848,12 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     }
 
     // 4. 可绘制集 + 裁剪盒（全部所需瓦片驻留时才允许裁剪 LOD）。
+    //
+    // 可绘制集必须每帧按「当前选择」重建：此前只追加不清空，于是随着相机
+    // 移动会累积历次选择的旧瓦片，而裁剪盒只覆盖当前所需瓦片——旧瓦片照画、
+    // 其区域的 LOD 却被裁掉，屏幕上就出现一块块的拼块接缝（真机可见）。
+    // 防闪烁靠选择集自身的滞回，而不是靠累积陈旧可绘制项。
+    tile_drawable_ids_.clear();
     tile_all_resident_ = !tile_needed_ids_.empty();
     bool any = false;
     float min_x = 1e30f, min_y = 1e30f, min_z = 1e30f;
