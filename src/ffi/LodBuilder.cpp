@@ -36,21 +36,23 @@ Bounds compute_bounds(const std::vector<gs3d::data::Gs3dPoint>& points) {
 }
 
 /*
- * 体素键：以 bbox 最小角为原点，按体素边长量化到 21 位/轴并打包。
+ * 体素键：以给定锚点为原点，按体素边长量化到 21 位/轴并打包。
  * 21 位 = 每轴 209 万格，远超单机数据规模；越界时夹取，避免键碰撞引发的
  * 不均匀降采样（宁可合并到边界格，也不产生错误的空间分布）。
+ *
+ * 锚点由调用方固定传入（而不是每次重算 bbox），是层间点阵对齐的前提。
  */
 inline std::uint64_t voxel_key(
     float x, float y, float z,
     float cell,
-    const Bounds& bounds
+    const VoxelGridOrigin& origin
 ) {
     constexpr std::uint64_t kAxisMask = (1ull << 21) - 1;
     // kAxisMask 会被 std::min 按引用使用（odr-use），lambda 必须显式捕获——
     // MSVC 容忍缺捕获，clang 会直接报错（Android 构建曾因此失败）。
-    const auto axis_index = [cell, &bounds, kAxisMask](float value, float origin) {
+    const auto axis_index = [cell, kAxisMask](float value, float anchor) {
         const double index = std::floor(
-            static_cast<double>(value - origin) / static_cast<double>(cell)
+            static_cast<double>(value - anchor) / static_cast<double>(cell)
         );
         if (!(index > 0.0)) {
             return std::uint64_t{0};
@@ -58,9 +60,9 @@ inline std::uint64_t voxel_key(
         const auto clamped = static_cast<std::uint64_t>(index);
         return std::min<std::uint64_t>(clamped, kAxisMask);
     };
-    const std::uint64_t ix = axis_index(x, bounds.min_x);
-    const std::uint64_t iy = axis_index(y, bounds.min_y);
-    const std::uint64_t iz = axis_index(z, bounds.min_z);
+    const std::uint64_t ix = axis_index(x, origin.x);
+    const std::uint64_t iy = axis_index(y, origin.y);
+    const std::uint64_t iz = axis_index(z, origin.z);
     return (ix << 42) | (iy << 21) | iz;
 }
 
@@ -139,9 +141,24 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
     if (points.empty() || !(voxel_size > kMinVoxelSize)) {
         return points;
     }
-
     const Bounds bounds = compute_bounds(points);
     if (!bounds.valid) {
+        return points;
+    }
+    const VoxelGridOrigin origin{bounds.min_x, bounds.min_y, bounds.min_z};
+    return decimate_voxel(points, voxel_size, occupied_cells, origin);
+}
+
+std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
+    const std::vector<gs3d::data::Gs3dPoint>& points,
+    float voxel_size,
+    std::uint64_t* occupied_cells,
+    const VoxelGridOrigin& origin
+) {
+    if (occupied_cells != nullptr) {
+        *occupied_cells = 0;
+    }
+    if (points.empty() || !(voxel_size > kMinVoxelSize)) {
         return points;
     }
 
@@ -152,6 +169,9 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
      * 规整的栅格点阵，屏幕上就是一块块的方格（真机 LOD 模式可见的接缝感）。
      * 质心化后点落回单元中心，各层都是同一套栅格、只有疏密差异，表面恢复平滑。
      * 其余属性（颜色等）沿用该单元遇到的第一个点。
+     *
+     * 单元划分只用调用方给的 origin（不重算 bbox）：同一条 LOD 链的所有层共用
+     * 同一锚点，层内单元边界落在 origin + k × voxel 上，层间才能对齐。
      *
      * 用 index_of + 并行累加数组保持输出顺序与输入顺序一致（可复现），
      * 避免直接遍历 unordered_map 带来的不确定顺序。
@@ -177,7 +197,7 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
             continue;
         }
         const std::uint64_t key =
-            voxel_key(point.x, point.y, point.z, voxel_size, bounds);
+            voxel_key(point.x, point.y, point.z, voxel_size, origin);
         const auto [it, inserted] =
             index_of.try_emplace(key, output.size());
         if (inserted) {
@@ -200,6 +220,11 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
         output[index].x = static_cast<float>(accumulator.sx * inverse);
         output[index].y = static_cast<float>(accumulator.sy * inverse);
         output[index].z = static_cast<float>(accumulator.sz * inverse);
+    }
+
+    if (output.empty()) {
+        // 所有点都非有限：不做降采样（与单层入口一致），而不是产出一个空层。
+        return points;
     }
 
     if (occupied_cells != nullptr) {
@@ -226,16 +251,26 @@ LodChain LodBuilder::build(
     const float spacing = chain.estimated_spacing;
     float effective_spacing = spacing;
 
+    // 栅格锚点全局唯一：取首层（即源数据）的 bbox 最小角，所有层共用。
+    // 若每层各自重算 bbox，降采样后的范围收缩会让原点逐层漂移，层间错位。
+    const Bounds global_bounds = compute_bounds(points);
+    chain.grid_origin = VoxelGridOrigin{
+        global_bounds.min_x, global_bounds.min_y, global_bounds.min_z
+    };
+
     const std::vector<gs3d::data::Gs3dPoint>* source = &points;
     for (std::size_t level = 0; level < config.max_levels; ++level) {
         if (source->size() <= config.min_points) {
             break;
         }
         // 体素边长按 2 的幂增长：level1=2×间距, level2=4×间距 …
+        // 自纠正分支会用 voxel/=2 反推 effective_spacing，故层间比值恒为 2。
         float voxel = effective_spacing * static_cast<float>(1u << (level + 1));
         std::vector<gs3d::data::Gs3dPoint> decimated;
         for (int attempt = 0; attempt < 4; ++attempt) {
-            decimated = decimate_voxel(*source, voxel);
+            decimated = decimate_voxel(
+                *source, voxel, nullptr, chain.grid_origin
+            );
             /*
              * 自纠正：若一次降到远低于预算的量级（典型原因：间距估计偏大，
              * 或数据分布不均匀），逐步减半体素边长重试，而不是直接把

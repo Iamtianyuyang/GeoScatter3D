@@ -2,8 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -46,6 +48,50 @@ std::unordered_set<std::uint64_t> key_set(
         keys.insert((x << 42) | (y << 21) | z);
     }
     return keys;
+}
+
+/// 抖动斜面：模拟真实散乱点云。极值点不必然存活于降采样结果中，
+/// 因此“每层各自重算 bbox”的实现会让栅格原点逐层漂移。
+std::vector<gs3d::data::Gs3dPoint> make_jittered_surface(
+    int edge,
+    std::uint32_t seed
+) {
+    std::vector<gs3d::data::Gs3dPoint> points;
+    points.reserve(static_cast<std::size_t>(edge) * edge);
+    std::uint32_t state = seed | 1u;
+    const auto next = [&state]() {
+        state = state * 1664525u + 1013904223u;  // LCG：确定性、无随机库依赖
+        return static_cast<float>(state >> 8) / static_cast<float>(1u << 24);
+    };
+    for (int i = 0; i < edge; ++i) {
+        for (int j = 0; j < edge; ++j) {
+            const float x = static_cast<float>(i) + 0.8f * next();
+            const float y = static_cast<float>(j) + 0.8f * next();
+            const float z = 0.35f * (x + y) + 0.5f * next();
+            points.push_back(make_point(x, y, z));
+        }
+    }
+    return points;
+}
+
+/// 与 LodBuilder 内部同式、但独立的全局栅格下标实现（用于验证分组）。
+std::uint64_t grid_index(
+    float x,
+    float y,
+    float z,
+    float cell,
+    const gs3d::ffi::VoxelGridOrigin& origin
+) {
+    const auto axis = [cell](float value, float anchor) {
+        const double index =
+            std::floor((static_cast<double>(value) - anchor) / cell);
+        if (!(index > 0.0)) {
+            return std::uint64_t{0};
+        }
+        return static_cast<std::uint64_t>(index);
+    };
+    return (axis(x, origin.x) << 42) | (axis(y, origin.y) << 21) |
+           axis(z, origin.z);
 }
 
 }  // namespace
@@ -132,6 +178,117 @@ TEST_CASE("voxel decimation is a no-op for non-positive cells") {
     const auto points = make_grid(8);
     const auto decimated = gs3d::ffi::LodBuilder::decimate_voxel(points, 0.0f);
     CHECK(decimated.size() == points.size());
+}
+
+TEST_CASE("voxel decimation honours a caller-supplied grid origin") {
+    // 同一个点集，不同锚点必须给出不同的单元划分（这是层间对齐的前提）。
+    const std::vector<gs3d::data::Gs3dPoint> points{
+        make_point(0.0f, 0.0f, 0.0f),
+        make_point(1.0f, 0.0f, 0.0f),
+        make_point(1.9f, 0.0f, 0.0f),
+    };
+    const gs3d::ffi::VoxelGridOrigin at_zero{0.0f, 0.0f, 0.0f};
+    const auto anchored =
+        gs3d::ffi::LodBuilder::decimate_voxel(points, 1.0f, nullptr, at_zero);
+
+    // 单元 [0,1) 只有 x=0；单元 [1,2) 含 1 与 1.9 → 质心 1.45（不是首点 1.0）。
+    REQUIRE(anchored.size() == 2);
+    CHECK(anchored[0].x == 0.0f);
+    CHECK(std::abs(anchored[1].x - 1.45f) < 1e-5f);
+
+    // 锚点左移 0.5：x=0/1/1.9 分属三个单元，质心即原坐标。
+    const gs3d::ffi::VoxelGridOrigin shifted{-0.5f, 0.0f, 0.0f};
+    const auto rebased =
+        gs3d::ffi::LodBuilder::decimate_voxel(points, 1.0f, nullptr, shifted);
+    REQUIRE(rebased.size() == 3);
+    CHECK(std::abs(rebased[0].x - 0.0f) < 1e-6f);
+    CHECK(std::abs(rebased[1].x - 1.0f) < 1e-6f);
+    CHECK(std::abs(rebased[2].x - 1.9f) < 1e-6f);
+}
+
+TEST_CASE("lod levels share one dataset-anchored voxel grid") {
+    /*
+     * 回归：降采样后每层输入范围都会收缩，若每层各自用 bbox 锚定栅格，
+     * 原点就会逐层漂移（散乱数据上实测可达半个体素），层间点阵错位、疏密不匀。
+     * 该用例断言两件事：
+     *   1) 全链锚点 = 数据集 bbox 最小角，且层间体素严格 2 倍；
+     *   2) 每层输出点恰好是「该层输入按同一全局栅格分组后每组点的质心」。
+     * 断言 2 是可证伪的：旧实现按每层自己的 bbox 分组，分组集合与质心都会不同。
+     */
+    const auto points = make_jittered_surface(128, 20260912u);  // 16384 点
+
+    gs3d::ffi::LodBuildConfig config;
+    config.min_points = 1024;
+    config.max_levels = 4;
+    const auto chain = gs3d::ffi::LodBuilder::build(points, config);
+    REQUIRE(chain.levels.size() >= 2);
+
+    float min_x = 1e9f, min_y = 1e9f, min_z = 1e9f;
+    for (const auto& point : points) {
+        min_x = std::min(min_x, point.x);
+        min_y = std::min(min_y, point.y);
+        min_z = std::min(min_z, point.z);
+    }
+    CHECK(std::abs(chain.grid_origin.x - min_x) < 1e-5f);
+    CHECK(std::abs(chain.grid_origin.y - min_y) < 1e-5f);
+    CHECK(std::abs(chain.grid_origin.z - min_z) < 1e-5f);
+
+    struct Cell {
+        double sx = 0.0;
+        double sy = 0.0;
+        double sz = 0.0;
+        std::size_t count = 0;
+    };
+
+    const std::vector<gs3d::data::Gs3dPoint>* input = &points;
+    float previous_voxel = 0.0f;
+    for (const auto& level : chain.levels) {
+        if (previous_voxel > 0.0f) {
+            // 层间体素严格 2 倍：粗层单元 = 细层单元的 2^n 并集。
+            CHECK(
+                std::abs(level.voxel_size - 2.0f * previous_voxel) <
+                1e-4f * level.voxel_size
+            );
+        }
+        previous_voxel = level.voxel_size;
+
+        std::unordered_map<std::uint64_t, Cell> cells;
+        cells.reserve(level.points.size() * 2);
+        for (const auto& point : *input) {
+            auto& cell = cells[grid_index(
+                point.x, point.y, point.z, level.voxel_size,
+                chain.grid_origin
+            )];
+            cell.sx += point.x;
+            cell.sy += point.y;
+            cell.sz += point.z;
+            ++cell.count;
+        }
+
+        // 分组集合必须与输出一一对应（起点漂移会让单元被拆分/合并）。
+        REQUIRE(cells.size() == level.points.size());
+        for (const auto& out : level.points) {
+            const auto it = cells.find(grid_index(
+                out.x, out.y, out.z, level.voxel_size, chain.grid_origin
+            ));
+            REQUIRE(it != cells.end());
+            const double inverse =
+                1.0 / static_cast<double>(it->second.count);
+            CHECK(
+                std::abs(out.x - static_cast<float>(it->second.sx * inverse)) <
+                1e-4f
+            );
+            CHECK(
+                std::abs(out.y - static_cast<float>(it->second.sy * inverse)) <
+                1e-4f
+            );
+            CHECK(
+                std::abs(out.z - static_cast<float>(it->second.sz * inverse)) <
+                1e-4f
+            );
+        }
+        input = &level.points;
+    }
 }
 
 TEST_CASE("lod chain builds progressively coarser levels") {
