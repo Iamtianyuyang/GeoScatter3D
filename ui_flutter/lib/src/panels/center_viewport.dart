@@ -153,21 +153,6 @@ class _CenterViewportState extends State<CenterViewport> {
           ),
         ),
         PopupMenuItem(
-          value: 'measure',
-          height: Gs3dTokens.hitTargetTouch,
-          child: Row(
-            children: [
-              Icon(
-                Icons.straighten_rounded,
-                size: 18,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 10),
-              Text('标尺测距', style: TextStyle(fontFamily: Gs3dType.fontFamily)),
-            ],
-          ),
-        ),
-        PopupMenuItem(
           value: 'screenshot',
           height: Gs3dTokens.hitTargetTouch,
           child: Row(
@@ -204,9 +189,6 @@ class _CenterViewportState extends State<CenterViewport> {
         service.executeAction('workbench.camera.set_panning', {
           'panning': !service.isPanning,
         });
-        break;
-      case 'measure':
-        service.executeAction('workbench.measure.mode');
         break;
       case 'screenshot':
         service.executeAction('workbench.screenshot');
@@ -491,10 +473,6 @@ class _CenterViewportState extends State<CenterViewport> {
                             widget.service.toggleCommandPalette();
                             return KeyEventResult.handled;
                           } else if (event.logicalKey ==
-                              LogicalKeyboardKey.keyM) {
-                            widget.service.toggleMeasurementMode();
-                            return KeyEventResult.handled;
-                          } else if (event.logicalKey ==
                               LogicalKeyboardKey.escape) {
                             if (widget.service.isCommandPaletteOpen ||
                                 widget.service.isShortcutOverlayOpen ||
@@ -504,9 +482,6 @@ class _CenterViewportState extends State<CenterViewport> {
                               widget.service.toggleShortcutOverlay(false);
                               widget.service.togglePerformancePanel(false);
                               widget.service.toggleTileInspector(false);
-                              return KeyEventResult.handled;
-                            } else if (widget.service.isMeasurementMode) {
-                              widget.service.clearPendingMeasurement();
                               return KeyEventResult.handled;
                             }
                           }
@@ -691,15 +666,7 @@ class _CenterViewportState extends State<CenterViewport> {
                                     vpSize.width,
                                     vpSize.height,
                                   );
-                                  if (widget.service.isMeasurementMode) {
-                                    if (picked != null) {
-                                      widget.service.addMeasurementPoint(
-                                        picked,
-                                      );
-                                    }
-                                  } else {
-                                    widget.service.setSelectedPoint(picked);
-                                  }
+                                  widget.service.setSelectedPoint(picked);
                                 },
                                 onDoubleTapDown: (details) {
                                   final picked = widget.service.pickPointAt(
@@ -943,37 +910,13 @@ class _CenterViewportState extends State<CenterViewport> {
                             ),
                             const SizedBox(width: 6),
                             _buildPillToggleButton(
-                              key: WorkbenchUiKeys.viewportMapAxisToggle,
-                              label: '地图轴',
-                              active: mapAxis,
-                              onChanged: (v) => widget.service
-                                  .setViewportOverlays(mapAxis: v),
-                            ),
-                            const SizedBox(width: 6),
-                            _buildPillToggleButton(
-                              key: WorkbenchUiKeys.viewportWorldAxisToggle,
-                              label: '世界轴',
-                              active: worldAxis,
-                              onChanged: (v) => widget.service
-                                  .setViewportOverlays(worldAxis: v),
-                            ),
-                            const SizedBox(width: 6),
-                            _buildPillToggleButton(
-                              key: WorkbenchUiKeys.viewportCrosshairToggle,
-                              label: '十字准线',
-                              active: crosshair,
-                              onChanged: (v) => widget.service
-                                  .setViewportOverlays(crosshair: v),
-                            ),
-                            const SizedBox(width: 6),
-                            _buildPillToggleButton(
                               key: const ValueKey(
-                                'workbench.viewport.measure_toggle',
+                                'workbench.viewport.render_settings_btn',
                               ),
-                              label: '标尺测距',
-                              active: widget.service.isMeasurementMode,
-                              onChanged: (v) =>
-                                  widget.service.setMeasurementMode(v),
+                              label: '渲染外观',
+                              active: widget.service.isRenderSettingsOpen,
+                              onChanged: (_) =>
+                                  widget.service.toggleRenderSettings(),
                             ),
                             const SizedBox(width: 6),
                             // 预设视角快速切换菜单

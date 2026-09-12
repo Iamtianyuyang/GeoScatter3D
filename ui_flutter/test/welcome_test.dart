@@ -24,10 +24,10 @@ void main() {
     });
 
     test(
-      'getAvailableActions returns all registered actions (15 welcome + 46 workbench)',
+      'getAvailableActions returns all registered actions (15 welcome + 47 workbench)',
       () {
         final actions = service.getAvailableActions();
-        expect(actions.length, equals(61));
+        expect(actions.length, equals(62));
         final ids = actions.map((a) => a.id).toSet();
         expect(
           ids,
@@ -263,7 +263,7 @@ void main() {
         });
         final listRes = jsonDecode(service.executeJsonRpc(listRpc));
         expect(listRes['result'], isList);
-        expect((listRes['result'] as List).length, equals(61));
+        expect((listRes['result'] as List).length, equals(62));
 
         final actionRpc = jsonEncode({
           'jsonrpc': '2.0',

@@ -283,8 +283,6 @@ class TopMenuBar extends StatelessWidget {
           // 菜单项
           _buildFileMenu(context),
           _buildViewMenu(context),
-          _buildToolsMenu(context),
-          _buildWindowMenu(context),
           _buildHelpMenu(context),
 
           const Spacer(),
@@ -306,89 +304,29 @@ class TopMenuBar extends StatelessWidget {
 
           const Spacer(),
 
-          // 返回欢迎页按钮
-          TextButton.icon(
-            key: const ValueKey('workbench.menu.btn_welcome'),
-            style: TextButton.styleFrom(
-              foregroundColor: Gs3dTokens.textSecondary,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            ),
-            icon: const Icon(Icons.arrow_back_rounded, size: 15),
-            label: const Text('欢迎页', style: TextStyle(fontSize: 12.5)),
-            onPressed: () => service.closeWorkbench(),
-          ),
-          const SizedBox(width: 6),
-
-          // 布局切换选择器
-          PopupMenuButton<WorkbenchLayoutMode>(
-            key: WorkbenchUiKeys.layoutSwitcher,
-            tooltip: '切换工作区布局模式',
-            initialValue: service.layoutMode,
-            onSelected: (mode) => service.setLayoutMode(mode),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutStandard,
-                value: WorkbenchLayoutMode.standard,
-                child: Gs3dMenuItem(
-                  label: '标准工作台 (Workbench)',
-                  icon: Icons.dashboard_customize_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
+          // 渲染与外观悬浮设置按钮
+          ListenableBuilder(
+            listenable: service,
+            builder: (context, _) => TextButton.icon(
+              key: const ValueKey('workbench.menu.btn_render_settings'),
+              style: TextButton.styleFrom(
+                foregroundColor: service.isRenderSettingsOpen
+                    ? Gs3dTokens.accent
+                    : Gs3dTokens.textPrimary,
+                backgroundColor: service.isRenderSettingsOpen
+                    ? Gs3dTokens.surfaceHover
+                    : Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               ),
-              const PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutFloating,
-                value: WorkbenchLayoutMode.floatingDock,
-                child: Gs3dMenuItem(
-                  label: '悬浮胶囊 Dock (Floating Dock)',
-                  icon: Icons.layers_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text(
+                '渲染外观',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
-              const PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutAnalysis,
-                value: WorkbenchLayoutMode.analysisRail,
-                child: Gs3dMenuItem(
-                  label: '暗色分析舱 (Analysis Rail)',
-                  icon: Icons.view_sidebar_outlined,
-                  iconColor: Gs3dTokens.success,
-                ),
-              ),
-            ],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Gs3dTokens.border),
-                borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
-                color: Gs3dTokens.surface,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.view_quilt_outlined,
-                    size: 14,
-                    color: Gs3dTokens.accent,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    service.layoutMode.displayName,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Gs3dTokens.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.arrow_drop_down_rounded,
-                    size: 16,
-                    color: Gs3dTokens.textSecondary,
-                  ),
-                ],
-              ),
+              onPressed: () => service.toggleRenderSettings(),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
 
           // 快速打开数据按钮
           TextButton.icon(
@@ -405,6 +343,19 @@ class TopMenuBar extends StatelessWidget {
             onPressed: () {
               _loadBuiltInSample(context);
             },
+          ),
+          const SizedBox(width: 6),
+
+          // 返回欢迎页按钮
+          TextButton.icon(
+            key: const ValueKey('workbench.menu.btn_welcome'),
+            style: TextButton.styleFrom(
+              foregroundColor: Gs3dTokens.textSecondary,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            icon: const Icon(Icons.arrow_back_rounded, size: 15),
+            label: const Text('欢迎页', style: TextStyle(fontSize: 12.5)),
+            onPressed: () => service.closeWorkbench(),
           ),
         ],
       ),
@@ -427,17 +378,8 @@ class TopMenuBar extends StatelessWidget {
           case 'load_sample':
             _loadBuiltInSample(context);
             break;
-          case 'open_native':
-            service.openViaNativeFileMenu();
-            break;
-          case 'open_bundle_native':
-            service.openViaNativeBundleMenu();
-            break;
           case 'screenshot':
             service.requestScreenshot();
-            break;
-          case 'screenshot_native':
-            service.requestNativeMenuScreenshot();
             break;
           case 'export':
             _showExportDialog(context);
@@ -475,36 +417,6 @@ class TopMenuBar extends StatelessWidget {
           ),
         ),
         const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_open_native'),
-          value: 'open_native',
-          child: Row(
-            children: [
-              Icon(
-                Icons.file_open_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生打开数据文件'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_open_bundle_native'),
-          value: 'open_bundle_native',
-          child: Row(
-            children: [
-              Icon(
-                Icons.folder_zip_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生打开工区包'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
           key: WorkbenchUiKeys.menuItemQuickDemo,
           value: 'load_sample',
           child: Row(
@@ -532,17 +444,6 @@ class TopMenuBar extends StatelessWidget {
               ),
               SizedBox(width: 8),
               Text('视口截图'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_screenshot_native'),
-          value: 'screenshot_native',
-          child: Row(
-            children: [
-              Icon(Icons.save_alt_rounded, size: 16, color: Gs3dTokens.accent),
-              SizedBox(width: 8),
-              Text('原生显存截图保存'),
             ],
           ),
         ),
@@ -604,26 +505,8 @@ class TopMenuBar extends StatelessWidget {
           case 'iso':
             service.setCameraView(preset: 'iso');
             break;
-          case 'map_axis':
-            service.setViewportOverlays(mapAxis: !service.showMapAxis);
-            break;
-          case 'world_axis':
-            service.setViewportOverlays(worldAxis: !service.showWorldAxis);
-            break;
-          case 'crosshair':
-            service.setViewportOverlays(crosshair: !service.showCrosshair);
-            break;
-          case 'camera_link':
-            service.toggleCameraLinked();
-            break;
-          case 'new_view':
-            service.requestNewView();
-            break;
-          case 'restore_workspace':
-            service.restoreWorkspace();
-            break;
-          case 'new_workspace':
-            service.requestNewWorkspaceWindow();
+          case 'render_settings':
+            service.toggleRenderSettings();
             break;
           case 'theme_next':
             service.cycleTheme();
@@ -643,51 +526,17 @@ class TopMenuBar extends StatelessWidget {
           ),
         ),
         PopupMenuItem(
-          key: const ValueKey('workbench.menu.item_camera_link'),
-          value: 'camera_link',
+          key: const ValueKey('workbench.menu.item_render_settings'),
+          value: 'render_settings',
           child: Row(
             children: [
-              Icon(
-                service.cameraLinked
-                    ? Icons.link_rounded
-                    : Icons.link_off_rounded,
-                size: 16,
-                color: service.cameraLinked
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
+              const Icon(Icons.tune_rounded, size: 16, color: Gs3dTokens.accent),
               const SizedBox(width: 8),
-              Text(service.cameraLinked ? '关闭相机联动' : '开启相机联动'),
+              Text(service.isRenderSettingsOpen ? '关闭渲染外观' : '渲染外观面板...'),
             ],
           ),
         ),
-        PopupMenuItem(
-          key: const ValueKey('workbench.menu.item_new_view'),
-          value: 'new_view',
-          child: const Row(
-            children: [
-              Icon(
-                Icons.add_to_photos_outlined,
-                size: 16,
-                color: Gs3dTokens.accent,
-              ),
-              SizedBox(width: 8),
-              Text('新建原生视图'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          key: const ValueKey('workbench.menu.item_restore_workspace'),
-          value: 'restore_workspace',
-          child: const Row(
-            children: [
-              Icon(Icons.restore_rounded, size: 16, color: Gs3dTokens.textBody),
-              SizedBox(width: 8),
-              Text('恢复默认工作区'),
-            ],
-          ),
-        ),
-        PopupMenuDivider(),
+        const PopupMenuDivider(),
         PopupMenuItem(
           key: const ValueKey('workbench.menu.item_theme_next'),
           value: 'theme_next',
@@ -764,418 +613,8 @@ class TopMenuBar extends StatelessWidget {
             ],
           ),
         ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemToggleMapAxis,
-          value: 'map_axis',
-          child: Row(
-            children: [
-              Icon(
-                service.showMapAxis
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 16,
-                color: service.showMapAxis
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text('显示地图标尺轴'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemToggleWorldAxis,
-          value: 'world_axis',
-          child: Row(
-            children: [
-              Icon(
-                service.showWorldAxis
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 16,
-                color: service.showWorldAxis
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text('显示世界参考轴'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemToggleCrosshair,
-          value: 'crosshair',
-          child: Row(
-            children: [
-              Icon(
-                service.showCrosshair
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 16,
-                color: service.showCrosshair
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text('显示中心十字准星'),
-            ],
-          ),
-        ),
       ],
       child: _buildMenuLabel('视图'),
-    );
-  }
-
-  Widget _buildToolsMenu(BuildContext context) {
-    return PopupMenuButton<String>(
-      key: const ValueKey('workbench.menu.tools'),
-      tooltip: '工具',
-      offset: const Offset(0, 30),
-      onSelected: (value) {
-        switch (value) {
-          case 'cmd_palette':
-            service.toggleCommandPalette(true);
-            break;
-          case 'performance':
-            service.togglePerformancePanel(true);
-            break;
-          case 'tile_inspector':
-            service.toggleTileInspector(true);
-            break;
-          case 'panel_dataset':
-            service.toggleNativePanel('panel.dataset');
-            break;
-          case 'panel_render':
-            service.toggleNativePanel('panel.render_settings');
-            break;
-          case 'panel_perf':
-            service.toggleNativePanel('panel.performance');
-            break;
-          case 'panel_nav':
-            service.toggleNativePanel('panel.navigation_map');
-            break;
-          case 'panel_measure':
-            service.toggleNativePanel('panel.measurement');
-            break;
-          case 'panel_stats':
-            service.toggleNativePanel('panel.region_stats');
-            break;
-          case 'panel_tile':
-            service.toggleNativePanel('panel.tile_inspector');
-            break;
-          case 'panel_lod':
-            service.toggleNativePanel('panel.lod_view');
-            break;
-          case 'refresh_diag':
-            service.executeAction('workbench.diagnostics.refresh');
-            break;
-        }
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_cmd_palette'),
-          value: 'cmd_palette',
-          child: Row(
-            children: [
-              Icon(Icons.terminal, size: 16, color: Gs3dTokens.accent),
-              SizedBox(width: 8),
-              Text('命令面板 (Ctrl+P)...'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_performance'),
-          value: 'performance',
-          child: Row(
-            children: [
-              Icon(Icons.speed_rounded, size: 16, color: Gs3dTokens.success),
-              SizedBox(width: 8),
-              Text('性能与显存诊断...'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_tile_inspector'),
-          value: 'tile_inspector',
-          child: Row(
-            children: [
-              Icon(Icons.grid_view_rounded, size: 16, color: Gs3dTokens.accent),
-              SizedBox(width: 8),
-              Text('八叉树瓦片与 LOD 视察器...'),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_refresh_diag'),
-          value: 'refresh_diag',
-          child: Row(
-            children: [
-              Icon(Icons.sync_rounded, size: 16, color: Gs3dTokens.textBody),
-              SizedBox(width: 8),
-              Text('刷新原生诊断状态'),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_dataset'),
-          value: 'panel_dataset',
-          child: Row(
-            children: [
-              Icon(
-                Icons.folder_shared_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: 项目'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_render'),
-          value: 'panel_render',
-          child: Row(
-            children: [
-              Icon(Icons.tune_rounded, size: 16, color: Gs3dTokens.textBody),
-              SizedBox(width: 8),
-              Text('原生面板: 属性'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_perf'),
-          value: 'panel_perf',
-          child: Row(
-            children: [
-              Icon(
-                Icons.monitor_heart_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: 性能'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_nav'),
-          value: 'panel_nav',
-          child: Row(
-            children: [
-              Icon(Icons.map_outlined, size: 16, color: Gs3dTokens.textBody),
-              SizedBox(width: 8),
-              Text('原生面板: 导航图'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_measure'),
-          value: 'panel_measure',
-          child: Row(
-            children: [
-              Icon(
-                Icons.straighten_rounded,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: 测量'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_stats'),
-          value: 'panel_stats',
-          child: Row(
-            children: [
-              Icon(
-                Icons.analytics_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: 区域统计'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_tile'),
-          value: 'panel_tile',
-          child: Row(
-            children: [
-              Icon(
-                Icons.view_module_outlined,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: 瓦片检查'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_panel_lod'),
-          value: 'panel_lod',
-          child: Row(
-            children: [
-              Icon(
-                Icons.stacked_line_chart_rounded,
-                size: 16,
-                color: Gs3dTokens.textBody,
-              ),
-              SizedBox(width: 8),
-              Text('原生面板: LOD 调试'),
-            ],
-          ),
-        ),
-      ],
-      child: _buildMenuLabel('工具'),
-    );
-  }
-
-  Widget _buildWindowMenu(BuildContext context) {
-    return PopupMenuButton<String>(
-      key: WorkbenchUiKeys.menuWindow,
-      tooltip: '窗口',
-      offset: const Offset(0, 30),
-      onSelected: (value) {
-        switch (value) {
-          case 'layout_std':
-            service.setLayoutMode(WorkbenchLayoutMode.standard);
-            break;
-          case 'layout_float':
-            service.setLayoutMode(WorkbenchLayoutMode.floatingDock);
-            break;
-          case 'layout_rail':
-            service.setLayoutMode(WorkbenchLayoutMode.analysisRail);
-            break;
-          case 'toggle_left':
-            service.toggleLeftDock();
-            break;
-          case 'toggle_right':
-            service.toggleRightDock();
-            break;
-          case 'new_workspace':
-            service.requestNewWorkspaceWindow();
-            break;
-          case 'restore_workspace':
-            service.restoreWorkspace();
-            break;
-        }
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemLayoutStandard,
-          value: 'layout_std',
-          child: Row(
-            children: [
-              Icon(
-                Icons.dashboard_customize_outlined,
-                size: 16,
-                color: Gs3dTokens.accent,
-              ),
-              SizedBox(width: 8),
-              Text('标准工作台布局'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemLayoutFloating,
-          value: 'layout_float',
-          child: Row(
-            children: [
-              Icon(Icons.layers_outlined, size: 16, color: Gs3dTokens.accent),
-              SizedBox(width: 8),
-              Text('悬浮胶囊 Dock 布局'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemLayoutAnalysis,
-          value: 'layout_rail',
-          child: Row(
-            children: [
-              Icon(
-                Icons.view_sidebar_outlined,
-                size: 16,
-                color: Gs3dTokens.success,
-              ),
-              SizedBox(width: 8),
-              Text('暗色分析舱布局'),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemToggleLeftDock,
-          value: 'toggle_left',
-          child: Row(
-            children: [
-              Icon(
-                service.leftDockVisible
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 16,
-                color: service.leftDockVisible
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text('左侧抽屉面板'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          key: WorkbenchUiKeys.menuItemToggleRightDock,
-          value: 'toggle_right',
-          child: Row(
-            children: [
-              Icon(
-                service.rightDockVisible
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 16,
-                color: service.rightDockVisible
-                    ? Gs3dTokens.accent
-                    : Gs3dTokens.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text('右侧属性面板'),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_new_workspace'),
-          value: 'new_workspace',
-          child: Row(
-            children: [
-              Icon(
-                Icons.add_business_outlined,
-                size: 16,
-                color: Gs3dTokens.accent,
-              ),
-              SizedBox(width: 8),
-              Text('新建工作窗口'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          key: ValueKey('workbench.menu.item_restore_workspace_window'),
-          value: 'restore_workspace',
-          child: Row(
-            children: [
-              Icon(Icons.restore_rounded, size: 16, color: Gs3dTokens.textBody),
-              SizedBox(width: 8),
-              Text('恢复默认工作区'),
-            ],
-          ),
-        ),
-      ],
-      child: _buildMenuLabel('窗口'),
     );
   }
 
@@ -1274,9 +713,6 @@ class TopMenuBar extends StatelessWidget {
   }
 
   /// 触控工具条（tablet/compact 档，高 56，命中区 ≥48）。
-  ///
-  /// 抽屉开合由边缘把手直达（把手常驻可见），此处不重复放置抽屉开关，
-  /// 避免与 TabletDrawerScaffold 的局部开合状态做跨组件同步。
   Widget _buildTouchToolbar(BuildContext context) {
     if (context.gs3dFormFactor == Gs3dFormFactorSlot.compact) {
       return _buildCompactTouchToolbar(context);
@@ -1292,10 +728,9 @@ class TopMenuBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // 品牌与返回欢迎页（长按品牌区亦可唤起命令面板）。
+          // 品牌与返回欢迎页
           Gs3dPressable(
             onTap: () => service.closeWorkbench(),
-            onLongPress: () => service.toggleCommandPalette(true),
             hoverScale: 0,
             minTouchSize: Gs3dTokens.hitTargetTouch,
             key: WorkbenchUiKeys.homeButton,
@@ -1330,78 +765,16 @@ class TopMenuBar extends StatelessWidget {
           ),
           const SizedBox(width: Gs3dTokens.space12),
 
-          // 布局切换（触控命中 ≥48）。
-          PopupMenuButton<WorkbenchLayoutMode>(
-            key: WorkbenchUiKeys.layoutSwitcher,
-            tooltip: '切换工作区布局模式',
-            initialValue: service.layoutMode,
-            onSelected: (mode) => service.setLayoutMode(mode),
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutStandard,
-                value: WorkbenchLayoutMode.standard,
-                child: Gs3dMenuItem(
-                  label: '标准工作台 (触控)',
-                  icon: Icons.dashboard_customize_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
-              ),
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutFloating,
-                value: WorkbenchLayoutMode.floatingDock,
-                child: Gs3dMenuItem(
-                  label: '悬浮胶囊 Dock (桌面专属)',
-                  icon: Icons.layers_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
-              ),
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutAnalysis,
-                value: WorkbenchLayoutMode.analysisRail,
-                child: Gs3dMenuItem(
-                  label: '暗色分析舱 (桌面专属)',
-                  icon: Icons.view_sidebar_outlined,
-                  iconColor: Gs3dTokens.success,
-                ),
-              ),
-            ],
-            child: Gs3dTouchTarget(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Gs3dTokens.space8,
-                  vertical: Gs3dTokens.space4,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Gs3dTokens.border),
-                  borderRadius: BorderRadius.circular(Gs3dTokens.radiusSm),
-                  color: Gs3dTokens.surface,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.view_quilt_outlined,
-                      size: 15,
-                      color: Gs3dTokens.accent,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      service.layoutMode.displayName,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: Gs3dTokens.textPrimary,
-                        fontFamily: Gs3dType.fontFamily,
-                      ),
-                    ),
-                    const Icon(
-                      Icons.arrow_drop_down_rounded,
-                      size: 16,
-                      color: Gs3dTokens.textSecondary,
-                    ),
-                  ],
-                ),
-              ),
+          // 渲染外观面板触发按钮
+          ListenableBuilder(
+            listenable: service,
+            builder: (context, _) => Gs3dPillButton(
+              key: const ValueKey('workbench.menu.btn_render_settings'),
+              label: '渲染外观',
+              icon: Icons.tune_rounded,
+              active: service.isRenderSettingsOpen,
+              touchTarget: true,
+              onPressed: () => service.toggleRenderSettings(),
             ),
           ),
           const Spacer(),
@@ -1427,7 +800,7 @@ class TopMenuBar extends StatelessWidget {
 
           const Spacer(),
 
-          // 常驻「命令」按钮（等价 Ctrl+K/P 入口，无键盘可达）。
+          // 常驻「命令」按钮
           Gs3dPillButton(
             key: const ValueKey('workbench.menu.command'),
             label: '命令',
@@ -1454,10 +827,6 @@ class TopMenuBar extends StatelessWidget {
   }
 
   /// 紧凑手机工具条：只保留图标入口，把工程名交给中间的弹性区域。
-  ///
-  /// 手机宽度可能只有 320～360 logical px，继续排列桌面端的品牌文字、
-  /// 布局文字和两个长标签按钮会把状态栏直接撑出屏幕。所有主要动作仍然
-  /// 保留原有语义 key，Maestro 与无障碍入口不变。
   Widget _buildCompactTouchToolbar(BuildContext context) {
     return Container(
       key: WorkbenchUiKeys.topMenuBar,
@@ -1474,47 +843,15 @@ class TopMenuBar extends StatelessWidget {
             icon: Icons.home_outlined,
             tooltip: '返回欢迎页',
             onPressed: service.closeWorkbench,
-            onLongPress: () => service.toggleCommandPalette(true),
           ),
           const SizedBox(width: Gs3dTokens.space4),
-          PopupMenuButton<WorkbenchLayoutMode>(
-            key: WorkbenchUiKeys.layoutSwitcher,
-            tooltip: '切换工作区布局模式',
-            initialValue: service.layoutMode,
-            onSelected: service.setLayoutMode,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutStandard,
-                value: WorkbenchLayoutMode.standard,
-                child: Gs3dMenuItem(
-                  label: '标准工作台 (触控)',
-                  icon: Icons.dashboard_customize_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
-              ),
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutFloating,
-                value: WorkbenchLayoutMode.floatingDock,
-                child: Gs3dMenuItem(
-                  label: '悬浮胶囊 Dock (桌面专属)',
-                  icon: Icons.layers_outlined,
-                  iconColor: Gs3dTokens.accent,
-                ),
-              ),
-              PopupMenuItem(
-                key: WorkbenchUiKeys.menuItemLayoutAnalysis,
-                value: WorkbenchLayoutMode.analysisRail,
-                child: Gs3dMenuItem(
-                  label: '暗色分析舱 (桌面专属)',
-                  icon: Icons.view_sidebar_outlined,
-                  iconColor: Gs3dTokens.success,
-                ),
-              ),
-            ],
-            child: Semantics(
-              button: true,
-              label: '切换布局：${service.layoutMode.displayName}',
-              child: _buildCompactToolbarIcon(Icons.view_quilt_outlined),
+          ListenableBuilder(
+            listenable: service,
+            builder: (context, _) => _buildCompactIconAction(
+              key: const ValueKey('workbench.menu.btn_render_settings'),
+              icon: Icons.tune_rounded,
+              tooltip: '渲染外观',
+              onPressed: () => service.toggleRenderSettings(),
             ),
           ),
           const SizedBox(width: Gs3dTokens.space4),
@@ -1590,20 +927,6 @@ class TopMenuBar extends StatelessWidget {
               color: Gs3dTokens.textBody,
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCompactToolbarIcon(IconData icon) {
-    return SizedBox(
-      width: Gs3dTokens.hitTargetTouch,
-      height: Gs3dTokens.hitTargetTouch,
-      child: Center(
-        child: Icon(
-          icon,
-          size: Gs3dTokens.iconSizeMd,
-          color: Gs3dTokens.textBody,
         ),
       ),
     );

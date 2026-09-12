@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/main.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/panels/top_menu_bar.dart';
+import 'package:ui_flutter/src/welcome/welcome_ui_keys.dart';
 
 void main() {
   testWidgets('GeoScatter3dApp WelcomePage and Workbench routing test', (
@@ -52,16 +53,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('打开工程数据包'), findsNothing);
 
-    // 4. 路由切换：进入工作台并验证面板
+    // 4. 路由切换：进入工作台并验证全屏视口
     service.openWorkbench();
     await tester.pump(const Duration(milliseconds: 350));
 
-    expect(find.text('项目'), findsOneWidget);
-    expect(find.text('测量'), findsOneWidget);
-    expect(find.text('区域统计'), findsOneWidget);
-    expect(find.text('场景'), findsOneWidget);
-    expect(find.text('细节层级'), findsOneWidget);
-    expect(find.text('导航图'), findsOneWidget);
+    expect(find.byKey(WorkbenchUiKeys.topMenuBar), findsOneWidget);
+    expect(find.byKey(WorkbenchUiKeys.viewportCanvas), findsOneWidget);
+    expect(find.byKey(const ValueKey('workbench.menu.btn_render_settings')), findsOneWidget);
     expect(find.text('欢迎页'), findsOneWidget);
 
     // 5. 交互测试：在工作台顶部菜单点击“欢迎页”按钮返回欢迎页
@@ -73,7 +71,7 @@ void main() {
   });
 
   testWidgets(
-    'Workbench Layout switcher test (Standard, FloatingDock, AnalysisRail)',
+    'Workbench Minimalist Fullscreen Mode and RenderSettings Popover',
     (WidgetTester tester) async {
       final service = GeoScatter3dService();
       tester.view.physicalSize = const Size(1920, 1080);
@@ -87,35 +85,20 @@ void main() {
       await tester.pumpWidget(GeoScatter3dApp(service: service));
       await tester.pump(const Duration(milliseconds: 300));
 
-      // 1. 验证默认是标准工作台
-      expect(service.layoutMode, WorkbenchLayoutMode.standard);
+      // 1. 验证默认是标准全屏工作台
       expect(find.byKey(const ValueKey('layout_standard')), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.viewportCanvas), findsOneWidget);
 
-      // 2. 切换到悬浮胶囊 Dock 布局
-      service.setLayoutMode(WorkbenchLayoutMode.floatingDock);
+      // 2. 点击“渲染外观”呼出浮层
+      expect(find.byKey(const ValueKey('render_settings_popover')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('workbench.menu.btn_render_settings')));
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('layout_floating_dock')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('render_settings_popover')), findsOneWidget);
 
-      // 点击悬浮胶囊 Dock 的“工区数据集”图标呼出浮动卡片
-      await tester.tap(find.byTooltip('工区数据集'));
+      // 3. 点击关闭浮层
+      await tester.tap(find.byKey(const ValueKey('workbench.menu.btn_render_settings')));
       await tester.pumpAndSettle();
-      expect(find.text('工区名称'), findsOneWidget);
-
-      // 3. 切换到暗色分析舱布局
-      service.setLayoutMode(WorkbenchLayoutMode.analysisRail);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('layout_analysis_rail')),
-        findsOneWidget,
-      );
-
-      // 4. 切回标准工作台
-      service.setLayoutMode(WorkbenchLayoutMode.standard);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('layout_standard')), findsOneWidget);
+      expect(find.byKey(const ValueKey('render_settings_popover')), findsNothing);
     },
   );
 

@@ -554,6 +554,7 @@ class GeoScatter3dService extends ChangeNotifier {
   bool _isShortcutOverlayOpen = false;
   bool _isPerformancePanelOpen = false;
   bool _isTileInspectorOpen = false;
+  bool _isRenderSettingsOpen = false;
 
   double get fps => _fps;
   double get frameTimeMs => _frameTimeMs;
@@ -582,6 +583,7 @@ class GeoScatter3dService extends ChangeNotifier {
   bool get isShortcutOverlayOpen => _isShortcutOverlayOpen;
   bool get isPerformancePanelOpen => _isPerformancePanelOpen;
   bool get isTileInspectorOpen => _isTileInspectorOpen;
+  bool get isRenderSettingsOpen => _isRenderSettingsOpen;
 
   bool get leftDockVisible => _leftDockVisible;
   bool get rightDockVisible => _rightDockVisible;
@@ -800,6 +802,7 @@ class GeoScatter3dService extends ChangeNotifier {
     _isShortcutOverlayOpen = false;
     _isPerformancePanelOpen = false;
     _isTileInspectorOpen = false;
+    _isRenderSettingsOpen = false;
     notifyListeners();
   }
 
@@ -2131,6 +2134,11 @@ class GeoScatter3dService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleRenderSettings([bool? open]) {
+    _isRenderSettingsOpen = open ?? !_isRenderSettingsOpen;
+    notifyListeners();
+  }
+
   bool exportPointCloud(String outputPath, {String format = 'ply'}) {
     // 优先 engine 内全量导出（与渲染数据一致）
     final engine = _engineHandle;
@@ -3426,6 +3434,18 @@ class GeoScatter3dService extends ChangeNotifier {
         },
       ),
       UiActionDescriptor(
+        id: 'workbench.overlay.render_settings',
+        name: '渲染外观设置',
+        description: '唤起或关闭散点核心渲染设置悬浮卡片 (点大小/色标/形状/高度缩放/底色)',
+        category: 'workbench',
+        parameterSchema: {
+          'type': 'object',
+          'properties': {
+            'open': {'type': 'boolean', 'description': '显隐状态 (默认反转)'},
+          },
+        },
+      ),
+      UiActionDescriptor(
         id: 'workbench.export',
         name: '导出点云数据',
         description: '将当前点云或过滤结果导出为 PLY 或 CSV 格式',
@@ -4216,6 +4236,15 @@ class GeoScatter3dService extends ChangeNotifier {
           'success': true,
           'message': '瓦片检查器状态已更新',
           'data': {'open': _isTileInspectorOpen},
+        };
+
+      case 'workbench.overlay.render_settings':
+        final open = p['open'] as bool?;
+        toggleRenderSettings(open);
+        return {
+          'success': true,
+          'message': '渲染设置状态已更新',
+          'data': {'open': _isRenderSettingsOpen},
         };
 
       case 'workbench.export':

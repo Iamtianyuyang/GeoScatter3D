@@ -16,7 +16,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/main.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
-import 'package:ui_flutter/src/panels/tablet/tablet_drawer_scaffold.dart';
 
 /// 预览画布尺寸（逻辑像素）。
 const Size _canvas = Size(1680, 1000);
@@ -310,8 +309,6 @@ void main() {
       bundle: '$_repoRoot/data/sample-points.gs3d.bundle',
       name: '05-tablet.png',
     );
-    // 预览要呈现工作台本体，跳过首次进入的手势引导卡遮罩。
-    TabletDrawerScaffold.suppressGestureGuide();
     service
       ..openWorkbench()
       ..setLayoutMode(WorkbenchLayoutMode.standard);

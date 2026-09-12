@@ -7,6 +7,7 @@ import 'package:ui_flutter/src/layouts/standard_workbench_layout.dart';
 import 'package:ui_flutter/src/panels/bottom_status_bar.dart';
 import 'package:ui_flutter/src/panels/center_viewport.dart';
 import 'package:ui_flutter/src/panels/left_dock_panel.dart';
+import 'package:ui_flutter/src/panels/render_settings_popover.dart';
 import 'package:ui_flutter/src/panels/right_dock_panel.dart';
 import 'package:ui_flutter/src/panels/top_menu_bar.dart';
 import 'package:ui_flutter/src/welcome/welcome_ui_keys.dart';
@@ -398,9 +399,8 @@ void main() {
       expect(find.byKey(WorkbenchUiKeys.homeButton), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.menuFile), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.menuView), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.menuWindow), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.menuHelp), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.layoutSwitcher), findsOneWidget);
+      expect(find.byKey(const ValueKey('workbench.menu.btn_render_settings')), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.quickLoadDemoButton), findsOneWidget);
     });
 
@@ -424,9 +424,7 @@ void main() {
       expect(find.byKey(WorkbenchUiKeys.viewportCanvas), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.viewportResetButton), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.viewportPanToggle), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.viewportMapAxisToggle), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.viewportWorldAxisToggle), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.viewportCrosshairToggle), findsOneWidget);
+      expect(find.byKey(const ValueKey('workbench.viewport.render_settings_btn')), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.viewportPresetViewDropdown), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.viewportZoomInButton), findsOneWidget);
       expect(find.byKey(WorkbenchUiKeys.viewportZoomOutButton), findsOneWidget);
@@ -532,7 +530,7 @@ void main() {
       expect(find.textContaining('就绪'), findsOneWidget);
     });
 
-    testWidgets('StandardWorkbenchLayout reacts to left and right dock visibility toggles', (WidgetTester tester) async {
+    testWidgets('StandardWorkbenchLayout renders CenterViewport and fills screen', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -549,27 +547,33 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byKey(WorkbenchUiKeys.leftDockPanel), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.rightDockPanel), findsOneWidget);
+      expect(find.byType(CenterViewport), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.viewportCanvas), findsOneWidget);
+    });
 
-      // 隐藏左侧面板
-      service.toggleLeftDock(false);
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(WorkbenchUiKeys.leftDockPanel), findsNothing);
-      expect(find.byKey(WorkbenchUiKeys.rightDockPanel), findsOneWidget);
+    testWidgets('RenderSettingsPopover renders settings controls and handles parameters', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-      // 隐藏右侧面板
-      service.toggleRightDock(false);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RenderSettingsPopover(service: service),
+          ),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(WorkbenchUiKeys.leftDockPanel), findsNothing);
-      expect(find.byKey(WorkbenchUiKeys.rightDockPanel), findsNothing);
 
-      // 重新显示两侧面板
-      service.toggleLeftDock(true);
-      service.toggleRightDock(true);
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(WorkbenchUiKeys.leftDockPanel), findsOneWidget);
-      expect(find.byKey(WorkbenchUiKeys.rightDockPanel), findsOneWidget);
+      expect(find.byKey(const ValueKey('render_settings_popover')), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.rightDockPointSizeSlider), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.rightDockShapeDropdown), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.rightDockHeightScaleSlider), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.rightDockColormapDropdown), findsOneWidget);
+      expect(find.byKey(WorkbenchUiKeys.rightDockResetScalarRangeButton), findsOneWidget);
     });
   });
 }

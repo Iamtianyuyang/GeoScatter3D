@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
-import 'package:ui_flutter/src/panels/tablet/tablet_drawer_scaffold.dart';
 import 'package:ui_flutter/src/theme/gs3d_form_factor.dart';
 import 'package:ui_flutter/src/widgets/fluid.dart';
 import 'package:ui_flutter/src/welcome/welcome_ui_keys.dart';
@@ -40,7 +39,6 @@ void main() {
     setUp(() {
       service = WelcomeUiTestService();
       service.markEngineUnavailable('libgs3d_ffi.so not found');
-      TabletDrawerScaffold.resetGestureGuide();
     });
 
     Future<void> pumpWorkbench(WidgetTester tester) async {
@@ -89,17 +87,13 @@ void main() {
       }
     });
 
-    testWidgets('抽屉关闭按钮命中区 ≥48（唤出左抽屉后量测）', (tester) async {
+    testWidgets('顶栏渲染外观按钮命中区 ≥48', (tester) async {
       await pumpWorkbench(tester);
 
-      await tester.tap(
-        find.byKey(const ValueKey('tablet.drawer.handle.left')),
-      );
-      await tester.pumpAndSettle();
       expectHitTarget(
         tester,
-        const ValueKey('tablet.drawer.close.left'),
-        '左抽屉关闭按钮',
+        const ValueKey('workbench.menu.btn_render_settings'),
+        '顶栏渲染外观按钮',
       );
     });
 
@@ -201,7 +195,6 @@ void main() {
     setUp(() {
       service = WelcomeUiTestService();
       service.markEngineUnavailable('libgs3d_ffi.so not found');
-      TabletDrawerScaffold.resetGestureGuide();
     });
 
     Future<void> pumpWorkbench(WidgetTester tester) async {

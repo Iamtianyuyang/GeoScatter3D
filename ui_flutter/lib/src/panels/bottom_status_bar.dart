@@ -76,7 +76,6 @@ class BottomStatusBar extends StatelessWidget {
                 icon: Icons.grid_view_rounded,
                 label: '瓦片 ${service.loadedTiles}',
                 value: '命中 ${service.cacheHitRate.toStringAsFixed(1)}%',
-                onTap: service.toggleTileInspector,
               ),
               _sep,
               _StatusItem(icon: Icons.memory_rounded, label: gpuName),

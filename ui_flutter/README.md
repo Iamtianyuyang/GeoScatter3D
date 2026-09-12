@@ -10,46 +10,46 @@ GeoScatter3D 的 Windows 桌面端与 Android 平板/移动端应用前端，采
 
 ## 一、核心特性与模块架构
 
+
+本项目遵循严格的架构解耦与工程护栏：**UI 纯只读投影或产生纯数据命令（UiActions）、图形句柄不穿透、临时中间产物收敛至 `tmp/`**。
+
+---
+
+欢迎页已通过真实预处理、FFI 和 Vulkan 首帧测试。以下工作台模块清单并不等于全部端到端验收通过，最新状态见 [接入记录](../docs/flutter-integration-audit.md)。
+
+## 一、核心特性与模块架构
+
 ### 1. 欢迎页与工区管理 (Welcome & Workspaces)
 - **新建工程向导**：支持 CSV/DAT 文件浏览、线程数、XY/XYZ 体素模式和最细 LOD 层目标点数，调用真实预处理器构建。当前使用 X/Y/elevation/field_statics 标准列名。
 - **工区快速载入**：支持打开 `.gs3d.bundle` 工区包文件夹及独立 `.gs3d` 点云文件。
 - **最近工程列表**：自动记录并持久化最近打开的工区，支持一键清空与快速进入。
 - **防重提交与流式反馈**：后台任务执行期间提供进度条、取消机制与防止重复触发护栏。
 
-### 2. 多工作台布局体系 (Workbench Layouts)
-- **标准三栏工作台 (`StandardWorkbenchLayout`)**：左侧工具/图层/测量/统计停靠抽屉、中间 3D 主视口、右侧渲染与属性配置面板。
-- **浮动停靠布局 (`FloatingDockLayout`)**：工具卡片化悬浮，最大化主视口视野。
-- **紧凑分析导轨 (`AnalysisRailLayout`)**：左侧垂直轻量化功能 Rail，专为高频分析优化。
-- 支持在顶部菜单栏一键自由切换与状态保存。
+#### 2. 极简全屏视口工作台 (Minimalist Fullscreen Viewport Workbench)
+- **极简全屏视口布局 (`StandardWorkbenchLayout`)**：彻底移除左右停靠抽屉与侧栏，中央 Vulkan 3D 视口 (`CenterViewport`) 最大化充满窗口，跨桌面端、平板与手机保持纯粹视野一致性。
+- **悬浮渲染外观卡片 (`RenderSettingsPopover`)**：点大小、散点形状、高度缩放、色标映射、背景底色及标量数值区间重置等核心渲染控制统一封装在轻量半透明悬浮卡片中，支持顶栏与视口工具条快速唤起。
 
 ### 3. 三维主视口深度交互 (Center Viewport)
 - **悬停拾取 HUD**：鼠标在点云上移动时，毫秒级捕获最近物理测点坐标 $(X, Y, Z)$ 及标量属性值，浮动展示半透明属性卡片。
 - **快捷键复制 (`C` 键)**：一键将当前悬停测点坐标复制至系统剪贴板并弹出 Toast 反馈。
 - **双击旋转对焦 (Orbit Pivot)**：双击点云中任意目标点，视口旋转中心与相机观察焦点平滑定位至该点，并显示对焦准星光环。
-- **3D 几何测距标尺 (`M` 键 / 工具栏)**：连续拾取空间点生成三维几何连线，实时显示空间直线距离、$\Delta Z$ 轴向落差与坐标端点标注。
-- **选区框选与属性统计**：
-  - `Shift + 拖拽`：矩形框选区域，即时计算选区样本数、均值、极差、方差并生成 5-Bin 直方图。
-  - `Ctrl + 拖拽`：矩形框选视口缩放聚焦。
 - **交互式 3D 罗盘 (Gizmo)**：支持点击 X / Y / Z 正负极球体一键平滑过渡至顶视、底视、前视、侧视。
 - **高清截图导出**：基于 `RepaintBoundary` 实现 2.0x 无损 PNG 显存回读与本地保存。
 
-### 4. 停靠面板与分析套件 (Dock Panels & Tools)
-- **2D 鸟瞰小地图**：实时投影工区平面边界与当前主相机的世界视锥多边形，支持在小地图上点击快速平移漫游。
-- **测量线段管理**：记录多组测量结果，支持图钉固定、单项删除、清空全部与 2D/3D 显示切换。
-- **局部统计卡片**：动态展示选区统计指标，并支持一键复制统计数据文本。
-- **动态底部状态栏**：实时绑定引擎 FPS、单帧耗时、可见点数、显存占用与瓦片流式加载水位；支持点击快捷唤出诊断面板。
-- **移动端安全区与紧凑布局**：Android Edge-to-Edge 下由 `SafeArea` 避让状态栏和底部手势区；手机档顶部工具条使用图标入口，左右抽屉按可用宽度自适应收缩。
+### 4. 辅助视察与状态遥测 (Telemetry & Diagnostics)
+- **动态底部状态栏**：实时绑定原生 Vulkan 引擎 FPS、单帧耗时、可见点数、GPU 显卡信息与相机位姿遥测。
+- **移动端安全区与自适应工具栏**：Android Edge-to-Edge 下由 `SafeArea` 避让状态栏和底部手势区；手机档顶部工具条紧凑图标排列，平板档提供拇指操作条。
 
 ### 5. 全局视察器与命令套件 (Overlays & Inspectors)
 - **命令面板 (`CommandPalette` - `Ctrl+P`)**：居中模糊搜索框，快速检索全量动作、视角预设、色标方案并回车即时分发。
-- **快捷键速查指南 (`ShortcutOverlay` - `F1`)**：分类展现漫游、交互、测量与全局快捷键图层。
+- **快捷键速查指南 (`ShortcutOverlay` - `F1`)**：分类展现漫游、交互与全局快捷键图层。
 - **性能与显存诊断面板 (`PerformancePanel`)**：大字号仪表盘展示渲染帧率、GPU 显存占用、CPU 瓦片缓存水位及一键清空显存缓存。
 - **八叉树瓦片与 LOD 视察器 (`TileInspectorDialog`)**：深入检查空间八叉树分级结构与后台瓦片流式加载管线。
 - **点云数据集导出 (`ExportPointCloudDialog`)**：支持将工区点云全量导出为标准 ASCII PLY 或逗号分隔 CSV 格式。
 
 ### 6. 统一动作引擎与单进程控制 (Action Engine)
 
-- 注册了 **61 个统一高层 UI 动作**（15 个欢迎页动作 + 46 个工作台动作），覆盖欢迎页、工作台、视口控制、测量、诊断及数据导出。
+- 注册了 **62 个统一高层 UI 动作**（15 个欢迎页动作 + 47 个工作台动作），覆盖欢迎页、工作台、渲染外观配置、视口控制与数据导出。
 - **单进程引擎路径**：
   - `hasEngineApi` 时经 `gs3d_engine_*` 直连 `HeadlessRenderKernel`（渲染 + 拾取 + Gizmo + 导出 + PNG），RGBA 帧呈现，不 spawn 子进程；
   - 引擎不可用时显式报错；拾取/统计可走 A 组 C-ABI 或返回空；无纯 Dart 软件点云预览。
@@ -65,30 +65,28 @@ ui_flutter/
 │   └── src/
 │       ├── ffi/
 │       │   ├── geoscatter3d_bindings.dart    # 纯 C-ABI 动态链接库原生函数签名绑定
-│       │   └── geoscatter3d_service.dart     # 核心状态中枢、61项动作调度器与指标轮询引擎
+│       │   └── geoscatter3d_service.dart     # 核心状态中枢、62项动作调度器与指标轮询引擎
+│       ├── layouts/
+│       │   └── standard_workbench_layout.dart# 极简全屏视口工作台布局
 │       ├── panels/
-│       │   ├── center_viewport.dart          # 3D 视口画布、射线拾取、测距连线、框选与罗盘
-│       │   ├── left_dock_panel.dart          # 左侧抽屉：2D小地图、空间测量线列表、选区统计
-│       │   ├── right_dock_panel.dart         # 右侧抽屉：点云属性渲染、色标映射、光照与视图预设
-│       │   ├── top_menu_bar.dart             # 顶部原生风格菜单栏与布局切换入口
+│       │   ├── center_viewport.dart          # 3D 视口画布、射线拾取、罗盘与悬停 HUD
+│       │   ├── render_settings_popover.dart  # 悬浮渲染外观卡片（点大小/色标/高度缩放/背景）
+│       │   ├── top_menu_bar.dart             # 顶部原生风格菜单栏与核心操作入口
 │       │   ├── bottom_status_bar.dart        # 底部指标状态栏（FPS、耗时、可见点数、显存）
 │       │   ├── performance_panel.dart        # 性能与流式加载显存诊断面板
 │       │   ├── tile_inspector_dialog.dart    # 八叉树金字塔与 LOD 瓦片调试器
 │       │   └── export_dialog.dart            # PLY / CSV 点云数据导出对话框
-│       ├── widgets/
-│       │   ├── command_palette.dart          # Ctrl+P 全局交互式命令面板
-│       │   ├── shortcut_overlay.dart         # F1 快捷操作速查窗口
-│       │   ├── welcome_view.dart             # 欢迎页组件
-│       │   ├── standard_workbench_layout.dart# 标准三栏工作台布局
-│       │   ├── floating_dock_layout.dart     # 悬浮停靠卡片布局
-│       │   └── analysis_rail_layout.dart     # 分析导轨布局
+│       └── widgets/
+│           ├── command_palette.dart          # Ctrl+P 全局交互式命令面板
+│           ├── shortcut_overlay.dart         # F1 快捷操作速查窗口
+│           └── welcome_view.dart             # 欢迎页组件
 │       └── models/
-│           └── measurement_line_model.dart   # 三维测量线几何数据模型
+│           └── measurement_line_model.dart   # 三维空间点与标量模型
 ├── test/
 │   ├── ffi_test.dart                         # FFI 动态库加载与离线数据降级测试
 │   ├── welcome_test.dart                     # 欢迎页组件与交互动作测试
-│   ├── workbench_test.dart                   # 工作台三栏布局与视口操作测试
-│   ├── widget_test.dart                      # 欢迎页到工作台路由与布局模式切换测试
+│   ├── workbench_test.dart                   # 工作台视口与悬浮渲染卡片操作测试
+│   ├── widget_test.dart                      # 欢迎页到工作台路由与极简全屏测试
 │   └── overlays_test.dart                    # 命令面板、快捷键帮助、性能面板、导出对话框测试
 └── scripts/
     └── build_flutter_windows.ps1             # Windows 桌面全自动化编译与 FFI/Native 二进制部署脚本

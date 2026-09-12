@@ -5,11 +5,10 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'src/ffi/geoscatter3d_service.dart';
-import 'src/layouts/analysis_rail_layout.dart';
-import 'src/layouts/floating_dock_layout.dart';
 import 'src/layouts/standard_workbench_layout.dart';
 import 'src/panels/bottom_status_bar.dart';
 import 'src/panels/performance_panel.dart';
+import 'src/panels/render_settings_popover.dart';
 import 'src/panels/tablet/tablet_action_bar.dart';
 import 'src/panels/tile_inspector_dialog.dart';
 import 'src/panels/top_menu_bar.dart';
@@ -69,6 +68,7 @@ class _GeoScatter3dAppState extends State<GeoScatter3dApp> {
   GeoScatter3dService get service => widget.service;
 
   bool get _hasOpenWorkbenchOverlay =>
+      service.isRenderSettingsOpen ||
       service.isCommandPaletteOpen ||
       service.isShortcutOverlayOpen ||
       service.isPerformancePanelOpen ||
@@ -77,7 +77,9 @@ class _GeoScatter3dAppState extends State<GeoScatter3dApp> {
   /// Android 返回键采用移动端常见的逐层返回语义：先关闭当前覆盖层，
   /// 再离开工作台回到欢迎页；欢迎页根路由才允许系统退出应用。
   void _handleSystemBack() {
-    if (service.isCommandPaletteOpen) {
+    if (service.isRenderSettingsOpen) {
+      service.toggleRenderSettings(false);
+    } else if (service.isCommandPaletteOpen) {
       service.toggleCommandPalette(false);
     } else if (service.isShortcutOverlayOpen) {
       service.toggleShortcutOverlay(false);
@@ -181,16 +183,14 @@ class GeoScatter3dWorkbench extends StatelessWidget {
             children: [
               Column(
                 children: [
-                  // 1. 顶部菜单栏 (含布局切换器、工区状态、返回欢迎页)
+                  // 1. 顶部菜单栏
                   TopMenuBar(service: service),
 
-                  // 2. 动态主工作区布局：标准三栏 / 悬浮胶囊 Dock / 暗色分析舱
+                  // 2. 极简全屏视口工作台 (CenterViewport)
                   Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      child: _buildActiveLayout(),
+                    child: StandardWorkbenchLayout(
+                      key: const ValueKey('layout_standard'),
+                      service: service,
                     ),
                   ),
 
@@ -202,6 +202,17 @@ class GeoScatter3dWorkbench extends StatelessWidget {
                   BottomStatusBar(service: service),
                 ],
               ),
+
+              // 渲染外观悬浮设置面板
+              if (service.isRenderSettingsOpen)
+                Positioned(
+                  top: context.isTouchPreferred ? 60 : 44,
+                  right: 16,
+                  child: RenderSettingsPopover(
+                    service: service,
+                    onClose: () => service.toggleRenderSettings(false),
+                  ),
+                ),
 
               // 全局模态覆盖层与诊断视察器
               if (service.isCommandPaletteOpen)
@@ -220,25 +231,5 @@ class GeoScatter3dWorkbench extends StatelessWidget {
         );
       },
     );
-  }
-
-  Widget _buildActiveLayout() {
-    switch (service.layoutMode) {
-      case WorkbenchLayoutMode.standard:
-        return StandardWorkbenchLayout(
-          key: const ValueKey('layout_standard'),
-          service: service,
-        );
-      case WorkbenchLayoutMode.floatingDock:
-        return FloatingDockLayout(
-          key: const ValueKey('layout_floating_dock'),
-          service: service,
-        );
-      case WorkbenchLayoutMode.analysisRail:
-        return AnalysisRailLayout(
-          key: const ValueKey('layout_analysis_rail'),
-          service: service,
-        );
-    }
   }
 }
