@@ -31,10 +31,17 @@ target_link_libraries(gs3d_engine_core PUBLIC
 # FFI only contains ABI adapters and the legacy metadata/control group.  The
 # rendering implementation is kept in gs3d_engine_core so a future JNI, Rust,
 # Python or native desktop frontend can reuse it without depending on Flutter.
-add_library(gs3d_ffi SHARED
+set(GS3D_FFI_SOURCES
     geoscatter3d_ffi.cpp
     Gs3dEngineApi.cpp
 )
+
+if(ANDROID)
+    # 平台 surface 适配层（JNI）：ANativeWindow → surface 句柄，形如 C ABI。
+    list(APPEND GS3D_FFI_SOURCES AndroidSurfaceJni.cpp)
+endif()
+
+add_library(gs3d_ffi SHARED ${GS3D_FFI_SOURCES})
 
 target_include_directories(gs3d_ffi PUBLIC
     ${PROJECT_SOURCE_DIR}/include
@@ -56,9 +63,10 @@ if(WIN32)
 endif()
 
 if(ANDROID)
-    # util/Log.hpp 在 Android 上走 __android_log_write（app 的 stdout/stderr
-    # 不进 logcat）；该符号由 NDK 的 liblog 提供，必须显式链接。
-    target_link_libraries(gs3d_ffi PRIVATE log)
+    # log   : util/Log.hpp 在 Android 上走 __android_log_write（app 的
+    #         stdout/stderr 不进 logcat），该符号由 NDK 的 liblog 提供；
+    # android: ANativeWindow_fromSurface / ANativeWindow_release。
+    target_link_libraries(gs3d_ffi PRIVATE log android)
 endif()
 
 target_compile_definitions(gs3d_ffi PRIVATE GS3D_FFI_EXPORTS)

@@ -35,7 +35,10 @@ public:
         VkFormat preferred_format = VK_FORMAT_B8G8R8A8_UNORM;
     };
 
-    PresentSurface(const VulkanContext& context, Config config = {});
+    // 注意：Config 是嵌套类型，默认实参 `= {}` 会在 GCC/Clang 下因
+    // 「default member initializer 在类定义内尚不完整」而编译失败
+    // （MSVC 容忍这种扩展），因此这里不给默认实参，调用方显式传 Config。
+    PresentSurface(const VulkanContext& context, Config config);
     ~PresentSurface();
 
     PresentSurface(const PresentSurface&) = delete;

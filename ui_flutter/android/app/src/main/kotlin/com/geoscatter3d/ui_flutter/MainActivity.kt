@@ -2,11 +2,15 @@ package com.geoscatter3d.ui_flutter
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.PixelFormat
+import android.graphics.SurfaceTexture
+import android.media.ImageReader
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.view.Surface
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -26,9 +30,30 @@ class MainActivity : FlutterActivity() {
         private const val PICK_DIRECTORY_REQUEST = 4102
         private const val SAVE_FILE_REQUEST = 4103
         private const val IMPORT_BUFFER_SIZE = 64 * 1024
+
+        init {
+            // JNI 符号必须经 JVM 的库注册表加载（Dart 侧 dlopen 不注册）。
+            System.loadLibrary("gs3d_ffi")
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private external fun nativeAttachSurface(
+        engine: Long,
+        surface: Surface,
+        width: Int,
+        height: Int,
+    ): Int
+
+    private external fun nativePresentFrame(engine: Long): Int
+
+    private external fun nativeClearSurface(engine: Long): Int
+
+    private external fun nativeHasSurface(engine: Long): Int
+
+    /** 供 Dart 侧把引擎句柄交给平台层做 surface 附加。 */
+    private fun engineHandleOf(resultHandle: Number?): Long = resultHandle?.toLong() ?: 0L
     private var pendingPickerResult: MethodChannel.Result? = null
     private var pendingSaveSource: String? = null
 
@@ -76,6 +101,19 @@ class MainActivity : FlutterActivity() {
 
                 "getPersistentDirectory" -> result.success(filesDir.absolutePath)
 
+                // ── 窗口呈现烟囱测试（真机验收交换链通路，不依赖 Flutter 纹理）──
+                // ImageReader 提供一个可被 GPU 写入的 Surface；原生侧附加给引擎
+                // 并 present 若干帧，随后回读像素确认真的画进去了。
+                "surfaceSmokeTest" -> {
+                    val engine = engineHandleOf(call.argument<Number>("engineHandle"))
+                    val frames = call.argument<Number>("frames")?.toInt() ?: 60
+                    if (engine == 0L) {
+                        result.error("invalid_engine", "缺少引擎句柄", null)
+                    } else {
+                        Thread { runSurfaceSmokeTest(engine, frames, result) }.start()
+                    }
+                }
+
                 "saveFile" -> {
                     val sourcePath = call.argument<String>("sourcePath")
                     val suggestedName = call.argument<String>("suggestedName")
@@ -89,6 +127,89 @@ class MainActivity : FlutterActivity() {
 
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun runSurfaceSmokeTest(
+        engine: Long,
+        frames: Int,
+        result: MethodChannel.Result,
+    ) {
+        val width = 640
+        val height = 360
+        var reader: ImageReader? = null
+        try {
+            reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 4)
+            val attachResult = nativeAttachSurface(engine, reader.surface, width, height)
+            var presented = 0
+            var lastPresent = 0
+            for (frame in 0 until frames) {
+                lastPresent = nativePresentFrame(engine)
+                if (lastPresent == 0) presented += 1
+            }
+            val hasSurface = nativeHasSurface(engine)
+
+            // present 是异步显示：给合成器一点时间后回读最新一帧。
+            var litPixels = -1
+            var sampledPixels = 0
+            for (attempt in 0 until 10) {
+                Thread.sleep(120)
+                val image = reader.acquireLatestImage() ?: continue
+                image.use {
+                    val plane = it.planes[0]
+                    val buffer = plane.buffer
+                    val rowStride = plane.rowStride
+                    val pixelStride = plane.pixelStride
+                    val background = ByteArray(4)
+                    buffer.position(0)
+                    buffer.get(background)
+                    val row = ByteArray(rowStride)
+                    var lit = 0
+                    var sampled = 0
+                    var y = 0
+                    while (y < it.height) {
+                        buffer.position(y * rowStride)
+                        buffer.get(row, 0, minOf(rowStride, buffer.remaining()))
+                        var x = 0
+                        while (x < it.width) {
+                            val offset = x * pixelStride
+                            sampled += 1
+                            if (row[offset] != background[0] ||
+                                row[offset + 1] != background[1] ||
+                                row[offset + 2] != background[2]
+                            ) {
+                                lit += 1
+                            }
+                            x += 3
+                        }
+                        y += 3
+                    }
+                    litPixels = lit
+                    sampledPixels = sampled
+                }
+                break
+            }
+
+            val clearResult = nativeClearSurface(engine)
+            mainHandler.post {
+                result.success(
+                    mapOf(
+                        "attach" to attachResult,
+                        "presented" to presented,
+                        "lastPresent" to lastPresent,
+                        "hasSurface" to hasSurface,
+                        "litPixels" to litPixels,
+                        "sampledPixels" to sampledPixels,
+                        "clear" to clearResult,
+                    ),
+                )
+            }
+        } catch (error: Exception) {
+            mainHandler.post {
+                result.error("surface_smoke_failed", error.message, null)
+            }
+        } finally {
+            reader?.close()
         }
     }
 

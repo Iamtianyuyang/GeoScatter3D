@@ -78,6 +78,9 @@ class Gs3dEngine {
     }
   }
 
+  /// 引擎句柄（不透明指针地址）：仅供平台层把它交回 JNI 附加 surface。
+  int get nativeHandle => _disposed ? 0 : _ptr.address;
+
   int get width => _width;
   int get height => _height;
   bool get isDisposed => _disposed;

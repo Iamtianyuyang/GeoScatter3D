@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'gs3d_engine.dart';
 
 /// 基准/压力测试入口：以 --dart-define=GS3D_BENCH_POINTS=10000000 构建，
@@ -10,6 +12,10 @@ const int kBenchPointCount = int.fromEnvironment('GS3D_BENCH_POINTS');
 /// 直接加载磁盘上的 .gs3d.bundle（带 lod.gs3dlod / tiles.gs3dtiles* 时
 /// 走“粗尺度 LOD + 细尺度 tile”路径）。
 const String kBenchDatasetPath = String.fromEnvironment('GS3D_BENCH_DATASET');
+
+/// 真机验收：以 --dart-define=GS3D_SURFACE_SMOKE=true 构建，启动后把引擎
+/// 句柄交给平台层，用 ImageReader 附加真实 Surface 并 present 若干帧。
+const bool kSurfaceSmoke = bool.fromEnvironment('GS3D_SURFACE_SMOKE');
 
 /// 基准专用：启动后向前推进若干次相机缩放（正值放大），
 /// 用于在没有双指手势的自动化通道里进入细尺度 tile 区间。
@@ -106,6 +112,9 @@ class GeoScatter3dService extends ChangeNotifier {
       _ready = true;
       _fpsClock.start();
       _frameClock.start();
+      if (kSurfaceSmoke) {
+        unawaited(_runSurfaceSmokeTest(engine));
+      }
       // 首帧由渲染线程异步产生；UI 线程不再阻塞在 Vulkan 提交上。
       engine.requestFrame();
       notifyListeners();
@@ -121,6 +130,22 @@ class GeoScatter3dService extends ChangeNotifier {
       if (name is String && name.isNotEmpty) return name;
     }
     return 'Vulkan GPU';
+  }
+
+  /// 平台层烟囱测试：ImageReader Surface → 引擎 present → 回读像素。
+  Future<void> _runSurfaceSmokeTest(Gs3dEngine engine) async {
+    try {
+      final channel = const MethodChannel(
+        'com.geoscatter3d.ui_flutter/documents',
+      );
+      final result = await channel.invokeMethod<Map<Object?, Object?>>(
+        'surfaceSmokeTest',
+        {'engineHandle': engine.nativeHandle, 'frames': 60},
+      );
+      debugPrint('[SURFACE_SMOKE] result=$result');
+    } catch (error) {
+      debugPrint('[SURFACE_SMOKE] failed: $error');
+    }
   }
 
   /// 由引擎诊断的 LOD 状态生成规模摘要；小数据集返回空串（HUD 不显示）。
