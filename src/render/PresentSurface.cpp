@@ -372,16 +372,26 @@ bool PresentSurface::begin_frame(Frame& frame) {
         return false;
     }
 
+    /*
+     * 取图不能无限等待。合成器停摆时（应用切后台、Flutter 侧暂停合成纹理层）
+     * 交换链图像不会回来，UINT64_MAX 会让渲染线程永远卡在 acquire，
+     * 随后任何引擎调用（attach/resize/detach、诊断读取）都会连带阻塞 → ANR。
+     * 超时当作「本帧跳过」处理，与交换链刚重建的语义一致。
+     */
+    constexpr std::uint64_t kAcquireTimeoutNs = 100'000'000ull;  // 100 ms
     VkResult result = vkAcquireNextImageKHR(
         context_->device(),
         swapchain_,
-        UINT64_MAX,
+        kAcquireTimeoutNs,
         VK_NULL_HANDLE,
         VK_NULL_HANDLE,
         &frame.image_index
     );
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         needs_recreate_ = true;
+        return false;
+    }
+    if (result == VK_TIMEOUT || result == VK_NOT_READY) {
         return false;
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
