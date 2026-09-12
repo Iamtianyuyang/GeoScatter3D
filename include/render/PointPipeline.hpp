@@ -118,6 +118,15 @@ struct PointPipelineConfig {
 
     std::filesystem::path fragment_shader_path =
         "assets/shaders/point.frag.spv";
+
+    /*
+     * 颜色附件数量，必须与目标 render pass 完全一致：
+     *   3 = 离屏 Framebuffer 布局（color + pick id + pick depth）；
+     *   1 = 窗口/交换链呈现布局（仅 color + depth）。
+     * 附件多于 render pass 会直接违反 VUID-VkGraphicsPipelineCreateInfo
+     * -renderPass-parameter。
+     */
+    std::uint32_t color_attachment_count = 3;
 };
 
 class PointPipeline {
@@ -164,6 +173,7 @@ public:
 
 private:
     const VulkanContext& context_;
+    PointPipelineConfig config_{};
 
     VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;

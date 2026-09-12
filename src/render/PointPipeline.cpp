@@ -24,6 +24,7 @@ PointPipeline::PointPipeline(
     const PointPipelineConfig& config
 )
     : context_(context)
+    , config_(config)
 {
     create_graphics_pipeline(render_pass, config);
 }
@@ -248,6 +249,9 @@ void PointPipeline::create_graphics_pipeline(
                "using uniform RGBA colorWriteMask for all attachments.\n";
     }
 
+    // 附件数由配置决定（离屏 3 个：color/pick id/pick depth；present 1 个）。
+    const std::uint32_t attachment_count =
+        std::clamp(config_.color_attachment_count, 1u, 3u);
     VkPipelineColorBlendAttachmentState color_blend_attachments[3]{};
     color_blend_attachments[0].colorWriteMask = rgba_mask;
     color_blend_attachments[0].blendEnable = VK_FALSE;
@@ -262,7 +266,7 @@ void PointPipeline::create_graphics_pipeline(
     color_blending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     color_blending.logicOpEnable = VK_FALSE;
-    color_blending.attachmentCount = 3;
+    color_blending.attachmentCount = attachment_count;
     color_blending.pAttachments = color_blend_attachments;
 
     VkDynamicState dynamic_states[] = {

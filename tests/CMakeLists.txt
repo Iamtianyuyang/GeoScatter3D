@@ -654,6 +654,31 @@ if(NOT ANDROID)
     add_dependencies(GeoScatter3DEngineHostTests gs3d_shaders)
 endif()
 
+# 窗口/交换链呈现通路（Win32 隐藏窗口提供真实 surface；无 Vulkan 时跳过）。
+add_executable(GeoScatter3DPresentSurfaceTests
+    PresentSurfaceTests.cpp
+)
+target_include_directories(GeoScatter3DPresentSurfaceTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/third_party/stb
+)
+target_compile_definitions(GeoScatter3DPresentSurfaceTests PRIVATE
+    GS3D_TEST_SHADER_DIR="${GS3D_GENERATED_SHADER_DIR}"
+)
+target_link_libraries(GeoScatter3DPresentSurfaceTests PRIVATE
+    gs3d_render
+    gs3d_data
+    Vulkan::Vulkan
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.PresentSurface
+    COMMAND GeoScatter3DPresentSurfaceTests
+)
+if(NOT ANDROID)
+    add_dependencies(GeoScatter3DPresentSurfaceTests gs3d_shaders)
+endif()
+
 # 大规模点云 LOD 链（纯 CPU 逻辑，不依赖 Vulkan）。
 add_executable(GeoScatter3DLodBuilderTests
     LodBuilderTests.cpp

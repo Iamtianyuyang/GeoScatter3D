@@ -10,6 +10,7 @@ add_library(gs3d_render STATIC
     LodSelector.cpp
     NearestPointQuery.cpp
     OffscreenFramebuffer.cpp
+    PresentSurface.cpp
     PointCloudGpu.cpp
     PointCloudLodGpu.cpp
     PointCloudTileGpu.cpp
