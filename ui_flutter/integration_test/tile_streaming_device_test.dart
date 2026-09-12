@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -123,6 +125,30 @@ void main() {
       );
     }
     expect(changed, isTrue, reason: 'tile 流式期间必须继续出帧');
+
+    // 覆盖度回归：瓦片全部驻留后 LOD 会在 tile 并集内被裁剪，若叠加层
+    // 自身被误裁（历史上曾把带 kSpatialClip 的 push 传给 tile），画面会全黑。
+    // 因此必须断言合成后的帧仍含点云像素，而不是只看“帧变了”。
+    final frame = tester.widget<RawImage>(frameFinder).image!;
+    final pixels = await frame.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(pixels, isNotNull);
+    final bytes = pixels!.buffer.asUint8List(
+      pixels.offsetInBytes,
+      pixels.lengthInBytes,
+    );
+    var litPixels = 0;
+    for (var offset = 0; offset < bytes.length; offset += 4) {
+      if (bytes[offset] != bytes[0] ||
+          bytes[offset + 1] != bytes[1] ||
+          bytes[offset + 2] != bytes[2]) {
+        litPixels++;
+      }
+    }
+    expect(
+      litPixels,
+      greaterThan(1000),
+      reason: '细尺度合成后必须仍有点云像素（tile 不得被 kSpatialClip 裁掉）',
+    );
     expect(tester.takeException(), isNull);
   },
       // 未提供数据集时跳过（CI 无 bundle）。

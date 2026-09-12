@@ -304,13 +304,19 @@ class Gs3dEngine {
   }
 
   Future<ui.Image> _decode(int width, int height) {
-    final byteData = _rgbaBuffer!.asTypedList(width * height * 4);
-    // 拷贝至 Dart 管理的 Uint8List 以供 decodeImageFromPixels 使用
-    final copy = Uint8List.fromList(byteData);
+    /*
+     * 直接以本地内存视图交给 Flutter，不再做一次 Dart 侧整帧拷贝。
+     *
+     * 安全性：_rgbaBuffer 由本对象持有，ABI 的回读在帧通道锁内完成
+     * （读到的始终是一帧完整、不会再被改写的图），而这里只是在锁外把
+     * 同一块内存交给解码器；解码期间渲染线程写的是它自己的 scratch，
+     * 不会碰到这块缓冲。
+     */
+    final pixels = _rgbaBuffer!.asTypedList(width * height * 4);
 
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
-      copy,
+      pixels,
       width,
       height,
       ui.PixelFormat.rgba8888,

@@ -1076,7 +1076,13 @@ int HeadlessRenderKernel::render_rgba(
                 pipeline_->bind_for_viewport(c, extent);
                 for (const auto tile_id : tile_drawable_ids_) {
                     const auto& tile_cloud = tile_gpu_.gpu_cloud_for_tile(tile_id);
-                    pipeline_->draw_per_tile(c, tile_cloud, lod_push);
+                    /*
+                     * 瓦片必须用「无裁剪」的 push constants（push_），不能用 lod_push：
+                     * kSpatialClip 的语义是丢弃 bbox 内部，而瓦片的每个点都在
+                     * 自己的并集 bbox 内 —— 误用会把叠加层全部裁掉，
+                     * 加上 LOD 也在该区域被裁剪，画面直接变全黑（已发生过一次）。
+                     */
+                    pipeline_->draw_per_tile(c, tile_cloud, push_);
                     tile_drawn_points_ += tile_cloud.point_count();
                 }
             }
