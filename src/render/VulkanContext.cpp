@@ -353,7 +353,8 @@ void VulkanContext::create_logical_device() {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
     dynamic_rendering_features.dynamicRendering = VK_TRUE;
 
-    const auto device_extensions = required_device_extensions(config_.headless);
+    const auto device_extensions =
+        required_device_extensions(physical_device_, config_.headless);
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -510,14 +511,48 @@ QueueFamilyIndices VulkanContext::find_queue_families(
     return indices;
 }
 
-std::vector<const char*> VulkanContext::required_device_extensions(bool headless) {
+bool VulkanContext::device_advertises_extension(
+    VkPhysicalDevice device, const char* name) {
+    if (device == VK_NULL_HANDLE || name == nullptr) {
+        return false;
+    }
+    std::uint32_t count = 0;
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr) !=
+        VK_SUCCESS) {
+        return false;
+    }
+    std::vector<VkExtensionProperties> available(count);
+    if (vkEnumerateDeviceExtensionProperties(
+            device, nullptr, &count, available.data()) != VK_SUCCESS) {
+        return false;
+    }
+    return std::any_of(
+        available.begin(), available.end(),
+        [name](const VkExtensionProperties& extension) {
+            return std::strcmp(extension.extensionName, name) == 0;
+        });
+}
+
+std::vector<const char*> VulkanContext::required_device_extensions(
+    VkPhysicalDevice device, bool headless) {
     if (headless) {
         return {};
     }
-    return {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
-    };
+
+    // 窗口呈现必然需要 swapchain。
+    std::vector<const char*> extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+    /*
+     * VK_KHR_dynamic_rendering 在 Vulkan 1.3 被提升为核心，驱动可以选择不再
+     * advertise 该扩展名（真机 Adreno 650 即如此）。因此这里按「设备是否声称
+     * 支持」来启用：声称就启用扩展（1.1/1.2 设备必须如此），否则依赖 1.3 的
+     * 核心功能（create_device 中通过 VkPhysicalDeviceVulkan13Features 打开）。
+     * 旧 VulkanRenderer 的 vkCmdBeginRenderingKHR 也走同一条规则。
+     */
+    if (device_advertises_extension(device, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
+        extensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+    }
+    return extensions;
 }
 
 bool VulkanContext::device_extensions_supported(
@@ -544,7 +579,8 @@ bool VulkanContext::device_extensions_supported(
 
     std::set<std::string> required_extensions;
 
-    for (const auto* extension : required_device_extensions(config_.headless)) {
+    for (const auto* extension :
+         required_device_extensions(device, config_.headless)) {
         required_extensions.insert(extension);
     }
 

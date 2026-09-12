@@ -96,6 +96,10 @@ int HeadlessRenderKernel::create_resources_locked() {
         last_error_.clear();
         return 0;
     } catch (const std::exception& ex) {
+        // 资源创建失败必须留下可诊断痕迹（logcat tag=gs3d）。
+        gs3d::util::log::error()
+            << "[HeadlessRenderKernel] create_resources failed: " << ex.what()
+            << '\n';
         set_error(ex.what());
         destroy_gpu_resources();
         return -3;
@@ -955,6 +959,9 @@ int HeadlessRenderKernel::attach_surface(
     config_.height = height;
 
     const bool had_dataset = has_dataset_;
+    gs3d::util::log::info()
+        << "[HeadlessRenderKernel] attach_surface " << width << 'x' << height
+        << " had_dataset=" << (had_dataset ? 1 : 0) << '\n';
     destroy_gpu_resources();
 
     const int rc = create_resources_locked();
@@ -962,8 +969,14 @@ int HeadlessRenderKernel::attach_surface(
         surface_provider_ = {};
         return rc;
     }
-    if (had_dataset && rebuild_lod_locked() != 0) {
-        return -3;
+    if (had_dataset) {
+        const int rebuild_rc = rebuild_lod_locked();
+        if (rebuild_rc != 0) {
+            gs3d::util::log::error()
+                << "[HeadlessRenderKernel] attach_surface: LOD rebuild failed rc="
+                << rebuild_rc << " err=" << last_error_ << '\n';
+            return -3;
+        }
     }
 
     gs3d::util::log::info()

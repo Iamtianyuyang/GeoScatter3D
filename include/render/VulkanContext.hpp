@@ -128,7 +128,12 @@ private:
     QueueFamilyIndices find_queue_families(VkPhysicalDevice device) const;
 
     [[nodiscard]]
-    static std::vector<const char*> required_device_extensions(bool headless);
+    /// 设备是否 advertise 某扩展（1.3 起 dynamic rendering 等可为核心功能，
+    /// 驱动允许不再列出扩展名，因此必须按实际列表判断）。
+    static bool device_advertises_extension(
+        VkPhysicalDevice device, const char* name);
+    static std::vector<const char*> required_device_extensions(
+        VkPhysicalDevice device, bool headless);
 
     [[nodiscard]]
     bool device_extensions_supported(VkPhysicalDevice device) const;

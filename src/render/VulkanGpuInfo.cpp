@@ -13,9 +13,14 @@ namespace gs3d::render {
 
 namespace {
 
+/*
+ * 窗口呈现真正必需的扩展。VK_KHR_dynamic_rendering 自 Vulkan 1.3 起被提升为
+ * 核心，驱动可以不 advertise（真机 Adreno 650 就是这种情形），因此它不再属于
+ * 「必需扩展」——1.3 设备走核心 feature，1.1/1.2 设备由 has_required_extensions
+ * 单独按「扩展或核心」二者之一判定。
+ */
 constexpr const char* kRequiredDeviceExtensions[] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 bool has_required_extensions(VkPhysicalDevice device, bool headless)
