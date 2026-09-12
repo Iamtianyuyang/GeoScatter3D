@@ -27,6 +27,24 @@ if (-not (Test-Path -LiteralPath $Fixture)) {
     throw "Android Maestro fixture not found: $Fixture"
 }
 
+if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
+    $androidSdkPlatformTools = Join-Path $env:LOCALAPPDATA 'Android/Sdk/platform-tools'
+    if (Test-Path $androidSdkPlatformTools) {
+        $env:PATH = "$androidSdkPlatformTools;$env:PATH"
+    }
+}
+
+if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
+    if (Test-Path 'C:\Program Files\Android\openjdk\jdk-21.0.8') {
+        $env:JAVA_HOME = 'C:\Program Files\Android\openjdk\jdk-21.0.8'
+    } elseif (Test-Path 'C:\Program Files\Android\Android Studio\jbr') {
+        $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+    }
+}
+if ($env:JAVA_HOME -and -not (Get-Command java -ErrorAction SilentlyContinue)) {
+    $env:PATH = "$($env:JAVA_HOME)\bin;$env:PATH"
+}
+
 $deviceState = (& adb -s $Device get-state 2>&1).Trim()
 if ($LASTEXITCODE -ne 0 -or $deviceState -ne 'device') {
     throw "Android device is not ready: $Device (state: $deviceState)"

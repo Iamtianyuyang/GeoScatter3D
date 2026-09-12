@@ -150,9 +150,13 @@ void VulkanContext::pick_physical_device() {
     const auto selection = select_gpu(gpu_list_, config_.preferred_gpu);
 
     if (!selection.index.has_value()) {
-        throw std::runtime_error(
-            "VulkanContext: no suitable physical device found"
-        );
+        std::string err = "VulkanContext: no suitable physical device found (found " +
+                          std::to_string(gpu_list_.size()) + " GPUs: ";
+        for (const auto& g : gpu_list_) {
+            err += "[" + g.name + " (" + g.rejection_reason + ")] ";
+        }
+        err += ")";
+        throw std::runtime_error(err);
     }
 
     active_gpu_index_ = *selection.index;
@@ -248,7 +252,9 @@ void VulkanContext::create_logical_device() {
     device_features.independentBlend =
         supported_features_.independentBlend;
 
-    // 为离屏视口与交换链启用 dynamic rendering。
+    // 仅在非 headless（即使用 VulkanRenderer 交换链渲染）时启用 dynamic rendering。
+    // 离屏渲染（HeadlessRenderKernel）通过 OffscreenFramebuffer + VkRenderPass 工作，
+    // 无需也不依赖 VK_KHR_dynamic_rendering，兼容 Android 移动端与模拟器。
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{};
     dynamic_rendering_features.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
@@ -258,7 +264,9 @@ void VulkanContext::create_logical_device() {
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    create_info.pNext = &dynamic_rendering_features;
+    if (!config_.headless) {
+        create_info.pNext = &dynamic_rendering_features;
+    }
 
     create_info.queueCreateInfoCount =
         static_cast<std::uint32_t>(queue_create_infos.size());
@@ -371,9 +379,7 @@ QueueFamilyIndices VulkanContext::find_queue_families(
 
 std::vector<const char*> VulkanContext::required_device_extensions(bool headless) {
     if (headless) {
-        return {
-            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
-        };
+        return {};
     }
     return {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,

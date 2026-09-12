@@ -33,6 +33,10 @@ constexpr const char* kRequiredDeviceExtensions[] = {
 
 bool has_required_extensions(VkPhysicalDevice device, bool headless)
 {
+    if (headless) {
+        // 离屏渲染使用标准 VkRenderPass / VkFramebuffer，无需交换链或 dynamic rendering 扩展
+        return true;
+    }
     std::uint32_t count = 0;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
     std::vector<VkExtensionProperties> available(count);
@@ -40,10 +44,6 @@ bool has_required_extensions(VkPhysicalDevice device, bool headless)
         device, nullptr, &count, available.data());
 
     for (const char* required : kRequiredDeviceExtensions) {
-        if (headless &&
-            std::strcmp(required, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
-            continue;
-        }
         bool found = false;
         for (const auto& ext : available) {
             if (std::strcmp(ext.extensionName, required) == 0) {
@@ -279,7 +279,8 @@ std::vector<VulkanGpuInfo> enumerate_gpus(
         const bool headless = surface == VK_NULL_HANDLE;
         if (props2.properties.apiVersion < VK_API_VERSION_1_2) {
             info.suitable = false;
-            info.rejection_reason = "需要 Vulkan 1.2 或更高版本";
+            info.rejection_reason = "需要 Vulkan 1.2 或更高版本 (api=0x" +
+                std::to_string(props2.properties.apiVersion) + ")";
         } else if (!has_graphics_and_present_queue(device, surface)) {
             info.suitable = false;
             info.rejection_reason = "缺少图形或呈现队列支持";
