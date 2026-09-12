@@ -11,6 +11,10 @@ const int kBenchPointCount = int.fromEnvironment('GS3D_BENCH_POINTS');
 /// 走“粗尺度 LOD + 细尺度 tile”路径）。
 const String kBenchDatasetPath = String.fromEnvironment('GS3D_BENCH_DATASET');
 
+/// 基准专用：启动后向前推进若干次相机缩放（正值放大），
+/// 用于在没有双指手势的自动化通道里进入细尺度 tile 区间。
+const int kBenchZoomSteps = int.fromEnvironment('GS3D_BENCH_ZOOM');
+
 /// 唯一视口状态中枢；拥有引擎、帧和控制动作，Widget 不直接执行 FFI。
 class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dService({
@@ -95,6 +99,9 @@ class GeoScatter3dService extends ChangeNotifier {
       _sourcePointCount = engine.sourcePointCount;
       _pointCount = engine.drawnPointCount;
       _refreshLodSummary(engine);
+      for (var step = 0; step < kBenchZoomSteps; step++) {
+        engine.cameraInput(scrollY: 3.0);
+      }
       _gpuName = _resolveGpuName(engine);
       _ready = true;
       _fpsClock.start();

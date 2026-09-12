@@ -97,9 +97,18 @@ void main() {
       reason: '放大后应进入细尺度 tile 流式（当前 LOD 行：${await lodText()}）',
     );
     expect(tileSummary, contains('驻留'));
-    // 证据输出：本次运行的粗尺度与细尺度规模行。
+    // 证据输出：粗尺度/细尺度规模行 + HUD 性能读数。
+    String hudText(String key) {
+      final finder = find.byKey(ValueKey(key));
+      if (finder.evaluate().isEmpty) return '';
+      return tester.widget<Text>(finder).data ?? '';
+    }
+
     debugPrint('[ACCEPTANCE] coarse="$coarse"');
     debugPrint('[ACCEPTANCE] fine="$tileSummary"');
+    debugPrint('[ACCEPTANCE] metrics="${hudText('viewport_metrics')}"'
+        ' core="${hudText('viewport_render_cost')}"'
+        ' points="${hudText('viewport_status')}"');
 
     // 3. 画面必须仍在出帧（流式未卡死）。
     final frameFinder = find.byKey(const ValueKey('viewport_frame'));
