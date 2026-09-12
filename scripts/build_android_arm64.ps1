@@ -84,5 +84,15 @@ Write-Host "==> Built: $($SoFile.FullName)" -ForegroundColor Green
 # ── 部署到 jniLibs ──────────────────────────────────────────────────────────
 New-Item -ItemType Directory -Force -Path $JniLibDir | Out-Null
 Copy-Item -LiteralPath $SoFile.FullName -Destination (Join-Path $JniLibDir 'libgs3d_ffi.so') -Force
-Write-Host "==> Deployed to $JniLibDir" -ForegroundColor Green
+Write-Host "==> Deployed libgs3d_ffi.so to $JniLibDir" -ForegroundColor Green
+
+# c++_shared STL：ANDROID_STL=c++_shared 时运行时由应用自带，而非系统提供。
+# 未打包此库会导致 dlopen 失败："library libc++_shared.so not found"
+$LibcppSrc = Join-Path $NdkRoot 'toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'
+if (Test-Path $LibcppSrc) {
+    Copy-Item -LiteralPath $LibcppSrc -Destination (Join-Path $JniLibDir 'libc++_shared.so') -Force
+    Write-Host "==> Deployed libc++_shared.so (NDK c++_shared STL runtime)" -ForegroundColor Green
+} else {
+    Write-Warning "libc++_shared.so not found at: $LibcppSrc — dlopen may fail on device"
+}
 Write-Host "==> arm64-v8a cross-compilation complete." -ForegroundColor Green
