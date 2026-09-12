@@ -104,13 +104,28 @@ TEST_CASE("voxel decimation keeps one point per cell and preserves the bbox") {
         min_y = std::min(min_y, point.y);
         max_y = std::max(max_y, point.y);
     }
-    // 「保留每格首点」不保证恰好保留边界极值点，但降采样后仍要覆盖整个范围。
-    CHECK(min_x == 0.0f);
-    CHECK(min_y == 0.0f);
+    // 取质心后代表点落在单元内部，边界由「命中该单元的输入点」决定，
+    // 因此覆盖面允许有不超过一个体素的收缩，但仍须覆盖整个范围。
+    CHECK(min_x >= 0.0f);
+    CHECK(min_x <= 1.0f);
+    CHECK(min_y >= 0.0f);
+    CHECK(min_y <= 1.0f);
     CHECK(max_x >= 30.0f);
     CHECK(max_y >= 30.0f);
     CHECK(max_x <= 31.0f);
     CHECK(max_y <= 31.0f);
+
+    // 抗栅格回归：代表点必须落在单元中心附近，而不是全部吸附在整数格点上
+    // （旧实现「保留首点」会让 100% 的点停在整数格点，屏幕上就是方格接缝）。
+    std::size_t on_integer_grid = 0;
+    for (const auto& point : decimated) {
+        const float frac_x = point.x - std::floor(point.x);
+        const float frac_y = point.y - std::floor(point.y);
+        if (std::abs(frac_x) < 1e-4f && std::abs(frac_y) < 1e-4f) {
+            ++on_integer_grid;
+        }
+    }
+    CHECK(on_integer_grid * 5 < decimated.size());
 }
 
 TEST_CASE("voxel decimation is a no-op for non-positive cells") {

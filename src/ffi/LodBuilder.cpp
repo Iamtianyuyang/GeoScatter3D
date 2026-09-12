@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace gs3d::ffi {
@@ -144,12 +145,31 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
         return points;
     }
 
-    std::unordered_set<std::uint64_t> occupied;
-    // 预期占用格数 ≈ 输出点数：规则栅格 ≈ 1/4，散乱数据更少，预留一半可避免多次 rehash。
-    occupied.reserve(points.size() / 2 + 16);
+    /*
+     * 体素内取质心，而不是「保留第一个点」。
+     *
+     * 保留首点会把点吸附到体素栅格的单元角落上：在斜面/曲面上，代表点会聚成
+     * 规整的栅格点阵，屏幕上就是一块块的方格（真机 LOD 模式可见的接缝感）。
+     * 质心化后点落回单元中心，各层都是同一套栅格、只有疏密差异，表面恢复平滑。
+     * 其余属性（颜色等）沿用该单元遇到的第一个点。
+     *
+     * 用 index_of + 并行累加数组保持输出顺序与输入顺序一致（可复现），
+     * 避免直接遍历 unordered_map 带来的不确定顺序。
+     */
+    std::unordered_map<std::uint64_t, std::size_t> index_of;
+    index_of.reserve(points.size() / 2 + 16);
+
+    struct Accumulator {
+        double sx = 0.0;
+        double sy = 0.0;
+        double sz = 0.0;
+        std::uint64_t count = 0;
+    };
 
     std::vector<gs3d::data::Gs3dPoint> output;
+    std::vector<Accumulator> accumulators;
     output.reserve(points.size() / 2 + 16);
+    accumulators.reserve(points.size() / 2 + 16);
 
     for (const auto& point : points) {
         if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
@@ -158,13 +178,32 @@ std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
         }
         const std::uint64_t key =
             voxel_key(point.x, point.y, point.z, voxel_size, bounds);
-        if (occupied.insert(key).second) {
+        const auto [it, inserted] =
+            index_of.try_emplace(key, output.size());
+        if (inserted) {
             output.push_back(point);
+            accumulators.push_back(Accumulator{});
         }
+        Accumulator& accumulator = accumulators[it->second];
+        accumulator.sx += static_cast<double>(point.x);
+        accumulator.sy += static_cast<double>(point.y);
+        accumulator.sz += static_cast<double>(point.z);
+        ++accumulator.count;
+    }
+
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        const Accumulator& accumulator = accumulators[index];
+        if (accumulator.count <= 1) {
+            continue;
+        }
+        const double inverse = 1.0 / static_cast<double>(accumulator.count);
+        output[index].x = static_cast<float>(accumulator.sx * inverse);
+        output[index].y = static_cast<float>(accumulator.sy * inverse);
+        output[index].z = static_cast<float>(accumulator.sz * inverse);
     }
 
     if (occupied_cells != nullptr) {
-        *occupied_cells = occupied.size();
+        *occupied_cells = output.size();
     }
     return output;
 }
