@@ -152,5 +152,9 @@ C++ 层可以使用异常表达构造失败；跨过 C ABI 时必须捕获异常
 2. ✅ 以 Windows 1.3 和 Android 1.1 的离屏 RGBA 路径为验收基线；
    渲染线程 + 非阻塞帧通道 + 帧资源复用已在 Windows 与 Android arm64 真机
    （三星 Tab S7 / Adreno 650）上验证。
-3. ⏭ 再接入窗口 Surface/swapchain 适配；不得为兼容旧 Viewer 把 GLFW 引入离屏目标。
-4. 每增加一个前端能力，同时增加 ABI、引擎单测和 Flutter 投影测试。
+3. ✅ 大规模数据的双层渲染：粗尺度读 `lod.gs3dlod` 按点预算选层，细尺度由
+   `tiles.gs3dtiles(.index)` 按视锥 + 屏幕空间误差选取并流式上传全精度点，
+   合成时用 `kSpatialClip` 让 LOD 只在瓦片未覆盖区域出现。已在 Tab S7 真机
+   验证「贴合视图走 LOD、拉近后切瓦片全精度」。
+4. ⏭ 再接入窗口 Surface/swapchain 适配；不得为兼容旧 Viewer 把 GLFW 引入离屏目标。
+5. 每增加一个前端能力，同时增加 ABI、引擎单测和 Flutter 投影测试。

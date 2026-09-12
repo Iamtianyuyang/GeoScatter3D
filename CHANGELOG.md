@@ -3,6 +3,30 @@
 版本号沿用 Git 提交历史; 未打 release tag 前按里程碑组织。条目按时间倒序,
 日期为提交日期 (GitHub 仓库 `Iamtianyuyang/GeoScatter3D`)。
 
+## 2026-09-12 — 大规模点云：粗尺度 LOD + 细尺度 tile
+
+- **粗尺度 LOD（千万级可用）**: `LodBuilder` 体素降采样建链（间距用连续块
+  采样估计，层体素按 2 的幂增长并带过度降采样自纠正）；优先读预处理产出的
+  `lod.gs3dlod`，缺失才现场建链；运行期按点预算选层绘制。
+- **细尺度 tile（全精度原始点）**: kernel 解析 `tiles.gs3dtiles(.index)`，
+  按旧 Viewer 的策略选瓦片——视锥剔除 + 屏幕空间误差（投影 ≥50px 才要
+  全精度），先读后传（每帧限流读取 + 上传字节预算），合成顺序为
+  coarsest 兜底 → 选中 LOD（全套所需瓦片驻留时按并集 bbox 做 `kSpatialClip`）
+  → 瓦片全精度叠加；选择变化不清空当前显示集（防闪烁）。
+- **修复真机必现崩溃**: `PointCloudTileGpu` 的共享 staging buffer 不在驻留表，
+  `clear()` 不释放它，导致其在 `VulkanContext` 之后析构——悬垂 context 调
+  `vkDestroyBuffer` 触发校验层报错与 CRT abort（`0xC0000409`）。新增
+  `PointCloudTileGpu::destroy()` 并在释放设备前调用。
+- **可观测性**: 引擎诊断暴露 `lod.*`（源/绘制点数、层号、建链/上传耗时）与
+  `tile_*`（需求/驻留/上传字节/裁剪状态），HUD 显示规模行；
+  Android 日志改走 `__android_log_write`（tag `gs3d`），真机 logcat 可用。
+- **工具**: `tools/gs3d_bench_bundle` 生成合成 bundle（source + lod + tiles），
+  1M 点 ≈ 16MB + 46MB(5 层) + 100 瓦片(20MB)。
+- **验收**: 真机 Tab S7 —— 1000 万合成点 37 FPS / 核心 5.6ms（LOD 5/5）；
+  250k 点 + 400 瓦片 bundle 拉近后 `tile 3.3 万 点 · 驻留 52/129`（细尺度
+  切换成功）；Windows E2E 覆盖 lod sidecar + 瓦片驻留/合成断言；
+  ctest 30/30、flutter test 17/17、analyze 与 guardrails 全绿。
+
 ## 2026-09-12 — Vulkan 核心：渲染线程 + 非阻塞帧通道
 
 - **渲染线程独占 Vulkan (vulkan-core.md §4)**: 新增 `gs3d::ffi::EngineHost`
