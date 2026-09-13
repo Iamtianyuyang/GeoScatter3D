@@ -540,6 +540,13 @@ std::uint64_t HeadlessRenderKernel::effective_point_budget() const {
 }
 
 std::size_t HeadlessRenderKernel::choose_lod_index() const {
+    /*
+     * 底图选层的前提是「瓦片层盖住了整屏可见面」（见 tile_cover_view_）。
+     * 判据曾经是「只要有可绘制瓦片就算盖住」（tile_layers_active_）：瓦片是按投影
+     * 尺寸选的，中等缩放（真机 1M / fov≈25°）下只有近处一条带达标，远处半个屏幕
+     * 根本没瓦片，底图却被退回粗层 → 上半屏几乎空白（用户看到的就是「半个模型」）。
+     * 现在要求：有可绘制瓦片 ∧ 全部驻留 ∧ 视锥内没有瓦片因投影太小被漏选。
+     */
     const std::size_t count = lod_.level_count();
     if (count <= 1) {
         return 0;
@@ -554,7 +561,7 @@ std::size_t HeadlessRenderKernel::choose_lod_index() const {
      * 没有第 2 条时，放大后整屏只剩 12.5 万点/整个数据集 → 屏幕上点距 8~60 px，
      * 看起来就是「模型缺了一半」（真机截图即为此）。
      */
-    const bool need_dense_base = !tile_layers_active_;
+    const bool need_dense_base = !tile_cover_view_;  // 见下方注释与 update_tile_streaming_locked()
     if (!need_dense_base) {
         for (std::size_t index = 0; index < count; ++index) {
             if (lod_.level(index).gpu_point_count <= budget) {
@@ -911,6 +918,8 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     tile_clip_active_ = false;
     tile_all_resident_ = false;
     tile_layers_active_ = false;
+    tile_cover_view_ = false;
+    tile_below_threshold_ = 0;
     tile_pins_.clear();
 
     if (!tile_reader_ || !tile_reader_->valid() || !tile_cache_) {
@@ -935,6 +944,8 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     const auto selection = tile_selection_.update(camera_, tile_index_view_);
     tile_needed_ids_ = selection.enabled ? selection.tile_ids
                                          : std::vector<std::uint64_t>{};
+    // 可见但投影太小、永远轮不到瓦片的格子数：那些区域只有底图兑底。
+    tile_below_threshold_ = selection.tiles_below_threshold;
 
     /*
      * 点预算截断：selection.tile_ids 已按屏幕投影像素降序，从尾部丢掉最小的瓦片。
@@ -995,6 +1006,8 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
             << " fov=" << camera_.fov_y_degrees()
             << " ortho_h=" << camera_.ortho_height()
             << " min_px=" << config_.min_tile_pixel_size
+            << " below_px=" << selection.tiles_below_threshold
+            << " cover_view=" << (tile_cover_view_ ? 1 : 0)
             << " viewport=" << config_.width << 'x' << config_.height << '\n';
     }
 
@@ -1111,6 +1124,14 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
 
     tile_layers_active_ = !tile_drawable_ids_.empty();
     tile_clip_active_ = tile_all_resident_ && any && coverage_complete;
+    /*
+     * 瓦片层是否盖住了整屏可见面（底图只有这时才允许退回粗层，见 choose_lod_index）：
+     *   1) 确实有可绘制瓦片；
+     *   2) 所需瓦片全部驻留（ramp 未完时那些区域只有底图）；
+     *   3) 视锥内没有「投影尺寸未达门槛」的瓦片 —— 那些格子永远轮不到瓦片。
+     */
+    tile_cover_view_ = tile_layers_active_ && tile_all_resident_ &&
+                       tile_below_threshold_ == 0;
     if (any) {
         tile_clip_bounds_ = gs3d::core::Bounds3f{
             min_x, min_y, min_z, max_x, max_y, max_z

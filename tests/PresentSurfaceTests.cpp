@@ -554,6 +554,11 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
     CHECK(state->tile_needed == 0);
     CHECK(state->tile_planned_points == 0);
     CHECK(state->tiles_available);
+    /*
+     * 回归（真机「半个模型」）：瓦片层一旦没盖住整屏可见面（被预算剔掉、
+     * 或还有可见瓦片因投影太小被门槛刷掉），底图就不能退回粗层。
+     */
+    CHECK_FALSE(state->tile_cover_view);
 
     // 预算放开时不应截断（小数据集行为不变）。
     gs3d::ffi::EngineHost generous;

@@ -130,6 +130,8 @@ TileSelectionResult TileSelection::update(
             tile_projected_pixels(camera, config_, header, record);
 
         if (projected_pixels < config_.min_tile_pixel_size) {
+            // 可见但太小：这块屏幕区域靠底图兑底（见 tiles_below_threshold）。
+            ++result.tiles_below_threshold;
             continue;
         }
 

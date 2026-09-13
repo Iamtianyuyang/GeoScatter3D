@@ -258,6 +258,10 @@ public:
         std::uint64_t tile_uploaded_bytes_frame = 0;
         bool tile_clip_active = false;
         bool tiles_fully_resident = false;
+        /// 瓦片层是否盖住整屏可见面；false → 底图必须够密（见 choose_lod_index）。
+        bool tile_cover_view = false;
+        /// 视锥内投影尺寸未达门槛的瓦片数（>0 就是底图被逼变密的原因）。
+        std::uint32_t tile_below_threshold = 0;
     };
 
     [[nodiscard]] CameraState camera_state() const;
@@ -356,8 +360,12 @@ private:
     /// 最近一次选取（截断前）的瓦片数与计划点数，供诊断与测试断言。
     std::uint64_t tile_selected_ = 0;
     std::uint64_t tile_planned_points_ = 0;
-    /// 本帧是否真的绘制了瓦片（决定底图用粗层还是随放大变细）。
+    /// 本帧是否真的绘制了瓦片（决定底图选层的前提之一）。
     bool tile_layers_active_ = false;
+    /// 本帧视锥内「投影尺寸未达门槛」的瓦片数；>0 说明有可见面只有底图覆盖。
+    std::uint32_t tile_below_threshold_ = 0;
+    /// 瓦片层是否盖住了整屏可见面（false → 底图必须足够密，见 choose_lod_index）。
+    bool tile_cover_view_ = false;
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

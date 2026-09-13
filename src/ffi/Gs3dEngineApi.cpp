@@ -513,6 +513,8 @@ const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e) {
             {"tile_uploaded_bytes_frame", lod.tile_uploaded_bytes_frame},
             {"tile_clip_active", lod.tile_clip_active},
             {"tiles_fully_resident", lod.tiles_fully_resident},
+            {"tile_cover_view", lod.tile_cover_view},
+            {"tile_below_threshold", lod.tile_below_threshold},
         };
         diag["gpu"] = {
             {"name", gpu.name},

@@ -1281,6 +1281,66 @@ void test_tile_selection_normalizes_view_scale()
     );
 }
 
+void test_tile_selection_counts_visible_tiles_below_threshold()
+{
+    /*
+     * 回归（真机 1M / fov≈25° 的「半个模型」）：瓦片是按投影尺寸选的，中等缩放下
+     * 只有近处一条带达标 → 远处半个屏幕根本没瓦片。那些格子必须被计数，
+     * 底图选层才能知道「瓦片层并未盖住整屏」而保持够密（见 choose_lod_index）。
+     */
+    gs3d::camera::Camera camera;
+    camera.set_viewport(1200, 700);
+    camera.set_perspective(90.0f, 0.1f, 1000.0f);
+    camera.look_at(
+        {0.0f, 0.0f, 120.0f},
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f}
+    );
+
+    gs3d::core::TileIndexView tile_index;
+    tile_index.header.tile_size_x = 10.0f;
+    tile_index.header.tile_size_y = 10.0f;
+    tile_index.header.grid_origin_x = 0.0f;
+    tile_index.header.grid_origin_y = 0.0f;
+    tile_index.header.bbox_min_z = 0.0f;
+    tile_index.header.bbox_max_z = 10.0f;
+    // tile_size / (dist × tan45°) × 700 = 7000 / dist
+    // 近处格：dist≈115 → 約 61 px ≥ 50 → 选中
+    tile_index.records.push_back({
+        1, 0, 0, 100,
+        0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 10.0f
+    });
+    // 远处格：仍在视锥内（z=5 平面半宽 115），但 dist≈156 → 約 45 px < 50
+    tile_index.records.push_back({
+        2, 10, 0, 100,
+        100.0f, 0.0f, 0.0f, 110.0f, 10.0f, 10.0f
+    });
+
+    gs3d::render::TileSelectionConfig config;
+    config.min_tile_pixel_size = 50.0f;
+    gs3d::render::TileSelection selection(config);
+    const auto result = selection.update(camera, tile_index);
+
+    expect(result.enabled, "tile selection is enabled at this distance");
+    expect(
+        result.tile_ids.size() == 1 && result.tile_ids.front() == 1,
+        "only the near tile reaches the projected-size threshold"
+    );
+    expect(
+        result.tiles_below_threshold == 1,
+        "visible-but-too-small tiles are counted so the base LOD stays dense"
+    );
+
+    // 门槛降到两项都达标：计数器必须归零（否则底图会一直被迫变密）。
+    config.min_tile_pixel_size = 10.0f;
+    selection.set_config(config);
+    const auto lowered = selection.update(camera, tile_index);
+    expect(
+        lowered.tiles_below_threshold == 0 && lowered.tile_ids.size() == 2,
+        "lowering the threshold clears the below-threshold counter"
+    );
+}
+
 void test_zoom_caps_depth_ratio_for_close_large_scene()
 {
     // Ortho near/far are set by fit_bounds() and stay fixed — zoom does
@@ -4248,6 +4308,7 @@ void test_scenario_linked_viewports_after_propagation()
     LEGACY_TEST_CASE(test_tile_selection_uses_mapped_height_space)
     LEGACY_TEST_CASE(test_tile_selection_does_not_cap_visible_tiles)
     LEGACY_TEST_CASE(test_tile_selection_normalizes_view_scale)
+    LEGACY_TEST_CASE(test_tile_selection_counts_visible_tiles_below_threshold)
     LEGACY_TEST_CASE(test_zoom_caps_depth_ratio_for_close_large_scene)
     LEGACY_TEST_CASE(test_rotate_refreshes_depth_ratio)
     LEGACY_TEST_CASE(test_pan_refreshes_depth_ratio)

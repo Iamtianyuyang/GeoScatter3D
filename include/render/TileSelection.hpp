@@ -54,6 +54,15 @@ struct TileSelectionResult {
     gs3d::core::Bounds3f query_bounds{};
     std::uint32_t total_candidate_tiles = 0;
 
+    /**
+     * 与视锥相交、但投影尺寸低于 `min_tile_pixel_size` 而**未**被选中的瓦片数。
+     *
+     * 这些区域只有底图（LOD）覆盖。底图选层必须知道这件事：瓦片层只要露出一块
+     * 可见面，底图就不能退回粗层，否则那块区域会稀疏到像「模型缺一半」
+     * （真机 1M / fov≈25°：瓦片只盖住近处一条带，远处那半屏只剩 6.3 万点底图）。
+     */
+    std::uint32_t tiles_below_threshold = 0;
+
     std::vector<std::uint64_t> tile_ids;
 };
 
