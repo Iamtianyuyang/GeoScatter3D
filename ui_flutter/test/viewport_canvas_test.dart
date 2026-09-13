@@ -40,35 +40,29 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
-  testWidgets(
-    '纹理尺寸按设备 dpr 折算成物理像素（与屏幕 1:1）',
-    (tester) async {
-      // 默认测试视口是 2400×1800 物理 / dpr 3（逻辑 800×600）。
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(tester.view.reset);
-      final engine = FakeEngine();
-      final binder = FakePresentSurfaceBinder();
-      final service = GeoScatter3dService(
-        engine: engine,
-        presentBinder: binder,
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: ViewportCanvas(service: service)),
-        ),
-      );
-      for (var i = 0; i < 4 && !service.zeroCopyPresent; i++) {
-        await tester.pump();
-      }
-      expect(service.zeroCopyPresent, isTrue);
-      // 逻辑 1200×900 × dpr 2 = 物理 2400×1800：与屏幕像素一一对应。
-      expect(binder.attachSizes.single, (2400, 1800));
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+  testWidgets('纹理尺寸按设备 dpr 折算成物理像素（与屏幕 1:1）', (tester) async {
+    // 默认测试视口是 2400×1800 物理 / dpr 3（逻辑 800×600）。
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final engine = FakeEngine();
+    final binder = FakePresentSurfaceBinder();
+    final service = GeoScatter3dService(engine: engine, presentBinder: binder);
+    addTearDown(service.dispose);
+    await service.initialize();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ViewportCanvas(service: service)),
+      ),
+    );
+    for (var i = 0; i < 4 && !service.zeroCopyPresent; i++) {
+      await tester.pump();
+    }
+    expect(service.zeroCopyPresent, isTrue);
+    // 逻辑 1200×900 × dpr 2 = 物理 2400×1800：与屏幕像素一一对应。
+    expect(binder.attachSizes.single, (2400, 1800));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'native startup failure displays its cause, without a fake viewport',
@@ -120,4 +114,23 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('embedded viewport leaves telemetry to the bottom shell', (
+    tester,
+  ) async {
+    final service = GeoScatter3dService(engine: FakeEngine());
+    addTearDown(service.dispose);
+    await service.initialize();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ViewportCanvas(service: service, embedded: true)),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('telemetry_hud')), findsNothing);
+    expect(find.byKey(const ValueKey('viewport_gestures')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

@@ -138,7 +138,12 @@ class GeoScatter3dService extends ChangeNotifier {
         return;
       }
       _engine = engine;
-      engine.setBackground(1.0, 1.0, 1.0);
+      engine.setBackground(13 / 255, 17 / 255, 23 / 255);
+      // Black backgrounds need a bright, cheap control-point colormap:
+      // Turbo avoids both the dark low end of seismic and rainbow256's
+      // 256-entry fragment branch.
+      engine.setColormap(6);
+      engine.setPointSize(1.5);
       final size = _pendingSize;
       final pixelRatio = _pendingPixelRatio;
       _pendingSize = null;

@@ -153,6 +153,225 @@ class TelemetryHud extends StatelessWidget {
   }
 }
 
+/// 底部状态栏使用的横向遥测投影。
+class TelemetryStatusBar extends StatelessWidget {
+  const TelemetryStatusBar({
+    super.key,
+    required this.fps,
+    required this.frameTimeMs,
+    this.renderTimeMs = 0,
+    required this.visiblePoints,
+    this.lodSummary = '',
+    this.gpuName = 'Vulkan GPU',
+    this.status = '就绪',
+    this.renderPath = '',
+    this.compact = false,
+    this.showStatusPill = true,
+  });
+
+  final double fps;
+  final double frameTimeMs;
+  final double renderTimeMs;
+  final int visiblePoints;
+  final String lodSummary;
+  final String gpuName;
+  final String status;
+  final String renderPath;
+  final bool compact;
+  final bool showStatusPill;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final typography = tokens.typography;
+    final isReady = status.contains('就绪');
+    final transport = renderPath.isEmpty ? 'VULKAN' : 'VULKAN · $renderPath';
+    final points = TelemetryHud._formatPointCount(visiblePoints);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final dense =
+            compact ||
+            textScale > tokens.sizes.metricStackScaleThreshold ||
+            constraints.maxWidth < 900;
+        return Row(
+          children: [
+            if (showStatusPill)
+              _StatusPill(label: status, isReady: isReady)
+            else
+              _StatusLabel(label: status, isReady: isReady),
+            SizedBox(width: tokens.spacing.md),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    transport,
+                    key: const ValueKey('status_render_path'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: typography.meta.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                  if (!dense) ...[
+                    SizedBox(height: tokens.spacing.xs),
+                    Text(
+                      gpuName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: typography.meta.copyWith(color: colors.textMuted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(width: tokens.spacing.lg),
+            if (dense)
+              Expanded(
+                child: Text(
+                  '${fps.toStringAsFixed(1)} FPS'
+                  ' · ${frameTimeMs.toStringAsFixed(2)} ms'
+                  ' · $points 点'
+                  ' · 引擎 ${renderTimeMs > 0 ? renderTimeMs.toStringAsFixed(2) : '--'} ms',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: typography.status.copyWith(color: colors.textPrimary),
+                ),
+              )
+            else ...[
+              _InlineTelemetryMetric(
+                label: 'FPS',
+                value: fps.toStringAsFixed(1),
+                accent: true,
+              ),
+              _TelemetryDivider(),
+              _InlineTelemetryMetric(
+                label: '帧耗时',
+                value: '${frameTimeMs.toStringAsFixed(2)} ms',
+              ),
+              _TelemetryDivider(),
+              _InlineTelemetryMetric(label: '可见点', value: points),
+              _TelemetryDivider(),
+              _InlineTelemetryMetric(
+                label: '引擎',
+                value: renderTimeMs > 0
+                    ? '${renderTimeMs.toStringAsFixed(2)} ms'
+                    : '--',
+              ),
+              if (lodSummary.isNotEmpty) ...[
+                SizedBox(width: tokens.spacing.lg),
+                Flexible(
+                  child: Text(
+                    lodSummary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: typography.meta.copyWith(color: colors.textMuted),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatusLabel extends StatelessWidget {
+  const _StatusLabel({required this.label, required this.isReady});
+
+  final String label;
+  final bool isReady;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final dot = isReady ? colors.statusReady : colors.textMuted;
+    final foreground = isReady ? colors.statusReadyText : colors.textSecondary;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: tokens.sizes.statusDot,
+          height: tokens.sizes.statusDot,
+          decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+        ),
+        SizedBox(width: tokens.spacing.sm),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.typography.status.copyWith(color: foreground),
+        ),
+      ],
+    );
+  }
+}
+
+class _InlineTelemetryMetric extends StatelessWidget {
+  const _InlineTelemetryMetric({
+    required this.label,
+    required this.value,
+    this.accent = false,
+  });
+
+  final String label;
+  final String value;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.sm),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.typography.value.copyWith(
+              color: accent ? colors.accent : colors.textPrimary,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.xs),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.typography.meta.copyWith(color: colors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TelemetryDivider extends StatelessWidget {
+  const _TelemetryDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return SizedBox(
+      width: tokens.effects.hairline,
+      height: tokens.sizes.controlDividerHeight,
+      child: ColoredBox(color: tokens.colors.hudDivider),
+    );
+  }
+}
+
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.label, required this.isReady});
 

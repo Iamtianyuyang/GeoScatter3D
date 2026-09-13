@@ -17,7 +17,8 @@ class AppTokens extends ThemeExtension<AppTokens> {
 
   static const dark = AppTokens(
     colors: AppColorTokens(
-      viewport: Color(0xFFFFFFFF),
+      viewport: Color(0xFF0D1117),
+      shellBackground: Color(0xFFF2F6FA),
       hudSurface: Color(0xFFFFFFFF),
       hudSurfaceTop: Color(0xFFFFFFFF),
       hudSurfaceBottom: Color(0xFFFFFFFF),
@@ -33,6 +34,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       textPrimary: Color(0xFF0D1B2A),
       textSecondary: Color(0xFF556575),
       textMuted: Color(0xFF5F6E7D),
+      placeholder: Color(0xFFE6ECF3),
       error: Color(0xFFE5484D),
     ),
     spacing: AppSpacingTokens(xs: 4, sm: 8, md: 12, lg: 16, xl: 24),
@@ -49,6 +51,15 @@ class AppTokens extends ThemeExtension<AppTokens> {
       controlIconSize: 20,
       metricDividerHeight: 48,
       metricStackScaleThreshold: 1.3,
+      shellHeaderHeight: 56,
+      shellFooterHeight: 56,
+      shellFooterCollapsedHeight: 44,
+      shellPanelRailWidth: 48,
+      shellSidebarBreakpoint: 900,
+      shellFooterBreakpoint: 650,
+      navItemHeight: 44,
+      placeholderBarHeight: 12,
+      lodBarHeight: 14,
     ),
     typography: AppTypographyTokens(
       brand: TextStyle(
@@ -106,6 +117,27 @@ class AppTokens extends ThemeExtension<AppTokens> {
         fontSize: 13,
         fontWeight: FontWeight.w600,
         height: 1.1,
+      ),
+      shellBrand: TextStyle(
+        fontFamily: 'GeoSans',
+        fontFamilyFallback: <String>['NotoSansCJKsc'],
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        height: 1.1,
+      ),
+      sectionTitle: TextStyle(
+        fontFamily: 'GeoSans',
+        fontFamilyFallback: <String>['NotoSansCJKsc'],
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
+      navLabel: TextStyle(
+        fontFamily: 'GeoSans',
+        fontFamilyFallback: <String>['NotoSansCJKsc'],
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        height: 1.2,
       ),
     ),
     effects: AppEffectTokens(
@@ -173,6 +205,7 @@ extension AppTokensContext on BuildContext {
 class AppColorTokens {
   const AppColorTokens({
     required this.viewport,
+    required this.shellBackground,
     required this.hudSurface,
     required this.hudSurfaceTop,
     required this.hudSurfaceBottom,
@@ -188,10 +221,12 @@ class AppColorTokens {
     required this.textPrimary,
     required this.textSecondary,
     required this.textMuted,
+    required this.placeholder,
     required this.error,
   });
 
   final Color viewport;
+  final Color shellBackground;
   final Color hudSurface;
   final Color hudSurfaceTop;
   final Color hudSurfaceBottom;
@@ -207,11 +242,13 @@ class AppColorTokens {
   final Color textPrimary;
   final Color textSecondary;
   final Color textMuted;
+  final Color placeholder;
   final Color error;
 
   static AppColorTokens lerp(AppColorTokens a, AppColorTokens b, double t) {
     return AppColorTokens(
       viewport: Color.lerp(a.viewport, b.viewport, t)!,
+      shellBackground: Color.lerp(a.shellBackground, b.shellBackground, t)!,
       hudSurface: Color.lerp(a.hudSurface, b.hudSurface, t)!,
       hudSurfaceTop: Color.lerp(a.hudSurfaceTop, b.hudSurfaceTop, t)!,
       hudSurfaceBottom: Color.lerp(a.hudSurfaceBottom, b.hudSurfaceBottom, t)!,
@@ -235,6 +272,7 @@ class AppColorTokens {
       textPrimary: Color.lerp(a.textPrimary, b.textPrimary, t)!,
       textSecondary: Color.lerp(a.textSecondary, b.textSecondary, t)!,
       textMuted: Color.lerp(a.textMuted, b.textMuted, t)!,
+      placeholder: Color.lerp(a.placeholder, b.placeholder, t)!,
       error: Color.lerp(a.error, b.error, t)!,
     );
   }
@@ -312,6 +350,15 @@ class AppSizeTokens {
     required this.controlIconSize,
     required this.metricDividerHeight,
     required this.metricStackScaleThreshold,
+    required this.shellHeaderHeight,
+    required this.shellFooterHeight,
+    required this.shellFooterCollapsedHeight,
+    required this.shellPanelRailWidth,
+    required this.shellSidebarBreakpoint,
+    required this.shellFooterBreakpoint,
+    required this.navItemHeight,
+    required this.placeholderBarHeight,
+    required this.lodBarHeight,
   });
 
   final double hudMaxWidth;
@@ -325,6 +372,15 @@ class AppSizeTokens {
   final double controlIconSize;
   final double metricDividerHeight;
   final double metricStackScaleThreshold;
+  final double shellHeaderHeight;
+  final double shellFooterHeight;
+  final double shellFooterCollapsedHeight;
+  final double shellPanelRailWidth;
+  final double shellSidebarBreakpoint;
+  final double shellFooterBreakpoint;
+  final double navItemHeight;
+  final double placeholderBarHeight;
+  final double lodBarHeight;
 
   static AppSizeTokens lerp(AppSizeTokens a, AppSizeTokens b, double t) {
     double mix(double from, double to) => from + (to - from) * t;
@@ -343,6 +399,24 @@ class AppSizeTokens {
         a.metricStackScaleThreshold,
         b.metricStackScaleThreshold,
       ),
+      shellHeaderHeight: mix(a.shellHeaderHeight, b.shellHeaderHeight),
+      shellFooterHeight: mix(a.shellFooterHeight, b.shellFooterHeight),
+      shellFooterCollapsedHeight: mix(
+        a.shellFooterCollapsedHeight,
+        b.shellFooterCollapsedHeight,
+      ),
+      shellPanelRailWidth: mix(a.shellPanelRailWidth, b.shellPanelRailWidth),
+      shellSidebarBreakpoint: mix(
+        a.shellSidebarBreakpoint,
+        b.shellSidebarBreakpoint,
+      ),
+      shellFooterBreakpoint: mix(
+        a.shellFooterBreakpoint,
+        b.shellFooterBreakpoint,
+      ),
+      navItemHeight: mix(a.navItemHeight, b.navItemHeight),
+      placeholderBarHeight: mix(a.placeholderBarHeight, b.placeholderBarHeight),
+      lodBarHeight: mix(a.lodBarHeight, b.lodBarHeight),
     );
   }
 }
@@ -358,6 +432,9 @@ class AppTypographyTokens {
     required this.label,
     required this.meta,
     required this.status,
+    required this.shellBrand,
+    required this.sectionTitle,
+    required this.navLabel,
   });
 
   final TextStyle brand;
@@ -368,6 +445,9 @@ class AppTypographyTokens {
   final TextStyle label;
   final TextStyle meta;
   final TextStyle status;
+  final TextStyle shellBrand;
+  final TextStyle sectionTitle;
+  final TextStyle navLabel;
 
   static AppTypographyTokens lerp(
     AppTypographyTokens a,
@@ -383,6 +463,9 @@ class AppTypographyTokens {
       label: TextStyle.lerp(a.label, b.label, t)!,
       meta: TextStyle.lerp(a.meta, b.meta, t)!,
       status: TextStyle.lerp(a.status, b.status, t)!,
+      shellBrand: TextStyle.lerp(a.shellBrand, b.shellBrand, t)!,
+      sectionTitle: TextStyle.lerp(a.sectionTitle, b.sectionTitle, t)!,
+      navLabel: TextStyle.lerp(a.navLabel, b.navLabel, t)!,
     );
   }
 }

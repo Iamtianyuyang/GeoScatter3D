@@ -9,6 +9,8 @@ class FakeEngine implements Gs3dEngine {
   int sampleResult = 0;
   int? syntheticPoints;
   int? pointBudget;
+  int? colormap;
+  double? pointSize;
   List<(int, int)> sizes = [];
   final List<double> viewScales = [];
   Map<String, double>? input;
@@ -72,6 +74,16 @@ class FakeEngine implements Gs3dEngine {
   @override
   void setPointBudget(int maxPoints) {
     pointBudget = maxPoints;
+  }
+
+  @override
+  void setColormap(int index) {
+    colormap = index;
+  }
+
+  @override
+  void setPointSize(double size) {
+    pointSize = size;
   }
 
   @override

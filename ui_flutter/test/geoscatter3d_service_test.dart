@@ -25,7 +25,9 @@ void main() {
       await service.initialize();
       await service.initialize();
       expect(engine.loadCount, 1);
-      expect(engine.background, (1.0, 1.0, 1.0, 1.0));
+      expect(engine.background, (13 / 255, 17 / 255, 23 / 255, 1.0));
+      expect(engine.colormap, 6);
+      expect(engine.pointSize, 1.5);
       expect(service.ready, isTrue);
       expect(service.pointCount, 10000);
       service.dispose();

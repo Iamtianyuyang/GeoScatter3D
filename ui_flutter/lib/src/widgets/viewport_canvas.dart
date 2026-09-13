@@ -6,19 +6,20 @@ import 'package:flutter/scheduler.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../ffi/gs3d_engine.dart';
 import '../theme/app_tokens.dart';
-import 'telemetry_hud.dart';
 
 /// 视口只投影服务状态并转发输入；不直接调度原生引擎。
 class ViewportCanvas extends StatefulWidget {
   final Gs3dEngine? engine;
   final GeoScatter3dService? service;
   final bool autoLoadSample;
+  final bool embedded;
 
   const ViewportCanvas({
     super.key,
     this.engine,
     this.service,
     this.autoLoadSample = true,
+    this.embedded = false,
   }) : assert(engine == null || service == null);
 
   @override
@@ -170,27 +171,6 @@ class _ViewportCanvasState extends State<ViewportCanvas>
               ),
             ),
 
-            // 左上角悬浮实时遥测 HUD
-            Positioned(
-              top:
-                  MediaQuery.of(context).padding.top +
-                  context.tokens.spacing.lg,
-              left: context.tokens.spacing.lg,
-              right: context.tokens.spacing.lg,
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: TelemetryHud(
-                  fps: _service.fps,
-                  frameTimeMs: _service.frameTimeMs,
-                  renderTimeMs: _service.renderTimeMs,
-                  visiblePoints: _service.pointCount,
-                  lodSummary: _service.lodSummary,
-                  gpuName: _service.gpuName,
-                  status: _service.status,
-                  renderPath: _service.renderPath,
-                ),
-              ),
-            ),
             _buildViewportControls(context),
           ],
         );
@@ -258,110 +238,108 @@ class _ViewportCanvasState extends State<ViewportCanvas>
       );
     }
 
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.bottomRight,
-        child: Padding(
-          padding: EdgeInsets.all(tokens.spacing.lg),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: tokens.sizes.controlBarMaxWidth,
-            ),
-            child: ClipRRect(
-              borderRadius: tokens.radii.panelRadius,
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(
-                  sigmaX: tokens.effects.hudBlur,
-                  sigmaY: tokens.effects.hudBlur,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        tokens.colors.hudSurfaceTop,
-                        tokens.colors.hudSurfaceBottom,
-                      ],
-                    ),
-                    borderRadius: tokens.radii.panelRadius,
-                    border: Border.all(
-                      color: tokens.colors.hudBorder,
-                      width: tokens.effects.hairline,
-                    ),
-                    boxShadow: [tokens.effects.panelShadow],
+    final controls = Align(
+      alignment: Alignment.bottomRight,
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.lg),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: tokens.sizes.controlBarMaxWidth,
+          ),
+          child: ClipRRect(
+            borderRadius: tokens.radii.panelRadius,
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(
+                sigmaX: tokens.effects.hudBlur,
+                sigmaY: tokens.effects.hudBlur,
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      tokens.colors.hudSurfaceTop,
+                      tokens.colors.hudSurfaceBottom,
+                    ],
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: tokens.spacing.md,
-                      vertical: tokens.spacing.xs,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (kDebugControls) ...[
-                          Flexible(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: tokens.sizes.debugStatsMaxWidth,
+                  borderRadius: tokens.radii.panelRadius,
+                  border: Border.all(
+                    color: tokens.colors.hudBorder,
+                    width: tokens.effects.hairline,
+                  ),
+                  boxShadow: [tokens.effects.panelShadow],
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.md,
+                    vertical: tokens.spacing.xs,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (kDebugControls) ...[
+                        Flexible(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: tokens.sizes.debugStatsMaxWidth,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: tokens.spacing.md,
                               ),
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: tokens.spacing.md,
-                                ),
-                                child: Text(
-                                  _service.debugStats.isEmpty
-                                      ? 'debug: 等待遥测'
-                                      : _service.debugStats,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: tokens.typography.meta.copyWith(
-                                    color: tokens.colors.textPrimary,
-                                  ),
+                              child: Text(
+                                _service.debugStats.isEmpty
+                                    ? 'debug: 等待遥测'
+                                    : _service.debugStats,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tokens.typography.meta.copyWith(
+                                  color: tokens.colors.textPrimary,
                                 ),
                               ),
                             ),
                           ),
-                          SizedBox(width: tokens.spacing.md),
-                          Container(
-                            width: tokens.effects.hairline,
-                            height: tokens.sizes.controlDividerHeight,
-                            color: tokens.colors.hudDivider,
-                          ),
-                          SizedBox(width: tokens.spacing.md),
-                          actionButton(
-                            key: const ValueKey('camera_zoom_out'),
-                            tooltip: '缩小',
-                            icon: Icons.remove,
-                            onPressed: canControl
-                                ? () => _action('camera.input', {
-                                    'scrollY': -kDebugZoomStep,
-                                  })
-                                : null,
-                          ),
-                          SizedBox(width: tokens.spacing.sm),
-                          actionButton(
-                            key: const ValueKey('camera_zoom_in'),
-                            tooltip: '放大',
-                            icon: Icons.add,
-                            onPressed: canControl
-                                ? () => _action('camera.input', {
-                                    'scrollY': kDebugZoomStep,
-                                  })
-                                : null,
-                          ),
-                          SizedBox(width: tokens.spacing.sm),
-                        ],
+                        ),
+                        SizedBox(width: tokens.spacing.md),
+                        Container(
+                          width: tokens.effects.hairline,
+                          height: tokens.sizes.controlDividerHeight,
+                          color: tokens.colors.hudDivider,
+                        ),
+                        SizedBox(width: tokens.spacing.md),
                         actionButton(
-                          key: const ValueKey('camera_reset'),
-                          tooltip: '复位相机',
-                          icon: Icons.center_focus_strong,
+                          key: const ValueKey('camera_zoom_out'),
+                          tooltip: '缩小',
+                          icon: Icons.remove,
                           onPressed: canControl
-                              ? () => _action('camera.reset')
+                              ? () => _action('camera.input', {
+                                  'scrollY': -kDebugZoomStep,
+                                })
                               : null,
                         ),
+                        SizedBox(width: tokens.spacing.sm),
+                        actionButton(
+                          key: const ValueKey('camera_zoom_in'),
+                          tooltip: '放大',
+                          icon: Icons.add,
+                          onPressed: canControl
+                              ? () => _action('camera.input', {
+                                  'scrollY': kDebugZoomStep,
+                                })
+                              : null,
+                        ),
+                        SizedBox(width: tokens.spacing.sm),
                       ],
-                    ),
+                      actionButton(
+                        key: const ValueKey('camera_reset'),
+                        tooltip: '复位相机',
+                        icon: Icons.center_focus_strong,
+                        onPressed: canControl
+                            ? () => _action('camera.reset')
+                            : null,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -370,6 +348,8 @@ class _ViewportCanvasState extends State<ViewportCanvas>
         ),
       ),
     );
+
+    return widget.embedded ? controls : SafeArea(child: controls);
   }
 }
 

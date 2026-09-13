@@ -130,4 +130,42 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('TelemetryStatusBar renders telemetry in the bottom strip', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: const [AppTokens.dark]),
+        home: const Scaffold(
+          body: SizedBox(
+            height: 56,
+            child: TelemetryStatusBar(
+              key: ValueKey('telemetry_status_bar'),
+              fps: 125.6,
+              frameTimeMs: 7.96,
+              renderTimeMs: 2.34,
+              visiblePoints: 10000,
+              gpuName: 'Adreno (TM) 650',
+              status: '就绪',
+              renderPath: '零拷贝纹理',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
+    expect(find.text('VULKAN · 零拷贝纹理'), findsOneWidget);
+    expect(find.text('125.6'), findsOneWidget);
+    expect(find.text('7.96 ms'), findsOneWidget);
+    expect(find.text('10,000'), findsOneWidget);
+    expect(find.text('2.34 ms'), findsOneWidget);
+    expect(find.text('Adreno (TM) 650'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
