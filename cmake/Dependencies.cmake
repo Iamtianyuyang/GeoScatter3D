@@ -57,7 +57,11 @@ endif()
 if(NOT ANDROID)
     function(copy_runtime_assets target_name)
         add_dependencies(${target_name} gs3d_shaders)
+        # copy_directory 只合并不删除：源里已经删掉的资源会一直残留在这份
+        # 构建树拷贝里，并随后续暂存/打包继续出货。先清空目标再拷。
         add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E remove_directory
+                    $<TARGET_FILE_DIR:${target_name}>/assets
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                     ${PROJECT_SOURCE_DIR}/assets
                     $<TARGET_FILE_DIR:${target_name}>/assets

@@ -78,6 +78,14 @@ install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
 
 # F5 的 preLaunchTask 先构建完整原生运行时；每次 Flutter install 按配置部署。
 set(GS3D_NATIVE_STAGE "${CMAKE_CURRENT_SOURCE_DIR}/../../tmp/flutter-native/$<CONFIG>")
+# 与下面 flutter_assets 同样的防残留处理：install(DIRECTORY) 只合并不删除，
+# 原生暂存里已经删掉的 assets/config/examples 会留在上一次 install 的产物里。
+# 逐个子目录清理（不能删整个 LIB_DIR，那里还有 exe 与各 DLL）。
+install(CODE "
+  foreach(_gs3d_native_dir assets config examples)
+    file(REMOVE_RECURSE \"${INSTALL_BUNDLE_LIB_DIR}/\${_gs3d_native_dir}\")
+  endforeach()
+" COMPONENT Runtime)
 install(DIRECTORY "${GS3D_NATIVE_STAGE}/"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 

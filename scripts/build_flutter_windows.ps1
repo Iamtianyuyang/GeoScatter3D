@@ -55,16 +55,31 @@ Invoke-Checked $Cmake @('--build', $BuildDir, '--config', $NativeConfig, '--targ
 $StageDir = Join-Path $RepoRoot "tmp/flutter-native/$Config"
 $NativeDir = Join-Path $BuildDir "src/$NativeConfig"
 $FfiDir = Join-Path $BuildDir "src/ffi/$NativeConfig"
+# 暂存目录必须每次重建：Copy-Item 只合并不删除，源里删过的资源（如旧字体/图标）
+# 会一直留在暂存目录，随后被 Flutter install 打进 runner 目录继续出货。
+if (Test-Path -LiteralPath $StageDir) {
+    Remove-Item -LiteralPath $StageDir -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $FfiDir 'gs3d_ffi.dll') -Destination $StageDir -Force
 foreach ($RuntimeDir in @($NativeDir, $FfiDir)) {
     Get-ChildItem -LiteralPath $RuntimeDir -Filter '*.dll' | Copy-Item -Destination $StageDir -Force
 }
 foreach ($Directory in @('assets', 'config', 'examples')) {
-    $SourceDir = if ($Directory -eq 'assets') { Join-Path $NativeDir $Directory } else { Join-Path $RepoRoot $Directory }
     $DestinationDir = Join-Path $StageDir $Directory
+    if (Test-Path -LiteralPath $DestinationDir) {
+        Remove-Item -LiteralPath $DestinationDir -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
-    Copy-Item (Join-Path $SourceDir '*') $DestinationDir -Recurse -Force
+    if ($Directory -eq 'assets') {
+        # 直接取「源树静态资源 + 构建树编译出的 SPIR-V（源树没有 .spv）」，
+        # 不再从某个目标的输出目录复制：那种目录是 copy_directory 合并出来的，
+        # 源里已删除的资源会一直残留并被继续打包（旧字体/icon.svg 就这么出过货）。
+        Copy-Item (Join-Path $RepoRoot 'assets/*') $DestinationDir -Recurse -Force
+        Copy-Item (Join-Path $BuildDir 'generated-assets/shaders/*.spv') (Join-Path $DestinationDir 'shaders') -Force
+    } else {
+        Copy-Item (Join-Path $RepoRoot "$Directory/*") $DestinationDir -Recurse -Force
+    }
 }
 Write-Host "==> Native runtime staged at $StageDir"
 
