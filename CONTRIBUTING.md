@@ -62,7 +62,7 @@ ctest --test-dir build -C Release --output-on-failure
 ## 行为准则
 
 - 不提交密钥/凭据; 不编辑 `third_party/` 下的 vendored 代码
-  (Catch2 submodule、tomlplusplus、stb、nanosvg)。
+  (Catch2 submodule、tomlplusplus、stb)。
 - 不默认启用 `-march=native` 或绑定特定 CPU 的代码生成选项。
 - 不删除失败测试来让 CI 变绿。
 - 文档与代码保持同步: 实现变更涉及的行为描述 (README / architecture.md

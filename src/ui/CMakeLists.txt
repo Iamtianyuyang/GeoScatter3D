@@ -15,8 +15,6 @@ add_library(gs3d_ui STATIC
 
 target_include_directories(gs3d_ui PUBLIC
     ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/third_party/stb
-    ${PROJECT_SOURCE_DIR}/third_party/nanosvg
 )
 
 target_link_libraries(gs3d_ui PUBLIC

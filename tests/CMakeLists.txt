@@ -769,8 +769,7 @@ target_include_directories(GeoScatter3DBenchmark PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/third_party/tomlplusplus/include
     ${PROJECT_SOURCE_DIR}/third_party/stb
-    ${PROJECT_SOURCE_DIR}/third_party/nanosvg
-)
+    )
 target_link_libraries(GeoScatter3DBenchmark PRIVATE
     gs3d_app
 )
