@@ -1,19 +1,16 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../theme/app_tokens.dart';
 
-/// 纯净极简实时遥测 HUD 浮层 (Feature #1)
+/// 浅色玻璃测绘仪器风格的实时遥测浮层。
 class TelemetryHud extends StatelessWidget {
   final double fps;
   final double frameTimeMs;
-  /// 原生渲染线程上“提交 + 回读”的实际耗时；0 表示不可用（不展示）。
   final double renderTimeMs;
   final int visiblePoints;
-  /// LOD 规模摘要（如 “39.3 万 / 1000 万 点 · LOD 6/6”）；空串则不展示。
   final String lodSummary;
   final String gpuName;
   final String status;
-  /// 当前生效的取帧通路（如「零拷贝纹理」/「RGBA 回读」）；空串则不展示。
-  /// 真机排障用：一眼看出引擎是否已接管 Flutter 纹理层。
   final String renderPath;
 
   const TelemetryHud({
@@ -30,136 +27,383 @@ class TelemetryHud extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      key: const Key('telemetry_hud'),
-      borderRadius: BorderRadius.circular(10),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xCC0F172A), // 半透明 Slate 900
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: const Color(0x3338BDF8),
-              width: 1,
-            ), // 浅天蓝边框
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final typography = tokens.typography;
+    final isReady = status.contains('就绪');
+    final transport = renderPath.isEmpty ? 'VULKAN' : 'VULKAN · $renderPath';
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: tokens.sizes.hudMaxWidth),
+      child: ClipRRect(
+        key: const Key('telemetry_hud'),
+        borderRadius: tokens.radii.panelRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: tokens.effects.hudBlur,
+            sigmaY: tokens.effects.hudBlur,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题栏与在线指示灯
-              Row(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [colors.hudSurfaceTop, colors.hudSurfaceBottom],
+              ),
+              borderRadius: tokens.radii.panelRadius,
+              border: Border.all(
+                color: colors.hudBorder,
+                width: tokens.effects.hairline,
+              ),
+              boxShadow: [tokens.effects.panelShadow],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.lg),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF10B981), // Emerald 500
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x8010B981),
-                          blurRadius: 4,
-                          spreadRadius: 1,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'GEOSCATTER 3D',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: typography.brand.copyWith(
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            SizedBox(height: tokens.spacing.sm),
+                            Text(
+                              transport,
+                              key: const ValueKey('viewport_render_path'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: typography.meta.copyWith(
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      SizedBox(width: tokens.spacing.md),
+                      _StatusPill(label: status, isReady: isReady),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'GeoScatter3D Vulkan',
-                    style: TextStyle(
-                      color: Color(0xFFF1F5F9),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
+                  SizedBox(height: tokens.spacing.md),
+                  _PrimaryMetrics(fps: fps, frameTimeMs: frameTimeMs),
+                  SizedBox(height: tokens.spacing.md),
+                  Container(
+                    height: tokens.effects.hairline,
+                    color: colors.hudDivider,
+                  ),
+                  SizedBox(height: tokens.spacing.md),
+                  _SecondaryMetrics(
+                    visiblePoints: visiblePoints,
+                    renderTimeMs: renderTimeMs,
+                  ),
+                  SizedBox(height: tokens.spacing.md),
+                  Container(
+                    height: tokens.effects.hairline,
+                    color: colors.hudDivider,
+                  ),
+                  SizedBox(height: tokens.spacing.sm),
+                  if (lodSummary.isNotEmpty) ...[
+                    Text(
+                      lodSummary,
+                      key: const ValueKey('viewport_lod'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: typography.meta.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
+                    SizedBox(height: tokens.spacing.xs),
+                  ],
+                  Text(
+                    gpuName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: typography.meta.copyWith(color: colors.textMuted),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-              // 核心指标栏
-              Text(
-                key: const ValueKey('viewport_metrics'),
-                '${fps.toStringAsFixed(1)} FPS | ${frameTimeMs.toStringAsFixed(2)} ms',
-                style: const TextStyle(
-                  color: Color(0xFF38BDF8), // Sky 400
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace',
-                ),
+  static String _formatPointCount(int value) {
+    final digits = value.abs().toString();
+    final buffer = StringBuffer();
+    for (var index = 0; index < digits.length; index++) {
+      if (index > 0 && (digits.length - index) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(digits[index]);
+    }
+    return value < 0 ? '-$buffer' : buffer.toString();
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label, required this.isReady});
+
+  final String label;
+  final bool isReady;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final surface = isReady
+        ? colors.statusReadySurface
+        : colors.hudSurfaceRaised;
+    final border = isReady ? colors.statusReadyBorder : colors.hudBorder;
+    final foreground = isReady ? colors.statusReadyText : colors.textSecondary;
+    final dot = isReady ? colors.statusReady : colors.textMuted;
+
+    return Container(
+      key: const ValueKey('viewport_status'),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.md,
+        vertical: tokens.spacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: tokens.radii.pillRadius,
+        border: Border.all(color: border, width: tokens.effects.hairline),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: tokens.sizes.statusDot,
+            height: tokens.sizes.statusDot,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          SizedBox(width: tokens.spacing.sm),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.typography.status.copyWith(color: foreground),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryMetrics extends StatelessWidget {
+  const _PrimaryMetrics({required this.fps, required this.frameTimeMs});
+
+  final double fps;
+  final double frameTimeMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final typography = tokens.typography;
+    final fpsBlock = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            fps.toStringAsFixed(1),
+            key: const ValueKey('viewport_metrics'),
+            style: typography.metricHero.copyWith(color: colors.accent),
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              left: tokens.spacing.sm,
+              bottom: tokens.spacing.xs,
+            ),
+            child: Text(
+              'FPS',
+              style: typography.metricUnit.copyWith(
+                color: colors.textSecondary,
               ),
-              const SizedBox(height: 2),
-
-              // 引擎侧耗时：渲染线程提交 + 回读，与 UI 端解码/绘制解耦
-              if (renderTimeMs > 0) ...[
-                Text(
-                  key: const ValueKey('viewport_render_cost'),
-                  '引擎 ${renderTimeMs.toStringAsFixed(2)} ms',
-                  style: const TextStyle(
-                    color: Color(0xFF7DD3FC), // Sky 300
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                const SizedBox(height: 2),
-              ],
-
-              // 点数、状态与当前取帧通路
+            ),
+          ),
+        ],
+      ),
+    );
+    final frameBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
               Text(
-                key: const ValueKey('viewport_status'),
-                '$visiblePoints 可见点 | $status'
-                '${renderPath.isEmpty ? '' : ' · $renderPath'}',
-                style: const TextStyle(
-                  color: Color(0xFF94A3B8), // Slate 400
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                ),
+                frameTimeMs.toStringAsFixed(2),
+                style: typography.metric.copyWith(color: colors.textPrimary),
               ),
-              const SizedBox(height: 2),
-
-              // LOD 规模：源点数远大于绘制量时出现，避免“看不到全量数据”的误解
-              if (lodSummary.isNotEmpty) ...[
-                Text(
-                  key: const ValueKey('viewport_lod'),
-                  lodSummary,
-                  style: const TextStyle(
-                    color: Color(0xFF94A3B8), // Slate 400
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
+              Padding(
+                padding: EdgeInsets.only(
+                  left: tokens.spacing.xs,
+                  bottom: tokens.spacing.xs,
                 ),
-                const SizedBox(height: 2),
-              ],
-
-              // 物理显卡信息
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 240),
                 child: Text(
-                  gpuName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF64748B), // Slate 500
-                    fontSize: 10,
+                  'ms',
+                  style: typography.metricUnit.copyWith(
+                    color: colors.textSecondary,
                   ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+        Text('帧耗时', style: typography.label.copyWith(color: colors.textMuted)),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final stack =
+            textScale > tokens.sizes.metricStackScaleThreshold ||
+            constraints.maxWidth < 180;
+        if (stack) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              fpsBlock,
+              SizedBox(height: tokens.spacing.md),
+              Container(
+                height: tokens.effects.hairline,
+                color: colors.hudDivider,
+              ),
+              SizedBox(height: tokens.spacing.md),
+              frameBlock,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: fpsBlock),
+            SizedBox(width: tokens.spacing.xl),
+            Container(
+              width: tokens.effects.hairline,
+              height: tokens.sizes.metricDividerHeight,
+              color: colors.hudDivider,
+            ),
+            SizedBox(width: tokens.spacing.xl),
+            Expanded(child: frameBlock),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SecondaryMetrics extends StatelessWidget {
+  const _SecondaryMetrics({
+    required this.visiblePoints,
+    required this.renderTimeMs,
+  });
+
+  final int visiblePoints;
+  final double renderTimeMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    final points = _TelemetryMetric(
+      label: '可见点',
+      value: TelemetryHud._formatPointCount(visiblePoints),
+    );
+    final engine = renderTimeMs > 0
+        ? _TelemetryMetric(
+            key: const ValueKey('viewport_render_cost'),
+            label: '引擎',
+            value: '${renderTimeMs.toStringAsFixed(2)} ms',
+          )
+        : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final stack =
+            engine == null ||
+            textScale > tokens.sizes.metricStackScaleThreshold ||
+            constraints.maxWidth < 180;
+        if (stack) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              points,
+              if (engine != null) ...[
+                SizedBox(height: tokens.spacing.md),
+                Container(
+                  height: tokens.effects.hairline,
+                  color: colors.hudDivider,
+                ),
+                SizedBox(height: tokens.spacing.md),
+                engine,
+              ],
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: points),
+            SizedBox(width: tokens.spacing.xl),
+            Container(
+              width: tokens.effects.hairline,
+              height: tokens.sizes.metricDividerHeight,
+              color: colors.hudDivider,
+            ),
+            SizedBox(width: tokens.spacing.xl),
+            Expanded(child: engine),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TelemetryMetric extends StatelessWidget {
+  const _TelemetryMetric({super.key, required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = tokens.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: tokens.typography.label.copyWith(color: colors.textSecondary),
+        ),
+        SizedBox(height: tokens.spacing.xs),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.typography.value.copyWith(color: colors.textPrimary),
+        ),
+      ],
     );
   }
 }

@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'src/theme/app_tokens.dart';
 import 'src/widgets/viewport_canvas.dart';
+
+const _tokens = AppTokens.dark;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 移动端/桌面端统一深色沉浸式系统边框
+  // 白色绘制区需要深色系统图标保持可读。
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarIconBrightness: Brightness.light,
+    SystemUiOverlayStyle(
+      statusBarColor: _tokens.colors.viewport,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: _tokens.colors.viewport,
+      systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
 
@@ -26,12 +29,15 @@ class GeoScatter3dApp extends StatelessWidget {
     return MaterialApp(
       title: 'GeoScatter3D',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0B0F19),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF38BDF8),
-          surface: Color(0xFF0F172A),
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: _tokens.colors.viewport,
+        colorScheme: ColorScheme.dark(
+          primary: _tokens.colors.accent,
+          surface: _tokens.colors.hudSurfaceRaised,
+          error: _tokens.colors.error,
         ),
+        extensions: const [_tokens],
       ),
       home: const Scaffold(body: ViewportCanvas()),
     );

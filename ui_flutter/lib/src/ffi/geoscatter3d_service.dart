@@ -65,6 +65,7 @@ class GeoScatter3dService extends ChangeNotifier {
   bool _rendering = false;
   bool _paused = false;
   ui.Size? _pendingSize;
+
   /// 与 [_pendingSize] 一起提交的纹理像素倍率（见 [presentPixelRatioFor]）。
   double _pendingPixelRatio = 1.0;
   ui.Image? _frame;
@@ -80,9 +81,11 @@ class GeoScatter3dService extends ChangeNotifier {
   int _presentTicks = 0;
   int _presentWidth = 0;
   int _presentHeight = 0;
+
   /// 已经尝试过零拷贝接管的纹理尺寸（**物理像素**）；尺寸变化（旋转/分屏/
   /// 显示缩放）时再给一次机会。
   (int, int)? _presentAttemptedExtent;
+
   /// 已下发给引擎的「渲染像素 / 逻辑像素」汇率（避免每帧重复跨 FFI）。
   double _viewScale = 1.0;
   final Stopwatch _fpsClock = Stopwatch();
@@ -96,24 +99,31 @@ class GeoScatter3dService extends ChangeNotifier {
   String? get error => _error;
   bool get ready => _ready && !_disposed && _error == null;
   int get pointCount => _pointCount;
+
   /// 数据集总量（源点）；无 LOD 时等于 [pointCount]。
   int get sourcePointCount => _sourcePointCount;
+
   /// LOD 摘要（源点数远大于绘制量时才非空），用于 HUD 展示缩放后的规模。
   String get lodSummary => _lodSummary;
+
   /// 调试用内核选取状态（tile/LOD 合成），`GS3D_DEBUG_CONTROLS` 打开时展示。
   /// 格式：`cover=0 below=1243 tile=357/357 clip=1 lod=2/3`
   String get debugStats => _debugStats;
   int get frameNumber => _frameNumber;
   double get fps => _fps;
   double get frameTimeMs => _frameTimeMs;
+
   /// 原生渲染线程的帧耗时（毫秒）；与 UI 端解码/绘制解耦。
   double get renderTimeMs => _renderTimeMs;
   String get gpuName => _gpuName;
+
   /// Flutter 纹理 id；null 表示没有零拷贝通路（视图层回退到 RawImage）。
   /// 注意 0 是合法纹理 id，不可用 0 当哨兵值。
   int? get textureId => _textureId;
+
   /// 是否已接管为零拷贝呈现（引擎直接 present 到 Flutter 纹理）。
   bool get zeroCopyPresent => _textureId != null;
+
   /// 当前取帧通路的展示名（HUD/诊断用）。
   String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
@@ -128,6 +138,7 @@ class GeoScatter3dService extends ChangeNotifier {
         return;
       }
       _engine = engine;
+      engine.setBackground(1.0, 1.0, 1.0);
       final size = _pendingSize;
       final pixelRatio = _pendingPixelRatio;
       _pendingSize = null;
@@ -393,10 +404,8 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   /// 逻辑视口尺寸 → 整数像素尺寸（至少 1×1）。
-  static (int, int) _logicalExtentOf(ui.Size size) => (
-    math.max(1, size.width.toInt()),
-    math.max(1, size.height.toInt()),
-  );
+  static (int, int) _logicalExtentOf(ui.Size size) =>
+      (math.max(1, size.width.toInt()), math.max(1, size.height.toInt()));
 
   /// 逻辑视口尺寸 → 纹理/交换链的物理像素尺寸。
   static (int, int) _physicalExtentOf(ui.Size size, double pixelRatio) {

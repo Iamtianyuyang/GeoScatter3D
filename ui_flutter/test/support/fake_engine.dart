@@ -12,6 +12,7 @@ class FakeEngine implements Gs3dEngine {
   List<(int, int)> sizes = [];
   final List<double> viewScales = [];
   Map<String, double>? input;
+  (double, double, double, double)? background;
   Future<ui.Image?> Function()? render;
 
   /// true 时 request 不产生新帧，用于验证「渲染中不重复读、不报错」。
@@ -105,6 +106,11 @@ class FakeEngine implements Gs3dEngine {
   @override
   void setViewScale(double scale) {
     viewScales.add(scale);
+  }
+
+  @override
+  void setBackground(double r, double g, double b, [double a = 1.0]) {
+    background = (r, g, b, a);
   }
 
   @override

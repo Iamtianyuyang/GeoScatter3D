@@ -25,6 +25,7 @@ void main() {
       await service.initialize();
       await service.initialize();
       expect(engine.loadCount, 1);
+      expect(engine.background, (1.0, 1.0, 1.0, 1.0));
       expect(service.ready, isTrue);
       expect(service.pointCount, 10000);
       service.dispose();
@@ -75,20 +76,23 @@ void main() {
       expect(engine.requestCount, greaterThanOrEqualTo(1));
     },
   );
-  test('no new sequence means no read and no error, only a new request', () async {
-    final engine = FakeEngine()..stallFrames = true;
-    final service = GeoScatter3dService(engine: engine);
-    addTearDown(service.dispose);
-    await service.initialize();
-    final requests = engine.requestCount;
-    await service.renderNextFrame();
-    await service.renderNextFrame();
-    expect(engine.readCount, 0);
-    expect(service.error, isNull);
-    expect(service.frame, isNull);
-    // 每个 tick 都向渲染线程预约下一帧（内核侧会合并重复请求）。
-    expect(engine.requestCount, requests + 2);
-  });
+  test(
+    'no new sequence means no read and no error, only a new request',
+    () async {
+      final engine = FakeEngine()..stallFrames = true;
+      final service = GeoScatter3dService(engine: engine);
+      addTearDown(service.dispose);
+      await service.initialize();
+      final requests = engine.requestCount;
+      await service.renderNextFrame();
+      await service.renderNextFrame();
+      expect(engine.readCount, 0);
+      expect(service.error, isNull);
+      expect(service.frame, isNull);
+      // 每个 tick 都向渲染线程预约下一帧（内核侧会合并重复请求）。
+      expect(engine.requestCount, requests + 2);
+    },
+  );
   test('published frame is decoded once and updates telemetry', () async {
     final engine = FakeEngine();
     final completer = Completer<ui.Image?>();
@@ -147,7 +151,12 @@ void main() {
   });
   test('lod summary reports drawn vs source and level', () async {
     final engine = FakeEngine()
-      ..setLodScenario(source: 10000000, drawn: 393216, level: 5, levelCount: 6);
+      ..setLodScenario(
+        source: 10000000,
+        drawn: 393216,
+        level: 5,
+        levelCount: 6,
+      );
     final service = GeoScatter3dService(engine: engine);
     addTearDown(service.dispose);
     await service.initialize();
@@ -219,8 +228,12 @@ void main() {
 
     test('present 模式周期性从诊断刷新遥测，不靠帧序号', () async {
       final engine = FakeEngine();
-      engine.setLodScenario(source: 1000000, drawn: 79400, level: 2,
-          levelCount: 3);
+      engine.setLodScenario(
+        source: 1000000,
+        drawn: 79400,
+        level: 2,
+        levelCount: 3,
+      );
       final binder = FakePresentSurfaceBinder();
       final service = GeoScatter3dService(
         engine: engine,
