@@ -66,7 +66,139 @@ inline std::uint64_t voxel_key(
     return (ix << 42) | (iy << 21) | iz;
 }
 
+/*
+ * 64 位混洗（murmur3 尾混）：把键的每一位都摊到低位上。
+ *
+ * 必要性：抽稀空间哈希的槽位取键的低位，而格键是「21 位/轴」打包的（低位全是
+ * z 下标）。曲面数据的 z 高度分片极少，直接用打包键取低位会让几十万个点挤在
+ * 极少数槽位里，线性探测退化成 O(n²)——宿主实测 25 万点要 17 s、100 万点直接
+ * 跑不完。
+ *
+ * 槽位用「乘法散列取高位」（key × 黄金比常数，取乘积高位）而不是完整混洗：
+ * 每个点要做 27 次槽位计算，一次乘法就能把三个轴的信息都摊到高位，
+ * 而 murmur 尾混要 6 次运算；键本身仍原样存在表里做精确比较（无碰撞误判）。
+ */
+constexpr std::uint64_t kGoldenRatio64 = 0x9E3779B97F4A7C15ull;
+
+inline std::size_t slot_of(std::uint64_t key, int slot_bits) {
+    return static_cast<std::size_t>(key * kGoldenRatio64) >>
+           (64 - slot_bits);
+}
+
 }  // namespace
+
+std::vector<gs3d::data::Gs3dPoint> LodBuilder::dedupe_min_distance(
+    const std::vector<gs3d::data::Gs3dPoint>& points,
+    float min_distance
+) {
+    if (points.size() < 2 || !(min_distance > kMinVoxelSize)) {
+        return points;
+    }
+
+    const double radius = static_cast<double>(min_distance);
+    const double radius_sq = radius * radius;
+
+    /*
+     * 扁平空间哈希（开放寻址 + 每点同格链）。
+     *
+     * 不能用 unordered_map<key, vector<uint32_t>>：真机 10M 数据上这一步要
+     * 5.0 s（2.47M 代表点 × 27 格查找，每次查找都是节点分配 + 指针追逐，
+     * LOD 建链 1.42 s → 6.41 s）。扁平表把查找降成几次数组访问；只保留
+     * 同格链（next_of）而不开 vector，内存也从每个格一份分配变成两块大数组。
+     *
+     * 表大小取 2 的幂且 ≥ 点数（负载因子 ≲ 0.6，线性探测均摊 ~1.5 次）。
+     */
+    std::size_t table_size = 1;
+    int slot_bits = 0;
+    while (table_size < points.size()) {
+        table_size <<= 1;
+        ++slot_bits;
+    }
+    const std::size_t table_mask = table_size - 1;
+    // 坐标 → 格下标用乘法（每点 3 次）而不是除法：2.5M 代表点上差别可观。
+    const double inverse_radius = 1.0 / radius;
+    constexpr std::uint32_t kNoPoint = 0xFFFFFFFFu;
+    // 格键：21 位/轴 + 偏置（允许负下标）。坐标超出 ±100 万格时按位夹取到边界
+    // （与 voxel_key 同一取舍：宁可合并极端边界格，也不额外分配一套键类型）。
+    const auto cell_key = [](std::int64_t ix, std::int64_t iy, std::int64_t iz) {
+        constexpr std::int64_t kBias = 1 << 20;
+        constexpr std::uint64_t kMask = (1ull << 21) - 1;
+        return ((static_cast<std::uint64_t>(ix + kBias) & kMask) << 42) |
+               ((static_cast<std::uint64_t>(iy + kBias) & kMask) << 21) |
+               (static_cast<std::uint64_t>(iz + kBias) & kMask);
+    };
+    const auto cell_of = [radius, inverse_radius](float value) {
+        static_cast<void>(radius);
+        return static_cast<std::int64_t>(
+            std::floor(static_cast<double>(value) * inverse_radius)
+        );
+    };
+
+    std::vector<std::uint64_t> slot_key(table_size, 0);
+    std::vector<std::uint32_t> slot_head(table_size, kNoPoint);
+    std::vector<std::uint32_t> next_of;
+    next_of.reserve(points.size());
+    std::vector<gs3d::data::Gs3dPoint> kept;
+    kept.reserve(points.size());
+
+    for (const auto& point : points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+            !std::isfinite(point.z)) {
+            continue;
+        }
+        const std::int64_t ix = cell_of(point.x);
+        const std::int64_t iy = cell_of(point.y);
+        const std::int64_t iz = cell_of(point.z);
+
+        bool too_close = false;
+        for (std::int64_t dx = -1; dx <= 1 && !too_close; ++dx) {
+            for (std::int64_t dy = -1; dy <= 1 && !too_close; ++dy) {
+                for (std::int64_t dz = -1; dz <= 1 && !too_close; ++dz) {
+                    const std::uint64_t key =
+                        cell_key(ix + dx, iy + dy, iz + dz);
+                    std::size_t slot = slot_of(key, slot_bits);
+                    while (slot_head[slot] != kNoPoint) {
+                        if (slot_key[slot] == key) {
+                            for (std::uint32_t index = slot_head[slot];
+                                 index != kNoPoint;
+                                 index = next_of[index]) {
+                                const gs3d::data::Gs3dPoint& other =
+                                    kept[index];
+                                const double ddx =
+                                    static_cast<double>(point.x) - other.x;
+                                const double ddy =
+                                    static_cast<double>(point.y) - other.y;
+                                const double ddz =
+                                    static_cast<double>(point.z) - other.z;
+                                if (ddx * ddx + ddy * ddy + ddz * ddz <
+                                    radius_sq) {
+                                    too_close = true;
+                                    break;
+                                }
+                            }
+                            break;  // 该格已处理（未命中则继续探测）
+                        }
+                        slot = (slot + 1) & table_mask;
+                    }
+                }
+            }
+        }
+        if (too_close) {
+            continue;
+        }
+        const std::uint64_t key = cell_key(ix, iy, iz);
+        std::size_t slot = slot_of(key, slot_bits);
+        while (slot_head[slot] != kNoPoint && slot_key[slot] != key) {
+            slot = (slot + 1) & table_mask;
+        }
+        slot_key[slot] = key;
+        // 单层代表点规模在百万量级（10M 源数据 4:1 后 ≈ 250 万），uint32 足够。
+        next_of.push_back(slot_head[slot]);
+        slot_head[slot] = static_cast<std::uint32_t>(kept.size());
+        kept.push_back(point);
+    }
+    return kept;
+}
 
 float LodBuilder::estimate_spacing(
     const std::vector<gs3d::data::Gs3dPoint>& points,
@@ -271,6 +403,22 @@ LodChain LodBuilder::build(
             decimated = decimate_voxel(
                 *source, voxel, nullptr, chain.grid_origin
             );
+            /*
+             * 体素质心之后再抽稀一次（见 min_distance_factor）：
+             * 2.5D 曲面被 z 边界切碎的同一列会吐出多个靠得很近的代表点，
+             * 屏幕上就是 1-2-1-2 的疏密交替。必须放在下面的预算/自纠正判断
+             * 之前 —— floor 检查认的是最终点数。
+             *
+             * 永远不会被绘制的层跳过抽稀（见 min_distance_max_points）。
+             */
+            if (config.min_distance_factor > 0.0f &&
+                (config.min_distance_max_points == 0 ||
+                 static_cast<std::uint64_t>(decimated.size()) <=
+                     config.min_distance_max_points)) {
+                decimated = dedupe_min_distance(
+                    decimated, voxel * config.min_distance_factor
+                );
+            }
             /*
              * 自纠正：若一次降到远低于预算的量级（典型原因：间距估计偏大，
              * 或数据分布不均匀），逐步减半体素边长重试，而不是直接把

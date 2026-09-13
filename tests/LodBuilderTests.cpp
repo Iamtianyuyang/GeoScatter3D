@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -266,7 +267,8 @@ TEST_CASE("lod levels share one dataset-anchored voxel grid") {
         }
 
         // 分组集合必须与输出一一对应（起点漂移会让单元被拆分/合并）。
-        REQUIRE(cells.size() == level.points.size());
+        // 抽稀会丢弃部分代表点，因此是「输出 ⊆ 分组」，且每条输出仍是其单元的质心。
+        REQUIRE(cells.size() >= level.points.size());
         for (const auto& out : level.points) {
             const auto it = cells.find(grid_index(
                 out.x, out.y, out.z, level.voxel_size, chain.grid_origin
@@ -405,6 +407,105 @@ TEST_CASE("lod chain reaches the budget for a million-scale grid") {
     }
     // 最粗层进入预算区间（15 万以内），运行时可选中它。
     CHECK(chain.levels.back().points.size() <= config.min_points);
+}
+
+TEST_CASE("min-distance dedupe keeps a blue-noise subset") {
+    /*
+     * 该步是 P1.2 的核心：体素质心后，2.5D 曲面被 z 边界切碎的同一列会留下多个
+     * 几乎重合的代表点，必须抽稀掉（真机紧邻占比 23% → 1.7%）。
+     */
+    // 1) 阈值内只留第一个；阈值外全部保留（顺序 = 输入顺序的子序列）。
+    const std::vector<gs3d::data::Gs3dPoint> line{
+        make_point(0.0f, 0.0f, 0.0f),
+        make_point(0.10f, 0.0f, 0.0f),   // < 0.5 → 丢
+        make_point(0.20f, 0.0f, 0.0f),   // < 0.5（与 0.0 比）→ 丢
+        make_point(0.60f, 0.0f, 0.0f),   // ≥ 0.5 → 留
+        make_point(0.80f, 0.0f, 0.0f),   // 与 0.6 距离 0.2 → 丢
+        make_point(1.20f, 0.0f, 0.0f),   // 与 0.6 距离 0.6 → 留
+    };
+    const auto deduped = gs3d::ffi::LodBuilder::dedupe_min_distance(line, 0.5f);
+    REQUIRE(deduped.size() == 3);
+    CHECK(deduped[0].x == 0.0f);
+    CHECK(deduped[1].x == 0.6f);
+    CHECK(deduped[2].x == 1.2f);
+
+    // 2) 任意两点距离 ≥ 阈值（此处用规则栅格：间距 1.0，阈值 0.7 < 1.0 → 一点不丢）。
+    const auto lattice = make_grid(32);
+    const auto untouched = gs3d::ffi::LodBuilder::dedupe_min_distance(
+        lattice, 0.7f
+    );
+    CHECK(untouched.size() == lattice.size());
+
+    // 3) 半径取到「邻点距离量级」就会大量抽稀（所以 factor 必须明显小于 1.0：
+    //    真机数据上 1.0× 会把 72569 点砍到 34617，0.7× 只丢 15%）。
+    //    平面栅格间距 1.0、半径 1.5 时只能隔行隔列保留。
+    std::vector<gs3d::data::Gs3dPoint> planar;
+    planar.reserve(32 * 32);
+    for (int i = 0; i < 32; ++i) {
+        for (int j = 0; j < 32; ++j) {
+            planar.push_back(make_point(
+                static_cast<float>(i), static_cast<float>(j), 0.0f
+            ));
+        }
+    }
+    const auto thinned = gs3d::ffi::LodBuilder::dedupe_min_distance(
+        planar, 1.5f
+    );
+    CHECK(thinned.size() <= planar.size() / 2);
+
+    // 4) 非法阈值 / 少于两点：原样返回（不是空集）。
+    CHECK(
+        gs3d::ffi::LodBuilder::dedupe_min_distance(lattice, 0.0f).size() ==
+        lattice.size()
+    );
+    std::vector<gs3d::data::Gs3dPoint> single{make_point(0.0f, 0.0f, 0.0f)};
+    CHECK(gs3d::ffi::LodBuilder::dedupe_min_distance(single, 1.0f).size() == 1);
+
+    // 5) 确定性：同样输入两次必须逐点一致。
+    const auto again = gs3d::ffi::LodBuilder::dedupe_min_distance(line, 0.5f);
+    CHECK(key_set(again) == key_set(deduped));
+
+    // 6) 与 decimate_voxel 一致：非有限点不参与输出。
+    std::vector<gs3d::data::Gs3dPoint> with_nan{
+        make_point(0.0f, 0.0f, 0.0f),
+        make_point(std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f),
+        make_point(2.0f, 0.0f, 0.0f),
+    };
+    const auto filtered =
+        gs3d::ffi::LodBuilder::dedupe_min_distance(with_nan, 0.5f);
+    REQUIRE(filtered.size() == 2);
+    CHECK(filtered[0].x == 0.0f);
+    CHECK(filtered[1].x == 2.0f);
+}
+
+TEST_CASE("lod chain applies min-distance dedupe on every level") {
+    // 真实地形状数据（斜面 + 抖动）：体素质心会出现同列重复点，抽稀后必须均匀。
+    const auto points = make_jittered_surface(128, 20260913u);
+
+    gs3d::ffi::LodBuildConfig config;
+    config.min_points = 1024;
+    config.max_levels = 4;
+    REQUIRE(config.min_distance_factor > 0.0f);
+    const auto chain = gs3d::ffi::LodBuilder::build(points, config);
+    REQUIRE(chain.levels.size() >= 2);
+
+    for (const auto& level : chain.levels) {
+        const float radius = level.voxel_size * config.min_distance_factor;
+        // 每层输出必须满足最小距离约束（O(n²) 在此规模可接受：≤ 8192 点）。
+        double closest = std::numeric_limits<double>::max();
+        for (std::size_t i = 0; i < level.points.size(); ++i) {
+            for (std::size_t j = i + 1; j < level.points.size(); ++j) {
+                const double dx = static_cast<double>(level.points[i].x) -
+                                  level.points[j].x;
+                const double dy = static_cast<double>(level.points[i].y) -
+                                  level.points[j].y;
+                const double dz = static_cast<double>(level.points[i].z) -
+                                  level.points[j].z;
+                closest = std::min(closest, std::sqrt(dx * dx + dy * dy + dz * dz));
+            }
+        }
+        CHECK(closest >= static_cast<double>(radius) * 0.999);
+    }
 }
 
 TEST_CASE("small datasets produce no levels") {

@@ -611,7 +611,18 @@ std::size_t HeadlessRenderKernel::choose_lod_index() const {
             continue;
         }
         finest_within_cap = index;   // 粗→细，最后一次赋值即「上限内最细」
-        const float spacing = span / std::sqrt(static_cast<float>(points));
+        /*
+         * 层内点距：优先用建链时的体素边长（一个代表点/单元 → 它就是设计点距）。
+         * 不能用「span / sqrt(n)」当唯一依据：P1.2 的最小距离抽稀会拿掉同一列里
+         * 重复的冗余点（点数降 ~15%），而 span/sqrt(n) 会因此把点距高估 ~11%，
+         * 于是合格的层被跳过、底图直接退化到**全量源数据**（真机实测 250k 数据：
+         * 去重后层 60780 点被判不合格，改画 250000 点源数据）。
+         * 源层没有体素（=0）时才退回估计值。
+         */
+        const float level_spacing = lod_.level(index).voxel_size;
+        const float spacing = level_spacing > 0.0f
+            ? level_spacing
+            : span / std::sqrt(static_cast<float>(points));
         if (spacing * pixels_per_unit <= max_spacing_px) {
             // 第一个达标的层 = 最省的达标层（不浪费顶点预算）。
             best = index;
@@ -705,6 +716,11 @@ int HeadlessRenderKernel::rebuild_lod_locked(bool reuse_cpu_chain) {
                 LodBuildConfig{}.min_points,
                 effective_point_budget() / 2u
             );
+            /*
+             * 超过底图点上限的层永远不会被绘制（见 choose_lod_index），
+             * 不必为它们花抽稀时间与显存。
+             */
+            lod_config.min_distance_max_points = config_.lod_point_cap;
             LodChain chain = LodBuilder::build(points, lod_config);
             estimated_spacing_ = chain.estimated_spacing;
             lod_build_ms_ = chain.build_ms;
