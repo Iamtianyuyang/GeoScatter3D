@@ -20,7 +20,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -477,6 +479,110 @@ TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
         }
     }
     CHECK(presented > 0);
+}
+
+TEST_CASE("tile point budget caps the drawn tile layer") {
+    /*
+     * 目的：放大后瓦片层不得把帧时打穿。
+     * 真机 10M 实测（无预算）：一屏选到 880/1600 瓦片 = 549 万点 → 17 FPS。
+     * 预算把「画/传多少」压到上限内，只丢屏幕投影最小的瓦片；
+     * 小数据集总点数在预算内，行为不变。
+     */
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    const std::filesystem::path bundle(GS3D_TEST_BENCH_DEV_BUNDLE);
+    if (!std::filesystem::exists(shader_dir / "point.vert.spv") ||
+        !std::filesystem::exists(bundle / "source.gs3d")) {
+        SUCCEED("shader or tiled bench bundle missing; skipping tile budget");
+        return;
+    }
+
+    HiddenWindow window;
+    gs3d::render::VulkanSurfaceProvider provider{};
+    const char* extensions[] = {VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    provider.instance_extensions = extensions;
+    provider.instance_extension_count = 1;
+    provider.create_surface = &create_win32_surface;
+    provider.user_data = window.handle();
+
+    constexpr std::uint64_t kBudget = 50000;
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config{};
+    config.width = 1204;
+    config.height = 704;
+    config.shader_dir = shader_dir.string();
+    config.tile_point_budget = kBudget;
+    if (host.start(config) != 0) {
+        SUCCEED("Vulkan unavailable; skipping tile budget test");
+        return;
+    }
+    REQUIRE(host.invoke([&bundle](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.load_dataset(bundle.string());
+    }) == 0);
+    host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        for (int step = 0; step < 2; ++step) {
+            kernel.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+        }
+        return 0;
+    });
+
+    std::vector<std::uint8_t> rgba(1204u * 704u * 4u);
+    for (int frame = 0; frame < 60; ++frame) {
+        std::uint32_t w = 0;
+        std::uint32_t h = 0;
+        host.invoke([&rgba, &w, &h](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            return kernel.render_rgba(
+                rgba.data(), static_cast<std::uint32_t>(rgba.size()), &w, &h
+            );
+        });
+    }
+
+    auto state = std::make_shared<gs3d::ffi::HeadlessRenderKernel::LodState>();
+    host.invoke([state](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        *state = kernel.lod_state();
+        return 0;
+    });
+
+    REQUIRE(state->tile_selected > 0);
+    CHECK(state->tile_needed > 0);
+    // 确实被截断：达标瓦片多于实际加载的瓦片。
+    CHECK(state->tile_selected > state->tile_needed);
+    // 计划点数落在预算内（bench-dev 瓦片点数是均匀的 625 点/块）。
+    CHECK(state->tile_planned_points <= kBudget);
+    CHECK(state->tile_planned_points > kBudget / 2);
+
+    // 预算放开时不应截断（小数据集行为不变）。
+    gs3d::ffi::EngineHost generous;
+    gs3d::ffi::HeadlessRenderKernel::Config open_config{};
+    open_config.width = 1204;
+    open_config.height = 704;
+    open_config.shader_dir = shader_dir.string();
+    open_config.tile_point_budget = 0;
+    if (generous.start(open_config) == 0) {
+        REQUIRE(generous.invoke([&bundle](gs3d::ffi::HeadlessRenderKernel& k) {
+            return k.load_dataset(bundle.string());
+        }) == 0);
+        generous.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
+            for (int step = 0; step < 2; ++step) {
+                k.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+            }
+            return 0;
+        });
+        for (int frame = 0; frame < 8; ++frame) {
+            std::uint32_t w = 0;
+            std::uint32_t h = 0;
+            generous.invoke([&rgba, &w, &h](gs3d::ffi::HeadlessRenderKernel& k) {
+                return k.render_rgba(
+                    rgba.data(), static_cast<std::uint32_t>(rgba.size()), &w, &h
+                );
+            });
+        }
+        auto open_state = std::make_shared<gs3d::ffi::HeadlessRenderKernel::LodState>();
+        generous.invoke([open_state](gs3d::ffi::HeadlessRenderKernel& k) {
+            *open_state = k.lod_state();
+            return 0;
+        });
+        CHECK(open_state->tile_selected == open_state->tile_needed);
+    }
 }
 
 #else

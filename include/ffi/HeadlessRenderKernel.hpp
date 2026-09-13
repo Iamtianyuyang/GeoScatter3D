@@ -55,7 +55,24 @@ public:
         /// 默认关闭以便后续单独定位；打开前勿用于生产。
         bool tile_streaming = true;  // BISECT
         /// tile 投影宽度 ≥ 该像素数才加载全精度（Potree SSE；旧 Viewer 默认 50）。
+        /// 这是「值得加载」的下限；瓦片实际介入的时机还受 tile_point_budget 约束。
         float min_tile_pixel_size = 50.0f;
+        /*
+         * 瓦片层点预算（0 = 不限）：每帧允许绘制的全精度瓦片点数上限。
+         *
+         * 选取已按屏幕投影降序，超预算时从尾部截断（只丢屏幕上最小的瓦片）。
+         * 没有预算时，「放大到瓦片介入」会把帧时一次性打穿：真实场景下视锥
+         * 内大半瓦片都会达标（掠射视角下投影估算偏保守），真机 10M 实测
+         * 一帧要画 549 万瓦片点 → 17 FPS。有了预算，大数据上瓦片会自然
+         * 推迟到更深放大才介入，而小数据集（总点数在预算内）不受影响。
+         *
+         * 取值依据（真机 Adreno 650 / 1204×704 实测）：
+         *   无预算：549 万点 → 引擎 48.4 ms → 17 FPS
+         *   150 万点 → 引擎 17.1 ms → 47 FPS
+         *   → 实测约 11.4 ms / 百万点，取 100 万点（引擎 ≈ 11–12 ms + LOD 层
+         *     约 4 ms ≈ 16 ms）刚好卡在 60 FPS 线上，故定为默认值。
+         */
+        std::uint64_t tile_point_budget = 1'000'000;
         /// 每帧 tile 上传字节预算（避免一次拉入过多阻塞帧）。
         std::uint64_t tile_upload_budget_bytes = 8ull * 1024ull * 1024ull;
         /// CPU 侧 tile 点缓存上限（LRU）。
@@ -195,6 +212,10 @@ public:
         bool tiles_available = false;
         std::uint64_t tile_count = 0;
         std::uint64_t tile_needed = 0;
+        /// 点预算截断「之前」的选取数（= 屏幕空间误差真正达标的瓦片数）。
+        std::uint64_t tile_selected = 0;
+        /// 截断后计划绘制的瓦片点数（resident 后会等于实际绘制量）。
+        std::uint64_t tile_planned_points = 0;
         std::uint64_t tile_resident = 0;
         std::uint64_t tile_drawn_points = 0;
         std::uint64_t tile_uploaded_bytes_frame = 0;
@@ -295,6 +316,9 @@ private:
     bool lod_cpu_chain_reused_ = false;
     /// 最近一次记录的瓦片选取需求数：仅在其变化时打日志（诊断选取为何开关）。
     std::size_t tile_needed_logged_ = static_cast<std::size_t>(-1);
+    /// 最近一次选取（截断前）的瓦片数与计划点数，供诊断与测试断言。
+    std::uint64_t tile_selected_ = 0;
+    std::uint64_t tile_planned_points_ = 0;
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

@@ -833,13 +833,55 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     tile_needed_ids_ = selection.enabled ? selection.tile_ids
                                          : std::vector<std::uint64_t>{};
 
+    /*
+     * 点预算截断：selection.tile_ids 已按屏幕投影像素降序，从尾部丢掉最小的瓦片。
+     *
+     * 必须在构造 uploads / drawable 集 / 裁剪盒之前截断：三者都只认截断后的
+     * 集合，语义仍然自洽（裁剪盒 = 实际可绘制瓦片的并集，不会出现「LOD 被裁掉
+     * 却没人补点」的洞）。截断只针对「画/传多少」，选取本身（含滞回）不变，
+     * 因此相机回退时不会抖动。
+     */
+    std::uint64_t tile_points_needed = 0;
+    tile_selected_ = selection.tile_ids.size();
+    if (config_.tile_point_budget > 0 && !tile_needed_ids_.empty()) {
+        const auto& records = tile_index_view_.records;
+        std::size_t keep = 0;
+        while (keep < tile_needed_ids_.size()) {
+            const std::uint64_t id = tile_needed_ids_[keep];
+            const std::uint64_t tile_points =
+                id < records.size() ? records[id].point_count : 0;
+            // 至少保留一块：宁可略超预算，也不要因为单块超大而整层不出现。
+            if (keep > 0 &&
+                tile_points_needed + tile_points > config_.tile_point_budget) {
+                break;
+            }
+            tile_points_needed += tile_points;
+            ++keep;
+        }
+        if (keep < tile_needed_ids_.size()) {
+            tile_needed_ids_.resize(keep);
+        }
+    } else {
+        const auto& records = tile_index_view_.records;
+        for (const auto id : tile_needed_ids_) {
+            if (id < records.size()) {
+                tile_points_needed += records[id].point_count;
+            }
+        }
+    }
+
+    tile_planned_points_ = tile_points_needed;
+
     // 选取状态变化时打一行诊断：真机上排查「为什么没有瓦片」全靠它
     // （门槛是屏幕空间误差，而误差只取决于相机距离/视场角与瓦片尺寸）。
     if (tile_needed_ids_.size() != tile_needed_logged_) {
         tile_needed_logged_ = tile_needed_ids_.size();
         gs3d::util::log::info()
-            << "[HeadlessRenderKernel] tile selection: needed="
-            << tile_needed_ids_.size()
+            << "[HeadlessRenderKernel] tile selection: selected="
+            << selection.tile_ids.size()
+            << " needed=" << tile_needed_ids_.size()
+            << " points=" << tile_points_needed
+            << " budget=" << config_.tile_point_budget
             << " enabled=" << (selection.enabled ? 1 : 0)
             << " distance=" << camera_.distance()
             << " fov=" << camera_.fov_y_degrees()
@@ -931,7 +973,35 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
         }
     }
 
-    tile_clip_active_ = tile_all_resident_ && any;
+    /*
+     * 裁剪 LOD 的前提是「瓦片把自己包围盒填满了」：裁剪盒是并集包围盒，
+     * 若可绘制瓦片在盒内留有空缺（例如预算截断后只保留最近的一圈瓦片，
+     * 或视锥只切到网格的一个斜条），那里就会出现「LOD 被裁掉 + 没有瓦片」的洞。
+     * 未填满时宁可重叠也不裁剪（与流式未完成时的既有策略一致）。
+     */
+    bool coverage_complete = false;
+    if (!tile_drawable_ids_.empty()) {
+        std::uint32_t min_tx = std::numeric_limits<std::uint32_t>::max();
+        std::uint32_t min_ty = std::numeric_limits<std::uint32_t>::max();
+        std::uint32_t max_tx = 0;
+        std::uint32_t max_ty = 0;
+        for (const auto tile_id : tile_drawable_ids_) {
+            if (tile_id >= records.size()) {
+                continue;
+            }
+            const auto& record = records[static_cast<std::size_t>(tile_id)];
+            min_tx = std::min(min_tx, record.tile_x);
+            min_ty = std::min(min_ty, record.tile_y);
+            max_tx = std::max(max_tx, record.tile_x);
+            max_ty = std::max(max_ty, record.tile_y);
+        }
+        const std::uint64_t cells =
+            static_cast<std::uint64_t>(max_tx - min_tx + 1) *
+            static_cast<std::uint64_t>(max_ty - min_ty + 1);
+        coverage_complete = cells == tile_drawable_ids_.size();
+    }
+
+    tile_clip_active_ = tile_all_resident_ && any && coverage_complete;
     if (any) {
         tile_clip_bounds_ = gs3d::core::Bounds3f{
             min_x, min_y, min_z, max_x, max_y, max_z
@@ -1751,6 +1821,8 @@ HeadlessRenderKernel::LodState HeadlessRenderKernel::lod_state() const {
     if (state.tiles_available) {
         state.tile_count = tile_reader_->tile_count();
         state.tile_needed = tile_needed_ids_.size();
+        state.tile_selected = tile_selected_;
+        state.tile_planned_points = tile_planned_points_;
         state.tile_resident = tile_gpu_.tile_count();
         state.tile_drawn_points = tile_drawn_points_;
         state.tile_uploaded_bytes_frame = tile_uploaded_bytes_frame_;
