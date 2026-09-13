@@ -1,0 +1,30 @@
+# Fresh-clone 测试夹具（由 tests/CMakeLists.txt configure_file 生成）。
+#
+# 与 config/sample-viewer.toml 的区别只有两点：
+#   1) 输入/输出都用绝对路径，落点固定在**构建树**（test-fixtures/），
+#      不再写进源树 data/ —— 源树里的旧产物会让「fresh clone」测试假绿；
+#   2) 只保留预处理需要的段落，避免测试夹具跟着 viewer 配置漂移。
+
+[input]
+mode = "csv"
+csv_path = "@PROJECT_SOURCE_DIR@/examples/sample-points.csv"
+bundle_dir = "@CMAKE_BINARY_DIR@/test-fixtures/sample-points.gs3d.bundle"
+
+[csv_convert]
+num_threads = 1
+x_field = "X"
+y_field = "Y"
+z_field = "elevation"
+primary_value_field = "field_statics"
+
+[shader]
+vertex_shader_path = "@GS3D_GENERATED_SHADER_DIR@/point.vert.spv"
+fragment_shader_path = "@GS3D_GENERATED_SHADER_DIR@/point.frag.spv"
+
+[lod]
+enabled = false
+auto_load_sidecar = false
+
+[tile]
+enabled = true
+min_tile_pixel_size = 8

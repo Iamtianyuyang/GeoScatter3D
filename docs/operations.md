@@ -184,9 +184,13 @@ Windows 实测结果（2026-08-16，VS2026 + vcpkg）：构建成功，
 ### 3.3 数据集 / bundle 位置
 
 - 仓库样例源：`examples/sample-points.csv`（26 行，25 个 golden 点）。
-- 一键生成 + 打开：`./build/GeoScatter3D --config config/sample-viewer.toml`
-  （生成到被忽略的 `data/sample-points.gs3d.bundle/`）；只转换不开窗口用
-  `./build/GeoScatter3DPreprocess --config config/sample-viewer.toml`。
+- 生成样例 bundle（CSV → GS3D v2）：
+  `GeoScatter3DPreprocess --config config/sample-viewer.toml`
+  （生成到被忽略的 `data/sample-points.gs3d.bundle/`）。可执行文件随构建目录，
+  Windows 上即 `tmp/build-win/src/Release/GeoScatter3DPreprocess.exe`。
+- 打开样例：用 Flutter 前端加载该 bundle（启动参数
+  `--dart-define=GS3D_BENCH_DATASET=<bundle 路径>`，或在应用内用文件选择器导入）。
+  旧的桌面 Viewer（`GeoScatter3D`）已随「Flutter 为唯一前端」的迁移移除。
 - 默认配置 `config/viewer.toml` 指向 `data/field_and_ele_source_rec_50m.gs3d.bundle`
   （约 403 MiB，3302 万点，本机实测 `--bundle` 启动 + 控制面截图正常；
   `viewport.main` 报可见点数约 387 万、GPU 显存约 77 MiB）。

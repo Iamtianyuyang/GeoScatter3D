@@ -714,19 +714,31 @@ add_test(
             ${PROJECT_SOURCE_DIR}/scripts/check_engineering_guardrails.py
 )
 
-# Fresh-clone smoke test: a tracked CSV is converted into an ignored
-# bundle, exercising config resolution and the standalone preprocessor
-# without requiring a window server or physical GPU.
+# Fresh-clone smoke test: a tracked CSV is converted into a bundle, exercising
+# config resolution and the standalone preprocessor, without requiring a window
+# server or physical GPU.
+#
+# 产物固定写在**构建树**（test-fixtures/）：过去跑的是源树 config/sample-viewer.toml
+# （输出到源树 data/），于是只要源树里还留着上次的产物，测试就在吃陈旧数据；
+# 干净克隆反而 Not Run（可执行目标当时已丢失）。
+set(GS3D_TEST_FIXTURE_DIR "${CMAKE_BINARY_DIR}/test-fixtures")
+file(MAKE_DIRECTORY "${GS3D_TEST_FIXTURE_DIR}")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sample-preprocess.toml.in"
+    "${GS3D_TEST_FIXTURE_DIR}/sample-preprocess.toml"
+    @ONLY
+)
 add_test(
     NAME GeoScatter3D.FreshClonePreprocess
     COMMAND GeoScatter3DPreprocess
             --config
-            ${PROJECT_SOURCE_DIR}/config/sample-viewer.toml
+            ${GS3D_TEST_FIXTURE_DIR}/sample-preprocess.toml
 )
 set_tests_properties(
     GeoScatter3D.FreshClonePreprocess
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        FIXTURES_SETUP gs3d_sample_bundle
         ENVIRONMENT
             "GS3D_USER_CONFIG_DIR=${CMAKE_BINARY_DIR}/test-user-config"
 )
@@ -741,7 +753,7 @@ target_include_directories(GeoScatter3DFreshCloneBundleTests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 target_compile_definitions(GeoScatter3DFreshCloneBundleTests PRIVATE
-    GS3D_SAMPLE_BUNDLE_DIR=\"${PROJECT_SOURCE_DIR}/data/sample-points.gs3d.bundle\"
+    GS3D_SAMPLE_BUNDLE_DIR=\"${CMAKE_BINARY_DIR}/test-fixtures/sample-points.gs3d.bundle\"
 )
 target_link_libraries(GeoScatter3DFreshCloneBundleTests PRIVATE
     gs3d_data
@@ -755,6 +767,7 @@ set_tests_properties(
     GeoScatter3D.FreshCloneBundle
     PROPERTIES
         DEPENDS GeoScatter3D.FreshClonePreprocess
+        FIXTURES_REQUIRED gs3d_sample_bundle
 )
 
 # Manual GPU performance harness — not registered with add_test()/ctest
