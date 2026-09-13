@@ -72,7 +72,25 @@ public:
          *   → 实测约 11.4 ms / 百万点，取 100 万点（引擎 ≈ 11–12 ms + LOD 层
          *     约 4 ms ≈ 16 ms）刚好卡在 60 FPS 线上，故定为默认值。
          */
-        std::uint64_t tile_point_budget = 1'000'000;
+        std::uint64_t tile_point_budget = 1'200'000;
+        /*
+         * 瓦片层每帧绘制调用上限（每块瓦片一次 vkCmdDraw）。
+         *
+         * 真机实测：1478 块瓦片（1M 数据集、fov=19°）时引擎 19 ms，而 176 块
+         * （10M 数据集、fov=1°）只有 8.6 ms —— 点数相近，差别在绘制调用数
+         * （每块 ~13 µs 的驱动/状态开销）。所以预算必须同时管住「块数」。
+         * 超上限同样走「全有或全无」：这一帧不出瓦片，等更放大时才出。
+         */
+        std::uint32_t tile_max_draws = 512;
+        /*
+         * 底图（LOD）点预算上限：瓦片层未生效时，底图可以随放大自动变细
+         * （否则放大后整屏都是稀疏点阵，看起来像「模型缺了一半」）。
+         * 瓦片层一旦覆盖可见面，底图立刻退回粗层（避免与瓦片叠加浪费）。
+         * 取值与 tile_point_budget 对齐：两者任一时刻只开销一个。
+         */
+        std::uint64_t lod_point_cap = 1'200'000;
+        /// 底图屏幕目标：点距投影不超过该像素数（越小越密、越贵）。
+        float lod_max_projected_spacing_px = 2.5f;
         /// 每帧 tile 上传字节预算（避免一次拉入过多阻塞帧）。
         std::uint64_t tile_upload_budget_bytes = 8ull * 1024ull * 1024ull;
         /// CPU 侧 tile 点缓存上限（LRU）。
@@ -319,6 +337,8 @@ private:
     /// 最近一次选取（截断前）的瓦片数与计划点数，供诊断与测试断言。
     std::uint64_t tile_selected_ = 0;
     std::uint64_t tile_planned_points_ = 0;
+    /// 本帧是否真的绘制了瓦片（决定底图用粗层还是随放大变细）。
+    bool tile_layers_active_ = false;
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

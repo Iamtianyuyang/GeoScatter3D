@@ -536,12 +536,85 @@ std::size_t HeadlessRenderKernel::choose_lod_index() const {
         return 0;
     }
     const std::uint64_t budget = effective_point_budget();
-    for (std::size_t index = 0; index < count; ++index) {
-        if (lod_.level(index).gpu_point_count <= budget) {
-            return index;
+
+    /*
+     * 底图的两种用法：
+     *   1) 瓦片层已覆盖可见面 → 底图只需兜底，取「预算内最细的一层」即可（旧行为）。
+     *   2) 瓦片层没出现（未到阈值 / 超预算跳过）→ 底图就是唯一画面，必须够密：
+     *      按屏幕投影点距选层（够用就好，取最粗的达标层），上限 lod_point_cap。
+     * 没有第 2 条时，放大后整屏只剩 12.5 万点/整个数据集 → 屏幕上点距 8~60 px，
+     * 看起来就是「模型缺了一半」（真机截图即为此）。
+     */
+    const bool need_dense_base = !tile_layers_active_;
+    if (!need_dense_base) {
+        for (std::size_t index = 0; index < count; ++index) {
+            if (lod_.level(index).gpu_point_count <= budget) {
+                return index;
+            }
+        }
+        return count - 1;
+    }
+
+    /*
+     * 相机还没定位好（加载中：position/target 都是 0）时屏幕尺度没有意义，
+     * 此时退回预算规则，避免「距离=0 → 点距巨大 → 直接画全量源数据」。
+     */
+    if (camera_.distance() < 0.01f) {
+        for (std::size_t index = 0; index < count; ++index) {
+            if (lod_.level(index).gpu_point_count <= budget) {
+                return index;
+            }
+        }
+        return count - 1;
+    }
+
+    const float fov = std::max(camera_.fov_y_degrees(), 1.0f);
+    const float half_tan =
+        std::tan(fov * 0.5f * 3.14159265358979323846f / 180.0f);
+    const float dist = std::max(camera_.distance(), 1.0e-3f);
+    const float viewport_h = static_cast<float>(
+        std::max<std::uint32_t>(config_.height, 1)
+    );
+    const float pixels_per_unit = half_tan > 1.0e-6f
+        ? viewport_h / (2.0f * dist * half_tan)
+        : 0.0f;
+    const float max_spacing_px =
+        std::max(config_.lod_max_projected_spacing_px, 0.5f);
+
+    // 层内点距估算：span / sqrt(n)（散点/地表数据足够准，且不依赖额外元数据）。
+    const float span = std::max(
+        span_or_default(),
+        1.0f
+    );
+    const std::uint64_t cap = std::max<std::uint64_t>(
+        config_.lod_point_cap, budget
+    );
+
+    // 层级顺序是「细 → 粗」，所以从 count-1 往 0 遍历就是「粗 → 细」。
+    constexpr std::size_t kInvalid = static_cast<std::size_t>(-1);
+    std::size_t best = kInvalid;
+    std::size_t finest_within_cap = kInvalid;
+    for (std::size_t index = count; index-- > 0;) {
+        const std::uint64_t points = lod_.level(index).gpu_point_count;
+        if (points == 0 || points > cap) {
+            continue;
+        }
+        finest_within_cap = index;   // 粗→细，最后一次赋值即「上限内最细」
+        const float spacing = span / std::sqrt(static_cast<float>(points));
+        if (spacing * pixels_per_unit <= max_spacing_px) {
+            // 第一个达标的层 = 最省的达标层（不浪费顶点预算）。
+            best = index;
+            break;
         }
     }
-    return count - 1;
+    if (best != kInvalid) {
+        return best;
+    }
+    if (finest_within_cap != kInvalid) {
+        // 再放大就只能吃满上限了（屏幕点距会偏疏，由瓦片层接管细节）。
+        return finest_within_cap;
+    }
+    return count - 1;   // 所有层都超上限：退回最粗，保证还能出画面
 }
 
 int HeadlessRenderKernel::rebuild_lod_locked(bool reuse_cpu_chain) {
@@ -809,6 +882,7 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     tile_drawable_ids_.clear();
     tile_clip_active_ = false;
     tile_all_resident_ = false;
+    tile_layers_active_ = false;
     tile_pins_.clear();
 
     if (!tile_reader_ || !tile_reader_->valid() || !tile_cache_) {
@@ -843,25 +917,7 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
      */
     std::uint64_t tile_points_needed = 0;
     tile_selected_ = selection.tile_ids.size();
-    if (config_.tile_point_budget > 0 && !tile_needed_ids_.empty()) {
-        const auto& records = tile_index_view_.records;
-        std::size_t keep = 0;
-        while (keep < tile_needed_ids_.size()) {
-            const std::uint64_t id = tile_needed_ids_[keep];
-            const std::uint64_t tile_points =
-                id < records.size() ? records[id].point_count : 0;
-            // 至少保留一块：宁可略超预算，也不要因为单块超大而整层不出现。
-            if (keep > 0 &&
-                tile_points_needed + tile_points > config_.tile_point_budget) {
-                break;
-            }
-            tile_points_needed += tile_points;
-            ++keep;
-        }
-        if (keep < tile_needed_ids_.size()) {
-            tile_needed_ids_.resize(keep);
-        }
-    } else {
+    {
         const auto& records = tile_index_view_.records;
         for (const auto id : tile_needed_ids_) {
             if (id < records.size()) {
@@ -869,7 +925,27 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
             }
         }
     }
-
+    /*
+     * 全有或全无：可见面要么被瓦片完整覆盖，要么这一级整帧不出现。
+     *
+     * 曾经按预算「从尾部截断」，但选取是按屏幕投影降序排的，截断留下的恰好是
+     * 离相机最近的一圈瓦片 —— 远处的**可见**瓦片被丢掉后，那片区域只剩极粗的
+     * 底图，真机上就是「模型被切掉一半、上半屏发黑」（截图可见）。
+     * 宁可推迟瓦片介入（用户要的就是「更放大时才加载」），也不要在可见面上
+     * 留出半密半空的接缝。
+     */
+    bool tiles_skipped_by_budget = false;
+    const bool too_many_points =
+        config_.tile_point_budget > 0 && !tile_needed_ids_.empty() &&
+        tile_points_needed > config_.tile_point_budget;
+    const bool too_many_draws =
+        config_.tile_max_draws > 0 &&
+        tile_needed_ids_.size() > config_.tile_max_draws;
+    if (too_many_points || too_many_draws) {
+        tiles_skipped_by_budget = true;
+        tile_needed_ids_.clear();
+        tile_points_needed = 0;
+    }
     tile_planned_points_ = tile_points_needed;
 
     // 选取状态变化时打一行诊断：真机上排查「为什么没有瓦片」全靠它
@@ -882,6 +958,9 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
             << " needed=" << tile_needed_ids_.size()
             << " points=" << tile_points_needed
             << " budget=" << config_.tile_point_budget
+            << " skipped=" << (tiles_skipped_by_budget ? 1 : 0)
+            << " skip_by=" << (too_many_points ? "points"
+                             : too_many_draws ? "draws" : "-")
             << " enabled=" << (selection.enabled ? 1 : 0)
             << " distance=" << camera_.distance()
             << " fov=" << camera_.fov_y_degrees()
@@ -1001,6 +1080,7 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
         coverage_complete = cells == tile_drawable_ids_.size();
     }
 
+    tile_layers_active_ = !tile_drawable_ids_.empty();
     tile_clip_active_ = tile_all_resident_ && any && coverage_complete;
     if (any) {
         tile_clip_bounds_ = gs3d::core::Bounds3f{

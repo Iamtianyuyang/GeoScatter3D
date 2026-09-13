@@ -421,7 +421,9 @@ TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
     // load_synthetic 已经建过一次链，附加时只应重传 GPU 缓冲。
     CHECK(attached.cpu_chain_reused);
     CHECK(attached.level_count == built.level_count);
-    CHECK(attached.drawn_points == built.drawn_points);
+    // 注意：drawn_points 取决于相机（瓦片是否覆盖可见面 → 底图选层），
+    // 不是链路属性；这里断言与相机无关的 GPU 层级集合与间距。
+    CHECK(attached.gpu_points == built.gpu_points);
     CHECK(attached.estimated_spacing == built.estimated_spacing);
 
     /*
@@ -461,7 +463,7 @@ TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
     const auto reattached = lod_of();
     CHECK(reattached.cpu_chain_reused);
     CHECK(reattached.level_count == built.level_count);
-    CHECK(reattached.drawn_points == built.drawn_points);
+    CHECK(reattached.gpu_points == built.gpu_points);
     CHECK(reattached.estimated_spacing == built.estimated_spacing);
 
     // GPU 缓冲已重传：能真的画出来（否则 lod_ 为空，只会得到 -2）。
@@ -542,13 +544,15 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
         return 0;
     });
 
+    /*
+     * 全有或全无：达标瓦片的总点数超预算时，这一级整帧不出现，
+     * 而不是「只留最近的一圈」——后者会把远处的**可见**瓦片丢掉，
+     * 那片区域只剩极粗底图，真机上就是「模型被切掉一半」。
+     */
     REQUIRE(state->tile_selected > 0);
-    CHECK(state->tile_needed > 0);
-    // 确实被截断：达标瓦片多于实际加载的瓦片。
-    CHECK(state->tile_selected > state->tile_needed);
-    // 计划点数落在预算内（bench-dev 瓦片点数是均匀的 625 点/块）。
-    CHECK(state->tile_planned_points <= kBudget);
-    CHECK(state->tile_planned_points > kBudget / 2);
+    CHECK(state->tile_needed == 0);
+    CHECK(state->tile_planned_points == 0);
+    CHECK(state->tiles_available);
 
     // 预算放开时不应截断（小数据集行为不变）。
     gs3d::ffi::EngineHost generous;
@@ -582,6 +586,44 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
             return 0;
         });
         CHECK(open_state->tile_selected == open_state->tile_needed);
+        CHECK(open_state->tile_needed > 0);
+    }
+
+    // 绘制调用上限同样走「全有或全无」：1478 块瓦片（1M 数据集）实测 19 ms，
+    // 瓶颈是每块一次 vkCmdDraw 的驱动开销，与点数无关。
+    gs3d::ffi::EngineHost draw_limited;
+    gs3d::ffi::HeadlessRenderKernel::Config draw_config{};
+    draw_config.width = 1204;
+    draw_config.height = 704;
+    draw_config.shader_dir = shader_dir.string();
+    draw_config.tile_point_budget = 0;      // 只考验绘制调用上限
+    draw_config.tile_max_draws = 4;
+    if (draw_limited.start(draw_config) == 0) {
+        REQUIRE(draw_limited.invoke([&bundle](gs3d::ffi::HeadlessRenderKernel& k) {
+            return k.load_dataset(bundle.string());
+        }) == 0);
+        draw_limited.invoke([](gs3d::ffi::HeadlessRenderKernel& k) {
+            for (int step = 0; step < 2; ++step) {
+                k.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+            }
+            return 0;
+        });
+        for (int frame = 0; frame < 8; ++frame) {
+            std::uint32_t w = 0;
+            std::uint32_t h = 0;
+            draw_limited.invoke([&rgba, &w, &h](gs3d::ffi::HeadlessRenderKernel& k) {
+                return k.render_rgba(
+                    rgba.data(), static_cast<std::uint32_t>(rgba.size()), &w, &h
+                );
+            });
+        }
+        auto draw_state = std::make_shared<gs3d::ffi::HeadlessRenderKernel::LodState>();
+        draw_limited.invoke([draw_state](gs3d::ffi::HeadlessRenderKernel& k) {
+            *draw_state = k.lod_state();
+            return 0;
+        });
+        CHECK(draw_state->tile_selected > draw_config.tile_max_draws);
+        CHECK(draw_state->tile_needed == 0);
     }
 }
 
