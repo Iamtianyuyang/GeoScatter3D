@@ -281,6 +281,19 @@ TEST_CASE("tile streaming uploads and composes a large bundle") {
     );
     REQUIRE(load_rc == 0);
 
+    /*
+     * 先放大几步：瓦片是**整层介入**的（见 update_tile_streaming_locked 的
+     * partial_coverage）—— 只有视锥内每一块瓦片都达到 min_tile_pixel_size，
+     * 瓦片层才会出现；默认全景位姿下它故意不出，否则屏幕上会出现
+     * 「一半全精度瓦片 + 一半底图」的硬拼接。
+     */
+    host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        for (int step = 0; step < 2; ++step) {
+            kernel.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+        }
+        return 0;
+    });
+
     // 连续出帧直到瓦片驻留下来；首帧即会读取并上传若干瓦片。
     std::uint64_t resident = 0;
     std::uint64_t tile_points = 0;

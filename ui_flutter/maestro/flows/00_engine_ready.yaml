@@ -1,0 +1,27 @@
+appId: com.geoscatter3d.ui_flutter
+name: 引擎与视口就绪
+tags:
+  - smoke
+---
+# 前提：APK 用 `--dart-define=GS3D_DEBUG_CONTROLS=true` 构建（见同级 README）。
+# 该开关打开后，视口右下角有语义化按钮「放大 / 缩小 / 复位相机」，
+# HUD 下方多一行内核状态（cover=/below=/clip=/tile=/lod=/drawn=）。
+- launchApp:
+    stopApp: true
+
+# 引擎起来 + 零拷贝纹理接管：HUD 会显示「就绪 · 零拷贝纹理」（回退时为 RGBA 回读）。
+- extendedWaitUntil:
+    visible: ".*就绪.*"
+    timeout: 120000
+- assertVisible: ".*(零拷贝纹理|RGBA 回读).*"
+# 可见点 + LOD 规模摘要（小数据集时摘要为空，这里只要求 HUD 有 GPU 行）。
+- assertVisible: ".*可见点.*"
+- assertVisible: "Adreno.*"
+
+# 调试控制面必须存在（否则说明装的是生产包，本套流程无法驱动相机）。
+- assertVisible: "放大"
+- assertVisible: "缩小"
+- assertVisible: "复位相机"
+- extendedWaitUntil:
+    visible: "cover=.*"
+    timeout: 60000

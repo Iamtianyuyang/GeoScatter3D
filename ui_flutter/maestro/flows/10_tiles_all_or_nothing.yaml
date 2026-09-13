@@ -1,0 +1,68 @@
+appId: com.geoscatter3d.ui_flutter
+name: 瓦片层全有或全无（放大才出现、缩小必须整层消失）
+tags:
+  - regression
+  - tile
+---
+# 回归目标（真机「一半瓦片一半 LOD / 半个模型」）：
+#   瓦片按投影尺寸逐块选取，中等缩放下只有近处一条带达标；若照画不误，屏幕上就是
+#   「全精度瓦片带 + 稀疏底图」两块、中间一条硬边界。正确行为：瓦片层要么盖住整屏
+#   可见面（放大到一定阶段），要么这一帧整层不出，由底图把整屏画满。
+#
+# 调试行（`GS3D_DEBUG_CONTROLS=true` 才有）：
+#   cover=  瓦片是否盖住整屏可见面（只有 cover=1 时底图才允许退回粗层）
+#   below=  视锥内投影未达 min_tile_pixel_size 的瓦片数
+#   tile=   驻留/需求，0/0 表示这一帧整层不出
+#   lod=    底图选中层/总层数，drawn= 实际绘制点数
+# Maestro 的 text 匹配是**整串**正则，所以一律写 `.*….*`。
+#
+# 本流程的核心不变量（任意位姿都必须成立，因此对相机自漂移也稳健）：
+#   **不存在 below>0 且 tile 需求>0 的帧** —— 那就是「一半瓦片一半 LOD」。
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: ".*就绪.*"
+    timeout: 120000
+- extendedWaitUntil:
+    visible: ".*cover=.*"
+    timeout: 60000
+
+# ① 拟合位姿：整屏只有底图，不允许出现瓦片带。
+- tapOn: "复位相机"
+- extendedWaitUntil:
+    visible: ".*tile=0/0 .*"
+    timeout: 60000
+- assertNotVisible: ".*驻留.*"
+- assertVisible: ".*cover=0 .*"
+- assertNotVisible: ".*below=[1-9][0-9]* .*tile=[1-9][0-9]*/[1-9].*"
+
+# ② 逐级放大：每一步都检查不变量（这段会经过「部分可见瓦片未达门槛」的中间档，
+#    正是 bug 出现的区间）。
+- repeat:
+    times: 6
+    commands:
+      - tapOn: "放大"
+      - waitForAnimationToEnd:
+          timeout: 2500
+      - assertNotVisible: ".*below=[1-9][0-9]* .*tile=[1-9][0-9]*/[1-9].*"
+
+# 深放大后视锥内每一块瓦片都达标：below 必须归零。
+- extendedWaitUntil:
+    visible: ".*below=0 .*"
+    timeout: 90000
+
+# ③ 再逐级缩小回去：经过中间档时同样不允许出现混合帧，最终瓦片层必须整层消失。
+- repeat:
+    times: 8
+    commands:
+      - tapOn: "缩小"
+      - waitForAnimationToEnd:
+          timeout: 2500
+      - assertNotVisible: ".*below=[1-9][0-9]* .*tile=[1-9][0-9]*/[1-9].*"
+- extendedWaitUntil:
+    notVisible: ".*驻留.*"
+    timeout: 90000
+- extendedWaitUntil:
+    visible: ".*tile=0/0 .*"
+    timeout: 30000
+- assertVisible: ".*cover=0 .*"

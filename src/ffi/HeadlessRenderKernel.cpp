@@ -157,6 +157,19 @@ void HeadlessRenderKernel::destroy_gpu_resources(bool keep_cpu_caches) noexcept 
     tile_needed_ids_.clear();
     tile_drawable_ids_.clear();
     tile_drawn_points_ = 0;
+    /*
+     * 合成状态必须一并清：否则「上一次选取」的结论会活过 attach/detach
+     * （在下一帧的 update_tile_streaming_locked 跑完之前），诊断里就会出现
+     * 自相矛盾的一行：clip=1（旧帧）而 cover=0、tile=0/0（已清）。
+     * 宁可报「本轮还没选」，也不要报一个不存在的混合状态。
+     */
+    tile_layers_active_ = false;
+    tile_clip_active_ = false;
+    tile_all_resident_ = false;
+    tile_cover_view_ = false;
+    tile_below_threshold_ = 0;
+    tile_skipped_by_coverage_ = false;
+    tile_pins_.clear();
     pipeline_.reset();
     framebuffer_.destroy();
     if (context_ && command_pool_ != VK_NULL_HANDLE) {
@@ -920,6 +933,7 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     tile_layers_active_ = false;
     tile_cover_view_ = false;
     tile_below_threshold_ = 0;
+    tile_skipped_by_coverage_ = false;
     tile_pins_.clear();
 
     if (!tile_reader_ || !tile_reader_->valid() || !tile_cache_) {
@@ -981,8 +995,22 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     const bool too_many_draws =
         config_.tile_max_draws > 0 &&
         tile_needed_ids_.size() > config_.tile_max_draws;
-    if (too_many_points || too_many_draws) {
+    /*
+     * 第三种「全有或全无」：选取本身就不是全覆盖。
+     *
+     * 瓦片按投影尺寸逐块选（Potree SSE）：中等缩放下只有近处一条带达标，
+     * 远处一片因 < min_tile_pixel_size 被刷掉。若照画不误，屏幕上就是
+     * 「一半全精度瓦片 + 一半底图」两块，中间一条硬边界 —— 用户看到的就是
+     * 「放大到某阶段才加载 tile」那种半吊子状态（真机 1M / fov≈25°：
+     * 1600 块里 1200+ 块未达门槛）。
+     * 宁可这一帧不出瓦片（底图已经足够密，见 choose_lod_index），
+     * 等真的放大到「视锥内每一块都达标」时再整层介入。
+     */
+    const bool partial_coverage =
+        selection.enabled && selection.tiles_below_threshold > 0;
+    if (too_many_points || too_many_draws || partial_coverage) {
         tiles_skipped_by_budget = true;
+        tile_skipped_by_coverage_ = partial_coverage;
         tile_needed_ids_.clear();
         tile_points_needed = 0;
     }
@@ -999,7 +1027,8 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
             << " points=" << tile_points_needed
             << " budget=" << config_.tile_point_budget
             << " skipped=" << (tiles_skipped_by_budget ? 1 : 0)
-            << " skip_by=" << (too_many_points ? "points"
+            << " skip_by=" << (partial_coverage ? "coverage"
+                             : too_many_points ? "points"
                              : too_many_draws ? "draws" : "-")
             << " enabled=" << (selection.enabled ? 1 : 0)
             << " distance=" << camera_.distance()
@@ -1970,6 +1999,9 @@ HeadlessRenderKernel::LodState HeadlessRenderKernel::lod_state() const {
         state.tile_drawn_points = tile_drawn_points_;
         state.tile_uploaded_bytes_frame = tile_uploaded_bytes_frame_;
         state.tile_clip_active = tile_clip_active_;
+        state.tile_cover_view = tile_cover_view_;
+        state.tile_below_threshold = tile_below_threshold_;
+        state.tile_skipped_by_coverage = tile_skipped_by_coverage_;
         state.tiles_fully_resident =
             !tile_needed_ids_.empty() &&
             tile_drawable_ids_.size() == tile_needed_ids_.size();

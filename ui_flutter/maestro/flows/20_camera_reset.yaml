@@ -1,0 +1,28 @@
+appId: com.geoscatter3d.ui_flutter
+name: 相机输入与复位（旋转 + 复位）
+tags:
+  - camera
+---
+# 相机交互走的是 Flutter 手势，Maestro 用 swipe 驱动旋转（单指拖拽 = 转），
+# 复位用语义化按钮。这里只做「不崩、HUD 持续刷新、复位后回到拟合位姿」的冒烟。
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: ".*就绪.*"
+    timeout: 120000
+
+# 单指竖直拖拽 = 俯仰旋转（与真机手势等价）。
+- swipe:
+    start: "50%, 60%"
+    end: "50%, 35%"
+    duration: 600
+- waitForAnimationToEnd:
+    timeout: 4000
+- assertVisible: ".*可见点.*"
+
+# 复位必须回到「整屏一个底图层」的拟合位姿。
+- tapOn: "复位相机"
+- extendedWaitUntil:
+    visible: ".*/.* 点 · LOD.*"
+    timeout: 60000
+- assertVisible: ".*就绪.*"

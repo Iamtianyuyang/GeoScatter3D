@@ -262,6 +262,8 @@ public:
         bool tile_cover_view = false;
         /// 视锥内投影尺寸未达门槛的瓦片数（>0 就是底图被逼变密的原因）。
         std::uint32_t tile_below_threshold = 0;
+        /// 本帧是否因「选取本身不是全覆盖」而整层不出瓦片（见 partial_coverage）。
+        bool tile_skipped_by_coverage = false;
     };
 
     [[nodiscard]] CameraState camera_state() const;
@@ -366,6 +368,8 @@ private:
     std::uint32_t tile_below_threshold_ = 0;
     /// 瓦片层是否盖住了整屏可见面（false → 底图必须足够密，见 choose_lod_index）。
     bool tile_cover_view_ = false;
+    /// 本帧瓦片整层不出的原因是否是「选取不是全覆盖」（诊断/测试用）。
+    bool tile_skipped_by_coverage_ = false;
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

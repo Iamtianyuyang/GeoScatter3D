@@ -555,10 +555,13 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
     CHECK(state->tile_planned_points == 0);
     CHECK(state->tiles_available);
     /*
-     * 回归（真机「半个模型」）：瓦片层一旦没盖住整屏可见面（被预算剔掉、
-     * 或还有可见瓦片因投影太小被门槛刷掉），底图就不能退回粗层。
+     * 回归（真机「一半瓦片一半 LOD」/「半个模型」）：瓦片只能整层介入。
+     * 选取本身不是全覆盖（还有可见瓦片未达 min_tile_pixel_size）时，
+     * 这一帧就不允许画任何瓦片，否则屏幕上会出现「全精度瓦片带 + 底图」两块，
+     * 中间一条硬边界。
      */
     CHECK_FALSE(state->tile_cover_view);
+    CHECK(!(state->tile_below_threshold > 0 && state->tile_needed > 0));
 
     // 预算放开时不应截断（小数据集行为不变）。
     gs3d::ffi::EngineHost generous;
@@ -593,6 +596,15 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
         });
         CHECK(open_state->tile_selected == open_state->tile_needed);
         CHECK(open_state->tile_needed > 0);
+        // 合成状态必须自洽：cover ⇔（有可绘制瓦片 ∧ 全部驻留 ∧ 无未达门槛的可见瓦片）。
+        CHECK(
+            open_state->tile_cover_view ==
+            (open_state->tiles_fully_resident &&
+             open_state->tile_below_threshold == 0)
+        );
+        // 整层介入的前提就是全覆盖：不能一半瓦片一半底图。
+        CHECK(open_state->tile_below_threshold == 0);
+        CHECK_FALSE(open_state->tile_skipped_by_coverage);
     }
 
     // 绘制调用上限同样走「全有或全无」：1478 块瓦片（1M 数据集）实测 19 ms，

@@ -187,13 +187,21 @@ class _ViewportCanvasState extends State<ViewportCanvas>
             SafeArea(
               child: Align(
                 alignment: Alignment.bottomRight,
-                child: IconButton(
-                  key: const ValueKey('camera_reset'),
-                  tooltip: '复位相机',
-                  onPressed: _service.ready
-                      ? () => _action('camera.reset')
-                      : null,
-                  icon: const Icon(Icons.center_focus_strong),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 自动化/调试专用（`--dart-define=GS3D_DEBUG_CONTROLS=true`）：
+                    // 视口缩放是双指手势，外部自动化注入不进去，因此给出语义化按钮。
+                    if (kDebugControls) ..._buildDebugControls(context),
+                    IconButton(
+                      key: const ValueKey('camera_reset'),
+                      tooltip: '复位相机',
+                      onPressed: _service.ready
+                          ? () => _action('camera.reset')
+                          : null,
+                      icon: const Icon(Icons.center_focus_strong),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -202,6 +210,44 @@ class _ViewportCanvasState extends State<ViewportCanvas>
       },
     );
   }
+  /// 调试控制面：放大/缩小 + 内核算取状态一行。
+  ///
+  /// 每个按钮都有稳定的 tooltip（→ Android 无障碍标签），Maestro 可以直接
+  /// `tapOn: "放大"`；状态行同样作为文本节点暴露，可 `assertVisible: "cover=1.*"`。
+  List<Widget> _buildDebugControls(BuildContext context) => [
+    Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xCC0B1220),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        _service.debugStats.isEmpty ? 'debug: 等待遥测' : _service.debugStats,
+        style: const TextStyle(
+          color: Color(0xFF7DD3FC),
+          fontSize: 11,
+          fontFamily: 'monospace',
+        ),
+      ),
+    ),
+    IconButton(
+      key: const ValueKey('camera_zoom_out'),
+      tooltip: '缩小',
+      onPressed: _service.ready
+          ? () => _action('camera.input', {'scrollY': -kDebugZoomStep})
+          : null,
+      icon: const Icon(Icons.zoom_out),
+    ),
+    IconButton(
+      key: const ValueKey('camera_zoom_in'),
+      tooltip: '放大',
+      onPressed: _service.ready
+          ? () => _action('camera.input', {'scrollY': kDebugZoomStep})
+          : null,
+      icon: const Icon(Icons.zoom_in),
+    ),
+  ];
 }
 
 /// 显示引用单独持有，避免服务更换帧到下一次 Widget 重建之间引用失效。

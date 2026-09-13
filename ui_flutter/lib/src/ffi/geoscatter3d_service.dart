@@ -28,6 +28,20 @@ const int kBenchZoomSteps = int.fromEnvironment('GS3D_BENCH_ZOOM');
 /// 从引擎诊断读取（每 30 tick ≈ 0.5s@60Hz，一次 FFI JSON 往返）。
 const int kPresentTelemetryTicks = 30;
 
+/// 调试/自动化控制面：`--dart-define=GS3D_DEBUG_CONTROLS=true`。
+///
+/// 为什么需要它：视口的缩放/平移是 Flutter 的 `GestureDetector.onScaleUpdate`
+/// （双指）与 `Listener.onPointerSignal`（鼠标滚轮）—— **外部自动化注入不进去**
+/// （Maestro 只有 tap/swipe，`adb shell input` 没有 pinch，鼠标/触控板 roll 事件
+/// 引擎也不消费）。于是真机排障时相机没法被脚本控制。打开这个开关后，视口右下角
+/// 会出现带无障碍标签的相机按钮（放大/缩小/复位），并把内核的瓦片/LOD 选取状态
+/// 以文本暴露出来，Maestro 就能通过 `tapOn: "放大"` + `assertVisible` 完整驱动与断言。
+/// 默认关闭，生产 UI 不受影响。
+const bool kDebugControls = bool.fromEnvironment('GS3D_DEBUG_CONTROLS');
+
+/// 相机按钮每按一次推进的缩放量（与滚轮一步等价）。
+const double kDebugZoomStep = 3.0;
+
 /// 唯一视口状态中枢；拥有引擎、帧和控制动作，Widget 不直接执行 FFI。
 class GeoScatter3dService extends ChangeNotifier {
   GeoScatter3dService({
@@ -58,6 +72,7 @@ class GeoScatter3dService extends ChangeNotifier {
   int _pointCount = 0;
   int _sourcePointCount = 0;
   String _lodSummary = '';
+  String _debugStats = '';
   int _frameNumber = 0;
   int _windowFrames = 0;
   int _lastSequence = 0;
@@ -85,6 +100,9 @@ class GeoScatter3dService extends ChangeNotifier {
   int get sourcePointCount => _sourcePointCount;
   /// LOD 摘要（源点数远大于绘制量时才非空），用于 HUD 展示缩放后的规模。
   String get lodSummary => _lodSummary;
+  /// 调试用内核选取状态（tile/LOD 合成），`GS3D_DEBUG_CONTROLS` 打开时展示。
+  /// 格式：`cover=0 below=1243 tile=357/357 clip=1 lod=2/3`
+  String get debugStats => _debugStats;
   int get frameNumber => _frameNumber;
   double get fps => _fps;
   double get frameTimeMs => _frameTimeMs;
@@ -256,6 +274,22 @@ class GeoScatter3dService extends ChangeNotifier {
     }
   }
 
+  /// 调试行：把内核的选取状态压成一行可断言文本（Maestro 靠它判断
+  /// 「瓦片该不该出现」与「底图为什么变密」）。
+  String _formatDebugStats(Object? lod) {
+    if (lod is! Map) return '';
+    int intOf(String key) => (lod[key] as num?)?.toInt() ?? 0;
+    int boolOf(String key) => (lod[key] == true) ? 1 : 0;
+    return 'cover=${boolOf('tile_cover_view')}'
+        ' below=${intOf('tile_below_threshold')}'
+        ' clip=${boolOf('tile_clip_active')}'
+        ' fully=${boolOf('tiles_fully_resident')}'
+        ' skipcov=${boolOf('tile_skipped_by_coverage')}'
+        ' tile=${intOf('tile_resident')}/${intOf('tile_needed')}'
+        ' lod=${intOf('level_index') + 1}/${intOf('level_count')}'
+        ' drawn=${intOf('drawn_points')}';
+  }
+
   /// 由引擎诊断的 LOD 状态生成规模摘要；小数据集返回空串（HUD 不显示）。
   void _refreshLodSummary(Gs3dEngine engine) {
     _applyLodSummary(engine.diagnostics);
@@ -265,6 +299,7 @@ class GeoScatter3dService extends ChangeNotifier {
   void _applyDiagnostics(Map<String, dynamic> diagnostics) {
     if (diagnostics.isEmpty) return;
     _applyLodSummary(diagnostics);
+    _debugStats = _formatDebugStats(diagnostics['lod']);
     final lod = diagnostics['lod'];
     if (lod is Map) {
       _pointCount = (lod['drawn_points'] as num?)?.toInt() ?? _pointCount;
