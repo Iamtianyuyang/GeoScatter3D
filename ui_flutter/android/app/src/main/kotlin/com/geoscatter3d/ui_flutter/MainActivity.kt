@@ -165,6 +165,8 @@ class MainActivity : FlutterActivity() {
      * 建立纹理通路：SurfaceProducer → Surface → 引擎交换链。
      *
      * 返回 Flutter 纹理 id（Dart 侧用它渲染 Texture widget）。
+     * `width`/`height` 是**物理像素**（`SurfaceProducer.setSize` 的语义）：Dart 侧
+     * 已按 dpr 折算，传逻辑像素会被合成器放大到物理屏幕（点云发软）。
      * 任何一步失败都返回 error，Dart 侧保持回读路径（不得静默地“假装可用”）。
      */
     private fun attachPresentSurface(
@@ -225,6 +227,8 @@ class MainActivity : FlutterActivity() {
 
     /**
      * 视口尺寸变化：setSize 后必须重新附加。
+     *
+     * `width`/`height` 同样是**物理像素**（见 [attachPresentSurface]）。
      *
      * 试过「Surface 对象未变时只 setSize、让引擎自己按 OUT_OF_DATE 重建交换链」的
      * 偷懒路径：真机上交换链并不会被判为过期（没有 recreate 日志），结果引擎继续

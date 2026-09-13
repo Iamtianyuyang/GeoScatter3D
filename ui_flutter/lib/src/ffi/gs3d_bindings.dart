@@ -67,6 +67,9 @@ typedef DartResize = int Function(Gs3dEnginePtr e, int w, int h);
 typedef CSetPointSize = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Float size);
 typedef DartSetPointSize = int Function(Gs3dEnginePtr e, double size);
 
+typedef CSetViewScale = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Float scale);
+typedef DartSetViewScale = int Function(Gs3dEnginePtr e, double scale);
+
 typedef CSetColormap = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Int32 index);
 typedef DartSetColormap = int Function(Gs3dEnginePtr e, int index);
 
@@ -179,6 +182,7 @@ class Gs3dBindings {
   late final DartUnloadDataset unloadDataset;
   late final DartResize resize;
   late final DartSetPointSize setPointSize;
+  late final DartSetViewScale setViewScale;
   late final DartSetColormap setColormap;
   late final DartSetPointShape setPointShape;
   late final DartSetBackground setBackground;
@@ -227,6 +231,9 @@ class Gs3dBindings {
     resize = lib.lookupFunction<CResize, DartResize>('gs3d_engine_resize');
     setPointSize = lib.lookupFunction<CSetPointSize, DartSetPointSize>(
       'gs3d_engine_set_point_size',
+    );
+    setViewScale = lib.lookupFunction<CSetViewScale, DartSetViewScale>(
+      'gs3d_engine_set_view_scale',
     );
     setColormap = lib.lookupFunction<CSetColormap, DartSetColormap>(
       'gs3d_engine_set_colormap_index',

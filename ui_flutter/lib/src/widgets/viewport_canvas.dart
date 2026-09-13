@@ -124,7 +124,11 @@ class _ViewportCanvasState extends State<ViewportCanvas>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _service.requestSize(constraints.biggest);
+        // 只上报几何事实（逻辑尺寸 + 设备 dpr）；纹理像素密度策略在服务里决定。
+        _service.requestSize(
+          constraints.biggest,
+          pixelRatio: MediaQuery.devicePixelRatioOf(context),
+        );
 
         return Stack(
           children: [

@@ -91,6 +91,22 @@ public:
         std::uint64_t lod_point_cap = 1'200'000;
         /// 底图屏幕目标：点距投影不超过该像素数（越小越密、越贵）。
         float lod_max_projected_spacing_px = 2.5f;
+        /*
+         * 渲染像素 / 逻辑像素之比（= 设备 dpr），由平台层在接管物理像素纹理时告知。
+         *
+         * 为什么需要它：零拷贝纹理按物理像素建交换链（否则合成器把逻辑尺寸的
+         * 纹理放大到屏幕 —— 点云发软，而且丢掉全屏硬件叠加直通，真机实测
+         * 13.9 ms → 8.3 ms）。但下面这些「像素」参数是按逻辑像素调优的视觉门槛：
+         * 物理像素下 viewport_height ×2.13，投影像素数整体放大 → 选取的瓦片
+         * 翻几倍 → 超预算 → 「全有或全无」直接让瓦片层消失（真机 10M fov=1.4°
+         * 实测整屏空白），底图也会越级变细。
+         *
+         * 因此：把 view_scale 当作「多少物理像素换 1 个逻辑像素」的汇率，
+         * 所有像素门槛（min_tile_pixel_size / lod_max_projected_spacing_px /
+         * 自动点预算）一律换算回逻辑像素再比。1.0 = 逻辑像素渲染
+         * （回读路径；也等于纹理 dpr=1 的旧行为）。
+         */
+        float view_scale = 1.0f;
         /// 每帧 tile 上传字节预算（避免一次拉入过多阻塞帧）。
         std::uint64_t tile_upload_budget_bytes = 8ull * 1024ull * 1024ull;
         /// CPU 侧 tile 点缓存上限（LRU）。
@@ -151,6 +167,9 @@ public:
                      float pan_dx, float pan_dy, float scroll_y);
 
     void set_point_size(float size);
+
+    /// 设置「渲染像素 / 逻辑像素」汇率（见 Config::view_scale）；幂等。
+    int set_view_scale(float scale);
     void set_colormap_index(int index);
     void set_value_clip(bool enabled, float min_v, float max_v);
     void set_point_shape(int shape);  // 0-3

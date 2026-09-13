@@ -20,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -1216,6 +1217,67 @@ void test_tile_selection_does_not_cap_visible_tiles()
     expect(
         result.tile_ids.size() == 2,
         "visible tile selection ignores max_visible_tiles to avoid block artifacts"
+    );
+}
+
+void test_tile_selection_normalizes_view_scale()
+{
+    /*
+     * 零拷贝纹理按物理像素建交换链（点阵才锐、才走得通全屏硬件叠加），
+     * 但 min_tile_pixel_size 是按逻辑像素调优的「值得加载」门槛。
+     * 因此投影像素数必须按 view_scale（渲染像素 / 逻辑像素）换回逻辑像素：
+     * 不换的话 dpr=2.125 的平板会把投影像素整体放大 2 倍多，选取的瓦片翻几倍
+     * → 撞上 tile_point_budget → 「全有或全无」把整层瓦片剔掉（真机整屏空白）。
+     *
+     * 用正交相机：投影尺寸与距离无关，只随视口高度/汇率变化，阈值边界干净。
+     */
+    gs3d::core::TileIndexView tile_index;
+    tile_index.header.tile_size_x = 10.0f;
+    tile_index.header.tile_size_y = 10.0f;
+    tile_index.header.grid_origin_x = 0.0f;
+    tile_index.header.grid_origin_y = 0.0f;
+    tile_index.header.bbox_min_z = 0.0f;
+    tile_index.header.bbox_max_z = 10.0f;
+    tile_index.records.push_back({
+        1, 0, 0, 100,
+        0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 10.0f
+    });
+
+    // 投影尺寸 = tile_size / ortho_height × viewport_height / view_scale
+    //          = 10 / 40 × viewport_height / view_scale
+    auto selected = [&tile_index](std::uint32_t width, std::uint32_t height,
+                                  float view_scale, float min_px) {
+        gs3d::camera::Camera camera;
+        camera.set_viewport(width, height);
+        camera.set_orthographic(40.0f, 0.1f, 1000.0f);
+        camera.look_at(
+            {0.0f, 0.0f, 100.0f},
+            {0.0f, 0.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f}
+        );
+        gs3d::render::TileSelectionConfig config;
+        config.min_tile_pixel_size = min_px;
+        config.use_full_z_range = true;
+        config.view_scale = view_scale;
+        gs3d::render::TileSelection selection(config);
+        return selection.update(camera, tile_index).tile_ids.size();
+    };
+
+    // 逻辑像素视口：投影 175 px < 250 门槛 → 不选。
+    expect(
+        selected(1200, 700, 1.0f, 250.0f) == 0,
+        "logical viewport below the pixel threshold selects no tile"
+    );
+    // 物理像素视口（dpr=2）+ 汇率：等效投影仍然是 175 px，行为必须一致。
+    expect(
+        selected(2400, 1400, 2.0f, 250.0f) == 0,
+        "view_scale keeps physical-pixel selection identical to logical"
+    );
+    // 不告知汇率：投影被放大到 350 px，越级选中（真机上就是靠这个把瓦片层
+    // 挤出预算、连带底图一起变细）。
+    expect(
+        selected(2400, 1400, 1.0f, 250.0f) == 1,
+        "without view_scale the pixel ratio inflates projected tile size"
     );
 }
 
@@ -4185,6 +4247,7 @@ void test_scenario_linked_viewports_after_propagation()
     LEGACY_TEST_CASE(test_tile_selection_honors_full_z_range_config)
     LEGACY_TEST_CASE(test_tile_selection_uses_mapped_height_space)
     LEGACY_TEST_CASE(test_tile_selection_does_not_cap_visible_tiles)
+    LEGACY_TEST_CASE(test_tile_selection_normalizes_view_scale)
     LEGACY_TEST_CASE(test_zoom_caps_depth_ratio_for_close_large_scene)
     LEGACY_TEST_CASE(test_rotate_refreshes_depth_ratio)
     LEGACY_TEST_CASE(test_pan_refreshes_depth_ratio)

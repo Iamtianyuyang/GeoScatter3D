@@ -10,6 +10,7 @@ class FakeEngine implements Gs3dEngine {
   int? syntheticPoints;
   int? pointBudget;
   List<(int, int)> sizes = [];
+  final List<double> viewScales = [];
   Map<String, double>? input;
   Future<ui.Image?> Function()? render;
 
@@ -99,6 +100,11 @@ class FakeEngine implements Gs3dEngine {
   @override
   void dispose() {
     disposeCount++;
+  }
+
+  @override
+  void setViewScale(double scale) {
+    viewScales.add(scale);
   }
 
   @override

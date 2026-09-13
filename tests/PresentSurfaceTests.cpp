@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -625,6 +626,87 @@ TEST_CASE("tile point budget caps the drawn tile layer") {
         CHECK(draw_state->tile_selected > draw_config.tile_max_draws);
         CHECK(draw_state->tile_needed == 0);
     }
+}
+
+TEST_CASE("auto point budget is normalized by the view scale") {
+    /*
+     * 物理像素交换链（dpr>1）下 config_.width/height 是物理像素，而自动点预算
+     * 的密度目标（「每 6 个逻辑像素一个点」）是按逻辑像素定的。因此拿 view_scale
+     * （渲染像素/逻辑像素）换回逻辑像素后才算预算。
+     * 真机上这个偏差会让底图/瓦片选取基线整体放大 4.5 倍。
+     */
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (!std::filesystem::exists(shader_dir / "point.vert.spv")) {
+        SUCCEED("shaders missing; skipping view scale test");
+        return;
+    }
+
+    auto budget_for = [&shader_dir](
+                          std::uint32_t width,
+                          std::uint32_t height,
+                          float scale,
+                          std::int32_t* out_rc = nullptr
+                      ) -> std::uint64_t {
+        gs3d::ffi::EngineHost host;
+        gs3d::ffi::HeadlessRenderKernel::Config config{};
+        config.width = width;
+        config.height = height;
+        config.shader_dir = shader_dir.string();
+        if (host.start(config) != 0) {
+            return 0;
+        }
+        std::uint64_t budget = 0;
+        const std::int32_t rc = host.invoke(
+            [scale, &budget](gs3d::ffi::HeadlessRenderKernel& kernel) {
+                const std::int32_t set_rc = kernel.set_view_scale(scale);
+                budget = kernel.lod_state().budget;
+                return set_rc;
+            }
+        );
+        if (out_rc != nullptr) *out_rc = rc;
+        return budget;
+    };
+
+    const std::uint64_t baseline = budget_for(1200, 700, 1.0f);
+    if (baseline == 0) {
+        SUCCEED("Vulkan unavailable; skipping view scale test");
+        return;
+    }
+    CHECK(baseline == 1200ull * 700ull / 6ull);
+
+    // 物理像素视口（dpr=2）+ 汇率：自动预算必须与逻辑像素基线一致。
+    std::int32_t rc = 0;
+    const std::uint64_t scaled = budget_for(2400, 1400, 2.0f, &rc);
+    CHECK(rc == 0);
+    CHECK(scaled == baseline);
+
+    // 不告知汇率：预算被 dpr² 放大（要修的故障）。
+    CHECK(budget_for(2400, 1400, 1.0f) == baseline * 4ull);
+
+    // 非法汇率必须显式拒绝，而不是默默按 1 处理。
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config{};
+    config.width = 1200;
+    config.height = 700;
+    config.shader_dir = shader_dir.string();
+    REQUIRE(host.start(config) == 0);
+    const std::int32_t bad_rc = host.invoke(
+        [](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            const std::int32_t zero = kernel.set_view_scale(0.0f);
+            const std::int32_t nan = kernel.set_view_scale(
+                std::numeric_limits<float>::quiet_NaN()
+            );
+            return zero != 0 && nan != 0 ? 0 : -1;
+        }
+    );
+    CHECK(bad_rc == 0);
+    // 被拒绝的调用不得改变汇率（预算仍与基线一致）。
+    std::uint64_t after_bad = 0;
+    host.invoke([&after_bad](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        after_bad = kernel.lod_state().budget;
+        return 0;
+    });
+    CHECK(after_bad == baseline);
 }
 
 #else

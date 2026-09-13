@@ -297,6 +297,16 @@ GS3D_FFI_API int32_t gs3d_engine_unload_dataset(gs3d_engine* e);
 GS3D_FFI_API int32_t gs3d_engine_resize(gs3d_engine* e, uint32_t w, uint32_t h);
 
 GS3D_FFI_API int32_t gs3d_engine_set_point_size(gs3d_engine* e, float size);
+/*
+ * 渲染像素 / 逻辑像素之比（= 设备 dpr）。
+ *
+ * 零拷贝纹理通路按物理像素建交换链（点阵才能与屏幕 1:1、不吃合成器放大），
+ * 但内核里所有「像素门槛」（瓦片最小投影尺寸、底图目标点距、自动点预算）都是
+ * 按逻辑像素调优的。平台层拿到 dpr 后必须告知引擎，否则物理像素会让这些门槛
+ * 整体偏大，选取的瓦片/层级越级（真机 10M fov=1.4° 实测瓦片层消失、整屏空）。
+ * 回读路径（逻辑像素渲染）传 1.0。scale 非有限值或 <= 0 时返回非 0。
+ */
+GS3D_FFI_API int32_t gs3d_engine_set_view_scale(gs3d_engine* e, float scale);
 GS3D_FFI_API int32_t gs3d_engine_set_colormap_index(gs3d_engine* e, int32_t index);
 GS3D_FFI_API int32_t gs3d_engine_set_point_shape(gs3d_engine* e, int32_t shape);
 GS3D_FFI_API int32_t gs3d_engine_set_value_clip(

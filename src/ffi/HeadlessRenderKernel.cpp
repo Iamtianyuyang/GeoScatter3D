@@ -522,11 +522,20 @@ std::uint64_t HeadlessRenderKernel::effective_point_budget() const {
     if (point_budget_ != 0) {
         return point_budget_;
     }
-    // 自动预算：约每 6 个像素一个点（点尺寸 1–2 px 时视觉上已饱和），
-    // 并夹在 [64k, 4M]，避免小视口过度降采样、大视口无上限。
-    const std::uint64_t pixels =
-        static_cast<std::uint64_t>(config_.width) * config_.height;
-    const std::uint64_t budget = pixels / 6u;
+    /*
+     * 自动预算：约每 6 个**逻辑**像素一个点（点尺寸 1–2 px 时视觉上已饱和），
+     * 并夹在 [64k, 4M]，避免小视口过度降采样、大视口无上限。
+     *
+     * 密度目标是「屏幕上看起来多密」，因此必须先除以 view_scale² 换回逻辑像素：
+     * 否则物理像素纹理（dpr 2.13）会把预算直接放大 4.5 倍，与调优基线脱钩。
+     */
+    const double scale = static_cast<double>(
+        std::clamp(config_.view_scale, 0.5f, 8.0f)
+    );
+    const double pixels = static_cast<double>(config_.width) *
+                          static_cast<double>(config_.height) /
+                          (scale * scale);
+    const std::uint64_t budget = static_cast<std::uint64_t>(pixels / 6.0);
     return std::clamp<std::uint64_t>(budget, 64u * 1024u, 4u * 1024u * 1024u);
 }
 
@@ -575,8 +584,10 @@ std::size_t HeadlessRenderKernel::choose_lod_index() const {
     const float viewport_h = static_cast<float>(
         std::max<std::uint32_t>(config_.height, 1)
     );
+    // 像素门槛按逻辑像素定义，物理像素视口要先换回逻辑像素（见 Config::view_scale）。
+    const float view_scale = std::clamp(config_.view_scale, 0.5f, 8.0f);
     const float pixels_per_unit = half_tan > 1.0e-6f
-        ? viewport_h / (2.0f * dist * half_tan)
+        ? viewport_h / (2.0f * dist * half_tan * view_scale)
         : 0.0f;
     const float max_spacing_px =
         std::max(config_.lod_max_projected_spacing_px, 0.5f);
@@ -766,7 +777,8 @@ int HeadlessRenderKernel::rebuild_lod_locked(bool reuse_cpu_chain) {
         << " build=" << lod_build_ms_ << "ms"
         << " upload=" << lod_upload_ms_ << "ms"
         << " draw_level=" << drawn_level_
-        << " draw_points=" << drawn_point_count_ << "\n";
+        << " draw_points=" << drawn_point_count_
+        << " view_scale=" << config_.view_scale << "\n";
     return 0;
 }
 
@@ -901,6 +913,7 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
         cfg.min_tile_pixel_size = config_.min_tile_pixel_size;
         cfg.height_source = static_cast<std::uint32_t>(height_source_);
         cfg.height_mult = height_mult_;
+        cfg.view_scale = config_.view_scale;
         return cfg;
     }());
     const auto selection = tile_selection_.update(camera_, tile_index_view_);
@@ -1335,6 +1348,19 @@ void HeadlessRenderKernel::set_point_size(float size) {
     std::lock_guard<std::mutex> lock(mutex_);
     point_size_ = std::max(0.5f, size);
     push_.point_size = point_size_;
+}
+
+int HeadlessRenderKernel::set_view_scale(float scale) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!std::isfinite(scale) || scale <= 0.0f) {
+        return -1;
+    }
+    /*
+     * 夹在 [0.5, 8]：下限容纳降采样视口，上限防止异常 dpr（或调用方误传物理尺寸）
+     * 把像素门槛压到零、把自动点预算放大到爆炸。
+     */
+    config_.view_scale = std::clamp(scale, 0.5f, 8.0f);
+    return 0;
 }
 
 void HeadlessRenderKernel::set_colormap_index(int index) {

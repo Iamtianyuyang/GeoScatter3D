@@ -348,6 +348,103 @@ void main() {
       expect(binder.resizeCount, 1);
     });
 
+    test('纹理按物理像素建立，回读路径仍按逻辑像素', () async {
+      // 回归：纹理尺寸用逻辑像素会被合成器放大到物理屏幕（Tab S7 上
+      // 1204×704 → 2560×1600，点阵发软）；零拷贝通路必须按 dpr 折算。
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+
+      service.requestSize(const ui.Size(1204, 704), pixelRatio: 2.125);
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isTrue);
+      // (1204, 704) × 2.125 = (2558.5, 1496) → 四舍五入到整数像素。
+      expect(binder.attachSizes.single, (2559, 1496));
+      // 引擎视口必须与纹理同一坐标系（相机 aspect 与瓦片/LOD 像素门槛都用它）。
+      expect(engine.sizes.last, (2559, 1496));
+      // 像素汇率必须一起下发：内核的像素门槛按逻辑像素标定，物理像素不告知
+      // 汇率会让投影像素整体放大 → 瓦片超预算被整层剔除（真机 10M 实测整屏空）。
+      expect(engine.viewScales, [2.125]);
+
+      // 尺寸变化（旋转/分屏）同样按物理像素下发。
+      service.requestSize(const ui.Size(704, 1204), pixelRatio: 2.125);
+      await service.renderNextFrame();
+      expect(binder.resizeSizes.single, (1496, 2559));
+      expect(engine.sizes.last, (1496, 2559));
+      // 汇率未变不重复跨 FFI。
+      expect(engine.viewScales, [2.125]);
+    });
+
+    test('接管失败后引擎视口必须退回逻辑像素', () async {
+      // 否则回读帧会莫名变成 dpr² 像素（内存/填充率无谓×4.5）。
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder()..failAttach = true;
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+
+      service.requestSize(const ui.Size(320, 240), pixelRatio: 2);
+      await service.renderNextFrame();
+      expect(service.zeroCopyPresent, isFalse);
+      expect(binder.attachSizes, isEmpty);
+      // 回读视口 → 尝试接管时的物理像素 + 汇率 → 失败后两者都必须退回。
+      expect(engine.sizes, [(320, 240), (640, 480), (320, 240)]);
+      expect(engine.sizes.last, (320, 240));
+      expect(engine.viewScales, [2, 1]);
+    });
+
+    test('dpr 变化（显示缩放）会重试，但不重复下发相同纹理尺寸', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+
+      service.requestSize(const ui.Size(320, 240), pixelRatio: 2);
+      await service.renderNextFrame();
+      expect(binder.attachCount, 1);
+
+      // 同一逻辑尺寸 + 同一 dpr：不再往返平台层。
+      service.requestSize(const ui.Size(320, 240), pixelRatio: 2);
+      await service.renderNextFrame();
+      expect(binder.attachCount, 1);
+      expect(binder.resizeCount, 0);
+      expect(engine.viewScales, [2]);
+    });
+
+    test('显示缩放变化（同尺寸、异 dpr）只重下汇率，不重建交换链', () async {
+      final engine = FakeEngine();
+      final binder = FakePresentSurfaceBinder();
+      final service = GeoScatter3dService(
+        engine: engine,
+        presentBinder: binder,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+
+      service.requestSize(const ui.Size(320, 240), pixelRatio: 2);
+      await service.renderNextFrame();
+      expect(binder.attachSizes.single, (640, 480));
+
+      // dpr 变化但物理尺寸恰好相同（如 400×300 @2 → 320×240 @2.5）：
+      // 汇率必须更新，交换链不重建。
+      service.requestSize(const ui.Size(400, 300), pixelRatio: 1.6);
+      await service.renderNextFrame();
+      expect(engine.viewScales, [2, 1.6]);
+      expect(binder.resizeCount, 0);
+    });
+
     test('dispose 先解除纹理通路再释放引擎', () async {
       final engine = FakeEngine();
       final binder = FakePresentSurfaceBinder();

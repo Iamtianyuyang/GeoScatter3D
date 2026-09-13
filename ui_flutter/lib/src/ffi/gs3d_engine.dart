@@ -187,6 +187,17 @@ class Gs3dEngine {
     _bindings.setPointSize(_ptr, size);
   }
 
+  /// 设置「渲染像素 / 逻辑像素」汇率（见 `Config::view_scale`）：
+  /// 纹理按物理像素建立时必须告知引擎，否则内核的像素门槛（瓦片投影尺寸、
+  /// 底图目标点距、自动点预算）整体偏大，会把瓦片层挤出预算。
+  /// 回读路径（逻辑像素渲染）传 1.0。
+  void setViewScale(double scale) {
+    _checkDisposed();
+    if (!scale.isFinite || scale <= 0) return;
+    final rc = _bindings.setViewScale(_ptr, scale);
+    if (rc != 0) throw StateError('视图像素汇率设置失败 (rc=$rc): $lastError');
+  }
+
   void setColormap(int index) {
     _checkDisposed();
     _bindings.setColormap(_ptr, index);

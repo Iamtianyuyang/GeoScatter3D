@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -50,6 +51,8 @@ class GeoScatter3dService extends ChangeNotifier {
   bool _rendering = false;
   bool _paused = false;
   ui.Size? _pendingSize;
+  /// 与 [_pendingSize] 一起提交的纹理像素倍率（见 [presentPixelRatioFor]）。
+  double _pendingPixelRatio = 1.0;
   ui.Image? _frame;
   String? _error;
   int _pointCount = 0;
@@ -62,8 +65,11 @@ class GeoScatter3dService extends ChangeNotifier {
   int _presentTicks = 0;
   int _presentWidth = 0;
   int _presentHeight = 0;
-  /// 已经尝试过零拷贝接管的视口尺寸；尺寸变化（旋转/分屏）时再给一次机会。
-  ui.Size? _presentAttemptedSize;
+  /// 已经尝试过零拷贝接管的纹理尺寸（**物理像素**）；尺寸变化（旋转/分屏/
+  /// 显示缩放）时再给一次机会。
+  (int, int)? _presentAttemptedExtent;
+  /// 已下发给引擎的「渲染像素 / 逻辑像素」汇率（避免每帧重复跨 FFI）。
+  double _viewScale = 1.0;
   final Stopwatch _fpsClock = Stopwatch();
   final Stopwatch _frameClock = Stopwatch();
   double _fps = 0;
@@ -105,9 +111,11 @@ class GeoScatter3dService extends ChangeNotifier {
       }
       _engine = engine;
       final size = _pendingSize;
+      final pixelRatio = _pendingPixelRatio;
       _pendingSize = null;
-      if (size != null) {
-        engine.resize(size.width.toInt(), size.height.toInt());
+      final logical = size == null ? null : _logicalExtentOf(size);
+      if (logical != null) {
+        engine.resize(logical.$1, logical.$2);
       }
       if (kBenchDatasetPath.isNotEmpty) {
         // 真机/桌面基准：加载真实 bundle（可能带 LOD + tile sidecar）。
@@ -141,8 +149,15 @@ class GeoScatter3dService extends ChangeNotifier {
       engine.requestFrame();
       notifyListeners();
       // 已知视口尺寸时立即尝试接管零拷贝通路；否则等首个 tick 拿到尺寸再试。
-      if (size != null) {
-        unawaited(_tryAttachPresent(engine, size));
+      if (logical != null) {
+        unawaited(
+          _tryAttachPresent(
+            engine,
+            logical: logical,
+            physical: _physicalExtentOf(size!, pixelRatio),
+            pixelRatio: pixelRatio,
+          ),
+        );
       }
     } catch (error) {
       _fail(error);
@@ -151,22 +166,42 @@ class GeoScatter3dService extends ChangeNotifier {
 
   /// 尝试把引擎接管到 Flutter 纹理通路（零拷贝 present）。
   ///
+  /// [logical] 是回读通路使用的逻辑像素尺寸，[physical] 是纹理/交换链的物理像素
+  /// 尺寸（两者等比例，只差 dpr 倍率）：零拷贝通路必须按物理像素建纹理，否则
+  /// 合成器会把逻辑尺寸的纹理放大到屏幕（Tab S7 上 1204×704 → 2560×1600，点阵发软，
+  /// 且失去全屏硬件叠加直通：真机同位姿 13.9 ms → 8.3 ms）。
+  ///
+  /// 接管失败时必须把引擎视口与像素汇率都回退到逻辑像素：否则会留下
+  /// 「引擎按物理像素渲染、UI 按逻辑像素回读」的错配（内存与填充率无谓×4.5）。
+  ///
   /// 不可用时只记录一次并保持回读路径——不能静默地假装纹理通路可用。
-  Future<void> _tryAttachPresent(Gs3dEngine engine, ui.Size size) async {
+  Future<void> _tryAttachPresent(
+    Gs3dEngine engine, {
+    required (int, int) logical,
+    required (int, int) physical,
+    required double pixelRatio,
+  }) async {
     if (_disposed) return;
-    final width = size.width.toInt();
-    final height = size.height.toInt();
+    final (width, height) = physical;
     if (width < 1 || height < 1) return;
     // 同一尺寸只试一次（避免每帧重复往返平台层）；尺寸变化时允许重试。
-    if (_presentAttemptedSize == size) return;
-    _presentAttemptedSize = size;
+    if (_presentAttemptedExtent == physical) return;
+    _presentAttemptedExtent = physical;
+    // 纹理像素与回读像素一致（dpr=1）时无需切换，避免多余的原生调用。
+    final switchViewport = physical != logical;
+    if (switchViewport) _applyViewport(engine, physical, pixelRatio);
     try {
       final id = await _presentBinder.attach(
         engineHandle: engine.nativeHandle,
         width: width,
         height: height,
       );
-      if (_disposed || id == null) return;
+      if (_disposed || id == null) {
+        if (switchViewport && !_disposed) {
+          _applyViewport(engine, logical, 1.0);
+        }
+        return;
+      }
       _textureId = id;
       _presentWidth = width;
       _presentHeight = height;
@@ -174,8 +209,26 @@ class GeoScatter3dService extends ChangeNotifier {
       debugPrint('[GS3D] 零拷贝呈现已接管: texture=$id ${width}x$height');
       notifyListeners();
     } catch (error) {
+      if (switchViewport && !_disposed) {
+        _applyViewport(engine, logical, 1.0);
+      }
       debugPrint('[GS3D] 零拷贝纹理不可用，保持 RGBA 回读: $error');
     }
+  }
+
+  /// 引擎视口 = 尺寸 + 「渲染像素 / 逻辑像素」汇率，两者必须一起改。
+  ///
+  /// 内核的像素门槛（瓦片最小投影尺寸 / 底图目标点距 / 自动点预算）按逻辑像素
+  /// 标定（见 native `Config::view_scale`）：物理像素交换链不告知汇率的话，视口
+  /// 高度 ×dpr 会让投影像素整体放大，选取的瓦片翻几倍 → 撞上预算上限 →
+  /// 「全有或全无」把整层瓦片剔掉（真机 10M fov=1.4° 实测整屏空白）。
+  ///
+  /// 汇率变化时才跨 FFI（这个函数在每次拿到新尺寸时都会调用）。
+  void _applyViewport(Gs3dEngine engine, (int, int) extent, double viewScale) {
+    engine.resize(extent.$1, extent.$2);
+    if (_viewScale == viewScale) return;
+    _viewScale = viewScale;
+    engine.setViewScale(viewScale);
   }
 
   String _resolveGpuName(Gs3dEngine engine) {
@@ -290,14 +343,33 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   /// build 仅提交几何信息；原生 resize 合并到下一次渲染，避免同步 FFI。
-  void requestSize(ui.Size size) {
+  ///
+  /// [pixelRatio] 是设备 dpr（`MediaQuery.devicePixelRatioOf`）：零拷贝通路的纹理
+  /// 按 `逻辑尺寸 × dpr` 建，与物理屏幕 1:1；回读通路仍按逻辑像素渲染。
+  void requestSize(ui.Size size, {double pixelRatio = 1.0}) {
     if (!_disposed &&
         size.width.isFinite &&
         size.height.isFinite &&
         size.width >= 1 &&
         size.height >= 1) {
       _pendingSize = size;
+      _pendingPixelRatio = presentPixelRatioFor(pixelRatio);
     }
+  }
+
+  /// 逻辑视口尺寸 → 整数像素尺寸（至少 1×1）。
+  static (int, int) _logicalExtentOf(ui.Size size) => (
+    math.max(1, size.width.toInt()),
+    math.max(1, size.height.toInt()),
+  );
+
+  /// 逻辑视口尺寸 → 纹理/交换链的物理像素尺寸。
+  static (int, int) _physicalExtentOf(ui.Size size, double pixelRatio) {
+    final ratio = pixelRatio.isFinite && pixelRatio > 0 ? pixelRatio : 1.0;
+    return (
+      math.max(1, (size.width * ratio).round()),
+      math.max(1, (size.height * ratio).round()),
+    );
   }
 
   void setPaused(bool paused) {
@@ -317,6 +389,7 @@ class GeoScatter3dService extends ChangeNotifier {
     _rendering = true;
     try {
       final size = _pendingSize;
+      final pixelRatio = _pendingPixelRatio;
       _pendingSize = null;
 
       // ① 零拷贝通路：引擎直接 present 到 Flutter 纹理，不碰像素。
@@ -325,7 +398,8 @@ class GeoScatter3dService extends ChangeNotifier {
       final textureId = _textureId;
       if (textureId != null) {
         if (size != null) {
-          await _resizePresentSurface(size);
+          final (width, height) = _physicalExtentOf(size, pixelRatio);
+          await _resizePresentSurface(width, height, pixelRatio);
         }
         _engine!.requestFrame();
         _presentTicks++;
@@ -336,14 +410,22 @@ class GeoScatter3dService extends ChangeNotifier {
       }
 
       if (size != null) {
-        _engine!.resize(size.width.toInt(), size.height.toInt());
+        final logical = _logicalExtentOf(size);
+        _applyViewport(_engine!, logical, 1.0);
         // 拿到真实视口尺寸后才尝试接管纹理通路（成功后下一 tick 走 ①）。
         if (_textureId == null) {
-          await _tryAttachPresent(_engine!, size);
+          await _tryAttachPresent(
+            _engine!,
+            logical: logical,
+            physical: _physicalExtentOf(size, pixelRatio),
+            pixelRatio: pixelRatio,
+          );
           if (_textureId != null) {
             _engine!.requestFrame();
             return;
           }
+          // 到这里说明未接管：[_tryAttachPresent] 已把引擎视口回退到逻辑像素
+          // （换进物理像素再失败时会留下“引擎物理、UI 逻辑”的 4.5× 错配）。
         }
       }
 
@@ -403,16 +485,24 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   /// 视口尺寸变化（旋转/分屏）：纹理 Surface 与交换链需要一起改。
-  Future<void> _resizePresentSurface(ui.Size size) async {
-    final width = size.width.toInt();
-    final height = size.height.toInt();
+  ///
+  /// 入参是**物理像素**尺寸（见 [PresentSurfaceBinder.attach]）与对应的像素汇率：
+  /// 引擎的相机 aspect 与瓦片/LOD 的像素门槛都以纹理像素为基准，两者必须同坐标系。
+  Future<void> _resizePresentSurface(
+    int width,
+    int height,
+    double pixelRatio,
+  ) async {
     if (width < 1 || height < 1) return;
-    if (width == _presentWidth && height == _presentHeight) return;
+    final unchanged = width == _presentWidth && height == _presentHeight;
+    // 汇率变了（显示缩放）即使尺寸没变也要下发一次。
+    if (unchanged && _viewScale == pixelRatio) return;
     _presentWidth = width;
     _presentHeight = height;
     try {
-      // 引擎侧只需同步相机宽高比与离屏尺寸；交换链由平台层重建。
-      _engine!.resize(width, height);
+      // 引擎侧只需同步相机宽高比、像素汇率与离屏尺寸；交换链由平台层重建。
+      _applyViewport(_engine!, (width, height), pixelRatio);
+      if (unchanged) return;
       await _presentBinder.resize(
         textureId: _textureId!,
         width: width,

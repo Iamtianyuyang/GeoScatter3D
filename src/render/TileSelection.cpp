@@ -385,6 +385,8 @@ float TileSelection::tile_projected_pixels(
 
     // Conservative tile size: larger of the two grid dimensions
     const float tile_size = std::max(header.tile_size_x, header.tile_size_y);
+    // 像素门槛按逻辑像素定义：物理像素视口按汇率换回（见 view_scale）。
+    const float view_scale = std::clamp(config.view_scale, 0.5f, 8.0f);
 
     // Orthographic: uniform pixel scale across the viewport
     if (camera.projection_mode() == gs3d::camera::ProjectionMode::Orthographic) {
@@ -393,7 +395,7 @@ float TileSelection::tile_projected_pixels(
             return 0.0f;
         }
         return tile_size / ortho_h *
-               static_cast<float>(camera.viewport_height());
+               static_cast<float>(camera.viewport_height()) / view_scale;
     }
 
     // Perspective: Potree SSE formula
@@ -405,7 +407,7 @@ float TileSelection::tile_projected_pixels(
     }
 
     return tile_size / (dist * tan_half) *
-           static_cast<float>(camera.viewport_height());
+           static_cast<float>(camera.viewport_height()) / view_scale;
 }
 
 } // namespace gs3d::render

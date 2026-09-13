@@ -20,6 +20,14 @@ struct TileSelectionConfig {
      * 推荐范围：20–100。
      */
     float min_tile_pixel_size = 50.0f;
+    /*
+     * 渲染像素 / 逻辑像素之比（见 HeadlessRenderKernel::Config::view_scale）。
+     *
+     * [min_tile_pixel_size] 是「屏幕上多大才值得加载全精度」的视觉门槛，按逻辑
+     * 像素标定；物理像素纹理（dpr>1）下必须先除回来，否则阈值提前触发、
+     * 选取的瓦片翻几倍并撞上预算上限。
+     */
+    float view_scale = 1.0f;
     // Retained only for backwards-compatible configuration parsing. Visible
     // tiles are never truncated: a hard cap produces obvious block artifacts.
     std::uint32_t max_visible_tiles = 0;

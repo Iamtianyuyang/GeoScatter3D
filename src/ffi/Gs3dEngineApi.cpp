@@ -236,6 +236,13 @@ int32_t gs3d_engine_set_point_size(gs3d_engine* e, float size) {
     });
 }
 
+int32_t gs3d_engine_set_view_scale(gs3d_engine* e, float scale) {
+    if (e == nullptr) return -1;
+    return e->host.invoke([scale](gs3d::ffi::HeadlessRenderKernel& k) {
+        return k.set_view_scale(scale);
+    });
+}
+
 int32_t gs3d_engine_set_colormap_index(gs3d_engine* e, int32_t index) {
     if (e == nullptr) return -1;
     return e->host.invoke([index](gs3d::ffi::HeadlessRenderKernel& k) {
