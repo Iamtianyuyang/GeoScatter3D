@@ -151,6 +151,9 @@ public:
         float azimuth_deg = 0.0f;
         float elevation_deg = 0.0f;
         float zoom = 1.0f;
+        /// 透视相机的垂直视场角（度）。缩放走 FOV，因此这是「用户缩放状态」
+        /// 的唯一可观测量：Surface 重建/尺寸变化都必须保留它。
+        float fov_y_degrees = 0.0f;
         float pan[2] = {0.0f, 0.0f};
         float position[3] = {0.0f, 0.0f, 0.0f};
         float target[3] = {0.0f, 0.0f, 0.0f};
@@ -226,8 +229,9 @@ public:
 
 private:
     void create_pipeline();
-    /// keep_cpu_lod=true 时保留 CPU 侧 LOD 链（Surface 重建后只需重新上传）。
-    void destroy_gpu_resources(bool keep_cpu_lod = false) noexcept;
+    /// keep_cpu_caches=true 时保留纯 CPU 资产（LOD 链、瓦片 sidecar 与点缓存），
+    /// 供 Surface 重建后只重传 GPU 缓冲；false 时全部丢弃（换数据集/销毁）。
+    void destroy_gpu_resources(bool keep_cpu_caches = false) noexcept;
     /// 申请/复用帧资源（命令缓冲、栅栏、常驻 staging 缓冲）。
     void ensure_frame_resources(std::size_t bytes);
     void destroy_frame_resources() noexcept;
@@ -289,6 +293,8 @@ private:
     double lod_upload_ms_ = 0.0;
     /// 最近一次 rebuild 是否跳过 CPU 建链（供测试与诊断断言）。
     bool lod_cpu_chain_reused_ = false;
+    /// 最近一次记录的瓦片选取需求数：仅在其变化时打日志（诊断选取为何开关）。
+    std::size_t tile_needed_logged_ = static_cast<std::size_t>(-1);
     float estimated_spacing_ = 0.0f;
     std::uint64_t gpu_point_count_ = 0;
 

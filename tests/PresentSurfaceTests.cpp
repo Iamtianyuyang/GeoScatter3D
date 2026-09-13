@@ -422,6 +422,29 @@ TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
     CHECK(attached.drawn_points == built.drawn_points);
     CHECK(attached.estimated_spacing == built.estimated_spacing);
 
+    /*
+     * 相机缩放属于用户状态：Surface 重建/尺寸变化不得重置。
+     * 透视相机的缩放就是改 FOV，而 create_resources_locked 曾被 attach/detach
+     * 反复调用并顺带 set_perspective(45) —— 真机表现是「转一下屏幕缩放就没了」。
+     */
+    auto fov_of = [&host]() {
+        auto fov = std::make_shared<float>(0.0f);
+        host.invoke([fov](gs3d::ffi::HeadlessRenderKernel& kernel) {
+            *fov = kernel.camera_state().fov_y_degrees;
+            return 0;
+        });
+        return *fov;
+    };
+    host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        for (int step = 0; step < 3; ++step) {
+            kernel.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+        }
+        return 0;
+    });
+    const float zoomed_fov = fov_of();
+    REQUIRE(zoomed_fov > 0.0f);
+    CHECK(zoomed_fov < 45.0f);  // 确实缩进了
+
     // 旋转尺寸后重新附加：必须复用 CPU 链。
     host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
         kernel.detach_surface();
@@ -430,6 +453,9 @@ TEST_CASE("re-attaching a surface reuses the CPU LOD chain") {
     REQUIRE(host.invoke([&provider](gs3d::ffi::HeadlessRenderKernel& kernel) {
         return kernel.attach_surface(provider, 640, 360);
     }) == 0);
+    // 缩放必须原样保留（重新附加不得把它抹回 45°）。
+    CHECK(fov_of() == zoomed_fov);
+
     const auto reattached = lod_of();
     CHECK(reattached.cpu_chain_reused);
     CHECK(reattached.level_count == built.level_count);

@@ -91,8 +91,16 @@ int HeadlessRenderKernel::create_resources_locked() {
             create_present_resources_locked();
         }
 
+        /*
+         * 只同步视口尺寸（投影矩阵按 aspect 现算）。
+         *
+         * 这里曾经顺带 set_perspective(45,...)：它会把 FOV 重置成 45°，等价于
+         * 抹掉用户的缩放（透视相机缩放就是改 FOV）。而 create_resources_locked
+         * 会被 attach/detach/resize 反复调用 —— 纹理通路上表现为「点一下复位/
+         * 转一下屏幕，缩放就没了」，本会话真机调试时就被它坑过。
+         * 投影参数只在 reset_camera_to_bounds_locked()（复位/换数据集）里设。
+         */
         camera_.set_viewport(config_.width, config_.height);
-        camera_.set_perspective(45.0f, 1.0f, 100000.0f);
         last_error_.clear();
         return 0;
     } catch (const std::exception& ex) {
@@ -119,7 +127,7 @@ void HeadlessRenderKernel::create_pipeline() {
     );
 }
 
-void HeadlessRenderKernel::destroy_gpu_resources(bool keep_cpu_lod) noexcept {
+void HeadlessRenderKernel::destroy_gpu_resources(bool keep_cpu_caches) noexcept {
     if (context_) {
         vkDeviceWaitIdle(context_->device());
     }
@@ -127,22 +135,25 @@ void HeadlessRenderKernel::destroy_gpu_resources(bool keep_cpu_lod) noexcept {
     destroy_frame_resources();
     lod_.destroy();
     /*
-     * Surface 重建（attach/detach/resize）不会改变数据：CPU 侧的 LOD 链可以留用，
-     * 只把 GPU 缓冲重新上传即可。否则每次旋转屏幕都要重跑一次 CPU 建链
-     * （真机 100 万点实测 460 ms，是明显的卡顿来源）。
+     * Surface 重建（attach/detach/resize）不会改变数据：CPU 侧的 LOD 链、
+     * 瓦片 sidecar 与瓦片点缓存都可以留用，只把 GPU 缓冲重新上传即可。
+     *
+     * 曾经只保护了 LOD 链、却顺手 reset 掉 tile_reader_/tile_cache_ —— 结果是
+     * 零拷贝通路上「附加一次 Surface 就永久失去瓦片」：LOD 一直被绘制，
+     * 细尺度瓦片再也不会出现（真机 HUD 永远停在 LOD 行）。
      */
-    if (!keep_cpu_lod) {
+    if (!keep_cpu_caches) {
         lod_chain_.clear();
         lod_dataset_.reset();
         estimated_spacing_ = 0.0f;
         lod_build_ms_ = 0.0;
+        tile_reader_.reset();
+        tile_cache_.reset();
+        tile_index_view_ = {};   // 指向 tile_reader_ 内部数据，必须一起失效
     }
     drawn_point_count_ = 0;
     gpu_point_count_ = 0;
-    tile_reader_.reset();
-    tile_cache_.reset();
-    tile_gpu_.destroy();
-    tile_index_view_ = {};
+    tile_gpu_.destroy();         // GPU 缓冲始终销毁（device 已换）
     tile_needed_ids_.clear();
     tile_drawable_ids_.clear();
     tile_drawn_points_ = 0;
@@ -822,6 +833,21 @@ void HeadlessRenderKernel::update_tile_streaming_locked() {
     tile_needed_ids_ = selection.enabled ? selection.tile_ids
                                          : std::vector<std::uint64_t>{};
 
+    // 选取状态变化时打一行诊断：真机上排查「为什么没有瓦片」全靠它
+    // （门槛是屏幕空间误差，而误差只取决于相机距离/视场角与瓦片尺寸）。
+    if (tile_needed_ids_.size() != tile_needed_logged_) {
+        tile_needed_logged_ = tile_needed_ids_.size();
+        gs3d::util::log::info()
+            << "[HeadlessRenderKernel] tile selection: needed="
+            << tile_needed_ids_.size()
+            << " enabled=" << (selection.enabled ? 1 : 0)
+            << " distance=" << camera_.distance()
+            << " fov=" << camera_.fov_y_degrees()
+            << " ortho_h=" << camera_.ortho_height()
+            << " min_px=" << config_.min_tile_pixel_size
+            << " viewport=" << config_.width << 'x' << config_.height << '\n';
+    }
+
     // 2. 按帧限流读取缺失瓦片（先读后传；已驻留的不重复读）。
     std::vector<std::pair<std::uint64_t, gs3d::core::PointDataView>> uploads;
     uploads.reserve(tile_needed_ids_.size());
@@ -995,7 +1021,7 @@ int HeadlessRenderKernel::attach_surface(
     gs3d::util::log::info()
         << "[HeadlessRenderKernel] attach_surface " << width << 'x' << height
         << " had_dataset=" << (had_dataset ? 1 : 0) << '\n';
-    destroy_gpu_resources(/*keep_cpu_lod=*/true);
+    destroy_gpu_resources(/*keep_cpu_caches=*/true);
 
     const int rc = create_resources_locked();
     if (rc != 0) {
@@ -1026,7 +1052,7 @@ void HeadlessRenderKernel::detach_surface() {
     }
     surface_provider_ = {};
     const bool had_dataset = has_dataset_;
-    destroy_gpu_resources(/*keep_cpu_lod=*/true);
+    destroy_gpu_resources(/*keep_cpu_caches=*/true);
     if (create_resources_locked() == 0 && had_dataset) {
         rebuild_lod_locked(/*reuse_cpu_chain=*/true);
     }
@@ -1645,6 +1671,7 @@ HeadlessRenderKernel::CameraState HeadlessRenderKernel::camera_state() const {
         st.azimuth_deg = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
     }
     st.zoom = st.distance > 1e-3f ? (span_or_default() / st.distance) : 1.0f;
+    st.fov_y_degrees = camera_.fov_y_degrees();
     if (has_dataset_) {
         const float cx = (dataset_.bbox_min_x() + dataset_.bbox_max_x()) * 0.5f;
         const float cy = (dataset_.bbox_min_y() + dataset_.bbox_max_y()) * 0.5f;

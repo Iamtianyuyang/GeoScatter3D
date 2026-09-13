@@ -664,6 +664,9 @@ target_include_directories(GeoScatter3DPresentSurfaceTests PRIVATE
 )
 target_compile_definitions(GeoScatter3DPresentSurfaceTests PRIVATE
     GS3D_TEST_SHADER_DIR="${GS3D_GENERATED_SHADER_DIR}"
+    # 带瓦片 sidecar 的 bench bundle（tools/gs3d_bench_bundle 生成，tmp/ 已 gitignore）：
+    # 缺失时瓦片相关用例自行跳过。
+    GS3D_TEST_BENCH_DEV_BUNDLE="${PROJECT_SOURCE_DIR}/tmp/bench-dev"
 )
 target_link_libraries(GeoScatter3DPresentSurfaceTests PRIVATE
     gs3d_engine_core
