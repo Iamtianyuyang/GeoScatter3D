@@ -161,11 +161,11 @@ void main() {
 
     expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
     expect(find.text('VULKAN · 零拷贝纹理'), findsOneWidget);
+    expect(find.text('Adreno (TM) 650'), findsOneWidget);
     expect(find.text('125.6'), findsOneWidget);
     expect(find.text('7.96 ms'), findsOneWidget);
     expect(find.text('10,000'), findsOneWidget);
     expect(find.text('2.34 ms'), findsOneWidget);
-    expect(find.text('Adreno (TM) 650'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

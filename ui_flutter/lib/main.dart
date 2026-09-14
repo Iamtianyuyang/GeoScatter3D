@@ -8,13 +8,13 @@ const _tokens = AppTokens.dark;
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 浅色主界面需要深色系统图标保持可读。
+  // 全屏点云画布延伸到系统栏，使用浅色图标保持可读。
   SystemChrome.setSystemUIOverlayStyle(
     SystemUiOverlayStyle(
-      statusBarColor: _tokens.colors.shellBackground,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: _tokens.colors.shellBackground,
-      systemNavigationBarIconBrightness: Brightness.dark,
+      statusBarColor: _tokens.colors.viewport,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: _tokens.colors.viewport,
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 
@@ -31,7 +31,7 @@ class GeoScatter3dApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: _tokens.colors.shellBackground,
+        scaffoldBackgroundColor: _tokens.colors.viewport,
         colorScheme: ColorScheme.dark(
           primary: _tokens.colors.accent,
           surface: _tokens.colors.hudSurfaceRaised,

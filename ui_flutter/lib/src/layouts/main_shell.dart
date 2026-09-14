@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
@@ -5,7 +7,7 @@ import '../theme/app_tokens.dart';
 import '../widgets/telemetry_hud.dart';
 import '../widgets/viewport_canvas.dart';
 
-/// 主界面分区骨架。折叠仅改变布局，不承载业务状态。
+/// 全屏点云工作台：画布是底层，导航、工具和状态均为按需浮层。
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.viewport, this.service});
 
@@ -20,8 +22,8 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  bool? _leftExpanded;
-  bool? _rightExpanded;
+  int? _leftDrawerIndex;
+  int? _rightDrawerIndex;
   bool? _bottomExpanded;
   late final bool _ownsService;
   late final GeoScatter3dService _service;
@@ -39,173 +41,199 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
+  void _toggleLeftDrawer(int index) {
+    setState(() {
+      _leftDrawerIndex = _leftDrawerIndex == index ? null : index;
+      if (_leftDrawerIndex != null) _rightDrawerIndex = null;
+    });
+  }
+
+  void _toggleRightDrawer(int index) {
+    setState(() {
+      _rightDrawerIndex = _rightDrawerIndex == index ? null : index;
+      if (_rightDrawerIndex != null) _leftDrawerIndex = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    final bottomExpanded = _bottomExpanded ?? true;
+    final footerHeight = bottomExpanded
+        ? tokens.sizes.shellFooterHeight
+        : tokens.sizes.shellFooterCollapsedHeight;
+    final rightInset =
+        tokens.sizes.shellPanelRailWidth +
+        tokens.spacing.sm +
+        (_rightDrawerIndex == null
+            ? 0.0
+            : tokens.sizes.shellDrawerWidth + tokens.spacing.md);
 
     return Scaffold(
-      backgroundColor: tokens.colors.shellBackground,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final leftExpanded =
-                _leftExpanded ??
-                constraints.maxWidth >= tokens.sizes.shellSidebarBreakpoint;
-            final rightExpanded =
-                _rightExpanded ??
-                constraints.maxWidth >= tokens.sizes.shellSidebarBreakpoint;
-            final bottomExpanded =
-                _bottomExpanded ??
-                constraints.maxHeight >= tokens.sizes.shellFooterBreakpoint;
-
-            return Padding(
-              padding: EdgeInsets.all(tokens.spacing.lg),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: tokens.sizes.shellHeaderHeight,
-                    child: const _TopNavigation(
-                      key: ValueKey('top_navigation'),
-                    ),
-                  ),
-                  SizedBox(height: tokens.spacing.md),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (leftExpanded)
-                          Expanded(
-                            flex: 17,
-                            child: _ShellPanel(
-                              key: const ValueKey('left_project_panel'),
-                              title: '左侧项目区',
-                              action: _PanelToggleButton(
-                                key: const ValueKey('toggle_left_project'),
-                                tooltip: '折叠左侧项目区',
-                                icon: Icons.chevron_left_rounded,
-                                onPressed: () {
-                                  setState(() => _leftExpanded = false);
-                                },
-                              ),
-                              child: const _ProjectNavigationPlaceholder(),
-                            ),
-                          )
-                        else
-                          _CollapsedPanelRail(
-                            key: const ValueKey('left_project_rail'),
-                            tooltip: '展开左侧项目区',
-                            icon: Icons.chevron_right_rounded,
-                            onPressed: () {
-                              setState(() => _leftExpanded = true);
-                            },
-                          ),
-                        SizedBox(width: tokens.spacing.md),
-                        Expanded(
-                          flex: 68,
-                          child: _ShellPanel(
-                            key: const ValueKey('center_viewport_panel'),
-                            title: '中央视图区',
-                            child:
-                                widget.viewport ??
-                                ViewportCanvas(
-                                  key: const ValueKey('main_viewport'),
-                                  service: _service,
-                                  embedded: true,
-                                ),
-                          ),
-                        ),
-                        SizedBox(width: tokens.spacing.md),
-                        if (rightExpanded)
-                          Expanded(
-                            flex: 19,
-                            child: _ShellPanel(
-                              key: const ValueKey('right_property_panel'),
-                              title: '右侧属性区',
-                              action: _PanelToggleButton(
-                                key: const ValueKey('toggle_right_property'),
-                                tooltip: '折叠右侧属性区',
-                                icon: Icons.chevron_right_rounded,
-                                onPressed: () {
-                                  setState(() => _rightExpanded = false);
-                                },
-                              ),
-                              child: const _PropertySkeleton(),
-                            ),
-                          )
-                        else
-                          _CollapsedPanelRail(
-                            key: const ValueKey('right_property_rail'),
-                            tooltip: '展开右侧属性区',
-                            icon: Icons.chevron_left_rounded,
-                            onPressed: () {
-                              setState(() => _rightExpanded = true);
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: tokens.spacing.md),
-                  SizedBox(
-                    height: bottomExpanded
-                        ? tokens.sizes.shellFooterHeight
-                        : tokens.sizes.shellFooterCollapsedHeight,
-                    child: bottomExpanded
-                        ? _BottomStatusBar(
-                            key: const ValueKey('bottom_status_bar'),
-                            service: _service,
-                            onToggle: () {
-                              setState(() => _bottomExpanded = false);
-                            },
-                          )
-                        : _CollapsedBottomStatusBar(
-                            key: const ValueKey('bottom_status_collapsed'),
-                            service: _service,
-                            onToggle: () {
-                              setState(() => _bottomExpanded = true);
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _TopNavigation extends StatelessWidget {
-  const _TopNavigation({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-
-    return _Surface(
-      child: Row(
+      backgroundColor: tokens.colors.viewport,
+      body: Stack(
         children: [
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.lg),
-              child: Text(
-                'GeoScatter 3D',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.typography.shellBrand.copyWith(
-                  color: tokens.colors.textPrimary,
-                ),
-              ),
+          Positioned.fill(
+            child: KeyedSubtree(
+              key: const ValueKey('center_viewport_panel'),
+              child:
+                  widget.viewport ??
+                  ViewportCanvas(
+                    key: const ValueKey('main_viewport'),
+                    service: _service,
+                    embedded: true,
+                    controlInsets: EdgeInsets.only(
+                      right: rightInset,
+                      bottom: footerHeight + tokens.spacing.md,
+                    ),
+                  ),
             ),
           ),
-          Expanded(
-            child: Text(
-              '顶部导航区',
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.typography.sectionTitle.copyWith(
-                color: tokens.colors.textPrimary,
+          SafeArea(
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.md),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  final height = constraints.maxHeight;
+                  final leftDrawerOpen = _leftDrawerIndex != null;
+                  final rightDrawerOpen = _rightDrawerIndex != null;
+                  final bottomExpanded =
+                      _bottomExpanded ??
+                      height >= tokens.sizes.shellFooterBreakpoint;
+                  final activeFooterHeight = bottomExpanded
+                      ? tokens.sizes.shellFooterHeight
+                      : tokens.sizes.shellFooterCollapsedHeight;
+                  final railTop =
+                      tokens.sizes.shellHeaderHeight + tokens.spacing.md;
+                  final railBottom = activeFooterHeight + tokens.spacing.md;
+                  final drawerWidth = math.max(
+                    tokens.sizes.tapTarget * 4,
+                    math.min(
+                      tokens.sizes.shellDrawerWidth,
+                      width -
+                          tokens.sizes.shellPanelRailWidth -
+                          tokens.spacing.md * 3,
+                    ),
+                  );
+
+                  return Stack(
+                    children: [
+                      if (leftDrawerOpen)
+                        Positioned(
+                          left:
+                              tokens.sizes.shellPanelRailWidth +
+                              tokens.spacing.sm,
+                          top: railTop,
+                          bottom: railBottom,
+                          width: drawerWidth,
+                          child: _ChromeDrawer(
+                            key: const ValueKey('left_project_drawer'),
+                            title: _workspaceSections[_leftDrawerIndex!].title,
+                            onClose: () {
+                              setState(() => _leftDrawerIndex = null);
+                            },
+                            child: _WorkspaceDrawerContent(
+                              section: _workspaceSections[_leftDrawerIndex!],
+                            ),
+                          ),
+                        ),
+                      if (rightDrawerOpen)
+                        Positioned(
+                          right:
+                              tokens.sizes.shellPanelRailWidth +
+                              tokens.spacing.sm,
+                          top: railTop,
+                          bottom: railBottom,
+                          width: drawerWidth,
+                          child: _ChromeDrawer(
+                            key: const ValueKey('right_property_drawer'),
+                            title: _rightTools[_rightDrawerIndex!].title,
+                            onClose: () {
+                              setState(() => _rightDrawerIndex = null);
+                            },
+                            child: const _PropertySkeleton(),
+                          ),
+                        ),
+                      Positioned(
+                        left: 0,
+                        top: railTop,
+                        child: _ChromeToolRail(
+                          key: const ValueKey('left_tool_rail'),
+                          children: [
+                            for (
+                              var index = 0;
+                              index < _workspaceSections.length;
+                              index++
+                            )
+                              _RailButton(
+                                key: ValueKey(
+                                  'rail_${_workspaceSections[index].keyName}',
+                                ),
+                                tooltip: _workspaceSections[index].label,
+                                icon: _workspaceSections[index].icon,
+                                selected: _leftDrawerIndex == index,
+                                onPressed: () => _toggleLeftDrawer(index),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        top: railTop,
+                        child: _ChromeToolRail(
+                          key: const ValueKey('right_tool_rail'),
+                          children: [
+                            for (
+                              var index = 0;
+                              index < _rightTools.length;
+                              index++
+                            )
+                              _RailButton(
+                                key: ValueKey(
+                                  'rail_${_rightTools[index].keyName}',
+                                ),
+                                tooltip: _rightTools[index].label,
+                                icon: _rightTools[index].icon,
+                                selected: _rightDrawerIndex == index,
+                                onPressed: () => _toggleRightDrawer(index),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        height: tokens.sizes.shellHeaderHeight,
+                        child: _TopCommandBar(
+                          key: const ValueKey('top_navigation'),
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: activeFooterHeight,
+                        child: bottomExpanded
+                            ? _BottomStatusBar(
+                                key: const ValueKey('bottom_status_bar'),
+                                service: _service,
+                                onToggle: () {
+                                  setState(() => _bottomExpanded = false);
+                                },
+                              )
+                            : _CollapsedBottomStatusBar(
+                                key: const ValueKey('bottom_status_collapsed'),
+                                service: _service,
+                                onToggle: () {
+                                  setState(() => _bottomExpanded = true);
+                                },
+                              ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -215,23 +243,132 @@ class _TopNavigation extends StatelessWidget {
   }
 }
 
-class _ShellPanel extends StatelessWidget {
-  const _ShellPanel({
-    super.key,
-    required this.title,
-    required this.child,
-    this.action,
-  });
-
-  final String title;
-  final Widget child;
-  final Widget? action;
+class _TopCommandBar extends StatelessWidget {
+  const _TopCommandBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
-    return _Surface(
+    return _ChromeSurface(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.lg),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'GeoScatter 3D',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.typography.shellBrand.copyWith(
+                  color: tokens.colors.chromeTextPrimary,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                '顶部导航区',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.typography.sectionTitle.copyWith(
+                  color: tokens.colors.chromeTextPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChromeToolRail extends StatelessWidget {
+  const _ChromeToolRail({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return _ChromeSurface(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.xs,
+          vertical: tokens.spacing.sm,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var index = 0; index < children.length; index++) ...[
+              children[index],
+              if (index != children.length - 1)
+                SizedBox(height: tokens.spacing.sm),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RailButton extends StatelessWidget {
+  const _RailButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      iconSize: tokens.sizes.controlIconSize,
+      constraints: BoxConstraints.tightFor(
+        width: tokens.sizes.tapTarget,
+        height: tokens.sizes.tapTarget,
+      ),
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        foregroundColor: selected
+            ? tokens.colors.chromeAccent
+            : tokens.colors.chromeTextSecondary,
+        backgroundColor: selected ? tokens.colors.chromeAccentSoft : null,
+        shape: RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
+      ),
+      icon: Icon(icon),
+    );
+  }
+}
+
+class _ChromeDrawer extends StatelessWidget {
+  const _ChromeDrawer({
+    super.key,
+    required this.title,
+    required this.onClose,
+    required this.child,
+  });
+
+  final String title;
+  final VoidCallback onClose;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return _ChromeSurface(
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.lg),
         child: Column(
@@ -245,14 +382,23 @@ class _ShellPanel extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: tokens.typography.sectionTitle.copyWith(
-                      color: tokens.colors.textPrimary,
+                      color: tokens.colors.chromeTextPrimary,
                     ),
                   ),
                 ),
-                if (action != null) ...[
-                  SizedBox(width: tokens.spacing.sm),
-                  action!,
-                ],
+                SizedBox(width: tokens.spacing.sm),
+                IconButton(
+                  tooltip: '关闭面板',
+                  onPressed: onClose,
+                  iconSize: tokens.sizes.controlIconSize,
+                  constraints: BoxConstraints.tightFor(
+                    width: tokens.sizes.tapTarget,
+                    height: tokens.sizes.tapTarget,
+                  ),
+                  padding: EdgeInsets.zero,
+                  color: tokens.colors.chromeTextSecondary,
+                  icon: const Icon(Icons.close_rounded),
+                ),
               ],
             ),
             SizedBox(height: tokens.spacing.lg),
@@ -264,134 +410,32 @@ class _ShellPanel extends StatelessWidget {
   }
 }
 
-class _CollapsedPanelRail extends StatelessWidget {
-  const _CollapsedPanelRail({
-    super.key,
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
+class _WorkspaceDrawerContent extends StatelessWidget {
+  const _WorkspaceDrawerContent({required this.section});
 
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onPressed;
+  final _WorkspaceSection section;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
-    return SizedBox(
-      width: tokens.sizes.shellPanelRailWidth,
-      child: _Surface(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: EdgeInsets.only(top: tokens.spacing.sm),
-            child: _PanelToggleButton(
-              tooltip: tooltip,
-              icon: icon,
-              onPressed: onPressed,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PanelToggleButton extends StatelessWidget {
-  const _PanelToggleButton({
-    super.key,
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: EdgeInsets.zero,
-      constraints: BoxConstraints.tightFor(
-        width: tokens.sizes.tapTarget,
-        height: tokens.sizes.tapTarget,
-      ),
-      iconSize: tokens.sizes.controlIconSize,
-      color: tokens.colors.textSecondary,
-      icon: Icon(icon),
-    );
-  }
-}
-
-class _ProjectNavigationPlaceholder extends StatelessWidget {
-  const _ProjectNavigationPlaceholder();
-
-  static const _items = <String>['项目', '数据', '场景', '成果'];
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-
-    return Column(
+    return ListView(
       children: [
-        for (var index = 0; index < _items.length; index++) ...[
-          _ProjectNavigationItem(label: _items[index], selected: index == 0),
-          if (index != _items.length - 1) SizedBox(height: tokens.spacing.sm),
-        ],
-      ],
-    );
-  }
-}
-
-class _ProjectNavigationItem extends StatelessWidget {
-  const _ProjectNavigationItem({required this.label, required this.selected});
-
-  final String label;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    final foreground = selected
-        ? tokens.colors.accent
-        : tokens.colors.textSecondary;
-
-    return SizedBox(
-      height: tokens.sizes.navItemHeight,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? tokens.colors.accentSoft : null,
-          borderRadius: tokens.radii.controlRadius,
-        ),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.md),
-          child: Row(
-            children: [
-              Icon(
-                Icons.folder_outlined,
-                size: tokens.sizes.controlIconSize,
-                color: foreground,
-              ),
-              SizedBox(width: tokens.spacing.md),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.typography.navLabel.copyWith(color: foreground),
-                ),
-              ),
-            ],
+        Text(
+          section.description,
+          style: tokens.typography.meta.copyWith(
+            color: tokens.colors.chromeTextSecondary,
           ),
         ),
-      ),
+        SizedBox(height: tokens.spacing.xl),
+        const _PlaceholderBar(widthFactor: 1, onChrome: true),
+        SizedBox(height: tokens.spacing.md),
+        const _PlaceholderBar(widthFactor: 0.72, onChrome: true),
+        SizedBox(height: tokens.spacing.xl),
+        const _PlaceholderBar(widthFactor: 0.88, onChrome: true),
+        SizedBox(height: tokens.spacing.md),
+        const _PlaceholderBar(widthFactor: 0.56, onChrome: true),
+      ],
     );
   }
 }
@@ -421,24 +465,17 @@ class _PropertyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.colors.hudSurfaceRaised,
-        borderRadius: tokens.radii.controlRadius,
-        border: Border.all(
-          color: tokens.colors.hudBorder,
-          width: tokens.effects.hairline,
-        ),
-      ),
+    return _ChromeSurface(
+      raised: true,
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.lg),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _PlaceholderBar(widthFactor: 0.76),
+            const _PlaceholderBar(widthFactor: 0.76, onChrome: true),
             SizedBox(height: tokens.spacing.md),
-            const _PlaceholderBar(widthFactor: 0.56),
+            const _PlaceholderBar(widthFactor: 0.56, onChrome: true),
           ],
         ),
       ),
@@ -462,7 +499,7 @@ class _BottomStatusBar extends StatelessWidget {
 
     return ListenableBuilder(
       listenable: service,
-      builder: (context, child) => _Surface(
+      builder: (context, child) => _ChromeSurface(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.lg),
           child: Row(
@@ -472,7 +509,7 @@ class _BottomStatusBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: tokens.typography.sectionTitle.copyWith(
-                  color: tokens.colors.textPrimary,
+                  color: tokens.colors.chromeTextPrimary,
                 ),
               ),
               SizedBox(width: tokens.spacing.lg),
@@ -487,6 +524,7 @@ class _BottomStatusBar extends StatelessWidget {
                   gpuName: service.gpuName,
                   status: service.status,
                   renderPath: service.renderPath,
+                  showStatusPill: false,
                 ),
               ),
               SizedBox(width: tokens.spacing.sm),
@@ -520,7 +558,7 @@ class _CollapsedBottomStatusBar extends StatelessWidget {
 
     return ListenableBuilder(
       listenable: service,
-      builder: (context, child) => _Surface(
+      builder: (context, child) => _ChromeSurface(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.lg),
           child: Row(
@@ -530,7 +568,7 @@ class _CollapsedBottomStatusBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: tokens.typography.sectionTitle.copyWith(
-                  color: tokens.colors.textPrimary,
+                  color: tokens.colors.chromeTextPrimary,
                 ),
               ),
               SizedBox(width: tokens.spacing.lg),
@@ -564,10 +602,42 @@ class _CollapsedBottomStatusBar extends StatelessWidget {
   }
 }
 
+class _PanelToggleButton extends StatelessWidget {
+  const _PanelToggleButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(
+        width: tokens.sizes.tapTarget,
+        height: tokens.sizes.tapTarget,
+      ),
+      iconSize: tokens.sizes.controlIconSize,
+      color: tokens.colors.chromeTextSecondary,
+      icon: Icon(icon),
+    );
+  }
+}
+
 class _PlaceholderBar extends StatelessWidget {
-  const _PlaceholderBar({this.widthFactor = 1});
+  const _PlaceholderBar({this.widthFactor = 1, this.onChrome = false});
 
   final double widthFactor;
+  final bool onChrome;
 
   @override
   Widget build(BuildContext context) {
@@ -580,7 +650,9 @@ class _PlaceholderBar extends StatelessWidget {
         height: tokens.sizes.placeholderBarHeight,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: tokens.colors.placeholder,
+            color: onChrome
+                ? tokens.colors.chromeDivider
+                : tokens.colors.placeholder,
             borderRadius: tokens.radii.pillRadius,
           ),
         ),
@@ -589,10 +661,11 @@ class _PlaceholderBar extends StatelessWidget {
   }
 }
 
-class _Surface extends StatelessWidget {
-  const _Surface({required this.child});
+class _ChromeSurface extends StatelessWidget {
+  const _ChromeSurface({required this.child, this.raised = false});
 
   final Widget child;
+  final bool raised;
 
   @override
   Widget build(BuildContext context) {
@@ -600,15 +673,99 @@ class _Surface extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: tokens.colors.hudSurfaceRaised,
+        color: raised
+            ? tokens.colors.chromeSurfaceRaised
+            : tokens.colors.chromeSurface,
         borderRadius: tokens.radii.controlRadius,
         border: Border.all(
-          color: tokens.colors.hudBorder,
+          color: tokens.colors.chromeBorder,
           width: tokens.effects.hairline,
         ),
-        boxShadow: [tokens.effects.panelShadow],
+        boxShadow: [tokens.effects.chromeShadow],
       ),
       child: child,
     );
   }
 }
+
+class _WorkspaceSection {
+  const _WorkspaceSection({
+    required this.keyName,
+    required this.label,
+    required this.title,
+    required this.description,
+    required this.icon,
+  });
+
+  final String keyName;
+  final String label;
+  final String title;
+  final String description;
+  final IconData icon;
+}
+
+class _RightTool {
+  const _RightTool({
+    required this.keyName,
+    required this.label,
+    required this.title,
+    required this.icon,
+  });
+
+  final String keyName;
+  final String label;
+  final String title;
+  final IconData icon;
+}
+
+const _workspaceSections = <_WorkspaceSection>[
+  _WorkspaceSection(
+    keyName: 'project',
+    label: '项目',
+    title: '项目资源',
+    description: '管理当前项目、数据集和场景入口。',
+    icon: Icons.folder_outlined,
+  ),
+  _WorkspaceSection(
+    keyName: 'data',
+    label: '数据',
+    title: '数据图层',
+    description: '查看数据源、属性和加载状态。',
+    icon: Icons.dataset_outlined,
+  ),
+  _WorkspaceSection(
+    keyName: 'scene',
+    label: '场景',
+    title: '场景配置',
+    description: '管理显示参数、相机和空间范围。',
+    icon: Icons.view_in_ar_outlined,
+  ),
+  _WorkspaceSection(
+    keyName: 'result',
+    label: '成果',
+    title: '成果与导出',
+    description: '整理分析结果、截图和导出记录。',
+    icon: Icons.description_outlined,
+  ),
+];
+
+const _rightTools = <_RightTool>[
+  _RightTool(
+    keyName: 'properties',
+    label: '属性',
+    title: '属性检查器',
+    icon: Icons.tune_rounded,
+  ),
+  _RightTool(
+    keyName: 'layers',
+    label: '图层',
+    title: '图层控制',
+    icon: Icons.layers_outlined,
+  ),
+  _RightTool(
+    keyName: 'display',
+    label: '显示',
+    title: '显示设置',
+    icon: Icons.wb_sunny_outlined,
+  ),
+];

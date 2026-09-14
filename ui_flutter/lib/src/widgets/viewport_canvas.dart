@@ -13,6 +13,7 @@ class ViewportCanvas extends StatefulWidget {
   final GeoScatter3dService? service;
   final bool autoLoadSample;
   final bool embedded;
+  final EdgeInsets controlInsets;
 
   const ViewportCanvas({
     super.key,
@@ -20,6 +21,7 @@ class ViewportCanvas extends StatefulWidget {
     this.service,
     this.autoLoadSample = true,
     this.embedded = false,
+    this.controlInsets = EdgeInsets.zero,
   }) : assert(engine == null || service == null);
 
   @override
@@ -202,13 +204,13 @@ class _ViewportCanvasState extends State<ViewportCanvas>
             child: Center(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: tokens.colors.hudSurfaceRaised,
+                  color: tokens.colors.chromeSurfaceRaised,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: tokens.colors.hudBorder,
+                    color: tokens.colors.chromeBorder,
                     width: tokens.effects.hairline,
                   ),
-                  boxShadow: [tokens.effects.controlShadow],
+                  boxShadow: [tokens.effects.chromeShadow],
                 ),
                 child: Material(
                   type: MaterialType.transparency,
@@ -216,8 +218,8 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                     key: key,
                     onTap: onPressed,
                     customBorder: const CircleBorder(),
-                    highlightColor: tokens.colors.accentSoft,
-                    splashColor: tokens.colors.accentSoft,
+                    highlightColor: tokens.colors.chromeAccentSoft,
+                    splashColor: tokens.colors.chromeAccentSoft,
                     child: SizedBox(
                       width: tokens.sizes.controlButtonSize,
                       height: tokens.sizes.controlButtonSize,
@@ -225,8 +227,8 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                         icon,
                         size: tokens.sizes.controlIconSize,
                         color: onPressed == null
-                            ? tokens.colors.textMuted
-                            : tokens.colors.textPrimary,
+                            ? tokens.colors.chromeTextMuted
+                            : tokens.colors.chromeTextPrimary,
                       ),
                     ),
                   ),
@@ -241,7 +243,12 @@ class _ViewportCanvasState extends State<ViewportCanvas>
     final controls = Align(
       alignment: Alignment.bottomRight,
       child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.lg),
+        padding: EdgeInsets.only(
+          left: tokens.spacing.lg + widget.controlInsets.left,
+          top: tokens.spacing.lg + widget.controlInsets.top,
+          right: tokens.spacing.lg + widget.controlInsets.right,
+          bottom: tokens.spacing.lg + widget.controlInsets.bottom,
+        ),
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: tokens.sizes.controlBarMaxWidth,
@@ -259,16 +266,16 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      tokens.colors.hudSurfaceTop,
-                      tokens.colors.hudSurfaceBottom,
+                      tokens.colors.chromeSurfaceRaised,
+                      tokens.colors.chromeSurface,
                     ],
                   ),
                   borderRadius: tokens.radii.panelRadius,
                   border: Border.all(
-                    color: tokens.colors.hudBorder,
+                    color: tokens.colors.chromeBorder,
                     width: tokens.effects.hairline,
                   ),
-                  boxShadow: [tokens.effects.panelShadow],
+                  boxShadow: [tokens.effects.chromeShadow],
                 ),
                 child: Padding(
                   padding: EdgeInsets.symmetric(
@@ -295,7 +302,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: tokens.typography.meta.copyWith(
-                                  color: tokens.colors.textPrimary,
+                                  color: tokens.colors.chromeTextPrimary,
                                 ),
                               ),
                             ),
@@ -305,7 +312,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                         Container(
                           width: tokens.effects.hairline,
                           height: tokens.sizes.controlDividerHeight,
-                          color: tokens.colors.hudDivider,
+                          color: tokens.colors.chromeDivider,
                         ),
                         SizedBox(width: tokens.spacing.md),
                         actionButton(

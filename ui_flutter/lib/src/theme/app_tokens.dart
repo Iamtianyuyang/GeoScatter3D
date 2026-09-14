@@ -17,8 +17,17 @@ class AppTokens extends ThemeExtension<AppTokens> {
 
   static const dark = AppTokens(
     colors: AppColorTokens(
-      viewport: Color(0xFF0D1117),
+      viewport: Color(0xFF08131F),
       shellBackground: Color(0xFFF2F6FA),
+      chromeSurface: Color(0xF21A2028),
+      chromeSurfaceRaised: Color(0xFF242C36),
+      chromeBorder: Color(0x33FFFFFF),
+      chromeDivider: Color(0x26FFFFFF),
+      chromeTextPrimary: Color(0xFFF1F5F8),
+      chromeTextSecondary: Color(0xFFA9B6C4),
+      chromeTextMuted: Color(0xFF788696),
+      chromeAccent: Color(0xFF38A8E0),
+      chromeAccentSoft: Color(0x332FA9E3),
       hudSurface: Color(0xFFFFFFFF),
       hudSurfaceTop: Color(0xFFFFFFFF),
       hudSurfaceBottom: Color(0xFFFFFFFF),
@@ -55,6 +64,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       shellFooterHeight: 56,
       shellFooterCollapsedHeight: 44,
       shellPanelRailWidth: 48,
+      shellDrawerWidth: 320,
       shellSidebarBreakpoint: 900,
       shellFooterBreakpoint: 650,
       navItemHeight: 44,
@@ -153,6 +163,11 @@ class AppTokens extends ThemeExtension<AppTokens> {
         blurRadius: 16,
         offset: Offset(0, 7),
       ),
+      chromeShadow: BoxShadow(
+        color: Color(0x66000000),
+        blurRadius: 26,
+        offset: Offset(0, 12),
+      ),
     ),
   );
 
@@ -206,6 +221,15 @@ class AppColorTokens {
   const AppColorTokens({
     required this.viewport,
     required this.shellBackground,
+    required this.chromeSurface,
+    required this.chromeSurfaceRaised,
+    required this.chromeBorder,
+    required this.chromeDivider,
+    required this.chromeTextPrimary,
+    required this.chromeTextSecondary,
+    required this.chromeTextMuted,
+    required this.chromeAccent,
+    required this.chromeAccentSoft,
     required this.hudSurface,
     required this.hudSurfaceTop,
     required this.hudSurfaceBottom,
@@ -227,6 +251,15 @@ class AppColorTokens {
 
   final Color viewport;
   final Color shellBackground;
+  final Color chromeSurface;
+  final Color chromeSurfaceRaised;
+  final Color chromeBorder;
+  final Color chromeDivider;
+  final Color chromeTextPrimary;
+  final Color chromeTextSecondary;
+  final Color chromeTextMuted;
+  final Color chromeAccent;
+  final Color chromeAccentSoft;
   final Color hudSurface;
   final Color hudSurfaceTop;
   final Color hudSurfaceBottom;
@@ -249,6 +282,27 @@ class AppColorTokens {
     return AppColorTokens(
       viewport: Color.lerp(a.viewport, b.viewport, t)!,
       shellBackground: Color.lerp(a.shellBackground, b.shellBackground, t)!,
+      chromeSurface: Color.lerp(a.chromeSurface, b.chromeSurface, t)!,
+      chromeSurfaceRaised: Color.lerp(
+        a.chromeSurfaceRaised,
+        b.chromeSurfaceRaised,
+        t,
+      )!,
+      chromeBorder: Color.lerp(a.chromeBorder, b.chromeBorder, t)!,
+      chromeDivider: Color.lerp(a.chromeDivider, b.chromeDivider, t)!,
+      chromeTextPrimary: Color.lerp(
+        a.chromeTextPrimary,
+        b.chromeTextPrimary,
+        t,
+      )!,
+      chromeTextSecondary: Color.lerp(
+        a.chromeTextSecondary,
+        b.chromeTextSecondary,
+        t,
+      )!,
+      chromeTextMuted: Color.lerp(a.chromeTextMuted, b.chromeTextMuted, t)!,
+      chromeAccent: Color.lerp(a.chromeAccent, b.chromeAccent, t)!,
+      chromeAccentSoft: Color.lerp(a.chromeAccentSoft, b.chromeAccentSoft, t)!,
       hudSurface: Color.lerp(a.hudSurface, b.hudSurface, t)!,
       hudSurfaceTop: Color.lerp(a.hudSurfaceTop, b.hudSurfaceTop, t)!,
       hudSurfaceBottom: Color.lerp(a.hudSurfaceBottom, b.hudSurfaceBottom, t)!,
@@ -354,6 +408,7 @@ class AppSizeTokens {
     required this.shellFooterHeight,
     required this.shellFooterCollapsedHeight,
     required this.shellPanelRailWidth,
+    required this.shellDrawerWidth,
     required this.shellSidebarBreakpoint,
     required this.shellFooterBreakpoint,
     required this.navItemHeight,
@@ -376,6 +431,7 @@ class AppSizeTokens {
   final double shellFooterHeight;
   final double shellFooterCollapsedHeight;
   final double shellPanelRailWidth;
+  final double shellDrawerWidth;
   final double shellSidebarBreakpoint;
   final double shellFooterBreakpoint;
   final double navItemHeight;
@@ -406,6 +462,7 @@ class AppSizeTokens {
         b.shellFooterCollapsedHeight,
       ),
       shellPanelRailWidth: mix(a.shellPanelRailWidth, b.shellPanelRailWidth),
+      shellDrawerWidth: mix(a.shellDrawerWidth, b.shellDrawerWidth),
       shellSidebarBreakpoint: mix(
         a.shellSidebarBreakpoint,
         b.shellSidebarBreakpoint,
@@ -477,12 +534,14 @@ class AppEffectTokens {
     required this.hairline,
     required this.panelShadow,
     required this.controlShadow,
+    required this.chromeShadow,
   });
 
   final double hudBlur;
   final double hairline;
   final BoxShadow panelShadow;
   final BoxShadow controlShadow;
+  final BoxShadow chromeShadow;
 
   static AppEffectTokens lerp(AppEffectTokens a, AppEffectTokens b, double t) {
     double mix(double from, double to) => from + (to - from) * t;
@@ -491,6 +550,7 @@ class AppEffectTokens {
       hairline: mix(a.hairline, b.hairline),
       panelShadow: BoxShadow.lerp(a.panelShadow, b.panelShadow, t)!,
       controlShadow: BoxShadow.lerp(a.controlShadow, b.controlShadow, t)!,
+      chromeShadow: BoxShadow.lerp(a.chromeShadow, b.chromeShadow, t)!,
     );
   }
 }

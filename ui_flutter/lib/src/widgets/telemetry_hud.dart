@@ -214,7 +214,7 @@ class TelemetryStatusBar extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: typography.meta.copyWith(
-                      color: colors.textSecondary,
+                      color: colors.chromeTextSecondary,
                     ),
                   ),
                   if (!dense) ...[
@@ -223,7 +223,9 @@ class TelemetryStatusBar extends StatelessWidget {
                       gpuName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: typography.meta.copyWith(color: colors.textMuted),
+                      style: typography.meta.copyWith(
+                        color: colors.chromeTextMuted,
+                      ),
                     ),
                   ],
                 ],
@@ -239,7 +241,9 @@ class TelemetryStatusBar extends StatelessWidget {
                   ' · 引擎 ${renderTimeMs > 0 ? renderTimeMs.toStringAsFixed(2) : '--'} ms',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: typography.status.copyWith(color: colors.textPrimary),
+                  style: typography.status.copyWith(
+                    color: colors.chromeTextPrimary,
+                  ),
                 ),
               )
             else ...[
@@ -269,7 +273,9 @@ class TelemetryStatusBar extends StatelessWidget {
                     lodSummary,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: typography.meta.copyWith(color: colors.textMuted),
+                    style: typography.meta.copyWith(
+                      color: colors.chromeTextMuted,
+                    ),
                   ),
                 ),
               ],
@@ -291,8 +297,10 @@ class _StatusLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.tokens;
     final colors = tokens.colors;
-    final dot = isReady ? colors.statusReady : colors.textMuted;
-    final foreground = isReady ? colors.statusReadyText : colors.textSecondary;
+    final dot = isReady ? colors.statusReady : colors.chromeTextMuted;
+    final foreground = isReady
+        ? colors.chromeTextPrimary
+        : colors.chromeTextSecondary;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -341,7 +349,7 @@ class _InlineTelemetryMetric extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: tokens.typography.value.copyWith(
-              color: accent ? colors.accent : colors.textPrimary,
+              color: accent ? colors.chromeAccent : colors.chromeTextPrimary,
             ),
           ),
           SizedBox(height: tokens.spacing.xs),
@@ -349,7 +357,9 @@ class _InlineTelemetryMetric extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: tokens.typography.meta.copyWith(color: colors.textMuted),
+            style: tokens.typography.meta.copyWith(
+              color: colors.chromeTextMuted,
+            ),
           ),
         ],
       ),
@@ -367,7 +377,7 @@ class _TelemetryDivider extends StatelessWidget {
     return SizedBox(
       width: tokens.effects.hairline,
       height: tokens.sizes.controlDividerHeight,
-      child: ColoredBox(color: tokens.colors.hudDivider),
+      child: ColoredBox(color: tokens.colors.chromeDivider),
     );
   }
 }

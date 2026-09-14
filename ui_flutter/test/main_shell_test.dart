@@ -4,126 +4,104 @@ import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
 
 void main() {
-  testWidgets('MainShell renders the five static workspace regions', (
+  testWidgets('MainShell keeps the viewport as the full-screen base layer', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      _testApp(const MainShell(viewport: SizedBox.expand())),
-    );
+    await tester.pumpWidget(_testApp(_shell()));
 
     expect(find.byKey(const ValueKey('top_navigation')), findsOneWidget);
-    expect(find.byKey(const ValueKey('left_project_panel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('left_tool_rail')), findsOneWidget);
+    expect(find.byKey(const ValueKey('right_tool_rail')), findsOneWidget);
     expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
-    expect(find.byKey(const ValueKey('right_property_panel')), findsOneWidget);
     expect(find.byKey(const ValueKey('bottom_status_bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('left_project_drawer')), findsNothing);
+    expect(find.byKey(const ValueKey('right_property_drawer')), findsNothing);
 
     expect(find.text('GeoScatter 3D'), findsOneWidget);
     expect(find.text('顶部导航区'), findsOneWidget);
-    expect(find.text('左侧项目区'), findsOneWidget);
-    expect(find.text('中央视图区'), findsOneWidget);
-    expect(find.text('右侧属性区'), findsOneWidget);
-    expect(find.text('底部状态区 / LOD'), findsOneWidget);
-    expect(find.text('项目'), findsOneWidget);
-    expect(find.text('数据'), findsOneWidget);
-    expect(find.text('场景'), findsOneWidget);
-    expect(find.text('成果'), findsOneWidget);
+    expect(find.text('地形扫描演示场景'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('MainShell remains overflow-free at 200% text scale', (
+  testWidgets('left rail opens contextual drawers without resizing viewport', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      _testApp(
-        const MediaQuery(
-          data: MediaQueryData(textScaler: TextScaler.linear(2)),
-          child: MainShell(viewport: SizedBox.expand()),
-        ),
-      ),
-    );
-
-    expect(find.text('顶部导航区'), findsOneWidget);
-    expect(find.text('底部状态区 / LOD'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('collapsing side and bottom panels expands the viewport', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1668, 944);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(
-      _testApp(const MainShell(viewport: SizedBox.expand())),
-    );
-
+    await tester.pumpWidget(_testApp(_shell()));
     final center = find.byKey(const ValueKey('center_viewport_panel'));
-    final initialCenter = tester.getSize(center);
+    final initialSize = tester.getSize(center);
 
-    await tester.tap(find.byKey(const ValueKey('toggle_left_project')));
+    await tester.tap(find.byKey(const ValueKey('rail_project')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('left_project_rail')), findsOneWidget);
-    final afterLeftCollapse = tester.getSize(center);
-    expect(afterLeftCollapse.width, greaterThan(initialCenter.width));
+    expect(find.byKey(const ValueKey('left_project_drawer')), findsOneWidget);
+    expect(find.text('项目资源'), findsOneWidget);
+    expect(tester.getSize(center), initialSize);
 
-    await tester.tap(find.byKey(const ValueKey('toggle_right_property')));
+    await tester.tap(find.byKey(const ValueKey('rail_data')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('right_property_rail')), findsOneWidget);
-    final afterRightCollapse = tester.getSize(center);
-    expect(afterRightCollapse.width, greaterThan(afterLeftCollapse.width));
+    expect(find.text('数据图层'), findsOneWidget);
+    expect(find.text('项目资源'), findsNothing);
 
-    final heightBeforeFooterCollapse = afterRightCollapse.height;
+    await tester.tap(find.byTooltip('关闭面板'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('left_project_drawer')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('right rail opens the contextual property drawer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_testApp(_shell()));
+
+    await tester.tap(find.byKey(const ValueKey('rail_properties')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('right_property_drawer')), findsOneWidget);
+    expect(find.text('属性检查器'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('rail_layers')));
+    await tester.pump();
+    expect(find.text('图层控制'), findsOneWidget);
+    expect(find.text('属性检查器'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('collapsed status keeps telemetry and viewport size', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_testApp(_shell()));
+    final center = find.byKey(const ValueKey('center_viewport_panel'));
+    final initialSize = tester.getSize(center);
+
     await tester.tap(find.byKey(const ValueKey('toggle_bottom_status')));
     await tester.pump();
+
     expect(
       find.byKey(const ValueKey('bottom_status_collapsed')),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
     expect(find.textContaining('FPS'), findsOneWidget);
-    expect(
-      tester.getSize(center).height,
-      greaterThan(heightBeforeFooterCollapse),
-    );
-
-    await tester.tap(find.byTooltip('展开左侧项目区'));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('left_project_panel')), findsOneWidget);
+    expect(tester.getSize(center), initialSize);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact layouts default to collapsed utility panels', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(
-      _testApp(const MainShell(viewport: SizedBox.expand())),
-    );
-
-    expect(find.byKey(const ValueKey('left_project_rail')), findsOneWidget);
-    expect(find.byKey(const ValueKey('right_property_rail')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('bottom_status_collapsed')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('collapsed status telemetry fits at 200% text scale', (
+  testWidgets('drawers and telemetry remain overflow-free at 200% text scale', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -139,17 +117,41 @@ void main() {
       ),
     );
 
+    await tester.tap(find.byKey(const ValueKey('rail_project')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('left_project_drawer')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     await tester.tap(find.byKey(const ValueKey('toggle_bottom_status')));
     await tester.pump();
-
     expect(
       find.byKey(const ValueKey('bottom_status_collapsed')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact layouts default to a collapsed edge status', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_testApp(_shell()));
+
+    expect(find.byKey(const ValueKey('left_tool_rail')), findsOneWidget);
+    expect(find.byKey(const ValueKey('right_tool_rail')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('bottom_status_collapsed')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
+
+Widget _shell() => const MainShell(viewport: SizedBox.expand());
 
 Widget _testApp(Widget home) {
   return MaterialApp(
