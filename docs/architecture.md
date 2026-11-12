@@ -129,12 +129,11 @@ int32_t gs3d_engine_cancel(gs3d_engine*, uint64_t task);
 ### 唤醒
 
 ```c
-typedef struct { uint32_t mask; } gs3d_wake;
 enum { GS3D_WAKE_FRAME = 1u << 0, GS3D_WAKE_TASK = 1u << 1,
        GS3D_WAKE_ERROR = 1u << 2, GS3D_WAKE_PROGRESS = 1u << 3 };
 
 int32_t gs3d_engine_set_wake(gs3d_engine*,
-                             void (*on_wake)(void* user, gs3d_wake),
+                             void (*on_wake)(void* user, uint32_t mask),
                              void* user);
 ```
 
@@ -150,13 +149,14 @@ int32_t gs3d_engine_read_frame_rgba(gs3d_engine*, uint8_t* out, uint32_t cap,
 typedef struct { void* handle; uint32_t width; uint32_t height; uint32_t kind; }
     gs3d_native_surface;
 int32_t gs3d_engine_attach_surface(gs3d_engine*, const gs3d_native_surface*);
+/* 请求释放；在状态快照中确认完成前宿主须保留句柄 */
 int32_t gs3d_engine_detach_surface(gs3d_engine*);
 ```
 
 - 表面由宿主（`app/android`）创建与销毁；attach 只登记，不接管所有权。
-- 宿主销毁前必须先 `detach_surface`，并且 `detach` 返回后句柄才失效。
-- 引擎在渲染线程执行 attach/detach，detach 前 `vkDeviceWaitIdle`，旋转或锁屏
-  不会留下悬空 surface。
+- 宿主销毁前请求 `detach_surface`；引擎完成 GPU 资源释放并确认后，宿主才能释放句柄。
+  实现须保证句柄引用覆盖异步处理期间，并处理旋转、锁屏和退出。
+- 引擎在渲染线程执行 attach/detach，等待 GPU 的操作不能阻塞 Flutter UI 线程。
 
 ### JSON 通道
 
