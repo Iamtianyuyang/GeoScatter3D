@@ -312,8 +312,8 @@ manifest 必须包含：
 3. **格式 v3**：写入器、读取器、迁移工具、校验和与恢复；删除 v1/v2 与旧 spec。
 4. **ABI v1**：受锁保护的快照、异步命令与任务表、管线 ABI、JSON 通道；逐步重写
    Dart 绑定（Dart 只依赖 `gs3d_engine_*`，无第二消费者需要共存）。
-5. **前端**：视口 → 数据集 → 渲染设置 → 测量 → 导出 → 最近项目；把 1a 删掉的
-   约 4,000 行行为重写进 `engine/session/`。
+5. **前端**：视口 → 数据集 → 渲染设置 → 测量 → 导出 → 最近项目；将旧查看器中
+   需要保留的行为迁移到 `engine/session/`。
 6. **CI**：Windows / Linux / Android 三矩阵 + lavapipe 渲染冒烟 + `gs3d_bench`
    基线比较（移植 `tools/gs3d_bench_bundle.cpp`）。
 
