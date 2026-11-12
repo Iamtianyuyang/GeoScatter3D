@@ -297,12 +297,12 @@ manifest 必须包含：
 | `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
 | `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
 | `src/ffi/AndroidSurfaceJni.cpp` | `platform/android/` |
-| `src/platform/Window.cpp` | 旧 GLFW 查看器移除后删除 |
 | `ui_flutter/` | `app/` |
 | `src/control/*` | 旧 ABI 及其调用方迁移后删除；目前仍由 `gs3d_ffi` 使用 |
 | `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 在现有引擎与控制层依赖迁移后删除（第一版不做工作区布局） |
-| `src/app/ViewerApp*.cpp`（约 4,000 行） | 删除；其中的导入、测量、导出、拾取、截图行为在第 5 步重写 |
-| `src/render/Vulkan{Renderer,Swapchain}.cpp` | 在旧查看器依赖移除后删除 |
+
+旧 GLFW 查看器中不参与构建的实现已移除；其需要保留的行为在第 5 步迁移。
+旧查看器测试开关当前无法链接，相关测试须迁移后才能作为验收依据。
 
 ## 迁移顺序
 
