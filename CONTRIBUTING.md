@@ -57,7 +57,6 @@ ctest --test-dir build -C Release --output-on-failure
 4. 打开 PR 到 `main`; PR 标题/正文含关联任务标识 (如 `TIA-<N>`), 正文
    列出改动、验证证据 (测试/日志路径) 与已知边界。
 5. CI (GitHub Actions) 会执行无窗口测试与护栏检查; 合并前等待评审。
-6. 合并后如需, 在 CHANGELOG.md 补一条里程碑记录。
 
 ## 行为准则
 

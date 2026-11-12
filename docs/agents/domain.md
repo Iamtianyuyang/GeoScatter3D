@@ -15,7 +15,6 @@ How the engineering skills should consume this repo's domain documentation when 
 - **`docs/config-reference.md`** — viewer.toml 全量配置键与用户偏好。
 - **`docs/spec/gs3d-format.md`** — GS3D/LOD/tile 二进制格式规范。
 - **`README.md`** — 构建/测试/分发/样例流程。
-- **`CHANGELOG.md`** — 变更记录（按里程碑组织）。
 
 ## 文档-代码一致性约定
 
