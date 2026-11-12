@@ -81,8 +81,8 @@ assets/  config/  examples/  scripts/  tests/  docs/
 - ABI 自身的版本由 `uint32_t gs3d_engine_abi_version(void)` 给出，不塞进每个结构体。
 - 字符串与数组指针**只在调用期间有效**。异步命令的参数由引擎深拷贝；引擎绝不
   保存调用方指针。
-- 错误：`int32_t` 返回 0 成功、负数错误码；文本只出现在已发布的快照里
-  （定长 `char[256]`），不返回裸指针。
+- 错误：`int32_t` 返回 0 成功、负数错误码；引擎任务的错误文本放在已发布的
+  快照里（定长 `char[256]`），管线任务放在其状态中；不返回裸指针。
 - 任何一次 ABI 改动同时改 `app/lib/ffi/` 的镜像与一个布局测试。
 
 ### 状态快照
@@ -93,7 +93,7 @@ assets/  config/  examples/  scripts/  tests/  docs/
 typedef struct {
     uint32_t struct_size;
     uint64_t generation;      /* 每次发布 +1 */
-    /* …相机、点数、预算、任务表、last_error[256]… */
+    /* …相机、点数、预算、任务表、表面操作状态、last_error[256]… */
 } gs3d_state;
 
 /* 拷贝最近一次已发布的完整一代；没有发布过则返回 -2 */
@@ -105,7 +105,8 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 回调，禁止半写半读。不得仅靠双缓冲和序号重试：写者再次复用缓冲时仍可能与读者并发访问。
 
 任务表也在这份快照里（固定上限 4 项）：`{id, stage, state, progress}`。任务结束时
-状态保留到被读取一次为止，防止 Dart 错过终态。
+状态保留到被读取一次为止，防止 Dart 错过终态。任务表已满时必须明确返回错误；
+宿主须保留表面句柄，并在能提交 detach 后等待该任务完成。
 
 ### 命令
 
@@ -113,7 +114,7 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 typedef struct {
     uint32_t struct_size;
     uint32_t op;
-    uint32_t flags;           /* GS3D_CMD_ASYNC；0 = 同步 */
+    uint32_t flags;           /* GS3D_CMD_ASYNC；0 = 普通入队命令 */
     union { /* 每类命令一个 POD 参数块，字符串为 const char* */ } args;
 } gs3d_command;
 
@@ -122,9 +123,9 @@ int32_t gs3d_engine_submit(gs3d_engine*, const gs3d_command*,
 int32_t gs3d_engine_cancel(gs3d_engine*, uint64_t task);
 ```
 
-同步命令只允许"立即完成"的：相机输入、点大小、配色、背景、请求一帧。
-异步命令：开包、卸载、预处理、LOD 重建、导出、截图写盘。同步命令在调用线程上
-做参数校验与深拷贝，真正的执行进队列。
+普通命令包括相机输入、点大小、配色、背景、请求一帧；返回成功表示已校验并入队，
+不表示渲染线程已执行。调用线程只做参数校验与深拷贝，不等待执行。
+开包、卸载、预处理、LOD 重建、导出和截图写盘使用异步任务号跟踪执行与终态。
 
 ### 唤醒
 
@@ -146,17 +147,19 @@ int32_t gs3d_engine_set_wake(gs3d_engine*,
 int32_t gs3d_engine_read_frame_rgba(gs3d_engine*, uint8_t* out, uint32_t cap,
                                     uint32_t* w, uint32_t* h, uint32_t* stride);
 
-typedef struct { void* handle; uint32_t width; uint32_t height; uint32_t kind; }
+typedef struct { uint32_t struct_size; void* handle; uint32_t width, height, kind; }
     gs3d_native_surface;
-int32_t gs3d_engine_attach_surface(gs3d_engine*, const gs3d_native_surface*);
-/* 请求释放；在状态快照中确认完成前宿主须保留句柄 */
-int32_t gs3d_engine_detach_surface(gs3d_engine*);
+int32_t gs3d_engine_attach_surface(gs3d_engine*, const gs3d_native_surface*,
+                                    uint64_t* out_task);
+/* 请求释放；对应任务完成前宿主须保留句柄 */
+int32_t gs3d_engine_detach_surface(gs3d_engine*, uint64_t* out_task);
 ```
 
 - 表面由宿主（`app/android`）创建与销毁；attach 只登记，不接管所有权。
 - 宿主销毁前请求 `detach_surface`；引擎完成 GPU 资源释放并确认后，宿主才能释放句柄。
   实现须保证句柄引用覆盖异步处理期间，并处理旋转、锁屏和退出。
-- 引擎在渲染线程执行 attach/detach，等待 GPU 的操作不能阻塞 Flutter UI 线程。
+- attach/detach 入队后立即返回任务号；快照中的任务终态标识具体操作是否完成或失败。
+  引擎在渲染线程执行操作，等待 GPU 的操作不能阻塞 Flutter UI 线程。
 
 ### JSON 通道
 
@@ -168,7 +171,8 @@ int32_t gs3d_engine_request(gs3d_engine*, const char* request_json,
                             char* out, uint32_t cap, uint32_t* out_len);
 ```
 
-请求与应答都带 `"v": 1`；字段只增不改，未知字段忽略。热点路径禁止走这里。
+请求与应答都带 `"v": 1`；字段只增不改，未知字段忽略。同步请求仅处理内存中的
+短操作；涉及文件或其他长操作时，返回任务号并通过快照取得结果。热点路径禁止走这里。
 
 ### 管线 ABI（无 GPU）
 
