@@ -222,11 +222,11 @@ manifest 必须包含：
   "attributes": [ { "name": "elevation", "type": "f32", "unit": "m",
                     "null": -9999 } ],
   "chunks": [ { "path": "points/000000.chunk", "points": 65536,
-                "bytes": 1048576, "crc32c": "0x1a2b3c4d" } ],
+                "bytes": 1048608, "crc32c": "0x1a2b3c4d" } ],
   "job": { "id": "uuid", "source": { "path": "x.dat", "bytes": 3350000067,
                                      "sha256": "…" },
            "options_hash": "…",
-           "stages": { "parse": "done", "lod": "done", "tiles": "pending" } }
+           "stages": { "parse": "done", "lod": "done", "tiles": "done" } }
 }
 ```
 
@@ -234,7 +234,9 @@ manifest 必须包含：
 
 1. 点存相对 `origin` 的坐标（原点用双精度）；对外只给绝对坐标，只有一个换算入口。
 2. 块写入后不可变；重写产生新块号，旧块在提交时删除。
-3. 每个块带 `bytes` 与 `crc32c`；读取先校验长度与校验和，再 mmap。
+3. 块表的 `bytes` 是完整文件长度；点块包含 32 字节头，`crc32c` 是点数据载荷的
+   校验和，与块头中的值一致。读取先验证文件长度，再映射并校验载荷，校验成功后
+   才能将数据交给调用方。
 4. 每个阶段完成后持久化块和阶段检查点；最终 manifest 只在全部必需阶段完成后发布。
    写块和临时元数据后先同步文件，再用同一文件系统内的原子替换发布并同步目录；
    各平台分别实现并验证等效的持久化语义。最终 manifest 校验通过才视为包完整。
