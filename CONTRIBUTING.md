@@ -1,68 +1,96 @@
 # Contributing
 
-## 构建与测试
+GeoScatter3D 是一个单进程应用：C++ 引擎负责数据、渲染和状态，Flutter 只负责界面。
+这份文件是入口，规则细节见 [docs/RULES.md](docs/RULES.md)，目录与契约见
+[docs/architecture.md](docs/architecture.md)，加功能照 [docs/recipes/](docs/recipes/) 做。
 
-依赖: CMake 3.28+, C++20 编译器, Vulkan SDK/开发包, GLFW 3,
-线程库, Python 3 (配置期硬性依赖: `find_package(Python3 REQUIRED)`,
-驱动 `check_include_deps.py` 与 `check_engineering_guardrails.py` 测试),
-`glslangValidator` (CMake 从 GLSL 自动生成 SPIR-V)。Git submodule:
-`third_party/catch2`。
+> 仓库处于重写期，迁移顺序见 `docs/architecture.md` 末尾的映射表。提交必须让仓库
+> 在当次提交后仍能配置、构建、通过测试。
+
+## 环境依赖
+
+| 依赖 | 版本 | 说明 |
+| --- | --- | --- |
+| CMake | 3.28+ | 配置期硬性要求 `Python3`（跑两个守卫脚本） |
+| C++ 编译器 | C++20 | Linux: g++ 16 或 clang 23；Windows: MSVC 19.4+ |
+| Vulkan | loader + headers 1.3+ | 三端唯一图形后端，不做 GLES 降级 |
+| glslangValidator | 任意近期版本 | 编译 `engine/render/*/shaders/*.glsl` 到 SPIR-V |
+| Flutter | 3.50+ / Dart 3.12+ | 前端与 Android/Windows 宿主 |
+| JDK | 17+ | Android 构建；`flutter doctor --android-licenses` 需已接受 |
+| catch2 | submodule | `git submodule update --init third_party/catch2` |
+
+Linux 上 `Vulkan` 只需 `vulkan-icd-loader` + `vulkan-headers`，着色器编译用
+`glslangValidator`。CI 里额外安装 `mesa-vulkan-drivers` 以使用软件光栅（lavapipe）。
+
+## 构建
 
 ```bash
 git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure
 ```
 
-Windows (vcpkg):
+Windows：
 
 ```powershell
-vcpkg install glfw3:x64-windows vulkan-headers:x64-windows vulkan-loader:x64-windows glslang[tools]:x64-windows
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+vcpkg install vulkan-headers:x64-windows vulkan-loader:x64-windows glslang[tools]:x64-windows
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
 ```
 
-详细说明见 [README](README.md)。
+Android（产物为含 `libgs3d_ffi.so` 的 APK/AAB）：
 
-## 测试约定
+```bash
+cd app && flutter build apk --release
+```
 
-- 单元测试为 Catch2 (`tests/*.cpp`), 每个文件一个可执行目标
-  (`GeoScatter3D*Tests`), 全部进默认 ctest 套件; 可按标签或用例名过滤:
-  `./build/GeoScatter3DDataTests "[gs3d]"`。
-- `GeoScatter3DBenchmark` 为手动运行的性能基准, 不进默认 ctest。
-- `GeoScatter3D.FreshClonePreprocess` / `GeoScatter3D.FreshCloneBundle`
-  是无 GPU 环境的端到端冒烟测试 (样例 CSV → bundle → 生产 reader 回读)。
-- `GeoScatter3D.IncludeDeps` / `GeoScatter3D.EngineeringGuardrails`
-  为 Python 脚本测试: include 依赖卫生与架构行数护栏。
+## 测试与门禁
 
-## 工程护栏
+提交前必须全绿，四项缺一不可：
 
-- `scripts/check_engineering_guardrails.py` 约束关键文件行数上限
-  (当前: ViewerApp.cpp 912 / run() 716 / UiRoot.cpp 1207 /
-  AppConfig.cpp 763)。PR CI 与 `merge-base(base, HEAD)` 比较, 预算只允许
-  下降; 本地快速检查与 `HEAD^` 比较。
-- `scripts/check_include_deps.py` 校验 include 依赖分层。
-- 修改这三种二进制格式 (GS3D/LOD/tile) 必须同时更新
-  `docs/spec/gs3d-format.md` 与相关测试 (格式语义以代码为准)。
-- 新增/修改 viewer.toml 配置键时同步更新 `docs/config-reference.md`。
+```bash
+ctest --test-dir build --output-on-failure          # C++，含守卫脚本自测
+cd app && flutter analyze && flutter test           # Dart
+python3 scripts/check_include_deps.py               # 依赖方向
+python3 scripts/check_engineering_guardrails.py     # 诊断输出与预算
+```
 
-## PR 流程
+- 渲染改动额外在 Linux 上跑一次软件光栅冒烟：`ctest -R RenderSmoke`（迁移第 6 步落地），它用
+  lavapipe 渲染一帧并比对像素与帧时间；没有 GPU 的 CI 也靠它发现渲染崩溃。
+- `GeoScatter3D.FreshClonePreprocess` / `FreshCloneBundle` 是无 GPU 的端到端
+  冒烟：样例 CSV → 工程包 → 用生产 reader 回读。
+- CI 三矩阵：Windows、Linux、Android。Android 只做构建，不做设备测试。
 
-1. 从 `main` 新建分支, 按仓库惯例命名 (如 `fix/...`、`feat/...`)。
-2. 提交信息遵循仓库风格: 前缀 `feat:`/`fix:`/`perf:`/`refactor:`/
-   `test:`/`docs:`/`chore:`, 必要时附模块标签 `(data)`/`(ui)`/`(render)`。
-3. 本地 `ctest --test-dir build --output-on-failure` 全绿后再推送。
-4. 打开 PR 到 `main`; PR 标题/正文含关联任务标识 (如 `TIA-<N>`), 正文
-   列出改动、验证证据 (测试/日志路径) 与已知边界。
-5. CI (GitHub Actions) 会执行无窗口测试与护栏检查; 合并前等待评审。
+## 提交与 PR
 
-## 行为准则
+1. 直接在 `flutter` 分支上小步提交，不建长期分支；每个提交都要能构建、能过测试。
+2. 提交前缀：`feat:` / `fix:` / `perf:` / `refactor:` / `test:` / `docs:` /
+   `chore:`，必要时带模块标签，例如 `feat(render): ...`。
+3. 一个提交只做一件事：删代码、搬文件、改行为不要混在一起——搬文件提交里不夹带
+   逻辑修改，否则无法审阅历史。
+4. PR 描述写三行：改了什么、怎么验证的（命令与结果）、已知边界。
+5. 合并前四项门禁全绿。
 
-- 不提交密钥/凭据; 不编辑 `third_party/` 下的 vendored 代码
-  (Catch2 submodule、tomlplusplus、stb)。
-- 不默认启用 `-march=native` 或绑定特定 CPU 的代码生成选项。
-- 不删除失败测试来让 CI 变绿。
-- 文档与代码保持同步: 实现变更涉及的行为描述 (README / architecture.md
-  / config-reference.md / 格式规范) 须随 PR 更新。
+## 加功能
+
+不要凭感觉新建目录或新模块。先查 [docs/recipes/](docs/recipes/)：
+
+| 要做的事 | 配方 |
+| --- | --- |
+| 加一个 Flutter 面板 | [recipes/add-panel.md](docs/recipes/add-panel.md) |
+| 加一个引擎命令 | [recipes/add-engine-command.md](docs/recipes/add-engine-command.md) |
+| 加一种数据块 | [recipes/add-data-chunk.md](docs/recipes/add-data-chunk.md) |
+| 加一个平台适配 | [recipes/add-platform-adapter.md](docs/recipes/add-platform-adapter.md) |
+| 加一个测试 | [recipes/add-test.md](docs/recipes/add-test.md) |
+
+配方里没有对应类型的，先补一篇再动手。
+
+## 不允许
+
+- 提交密钥、凭据、本机绝对路径。
+- 编辑 `third_party/` 下的 vendored 代码（catch2 submodule、tomlplusplus、stb）。
+- 为实现某个功能引入新的第三方依赖而不在 PR 里说明理由与体积代价。
+- 删除失败测试来让 CI 变绿；测试失败先当作真问题查。
+- 在 Dart 侧保存一份与引擎冲突的权威状态（见规则三）。
+- 启用 `-march=native` 或绑定特定 CPU 的编译选项。

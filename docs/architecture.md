@@ -1,319 +1,195 @@
-# GeoScatter3D 架构与现状
+# 架构
 
-> 状态: 现行 | 核对基准: 2026-09-11, flutter 单进程 FFI 主路径（双进程已删除）
-> 单进程契约见 [fullstack-engine-parity.md](compose/spec/fullstack-engine-parity.md) 与 [ffi-single-process.md](compose/spec/ffi-single-process.md)
-> Vulkan 核心的跨平台边界、生命周期和平台接入规则见 [vulkan-core.md](spec/vulkan-core.md)。
+## 目标
 
-## 架构总览
+一个应用，两种语言：C++ 引擎负责数据、渲染与状态，Flutter 只负责界面。
+三端（Windows / Linux / Android）本地离线运行，都能打开千万级点云，
+都能自己完成预处理。工程包三端通用，可直接拷贝。
 
-```mermaid
-flowchart LR
-    subgraph Input["输入层"]
-        TOML["viewer.toml / CLI"] --> APP["AppConfig"]
-        CSV["csv/dat"] --> PRE["GeoScatter3DPreprocess"]
-        PRE --> BND[".gs3d.bundle"]
-        BND --> DS[("source.gs3d +
-        lod.gs3dlod +
-        tiles.gs3dtiles(+.index)")]
-        GS3D["gs3d 模式"] --> DS
-    end
+## 目录
 
-    subgraph App["应用层"]
-        APP --> SESSION["ViewerDatasetSession"]
-        SESSION --> DS
-        SESSION --> GPUCLOUD["PointCloudGpu /
-        PointCloudLodGpu /
-        PointCloudTileGpu"]
-        APP --> STATE["AppState"]
-        UI["ui: UiRoot /
-        WelcomeWindow /
-        WorkbenchUi/FloatingDockUi/AnalysisRailUi"] --> ACTIONS["UiActions 命令队列"]
-        ACTIONS --> APP
-        STATE --> UI
-    end
-
-    subgraph Render["渲染层"]
-        GPUCLOUD --> PIPE["PointPipeline"]
-        PIPE --> OFF["OffscreenFramebuffer[N]"]
-        OFF --> IMG["Flutter Image.memory"]
-        CAM["Camera/CameraController/CameraHub"] --> OFF
-    end
-
-    UI --> IMG
-    APP --> CAM
+```
+engine/
+  foundation/      无业务依赖的地基
+    diagnostics/     Log, CpuInfo, Stopwatch, FrameClock, Percentile
+    io/              FileIO, MemoryMappedFile, Base64, ResourcePath
+    concurrency/     ThreadPool, Cancellation, TaskQueue
+    math/            Camera 数学, Ray, BoxSelect 几何, Bounds
+  data/            只读的数据理解，不碰 GPU
+    csv/             Sniffer, Delimiter, Schema, 分块读取
+    format/          Gs3dFormat, ByteOrder, Reader, Dataset, Exporter, Verifier
+    lod/             LodFormat, LodReader, LodDataset
+    tile/            TileFormat, TileReader, 索引与网格
+  pipeline/        写数据：原始文件 → 工程包
+    stages/         阶段机、进度、恢复、原子提交
+    compute/        统计、CSV→点、体素降采样
+    writers/        点块、LOD 块、瓦片块写入器
+  render/          Vulkan，只认 GPU，不认窗口
+    device/         Context, Buffer, DepthBuffer, GpuInfo, FrameTimer
+    scene/          Viewport, Camera, Selection, LodSelector, NearestPoint
+    point/          PointPipeline, PointCloud{Gpu,Lod,Tile}, AxisGrid
+    targets/        OffscreenFramebuffer, PresentSurface
+    streaming/      TileDeviceArena, TilePointCache, TileLoadCommit, FrameChannel
+  session/         一次运行的业务状态
+    project/        Bundle 打开/关闭、最近项目、任务表
+    measure/        MeasurementManager、结果存取
+    view/           Viewport{Interaction,Presentation}State、预算
+  config/          AppConfig、命令行、校验、viewer.toml
+  abi/             geoscatter3d.h、EngineApi、EngineHost
+  cli/             preprocess、verify（无 GPU 也能跑）
+app/               Flutter
+  lib/ffi/         绑定、结构体镜像、中枢（GeoScatter3dService）
+  lib/state/       快照模型（不可变）
+  lib/viewport/    视口画布、手势、纹理通路
+  lib/panels/      数据集 / 渲染设置 / 测量 / 导出 / 最近项目
+  lib/theme/       设计令牌、配色
+  lib/widgets/     通用组件
+  android/ windows/ linux/
+platform/          三端原生适配（不属于引擎，也不属于 Dart）
+  android/         Surface/JNI、后台任务、存储权限
+  windows/         窗口句柄、文件对话框、安装包钩子
+  linux/           同上
+packaging/         cmake 模块、安装包、签名
+assets/  config/  examples/  scripts/  tests/  docs/
 ```
 
-架构分层（从底至顶单向依赖）：
-1. **基础层 (Foundation)**：`core`（通用领域数据契约）、`platform`（GLFW 窗口与硬件探测）、`util`（线程池、计时器与统一日志）。
-2. **引擎层 (Engine Backend)**：`render`（Vulkan 资源所有权、管线与渲染器）、`camera`（视口相机数学与同步）、`data`（GS3D v2/LOD/瓦片格式与流式读取）、`preprocess`（离线切片与统计预处理）。
-3. **表现层 (Presentation UI)**：`ui`（统一前端基础设施，含 `panels/` 面板组件、`styling/` 主题与布局、`canvas/` 3D 视口画布）。UI 纯只读投影或产出 `UiActions` 纯数据命令，严禁直接持有 Vulkan 句柄。
-4. **应用编排与控制 (App Shell & Control)**：`app`（顶层主循环与分域子系统，含 `systems/` 运行时系统、`session/` 数据会话、`config/` 配置与偏好、`state/` 状态适配）、`control`（JSON-RPC 自动化控制面）。
+依赖方向见 [RULES.md](RULES.md) 规则一。`platform/` 只向下看 `engine/abi`。
 
-## 数据流
+## 线程模型
 
-```text
-viewer.toml / CLI
-        |
-        v
-AppConfigLoader
-        |
-        +-- input=csv|dat --> Statistics/CsvChunkReader --> Gs3dWriter
-        |                                          \----> Gs3dTileWriter
-        |
-        +-- input=bundle --> PreprocessedBundle (manifest.toml 解析)
-        |
-        v
-Gs3dDataset metadata/full points + optional LOD/tile sidecars
-        |
-        v
-PointCloudGpu / PointCloudLodGpu / PointCloudTileGpu
-        |
-        v
-PointPipeline --> OffscreenFramebuffer[N] --> Flutter Image.memory
+| 线程 | 拥有 | 不许做 |
+| --- | --- | --- |
+| 主线程（Flutter UI） | Dart 快照、界面 | 等待引擎、读文件、提交 GPU |
+| 渲染线程 | `VkDevice`、队列、视口资源 | 回调 Dart、阻塞在 IO |
+| 分发线程 | 唤醒通知（原子掩码 → 回调） | 访问 GPU、加锁渲染 |
+| 工作池（N = 核数） | 分块读、解码、预处理 | 提交 GPU、改引擎状态 |
+
+- 引擎对外的调用要么立即返回，要么返回一个任务号；没有"调用了就等它做完"的接口。
+- 长任务（预处理、LOD 构建）可取消；取消点按阶段划分。
+- 4 GB Android 设备上工作池默认为 `min(4, 核数)`，且同时只有一个重任务。
+
+## ABI 契约
+
+头文件：`engine/abi/geoscatter3d.h`，纯 C，`extern "C"`。规则二（只增不改）优先于
+这里的任何写法示例。
+
+```c
+typedef struct gs3d_engine gs3d_engine;
+
+/* 所有结构体首部一致：接收方先查 struct_size，未知版本拒绝执行 */
+typedef struct { uint32_t struct_size; uint32_t abi_version; } gs3d_header;
+
+typedef struct {
+    uint32_t mask;              /* 只有掩码，不带数据 */
+} gs3d_wake;
+
+enum { GS3D_WAKE_FRAME = 1u << 0, GS3D_WAKE_TASK = 1u << 1,
+       GS3D_WAKE_ERROR = 1u << 2, GS3D_WAKE_PROGRESS = 1u << 3 };
+
+/* 唯一的读取口：一次拿齐一帧所需的全部数字 */
+int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
+
+/* 唯一的写入口：命令是 POD，字符串只在调用期间有效 */
+int32_t gs3d_engine_submit(gs3d_engine*, const gs3d_command* cmd);
+
+/* 唤醒回调：只允许传 mask，不许传指针；由分发线程调用 */
+int32_t gs3d_engine_set_wake(gs3d_engine*,
+                             void (*on_wake)(void* user, gs3d_wake),
+                             void* user);
 ```
 
-## 主要模块
+- 像素：桌面走 `gs3d_engine_read_frame_rgba`（一次 memcpy，调用方给缓冲）；
+  Android 走 `gs3d_engine_attach_surface`，引擎直接 present 到 Flutter 纹理，
+  不产生像素回读。
+- 错误：所有 `int32_t` 返回 0 为成功、负数为错误码；`gs3d_engine_last_error`
+  取文本。`poll_state` 里的错误码与文本用于界面显示。
+- 回调约定：`on_wake` 可能被高频调用，必须立即返回；它只表示"有变化，来拉一次"。
 
-| Module | 层次定位 | 主要接口与职责 |
-|---|---|---|
-| `core` | 基础契约层 | `DatasetDescriptor`, `PointData`, `TileData`, `SceneState`, `TextureHandle`：核心领域 POD 数据定义与不透明句柄 |
-| `platform` | 基础环境层 | `Window`, `CpuInfo`：GLFW 初始化、事件派发与 CPU 特征探测 |
-| `util` | 基础支撑层 | `ThreadPool`, `Log`, `Stopwatch`, `PercentileStats`：通用多线程工作池、性能统计与分级日志 |
-| `render` | 引擎图形层 | `VulkanContext`, `VulkanRenderer`, `PointPipeline`, `PointCloudGpu`, `ViewportManager`：Vulkan 显存资源管理、Shader 管线与离屏多视口绘制 |
-| `camera` | 引擎相机层 | `Camera`, `CameraController`, `CameraHub`, `BoxSelect`：3D 视口相机变换矩阵、局部事件映射、框选与多视口同步组 |
-| `data` | 引擎数据层 | `Gs3dDataset`, `Gs3dLodDataset`, `Gs3dTileDataset`, `CsvReader`：GS3D v2 格式强校验、点数据流式解算与内存映射 |
-| `preprocess` | 引擎工具层 | `Gs3dWriter`, `Gs3dLodWriter`, `Gs3dTileWriter`, `PointStats`：离线高并发 CSV 切片、统计直方图与瓦片树生成 |
-| `ui` | 前端逻辑层 | `PanelRegistry`, `LayoutRegistry`, `WorkspaceManager`, `UiFonts`, `ThemeRegistry`, `ViewportCanvas`：无 GUI 依赖的 UI 元数据/布局/主题组件（前端界面由 Flutter 承担） |
-| `ffi` | 跨语言边界 | `HeadlessRenderKernel`, `EngineHost`, `FrameChannel`, `Gs3dEngineApi`：单进程离屏引擎 C-ABI（`gs3d_engine_*` + A 组本地元数据 API）。`EngineHost` 持有唯一渲染线程，`FrameChannel` 负责已发布帧的非阻塞读取 |
-| `app` | 应用外壳层 | `ViewerApp`, `AppState`, `UiActions`, `AppConfig`：生命周期调度与领域子系统（`systems/`, `session/`, `config/`, `state/`）；GUI/控制面路径仍用 |
-| `control` | 应用控制面 | `ControlPlane`, `ComponentRegistry`：TCP + JSON-RPC 2.0 控制面、自动化驱动与组件树反射（双进程/legacy 路径） |
+## 工程包格式 v3
 
-## 代码物理分层与目录拓扑
-
-工程通过严格的领域分包（Domain-Driven Subdirectories）避免单目录文件平铺失衡，形成自底向上的四层单向依赖关系：
-
-```text
-include/ & src/
-├── [基础层 Foundation]
-│   ├── core/         # 基础数据契约 (PointData, TileData, DatasetDescriptor, SceneState, TextureHandle)
-│   ├── platform/     # 跨平台支撑 (Window, CpuInfo, NativeFileDialog)
-│   └── util/         # 通用工具箱 (ThreadPool, Log, Stopwatch, PercentileStats)
-│
-├── [引擎层 Engine]
-│   ├── render/       # Vulkan 渲染后端、管线与着色器 (VulkanContext, PointPipeline, ViewportManager...)
-│   ├── camera/       # 视口相机变换、输入响应与多视口同步 (Camera, CameraController, CameraHub...)
-│   ├── data/         # GS3D v2 数据格式校验、点云加载与瓦片索引
-│   └── preprocess/   # 离线数据切片预处理流水线 (Gs3dWriter, Gs3dLodWriter, Gs3dTileWriter...)
-│
-├── [前端表现层 UI]
-│   └── ui/           # 纯逻辑面板、布局与工作区注册表
-│       ├── panels/   # 业务面板元数据 (PanelRegistry)
-│       ├── styling/  # 主题色彩与布局体系 (ThemeRegistry, LayoutRegistry, LayoutMetrics)
-│       ├── canvas/   # 视口几何与坐标轴工具 (ViewportCanvas)
-│       └── (根目录)  # UI 纯逻辑组件 (WorkspaceManager, UiFonts)
-│
-└── [应用编排与控制面 App Shell]
-    ├── app/          # 顶层主循环与领域编排系统（GUI/控制面路径）
-    │   ├── systems/  # 运行时子系统 (CameraFrame, LodFrame, PickSystem, FrameRenderer...)
-    │   ├── session/  # 点云会话与缓存 (DatasetSession, TilePointCache, PreprocessedBundle...)
-    │   ├── config/   # 配置与偏好管理 (AppConfigValidation, UserPreferences, RecentProjects...)
-    │   ├── state/    # 交互与布局状态适配 (ViewportInteractionState, ViewerWorkbenchLayout...)
-    │   └── (根目录)  # 主入口与分部类 (ViewerApp.cpp, AppConfig.cpp, WelcomeWindow.cpp)
-    ├── ffi/          # Flutter 可调用 C-ABI：HeadlessRenderKernel + Gs3dEngineApi
-    └── control/      # JSON-RPC 2.0 自动化控制面 (ControlPlane, ComponentRegistry, Handlers)
+```
+<bundle>/
+  manifest.json         版本、原点、包围盒、点数、属性表、块表、各阶段状态
+  points/000000.chunk   点块，定长，小端，mmap 直读，不压缩
+  lod/level-000.chunk   预计算层级
+  tiles/index.bin       网格尺寸 + 每格偏移/点数
+  tiles/000000.chunk
+  analysis.json         测量结果
 ```
 
-## 启动流程
+不变量：
 
-### Flutter 单进程主路径（默认）
+1. 点存相对于 `manifest.origin` 的坐标；对外一律给绝对坐标，只有一个换算入口。
+2. 块写入后不可变；重写产生新块号，旧块在提交时删除。
+3. `manifest.json` 最后写，且用"临时文件 + rename"原子替换。manifest 存在且校验
+   通过 = 包完整；否则视为未完成，可继续预处理。
+4. 每阶段产出自己的文件并在 manifest 里标记完成；恢复从最后一个完成阶段开始。
+5. 未知块类型必须被忽略而不是报错，这样新版包可以被旧程序打开。
 
-1. Flutter `GeoScatter3dService.startNativeRenderer()` 探测 `hasEngineApi`。
-2. `gs3d_engine_create_simple` 创建离屏 Vulkan 内核（无 GLFW/swapchain），
-   `gs3d_engine_load_dataset` 载入 `.gs3d.bundle` 或独立 `.gs3d`。
-3. 相机/渲染设置经 `gs3d_engine_*` 投递到引擎渲染线程（`EngineHost` 独占
-   `VkDevice`）；视口按 ticker 调用 `gs3d_engine_request_frame` 预约帧，
-   再用 `gs3d_engine_read_frame_rgba` 非阻塞取回最近完成帧（`FrameChannel`
-   双缓冲，UI isolate 不再阻塞在 Vulkan 提交上），服务层解码为 `ui.Image` 呈现。
-   `gs3d_engine_render_rgba` 保留为同步兼容路径（测试/单发调用）。
-4. engine 失败或符号缺失时**明确报错**；**无**纯 Dart 软件点云预览（核心仅为 `gs3d_engine_*`）。
+## 性能预算
 
-### 历史：GUI / 控制面路径（已废弃双进程）
+50M 点、37 km × 40 km、高程 −190…282 m 为基准数据集。
 
-> 以下描述保留给 `GeoScatter3D.exe` 独立自动化/控制面；Flutter 主路径不再 spawn 该进程。
+| 指标 | Windows / Linux | Android（4 GB） |
+| --- | --- | --- |
+| 打开到可交互 | ≤ 1.5 s | ≤ 4 s |
+| 拖动 / 旋转帧时间 | ≤ 16 ms | ≤ 33 ms |
+| 预处理 50M 点 | ≤ 60 s（16 核） | ≤ 4 min |
+| 峰值内存 | ≤ 2 GB | ≤ 1.2 GB |
+| 桌面回读额外延迟 | ≤ 3 ms | 不适用 |
 
-1. `main()` 读取 TOML 和命令行覆盖项。
-2. CSV/DAT 模式先生成 GS3D；启用 tile 时同时生成 tile index/data；bundle
-   模式按 manifest 解析已有产物。
-3. LOD sidecar 可用时只加载 GS3D header；需要构建 LOD 或全量渲染时才加载点数组。
-4. 创建窗口、Vulkan context、swapchain、renderer；界面由 Flutter 进程承载。
-5. 预分配最多 4 个独立离屏视口，默认显示配置指定的 1 个视图，并创建点渲染
-   管线、相机控制器和 GPU 点云。
-6. 进入逐帧循环。
+预处理必须随核数近似线性（8 核 ≤ 180 s）。达不到时优先降像素比或 LOD 预算，
+不允许提高内存上限。
 
-## 逐帧流程
+## 平台差异
 
-1. 轮询窗口事件并更新帧率。
-2. 从真实运行状态生成 `AppState`，控制面动作经 `apply_control_actions` 合并为
-   `UiActions`（前端输入来自 Flutter/控制面）。
-3. `CameraController` 使用视图画布上的局部输入更新目标相机；相机默认独立，
-   只有勾选“联动相机”的视图才由 `CameraHub` 传播变化。
-4. 相机稳定后触发 tile 选择；后台 future 完成后按
-   `tile.gpu_upload_budget_bytes` 分帧批量上传 GPU。
-5. 在 swapchain render pass 前仅渲染激活标签页和实际可见的独立平台窗口。
-6. Flutter 通过控制面回读视口 PNG 与交互快照，并发送相对于显示区域的输入坐标。
-7. resize 请求稳定 150 ms 后批量处理，一批只执行一次 GPU 空闲同步。
+| 能力 | Windows | Linux | Android |
+| --- | --- | --- | --- |
+| 图形 | Vulkan 1.1+ | Vulkan 1.1+ | Vulkan 1.0+ 驱动 |
+| 视口呈现 | RGBA 回读 | RGBA 回读 | 原生纹理零拷贝 |
+| 后台预处理 | 进程常驻 | 进程常驻 | 前台服务 + 阶段恢复 |
+| 文件选择 | 原生对话框 | 原生对话框 | SAF / 应用私有目录 |
+| 大文件读取 | mmap | mmap | pread（部分设备 mmap 受限） |
 
-控制面命令在主循环里按固定时序插入：
-`control_session.poll()`（帧边界取请求）→
-`apply_control_actions()`（控制面动作并入 `UiActions`，主题切换直接
-`apply_theme`）→ 相机/渲染设置/拾取命令 → `frame_renderer.render()`。
-因此 `toggle` 后本帧 UI 即变化、`screenshot` 必含处理帧效果（帧同步保证）。
+三端都必须能在启动时检测 Vulkan 并给出可读的失败原因，不许静默退出。
 
-## GPU Pick Contract
+## 迁移映射
 
-- 生产 hover 与 box-select anchor 现在走 GPU pick，而不是 CPU
-  `NearestPointQuery`。
-- 每个渲染点会写出一个 `point_id` 到离屏 pick attachment。这个
-  `point_id` 只保证**单次运行内稳定**，用于本次进程中的 hover/框选反查；
-  它不是跨运行、跨文件的持久 ID，不能拿去做选中结果存盘或长期引用。
-- pick 规则是**纯 front-most**：围绕光标回读 `5 x 5` 邻域，只看命中的像素，
-  在这些像素里选择深度最小的那个点。
-- 这个规则不会先按屏幕距离挑像素，所以当前后点在邻域内并排出现时，会优先选中
-  更靠前的已渲染点，而不是更靠后的“屏幕更近像素”。
-- `NearestPointQuery` 仍保留，语义依旧是“屏幕空间 2D 最近且带阈值”；它现在主要
-  用于历史测试/对照，不再代表生产 hover 契约。
+当前树 → 目标树（`git mv` 保留历史）：
 
-## 已完成的性能优化
+| 现在 | 以后 |
+| --- | --- |
+| `src/data/Csv*.cpp`, `Delimiter`, `DataSchema` | `engine/data/csv/` |
+| `src/data/Gs3d{Format,Reader,Dataset,Exporter,Verifier,ByteOrder}.cpp` | `engine/data/format/` |
+| `src/data/Gs3dLod*.cpp` | `engine/data/lod/` |
+| `src/data/Gs3dTile*.cpp` | `engine/data/tile/` |
+| `src/preprocess/*` | `engine/pipeline/{stages,compute,writers}/` |
+| `src/render/*` | `engine/render/{device,scene,point,targets,streaming}/` |
+| `src/camera/*` | `engine/render/scene/`（纯数学部分进 `foundation/math/`） |
+| `src/app/{config/*, session/*}` | `engine/config/`, `engine/session/project/` |
+| `src/app/systems/MeasurementManager.cpp` | `engine/session/measure/` |
+| `src/app/state/*`, `src/ui/{layouts,color}/*` | `engine/session/view/`（工作区布局第一版不做） |
+| `src/ffi/{EngineHost,FrameChannel,Gs3dEngineApi}` | `engine/abi/` |
+| `src/ffi/HeadlessRenderKernel.cpp`（2,036 行） | 按职责拆进 `engine/session/` 与 `engine/render/` |
+| `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
+| `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
+| `src/ffi/AndroidSurfaceJni.cpp`, `platform/Window.cpp` | `platform/android/`, `platform/windows/` |
+| `ui_flutter/` | `app/` |
+| `src/control/*`（2,554 行） | 删除 |
+| `src/main.cpp`, `src/app/ViewerApp*.cpp`, `src/render/Vulkan{Renderer,Swapchain}.cpp`, `src/ui/{WorkspaceManager,color,layouts}`, `include/app/Viewer*.hpp` | 删除（35 个未编译 `.cpp`，约 9,744 行） |
 
-- 3302 万点样例在 LOD sidecar 模式下，GS3D 读取由约 `0.57 s` 降至
-  `0.00003 s`，并避免约 `504 MiB` 完整点数组常驻。
-- tile CPU 缓存受 `tile.cpu_cache_max_bytes` 限制，使用 LRU 淘汰并显示真实命中率。
-- tile future 直接持有本次上传数据，缓存淘汰不会破坏正在进行的 GPU 上传。
-- tile GPU buffer 先批量准备，再在一个命令缓冲中复制；上传按帧预算切片，避免每个
-  tile 单独 `vkQueueWaitIdle` 和一次性百毫秒级主线程停顿。
-- 交互期间暂停高分辨率 tile 上传并使用最低 LOD；相机稳定后再恢复 tile 选择和
-  渐进上传。
-- 视口 resize 从“每次尺寸变化执行一次 `vkDeviceWaitIdle`”改为防抖后批量重建。
-- 隐藏视图和未激活标签页不再执行离屏点云渲染。
-- 各视图保留自己的 tile 选择集合；移动一个独立窗口不会清空其他视图的高分辨率
-  结果。
-- 多视图状态一次分配后原地更新，移除了逐帧 clear/push 和颜色选项临时数组。
-- LOD 只在相机真正移动或缩放时进入交互态，消除了静止状态的层级抖动。
+迁移顺序，每一步单独提交且仓库必须可构建：
 
-在 3302 万点样例和同一台测试机器上，旧版默认 4 视图高 LOD 空闲时 GPU 持续
-100%；默认单视图后约为 35%-38%。高分辨率 tile 已驻留时，连续拖动由 100%
-降至约 40%-51%。一次约 234 MiB、110 ms 的集中上传被拆为受 8 MiB 预算约束的
-多帧切片，除首片外多数约 3-5 ms。以上数字用于说明本机前后差异，不是跨设备指标。
+1. 删死代码与旧 ABI，保留一个可运行的引擎。
+2. 目录搬迁，只改路径，不改逻辑。
+3. 格式 v3：写入器、读取器、迁移工具、删除 v1/v2。
+4. ABI v1：结构体 + 推送 + 拉取，Dart 绑定重写。
+5. 前端：视口 → 数据集面板 → 渲染设置 → 测量 → 导出 → 最近项目。
+6. CI 三矩阵 + lavapipe 渲染冒烟。
 
-## 资源所有权
+## 未决
 
-- `VulkanContext` 比所有 Vulkan 子资源活得更久。
-- `VulkanRenderer` 拥有 swapchain framebuffer、同步对象和命令缓冲。
-- `ViewportManager` 拥有每个视口的 `Camera + OffscreenFramebuffer`。
-- `OffscreenFramebuffer` 拥有颜色图、深度图、render pass 和 framebuffer。
-- `PointCloud*Gpu` 拥有点数据对应的 Vulkan buffer。
-- Flutter 退出时停止原生进程；原生内部按 Vulkan 资源所有权释放对象。
-
-## 当前功能状态
-
-以下清单对应 TIA-81 审查时的"尚未完成"节, 已按当前代码逐项核验
-(2026-08-14):
-
-**已实现并接线:**
-
-- 截图: `include/app/ScreenshotService.hpp` + `src/app/ViewerAppScreenshot.cpp`,
-  菜单/按钮触发, 原生另存为对话框, 后台编码 PNG。
-- 属性映射与着色: `include/app/ViewerAttributeMapping.hpp`, value/z
-  双通道独立选择 (高度/着色来源), 切换零成本 (只改 push constant)。
-- 框选: `include/camera/BoxSelect.hpp` + `src/camera/BoxSelect.cpp`,
-  anchor 走 GPU pick, 松开后 `fit_screen_rect` 反投影聚焦。
-- 测量: `include/app/MeasurementManager.hpp` + `src/ui/MeasurementPanel.cpp`,
-  距离/区域统计 (Shift+拖拽), 结果持久化到 `bundle_dir/analysis.toml`。
-- 色带: `src/ui/AnalysisRailUi.cpp` 色带选择 UI (9 个色带, 索引 0-8, 含
-  Rainbow256 离散 Jet LUT), `include/render/PointPipeline.hpp` 的 colormap_index。
-- 值域裁切: `src/ui/RenderSettingsPanel.cpp` (value_clip 开关与范围)。
-- 打开数据: 文件菜单/快捷键触发原生文件对话框, 以重启方式打开新
-  数据文件或 GS3D Bundle 项目 (`src/app/ViewerAppGuiCommands.cpp`)。
-- hover 信息与最近点查询: GPU pick 生产路径 + 悬停十字线/数值读出
-  (见上"GPU Pick Contract")。
-- 导航图、导航球、自适应坐标轴刻度、高度缩放、点形状、多视图与
-  可折叠侧边栏（TIA-111 方向 B）。
-- **前端现状**：C++ 侧只保留原生渲染与控制面；`ui` 层仅保留控制面/应用
-  依赖的纯逻辑组件（面板/布局/主题注册表、工作区、视口几何）。前端界面全部由
-  经 `gs3d_ffi.dll` 的 C-ABI 调用单进程 `gs3d_engine_*`；视口仅呈现 engine RGBA 帧。
-  引擎不可用时显式报错，不做 Dart 软件投影回退。
-  契约见 `include/ffi/geoscatter3d_ffi.h` 与
-  `docs/compose/spec/ffi-single-process.md`。
-- **主题现状**：Flutter 前端由单一令牌源
-  `ui_flutter/lib/src/theme/gs3d_tokens.dart` 调度（`Gs3dPalette` 原始色板 →
-  `Gs3dTokens` 语义令牌 → `Gs3dType` 光学排版 → `Gs3dMaterial` 玻璃/阴影 →
-  `Gs3dMotion` 弹簧物理 → `Gs3dA11y` 无障碍上下文；暗色分析舱色阶见
-  `Gs3dDark`），`ThemeData` 由 `gs3d_theme.dart` 装配。C++ 侧遗留的
-  5 套 `include/ui/Theme.hpp` 主题随 ImGui 移除已不再驱动界面。
-  详见 `docs/flutter-integration-audit.md`「前端设计体系」。
-
-**仍未实现/有明确边界:**
-
-- 保存/另存为、添加数据、移除数据、首选项面板等"项目编辑"动作
-  无对应实现; 打开新数据以重启进程完成, 无数据集热切换。
-- 相机联动仍只有单个"联动相机"布尔组 (`RenderViewState.camera_linked`,
-  `include/app/AppState.hpp:286`), 尚不能创建和命名多个同步组。
-- 无空间裁剪与光照/着色模型: 管线 push constant 存在 `spatial_clip_enable`
-  flag (PointPipeline.hpp:56) 但无 UI/应用层接线 (渲染端恒为 0);
-  仅值域裁切与色带映射可用。
-- 旧 docking 布局 ini 已移除；Flutter 布局持久化需单独验收。
-
-## 重大风险
-
-1. `ViewerApp.cpp` 当前有 910 行，其中 `ViewerApp::run()` 独占 688 行。运行时资源、
-   tile 流、相机、pick和帧绘制已有独立所有者，但主循环仍负责编排这些子系统、路由
-   `UiActions`，并保有跨帧局部状态；它仍是改动最容易产生耦合回归的区域。下一步是把
-   帧输入、状态同步和呈现顺序收敛为一个窄的逐帧编排器，并把 `run()` 降至只处理退出、
-   调度与错误边界。工程护栏以 912 / 716 / 763 行分别约束 `ViewerApp.cpp`、
-   `run()` 和 `AppConfig.cpp`；PR CI 与 `merge-base(base, HEAD)` 的预算
-   比较只允许下降，本地快速检查仍与 `HEAD^` 比较。当前 PR 早于 main 上的护栏，故仅在
-   此过渡期以本 PR 首个完整预算提交为基线；合入后不再适用该例外。
-2. 新写入的 GS3D v2 使用固定小端、显式 IEEE-754 字段编码，且允许 `header_size`
-   大于已知最小头部以保持前向读取兼容。读取端仍保留 GS3D v1 的原生布局兼容路径；
-   已有 v1 数据应重建为 v2。LOD（`.gs3dlod`）与 tile（`.gs3dtiles` 索引/数据）
-   sidecar 已同样统一为显式小端编码：LOD v1 已正式废弃并被读取端显式拒绝（提示
-   重新生成 v2）；tile 读取端按 data header 声明的 `point_stride` 逐记录强校验，
-   并校验记录数据区间位于 payload 内且连续铺满，版本与 stride 不一致、混合 stride、
-   空洞等损坏/手工拼装文件会被显式拒绝，不再可能按错误 stride 解码静默置零。
-   （格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。）
-3. swapchain 重建假设颜色格式和 image count 不变。显示模式或 surface 能力变化时，
-   Vulkan pipeline/render pass 以及 image-count 配置可能失配。
-4. resize 已防抖并批量同步，但批次仍使用 `vkDeviceWaitIdle`。进一步优化应改为按
-   frame fence 延迟回收旧 framebuffer，彻底消除设备级停顿。
-5. 自动化测试覆盖 GS3D 格式、元数据加载、resize 调度、LRU/帧上传预算、视图局部
-   相机输入与 LOD 策略；FreshClonePreprocess 还会把跟踪的 CSV 生成 bundle，并由生产
-   GS3D/tile reader 回读 25 个 golden 点。CTest 中的 C++ 测试使用 Catch2 并可按具体
-   用例过滤，Linux/Windows 构建工作流执行这些无窗口测试，并检查日志、仓库卫生和架构
-   风险数字。仍缺少 tile 选择和 Vulkan 生命周期集成测试。
-6. `ThreadPool::shutdown()` 会取消尚未开始的工作，并令对应 future 抛出显式
-   `TaskCancelled`。pool 必须比它返回的每个 future 活得更久；调用者要么在 shutdown
-   前消费 future，要么显式处理该异常。当前生产用法在同一函数内提交并消费 future，且
-   没有手动 shutdown 调用；Viewer 的 tile future 来自 `std::async`，清缓存路径已捕获
-   它的异常。未来若引入跨所有者的 pool future，必须同时添加生命周期测试和取消处理。
-7. 运行时诊断统一经 `util::log` 输出；命令行数据导出工具与手动 benchmark 保留直接
-   stdout 作为机器可读接口。日志级别由 `GS3D_LOG_LEVEL` 控制，benchmark 通道可由
-   `GS3D_LOG_BENCHMARK=0` 关闭。
-8. 当前 HEAD 的可追踪 blob 约为 28 MiB，其中两个 CJK 字体约占 25 MiB；历史中仍
-   保留已删除的调试资源和多个字体字重。要真正缩小克隆历史，需要以 `git filter-repo`
-   重写历史并协调一次强制推送；在完成团队协调前，不应静默执行该操作。
-
-## 后续拆分方向
-
-1. **Flutter 前端收敛**：单进程 `gs3d_engine_*` 已为默认渲染路径；控制面 JSON-RPC
-   与 `AppState`/`UiActions` 契约保留给双进程/自动化路径。逐帧编排器继续收敛
-   `ViewerApp::run()`，避免主循环逐项复制 UI 字段。
-2. **逐帧编排器**：集中生成 `AppState`、应用 `UiActions` 和路由输入，避免主循环
-   逐项复制 UI 字段，并将 `ViewerApp::run()` 收敛为薄协调层。
-3. ~~稳定的文件格式层~~ **已完成** (TIA-93)：GS3D v2 / LOD / tile 已统一为
-   显式小端字段编码，LOD v1 已废弃，tile 读取端按 stride 强校验；
-   格式规范见 [docs/spec/gs3d-format.md](spec/gs3d-format.md)。
-4. **Swapchain 变更接口**：明确通知依赖 render pass 的管线重建，而不是
-   依赖当前隐含的初始化顺序。
-5. **单进程纹理呈现优化**：当前 RGBA 回读已可用；后续可评估
-   `TextureRegistry`/零拷贝纹理，降低大分辨率拷贝成本（见
-   [ffi-single-process.md](compose/spec/ffi-single-process.md) S3）。
+- 桌面是否需要零拷贝纹理：等回读实测超过 3 ms 再决定。
+- lavapipe 在本仓库 CI 上的可用性未验证（Linux 需要 `mesa-vulkan-drivers`）。
+- Android 后台预处理的存活策略（前台服务类型、电量与存储配额）未验证。
+- 60 s 预处理目标与当前实现的差距未测。
