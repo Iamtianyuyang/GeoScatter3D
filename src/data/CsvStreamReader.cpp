@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
@@ -152,7 +153,7 @@ bool CsvStreamReader::parse_float(std::string_view text, float& value) {
     std::string tmp(trimmed);
     char* end = nullptr;
     value = std::strtof(tmp.c_str(), &end);
-    return end == tmp.c_str() + tmp.size();
+    return end == tmp.c_str() + tmp.size() && std::isfinite(value);
 #else
     const auto result = std::from_chars(
         trimmed.data(),
@@ -164,7 +165,7 @@ bool CsvStreamReader::parse_float(std::string_view text, float& value) {
         return false;
     }
 
-    return result.ptr == trimmed.data() + trimmed.size();
+    return result.ptr == trimmed.data() + trimmed.size() && std::isfinite(value);
 #endif
 }
 
@@ -179,7 +180,7 @@ bool CsvStreamReader::parse_double(std::string_view text, double& value) {
     std::string tmp(trimmed);
     char* end = nullptr;
     value = std::strtod(tmp.c_str(), &end);
-    return end == tmp.c_str() + tmp.size();
+    return end == tmp.c_str() + tmp.size() && std::isfinite(value);
 #else
     const auto result = std::from_chars(
         trimmed.data(),
@@ -191,7 +192,7 @@ bool CsvStreamReader::parse_double(std::string_view text, double& value) {
         return false;
     }
 
-    return result.ptr == trimmed.data() + trimmed.size();
+    return result.ptr == trimmed.data() + trimmed.size() && std::isfinite(value);
 #endif
 }
 

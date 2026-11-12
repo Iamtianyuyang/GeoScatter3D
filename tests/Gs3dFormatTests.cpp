@@ -201,6 +201,37 @@ void test_chunk_plan_has_no_overlap_at_record_boundary()
     }
 }
 
+void test_non_finite_csv_records_are_rejected()
+{
+    TemporaryFile input;
+    constexpr std::string_view text =
+        "x,y,fold,elevation\n"
+        "1,2,3,4\n"
+        "nan,2,3,4\n"
+        "1,inf,3,4\n"
+        "1,2,nan,4\n"
+        "1,2,3,-inf\n"
+        "5,6,7,8\n";
+    {
+        std::ofstream out(input.path(), std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+
+    for (const auto threads : {1u, 2u}) {
+        TemporaryFile output;
+        gs3d::data::CsvReadConfig config;
+        gs3d::data::CsvChunkPlanConfig plan;
+        plan.num_threads = threads;
+        plan.target_chunk_bytes = 16;
+        plan.min_parallel_file_bytes = 0;
+        gs3d::preprocess::CsvToGs3dConverter converter(config, plan);
+        const auto [result, dataset] = converter.convert(input.path(), output.path());
+        expect(result.written_points == 2, "only finite CSV rows are written");
+        expect(result.invalid_records == 4, "non-finite CSV rows are reported invalid");
+        expect(dataset.points().size() == 2, "dataset excludes non-finite rows");
+    }
+}
+
 void test_dat_schema_maps_field_statics()
 {
     const std::vector<std::string> header{
@@ -1783,6 +1814,7 @@ void test_tile_big_endian_bundle_is_rejected()
     LEGACY_TEST_CASE(test_overflowing_header_is_rejected)
     LEGACY_TEST_CASE(test_metadata_only_dataset)
     LEGACY_TEST_CASE(test_chunk_plan_has_no_overlap_at_record_boundary)
+    LEGACY_TEST_CASE(test_non_finite_csv_records_are_rejected)
     LEGACY_TEST_CASE(test_dat_schema_maps_field_statics)
     LEGACY_TEST_CASE(test_csv_and_dat_conversion_preserve_field_semantics_and_precision)
     LEGACY_TEST_CASE(test_lod_ratios_empty_falls_back_to_explicit_counts)

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -43,7 +44,7 @@ bool parse_float(std::string_view text, float& value) {
     std::string tmp(trimmed);
     char* end = nullptr;
     value = std::strtof(tmp.c_str(), &end);
-    return end == tmp.c_str() + tmp.size();
+    return end == tmp.c_str() + tmp.size() && std::isfinite(value);
 #else
     const auto result = std::from_chars(
         trimmed.data(),
@@ -52,7 +53,7 @@ bool parse_float(std::string_view text, float& value) {
     );
 
     return result.ec == std::errc{} &&
-           result.ptr == trimmed.data() + trimmed.size();
+           result.ptr == trimmed.data() + trimmed.size() && std::isfinite(value);
 #endif
 }
 
@@ -66,7 +67,7 @@ bool parse_double(std::string_view text, double& value) {
     std::string tmp(trimmed);
     char* end = nullptr;
     value = std::strtod(tmp.c_str(), &end);
-    return end == tmp.c_str() + tmp.size();
+    return end == tmp.c_str() + tmp.size() && std::isfinite(value);
 #else
     const auto result = std::from_chars(
         trimmed.data(),
@@ -75,7 +76,7 @@ bool parse_double(std::string_view text, double& value) {
     );
 
     return result.ec == std::errc{} &&
-           result.ptr == trimmed.data() + trimmed.size();
+           result.ptr == trimmed.data() + trimmed.size() && std::isfinite(value);
 #endif
 }
 
