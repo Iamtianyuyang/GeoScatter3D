@@ -297,7 +297,7 @@ manifest 必须包含：
 | `src/control/*`（2,554 行，仅测试引用 `Base64`） | 删除 |
 | `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 删除（第一版不做工作区布局） |
 | `src/app/ViewerApp*.cpp`（约 4,000 行） | 删除；其中的导入、测量、导出、拾取、截图行为在第 5 步重写 |
-| `src/main.cpp`, `src/render/Vulkan{Renderer,Swapchain}.cpp` | 删除（35 个未编译文件共 9,744 行） |
+| `src/render/Vulkan{Renderer,Swapchain}.cpp` | 在旧查看器依赖移除后删除 |
 
 ## 迁移顺序
 
