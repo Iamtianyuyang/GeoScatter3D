@@ -12,7 +12,7 @@
 engine/
   foundation/      无业务依赖的地基
     diagnostics/     Log, CpuInfo, Stopwatch, FrameClock, Percentile
-    io/              FileIO, MemoryMappedFile, Base64, ResourcePath
+    io/              FileIO, MemoryMappedFile, Crc32c, Base64, ResourcePath
     concurrency/     ThreadPool, Cancellation, TaskQueue
     math/            Camera 数学, Ray, BoxSelect 几何, Bounds
   data/            只读的数据理解，不碰 GPU
@@ -20,7 +20,7 @@ engine/
     format/          Gs3dFormat, ByteOrder, Reader, Dataset, Exporter, Verifier
     lod/             LodFormat, LodReader, LodDataset
     tile/            TileFormat, TileReader, 索引与网格
-  pipeline/        写数据：原始文件 → 工程包
+  pipeline/        写数据：原始文件 → 工程包（无 Vulkan 依赖）
     stages/         阶段机、进度、恢复、原子提交
     compute/        统计、CSV→点、体素降采样
     writers/        点块、LOD 块、瓦片块写入器
@@ -35,7 +35,7 @@ engine/
     measure/        MeasurementManager、结果存取
     view/           Viewport{Interaction,Presentation}State、预算
   config/          AppConfig、命令行、校验、viewer.toml
-  abi/             geoscatter3d.h、EngineApi、EngineHost
+  abi/             geoscatter3d.h、EngineApi、PipelineApi、EngineHost
   cli/             preprocess、verify（无 GPU 也能跑）
 app/               Flutter
   lib/ffi/         绑定、结构体镜像、中枢（GeoScatter3dService）
@@ -45,15 +45,16 @@ app/               Flutter
   lib/theme/       设计令牌、配色
   lib/widgets/     通用组件
   android/ windows/ linux/
-platform/          三端原生适配（不属于引擎，也不属于 Dart）
-  android/         Surface/JNI、后台任务、存储权限
+platform/          三端原生工具（只被 app/ 链接）
+  android/         Surface/JNI、后台服务、SAF
   windows/         窗口句柄、文件对话框、安装包钩子
   linux/           同上
 packaging/         cmake 模块、安装包、签名
 assets/  config/  examples/  scripts/  tests/  docs/
 ```
 
-依赖方向见 [RULES.md](RULES.md) 规则一。`platform/` 只向下看 `engine/abi`。
+依赖方向见 [RULES.md](RULES.md) 规则一。`platform/` 位于最上层：它调用 `engine/abi`，
+引擎从不 include、也不链接 `platform/`。
 
 ## 线程模型
 
@@ -64,52 +65,133 @@ assets/  config/  examples/  scripts/  tests/  docs/
 | 分发线程 | 唤醒通知（原子掩码 → 回调） | 访问 GPU、加锁渲染 |
 | 工作池（N = 核数） | 分块读、解码、预处理 | 提交 GPU、改引擎状态 |
 
-- 引擎对外的调用要么立即返回，要么返回一个任务号；没有"调用了就等它做完"的接口。
-- 长任务（预处理、LOD 构建）可取消；取消点按阶段划分。
-- 4 GB Android 设备上工作池默认为 `min(4, 核数)`，且同时只有一个重任务。
+- 对外的调用要么立即返回，要么返回任务号；没有"调用了就等它做完"的接口。
+  `EngineHost::invoke()` 这种阻塞形态在迁移第 4 步取消。
+- 长任务（开包、预处理、LOD、导出）可取消；取消点是阶段边界。
+- 只有渲染线程发布快照；只有主线程读取快照。见下文「状态快照」。
+- 4 GB Android 设备上工作池为 `min(4, 核数)`，且同时只允许一个重任务。
 
 ## ABI 契约
 
-头文件：`engine/abi/geoscatter3d.h`，纯 C，`extern "C"`。规则二（只增不改）优先于
-这里的任何写法示例。
+头文件：`engine/abi/geoscatter3d.h`。规则二（只增不改）优先于本文任何写法示例。
+
+### 通则
+
+- 所有结构体第一个字段是 `uint32_t struct_size`；接收方先查大小，过小直接拒绝。
+- ABI 自身的版本由 `uint32_t gs3d_engine_abi_version(void)` 给出，不塞进每个结构体。
+- 字符串与数组指针**只在调用期间有效**。异步命令的参数由引擎深拷贝；引擎绝不
+  保存调用方指针。
+- 错误：`int32_t` 返回 0 成功、负数错误码；文本只出现在已发布的快照里
+  （定长 `char[256]`），不返回裸指针。
+- 任何一次 ABI 改动同时改 `app/lib/ffi/` 的镜像与一个布局测试。
+
+### 状态快照
+
+只有一个写者（渲染线程）、一个读者（主线程）。做法与 `FrameChannel` 相同：
 
 ```c
-typedef struct gs3d_engine gs3d_engine;
-
-/* 所有结构体首部一致：接收方先查 struct_size，未知版本拒绝执行 */
-typedef struct { uint32_t struct_size; uint32_t abi_version; } gs3d_header;
-
 typedef struct {
-    uint32_t mask;              /* 只有掩码，不带数据 */
-} gs3d_wake;
+    uint32_t struct_size;
+    uint64_t generation;      /* 每次发布 +1 */
+    /* …相机、点数、预算、任务表、last_error[256]… */
+} gs3d_state;
 
+/* 拷贝最近一次已发布的完整一代；没有发布过则返回 -2 */
+int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
+```
+
+引擎内部维护两份 `gs3d_state`：渲染线程写"非当前"的那份，写完把原子序号切过去；
+`poll_state` 读序号、拷贝对应那份、再校验序号未变。禁止半写半读，禁止在
+`poll_state` 里加锁等待渲染线程。
+
+任务表也在这份快照里（固定上限 4 项）：`{id, stage, state, progress}`。任务结束时
+状态保留到被读取一次为止，防止 Dart 错过终态。
+
+### 命令
+
+```c
+typedef struct {
+    uint32_t struct_size;
+    uint32_t op;
+    uint32_t flags;           /* GS3D_CMD_ASYNC；0 = 同步 */
+    union { /* 每类命令一个 POD 参数块，字符串为 const char* */ } args;
+} gs3d_command;
+
+int32_t gs3d_engine_submit(gs3d_engine*, const gs3d_command*,
+                           uint64_t* out_task);   /* 可为 NULL */
+int32_t gs3d_engine_cancel(gs3d_engine*, uint64_t task);
+```
+
+同步命令只允许"立即完成"的：相机输入、点大小、配色、背景、请求一帧。
+异步命令：开包、卸载、预处理、LOD 重建、导出、截图写盘。同步命令在调用线程上
+做参数校验与深拷贝，真正的执行进队列。
+
+### 唤醒
+
+```c
+typedef struct { uint32_t mask; } gs3d_wake;
 enum { GS3D_WAKE_FRAME = 1u << 0, GS3D_WAKE_TASK = 1u << 1,
        GS3D_WAKE_ERROR = 1u << 2, GS3D_WAKE_PROGRESS = 1u << 3 };
 
-/* 唯一的读取口：一次拿齐一帧所需的全部数字 */
-int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
-
-/* 唯一的写入口：命令是 POD，字符串只在调用期间有效 */
-int32_t gs3d_engine_submit(gs3d_engine*, const gs3d_command* cmd);
-
-/* 唤醒回调：只允许传 mask，不许传指针；由分发线程调用 */
 int32_t gs3d_engine_set_wake(gs3d_engine*,
                              void (*on_wake)(void* user, gs3d_wake),
                              void* user);
 ```
 
-- 像素：桌面走 `gs3d_engine_read_frame_rgba`（一次 memcpy，调用方给缓冲）；
-  Android 走 `gs3d_engine_attach_surface`，引擎直接 present 到 Flutter 纹理，
-  不产生像素回读。
-- 错误：所有 `int32_t` 返回 0 为成功、负数为错误码；`gs3d_engine_last_error`
-  取文本。`poll_state` 里的错误码与文本用于界面显示。
-- 回调约定：`on_wake` 可能被高频调用，必须立即返回；它只表示"有变化，来拉一次"。
+只传掩码。`on_wake` 由分发线程调用，可能高频触发，必须立即返回；收到后 Dart
+下一次 `poll_state` 拿全量。
+
+### 像素与表面
+
+```c
+int32_t gs3d_engine_read_frame_rgba(gs3d_engine*, uint8_t* out, uint32_t cap,
+                                    uint32_t* w, uint32_t* h, uint32_t* stride);
+
+typedef struct { void* handle; uint32_t width; uint32_t height; uint32_t kind; }
+    gs3d_native_surface;
+int32_t gs3d_engine_attach_surface(gs3d_engine*, const gs3d_native_surface*);
+int32_t gs3d_engine_detach_surface(gs3d_engine*);
+```
+
+- 表面由宿主（`app/android`）创建与销毁；attach 只登记，不接管所有权。
+- 宿主销毁前必须先 `detach_surface`，并且 `detach` 返回后句柄才失效。
+- 引擎在渲染线程执行 attach/detach，detach 前 `vkDeviceWaitIdle`，旋转或锁屏
+  不会留下悬空 surface。
+
+### JSON 通道
+
+配置文件、对话框、诊断这类低频结构化数据走 JSON，不塞进结构体：
+
+```c
+/* 返回 -3 表示 cap 不足，out_len 给出所需字节数；成功时 out 内含完整应答 */
+int32_t gs3d_engine_request(gs3d_engine*, const char* request_json,
+                            char* out, uint32_t cap, uint32_t* out_len);
+```
+
+请求与应答都带 `"v": 1`；字段只增不改，未知字段忽略。热点路径禁止走这里。
+
+### 管线 ABI（无 GPU）
+
+预处理不能依赖渲染线程、窗口或 `VkDevice`，否则 Android 后台服务无法复用：
+
+```c
+typedef struct gs3d_pipeline gs3d_pipeline;
+gs3d_pipeline* gs3d_pipeline_create(const gs3d_pipeline_config*);
+int32_t gs3d_pipeline_start(gs3d_pipeline*, const gs3d_pipeline_job*, uint64_t* task);
+int32_t gs3d_pipeline_poll(gs3d_pipeline*, gs3d_pipeline_status*);
+int32_t gs3d_pipeline_cancel(gs3d_pipeline*, uint64_t task);
+/* 进程被杀后重新接管一个未完成的包：指纹不一致就返回错误 */
+int32_t gs3d_pipeline_resume(gs3d_pipeline*, const char* bundle_dir, uint64_t* task);
+void    gs3d_pipeline_destroy(gs3d_pipeline*);
+```
+
+Android 前台服务通过 JNI 直接调这一组，不经过 `EngineHost`，不需要 Flutter 引擎存活。
 
 ## 工程包格式 v3
 
 ```
 <bundle>/
-  manifest.json         版本、原点、包围盒、点数、属性表、块表、各阶段状态
+  manifest.json         版本、CRS、原点、属性表、块表、任务与阶段状态
   points/000000.chunk   点块，定长，小端，mmap 直读，不压缩
   lod/level-000.chunk   预计算层级
   tiles/index.bin       网格尺寸 + 每格偏移/点数
@@ -117,14 +199,45 @@ int32_t gs3d_engine_set_wake(gs3d_engine*,
   analysis.json         测量结果
 ```
 
+不存"全分辨率单体文件"：点只存在于 chunk 中，打开时只读 manifest 与块表，
+按需读块。`source.gs3d` 这类 763 MB 的一次性加载在 4 GB 设备上必然超预算。
+
+manifest 必须包含：
+
+```json
+{
+  "format_version": 3,
+  "min_reader_version": 3,
+  "required_features": ["tiles"],
+  "crs": { "authority": "EPSG", "code": 32650, "axis_order": "east,north,up",
+           "unit": "m", "vertical_unit": "m", "datum": "WGS84" },
+  "origin": [28165200.0, 57031700.0, 3243.5],
+  "bounds": { "min": [-18688700.0, -20026100.0, -400.5],
+              "max": [18688700.0, 20026100.0, 400.5] },
+  "points": { "count": 50000000, "stride": 16 },
+  "attributes": [ { "name": "elevation", "type": "f32", "unit": "m",
+                    "null": -9999 } ],
+  "chunks": [ { "path": "points/000000.chunk", "points": 65536,
+                "bytes": 1048576, "crc32c": "0x1a2b3c4d" } ],
+  "job": { "id": "uuid", "source": { "path": "x.dat", "bytes": 3350000067,
+                                     "sha256": "…" },
+           "options_hash": "…",
+           "stages": { "parse": "done", "lod": "done", "tiles": "pending" } }
+}
+```
+
 不变量：
 
-1. 点存相对于 `manifest.origin` 的坐标；对外一律给绝对坐标，只有一个换算入口。
+1. 点存相对 `origin` 的坐标（原点用双精度）；对外只给绝对坐标，只有一个换算入口。
 2. 块写入后不可变；重写产生新块号，旧块在提交时删除。
-3. `manifest.json` 最后写，且用"临时文件 + rename"原子替换。manifest 存在且校验
-   通过 = 包完整；否则视为未完成，可继续预处理。
-4. 每阶段产出自己的文件并在 manifest 里标记完成；恢复从最后一个完成阶段开始。
-5. 未知块类型必须被忽略而不是报错，这样新版包可以被旧程序打开。
+3. 每个块带 `bytes` 与 `crc32c`；读取先校验长度与校验和，再 mmap。
+4. 提交顺序：写块 → `fsync` 文件 → `fsync` 目录 → 写临时 manifest → `rename` →
+   `fsync` 目录。manifest 存在且校验通过 = 包完整。
+5. 恢复只从最后一个完成阶段开始：`job.id` + 源文件指纹 + `options_hash` 三者都
+   一致才允许续跑；不一致就拒绝并提示从头开始，绝不混合两次预处理的数据。
+6. 兼容：`min_reader_version` 高于自身 → 拒绝打开；`required_features` 有未知项 →
+   拒绝；块表中未知的**可选**块类型忽略，未知的必需块类型拒绝。
+7. CRS 或 `axis_order` 不一致的两个包不允许在同一个会话里叠加测量，界面必须提示。
 
 ## 性能预算
 
@@ -138,8 +251,13 @@ int32_t gs3d_engine_set_wake(gs3d_engine*,
 | 峰值内存 | ≤ 2 GB | ≤ 1.2 GB |
 | 桌面回读额外延迟 | ≤ 3 ms | 不适用 |
 
-预处理必须随核数近似线性（8 核 ≤ 180 s）。达不到时优先降像素比或 LOD 预算，
-不允许提高内存上限。
+测量门禁：`engine/cli/gs3d_bench`（从 `tools/gs3d_bench_bundle.cpp` 移植）无界面
+输出四个数字：开包毫秒、预处理各阶段秒数、一帧渲染毫秒、峰值 RSS。CI 记录数字并
+与基线比较（超过 1.5× 让任务失败）。Android 在发布前手工在 4 GB 设备上跑同一组
+数字并记入 PR。
+
+瓦片选择禁止线性扫全部瓦片（当前包有 30,479 个瓦片，30k 次视锥测试在手机上就是
+10 ms 以上）：必须按网格索引或按上一帧结果缓存。
 
 ## 平台差异
 
@@ -147,11 +265,11 @@ int32_t gs3d_engine_set_wake(gs3d_engine*,
 | --- | --- | --- | --- |
 | 图形 | Vulkan 1.1+ | Vulkan 1.1+ | Vulkan 1.0+ 驱动 |
 | 视口呈现 | RGBA 回读 | RGBA 回读 | 原生纹理零拷贝 |
-| 后台预处理 | 进程常驻 | 进程常驻 | 前台服务 + 阶段恢复 |
+| 后台预处理 | 进程常驻 | 进程常驻 | 前台服务 + 管线 ABI |
 | 文件选择 | 原生对话框 | 原生对话框 | SAF / 应用私有目录 |
 | 大文件读取 | mmap | mmap | pread（部分设备 mmap 受限） |
 
-三端都必须能在启动时检测 Vulkan 并给出可读的失败原因，不许静默退出。
+三端都必须在启动时检测 Vulkan 并给出可读的失败原因，不许静默退出。
 
 ## 迁移映射
 
@@ -168,28 +286,47 @@ int32_t gs3d_engine_set_wake(gs3d_engine*,
 | `src/camera/*` | `engine/render/scene/`（纯数学部分进 `foundation/math/`） |
 | `src/app/{config/*, session/*}` | `engine/config/`, `engine/session/project/` |
 | `src/app/systems/MeasurementManager.cpp` | `engine/session/measure/` |
-| `src/app/state/*`, `src/ui/{layouts,color}/*` | `engine/session/view/`（工作区布局第一版不做） |
+| `src/app/state/*` | `engine/session/view/` |
 | `src/ffi/{EngineHost,FrameChannel,Gs3dEngineApi}` | `engine/abi/` |
 | `src/ffi/HeadlessRenderKernel.cpp`（2,036 行） | 按职责拆进 `engine/session/` 与 `engine/render/` |
 | `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
 | `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
 | `src/ffi/AndroidSurfaceJni.cpp`, `platform/Window.cpp` | `platform/android/`, `platform/windows/` |
 | `ui_flutter/` | `app/` |
-| `src/control/*`（2,554 行） | 删除 |
-| `src/main.cpp`, `src/app/ViewerApp*.cpp`, `src/render/Vulkan{Renderer,Swapchain}.cpp`, `src/ui/{WorkspaceManager,color,layouts}`, `include/app/Viewer*.hpp` | 删除（35 个未编译 `.cpp`，约 9,744 行） |
+| `src/control/*`（2,554 行，仅测试引用 `Base64`） | 删除 |
+| `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 删除（第一版不做工作区布局） |
+| `src/app/ViewerApp*.cpp`（约 4,000 行） | 删除；其中的导入、测量、导出、拾取、截图行为在第 5 步重写 |
+| `src/main.cpp`, `src/render/Vulkan{Renderer,Swapchain}.cpp` | 删除（35 个未编译文件共 9,744 行） |
 
-迁移顺序，每一步单独提交且仓库必须可构建：
+## 迁移顺序
 
-1. 删死代码与旧 ABI，保留一个可运行的引擎。
-2. 目录搬迁，只改路径，不改逻辑。
-3. 格式 v3：写入器、读取器、迁移工具、删除 v1/v2。
-4. ABI v1：结构体 + 推送 + 拉取，Dart 绑定重写。
-5. 前端：视口 → 数据集面板 → 渲染设置 → 测量 → 导出 → 最近项目。
-6. CI 三矩阵 + lavapipe 渲染冒烟。
+每一步单独提交，提交后仓库必须能配置、构建、通过测试。
+
+1. **删死代码**，拆三个提交：
+   - 1a 删未编译文件与旧 ABI（`src/main.cpp`、`src/app/ViewerApp*.cpp`、
+     `src/control/`、`src/ui/`、`include/app/Viewer*.hpp`、`gs3d_ffi_*`）。
+     此前必须先把 `gs3d_engine_preprocess_csv` → `gs3d_ffi_preprocess_csv`
+     （`src/ffi/geoscatter3d_ffi.cpp:1108`）迁到新的管线 ABI。
+   - 1b 拆掉仍被引用的依赖：`include/app/ScreenshotService.hpp:3` 去掉
+     `control/CapturedImage.hpp`；`src/app/CMakeLists.txt:21-22` 去掉
+     `src/ui/{LayoutRegistry,WorkspaceManager}.cpp` 与 `ViewerWorkbenchLayout`。
+   - 1c 删测试：16 个测试文件引用死代码，按 suite 挑着留
+     （`RuntimeLogicTests.cpp` 只多两个 include，91 个用例里 3 个属旧代码）。
+     同一提交重写 `scripts/check_engineering_guardrails.py`：删掉
+     `docs/architecture.md` 行数指标与 `ViewerApp.cpp` 预算，改为 `engine/` 预算。
+2. **目录搬迁**：只改路径与 include，不改逻辑；同时把 `check_include_deps.py` 的
+   扫描根扩到 `engine/`，按两级模块（`engine/<层>/<模块>`）校验依赖方向。
+3. **格式 v3**：写入器、读取器、迁移工具、校验和与恢复；删除 v1/v2 与旧 spec。
+4. **ABI v1**：快照双缓冲、异步命令与任务表、管线 ABI、JSON 通道；同一提交重写
+   Dart 绑定（Dart 只依赖 `gs3d_engine_*`，无第二消费者需要共存）。
+5. **前端**：视口 → 数据集 → 渲染设置 → 测量 → 导出 → 最近项目；把 1a 删掉的
+   约 4,000 行行为重写进 `engine/session/`。
+6. **CI**：Windows / Linux / Android 三矩阵 + lavapipe 渲染冒烟 + `gs3d_bench`
+   基线比较（移植 `tools/gs3d_bench_bundle.cpp`）。
 
 ## 未决
 
 - 桌面是否需要零拷贝纹理：等回读实测超过 3 ms 再决定。
-- lavapipe 在本仓库 CI 上的可用性未验证（Linux 需要 `mesa-vulkan-drivers`）。
-- Android 后台预处理的存活策略（前台服务类型、电量与存储配额）未验证。
-- 60 s 预处理目标与当前实现的差距未测。
+- lavapipe 本机没装（需要 `vulkan-swrast` / `mesa-vulkan-drivers`），冒烟脚本未写。
+- 60 s 预处理目标未实测：三个阶段都已并行，但没有仓库内的计时数字。
+- Android 前台服务的存活策略（服务类型、电量与存储配额）未验证。

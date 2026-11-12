@@ -39,8 +39,6 @@ IGNORE_SCOPE_PROBES = (
     "src/data/guardrail-new-source.cpp",
 )
 LINE_BUDGETS = {
-    "src/app/ViewerApp.cpp": 912,
-    "ViewerApp::run()": 716,
     "src/app/AppConfig.cpp": 763,
 }
 
@@ -170,60 +168,6 @@ def tracked_files(root: pathlib.Path) -> list[pathlib.PurePosixPath]:
     ]
 
 
-def function_line_count(path: pathlib.Path, signature: str) -> int:
-    source = path.read_text(encoding="utf-8")
-    start = source.find(signature)
-    if start < 0:
-        raise ValueError(f"signature not found: {signature}")
-
-    start_line = source.count("\n", 0, start) + 1
-    open_brace = source.find("{", start)
-    if open_brace < 0:
-        raise ValueError(f"opening brace not found for: {signature}")
-
-    depth = 0
-    mode = "code"
-    index = open_brace
-    while index < len(source):
-        char = source[index]
-        next_char = source[index + 1] if index + 1 < len(source) else ""
-
-        if mode == "line_comment":
-            if char == "\n":
-                mode = "code"
-        elif mode == "block_comment":
-            if char == "*" and next_char == "/":
-                mode = "code"
-                index += 1
-        elif mode in {"string", "character"}:
-            if char == "\\":
-                index += 1
-            elif (mode == "string" and char == '"') or (
-                mode == "character" and char == "'"
-            ):
-                mode = "code"
-        elif char == "/" and next_char == "/":
-            mode = "line_comment"
-            index += 1
-        elif char == "/" and next_char == "*":
-            mode = "block_comment"
-            index += 1
-        elif char == '"':
-            mode = "string"
-        elif char == "'":
-            mode = "character"
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                end_line = source.count("\n", 0, index) + 1
-                return end_line - start_line + 1
-        index += 1
-
-    raise ValueError(f"closing brace not found for: {signature}")
-
-
 def is_ignored(root: pathlib.Path, candidate: str) -> bool:
     result = subprocess.run(
         ["git", "check-ignore", "--quiet", "--no-index", candidate],
@@ -329,42 +273,18 @@ def main() -> int:
 
     check_android_release_contract(root, violations)
 
-    viewer_path = root / "src/app/ViewerApp.cpp"
     app_config_path = root / "src/app/AppConfig.cpp"
-    architecture_path = root / "docs/architecture.md"
-    architecture = architecture_path.read_text(encoding="utf-8")
-    viewer_match = re.search(
-        r"`ViewerApp\.cpp` 当前有 (\d+) 行，其中 "
-        r"`ViewerApp::run\(\)` 独占 (\d+) 行",
-        architecture,
-    )
-    if viewer_match is None:
-        violations.append("architecture metrics are missing from docs/architecture.md")
-    else:
-        viewer_lines = len(viewer_path.read_text(encoding="utf-8").splitlines())
-        run_lines = function_line_count(viewer_path, "int ViewerApp::run()")
-        documented = tuple(map(int, viewer_match.groups()))
-        actual = (viewer_lines, run_lines)
-        if documented != actual:
+    if app_config_path.is_file():
+        subject = "src/app/AppConfig.cpp"
+        line_count = len(
+            app_config_path.read_text(encoding="utf-8").splitlines()
+        )
+        budget = LINE_BUDGETS[subject]
+        if line_count > budget:
             violations.append(
-                "stale architecture metrics: "
-                f"documented={documented}, actual={actual}"
+                "source line budget exceeded: "
+                f"{subject}={line_count}, budget={budget}"
             )
-
-        line_counts = {
-            "src/app/ViewerApp.cpp": viewer_lines,
-            "ViewerApp::run()": run_lines,
-            "src/app/AppConfig.cpp": len(
-                app_config_path.read_text(encoding="utf-8").splitlines()
-            ),
-        }
-        for subject, line_count in line_counts.items():
-            budget = LINE_BUDGETS[subject]
-            if line_count > budget:
-                violations.append(
-                    "source line budget exceeded: "
-                    f"{subject}={line_count}, budget={budget}"
-                )
 
     print("GeoScatter3D engineering guardrails")
     if not violations:

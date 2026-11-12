@@ -58,6 +58,8 @@ python3 scripts/check_engineering_guardrails.py     # 诊断输出与预算
 
 - 渲染改动额外在 Linux 上跑一次软件光栅冒烟：`ctest -R RenderSmoke`（迁移第 6 步落地），它用
   lavapipe 渲染一帧并比对像素与帧时间；没有 GPU 的 CI 也靠它发现渲染崩溃。
+- 性能：`build/gs3d_bench`（第 6 步从 `tools/gs3d_bench_bundle.cpp` 移植）输出开包毫秒、
+  预处理各阶段秒数、一帧耗时、峰值 RSS。CI 与基线比较，超过 1.5× 判为回归。
 - `GeoScatter3D.FreshClonePreprocess` / `FreshCloneBundle` 是无 GPU 的端到端
   冒烟：样例 CSV → 工程包 → 用生产 reader 回读。
 - CI 三矩阵：Windows、Linux、Android。Android 只做构建，不做设备测试。
