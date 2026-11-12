@@ -60,7 +60,7 @@ assets/  config/  examples/  scripts/  tests/  docs/
 
 | 线程 | 拥有 | 不许做 |
 | --- | --- | --- |
-| 主线程（Flutter UI） | Dart 快照、界面 | 等待引擎、读文件、提交 GPU |
+| 主线程（Flutter UI） | Dart 快照、界面 | 等待长任务、读文件、提交 GPU |
 | 渲染线程 | `VkDevice`、队列、视口资源 | 回调 Dart、阻塞在 IO |
 | 分发线程 | 唤醒通知（原子掩码 → 回调） | 访问 GPU、加锁渲染 |
 | 工作池（N = 核数） | 分块读、解码、预处理 | 提交 GPU、改引擎状态 |
@@ -100,9 +100,9 @@ typedef struct {
 int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 ```
 
-引擎内部维护两份 `gs3d_state`：渲染线程写"非当前"的那份，写完把原子序号切过去；
-`poll_state` 读序号、拷贝对应那份、再校验序号未变。禁止半写半读，禁止在
-`poll_state` 里加锁等待渲染线程。
+引擎用短时间持有的互斥锁保护已发布的 `gs3d_state`：渲染线程先在本地构造快照，
+只在复制发布时持锁；`poll_state` 持同一把锁复制快照。锁内不做 IO、GPU 操作或
+回调，禁止半写半读。不得仅靠双缓冲和序号重试：写者再次复用缓冲时仍可能与读者并发访问。
 
 任务表也在这份快照里（固定上限 4 项）：`{id, stage, state, progress}`。任务结束时
 状态保留到被读取一次为止，防止 Dart 错过终态。
@@ -200,7 +200,7 @@ Android 前台服务通过 JNI 直接调这一组，不经过 `EngineHost`，不
 ```
 
 不存"全分辨率单体文件"：点只存在于 chunk 中，打开时只读 manifest 与块表，
-按需读块。`source.gs3d` 这类 763 MB 的一次性加载在 4 GB 设备上必然超预算。
+按需读块。整文件加载会占用较大的内存预算，是否超限须以目标设备实测为准。
 
 manifest 必须包含：
 
@@ -231,8 +231,9 @@ manifest 必须包含：
 1. 点存相对 `origin` 的坐标（原点用双精度）；对外只给绝对坐标，只有一个换算入口。
 2. 块写入后不可变；重写产生新块号，旧块在提交时删除。
 3. 每个块带 `bytes` 与 `crc32c`；读取先校验长度与校验和，再 mmap。
-4. 提交顺序：写块 → `fsync` 文件 → `fsync` 目录 → 写临时 manifest → `rename` →
-   `fsync` 目录。manifest 存在且校验通过 = 包完整。
+4. 每个阶段完成后持久化块和阶段检查点；最终 manifest 只在全部必需阶段完成后发布。
+   写块和临时元数据后先同步文件，再用同一文件系统内的原子替换发布并同步目录；
+   各平台分别实现并验证等效的持久化语义。最终 manifest 校验通过才视为包完整。
 5. 恢复只从最后一个完成阶段开始：`job.id` + 源文件指纹 + `options_hash` 三者都
    一致才允许续跑；不一致就拒绝并提示从头开始，绝不混合两次预处理的数据。
 6. 兼容：`min_reader_version` 高于自身 → 拒绝打开；`required_features` 有未知项 →
@@ -256,8 +257,8 @@ manifest 必须包含：
 与基线比较（超过 1.5× 让任务失败）。Android 在发布前手工在 4 GB 设备上跑同一组
 数字并记入 PR。
 
-瓦片选择禁止线性扫全部瓦片（当前包有 30,479 个瓦片，30k 次视锥测试在手机上就是
-10 ms 以上）：必须按网格索引或按上一帧结果缓存。
+瓦片选择应利用网格索引或缓存缩小候选范围；当前包有 30,479 个瓦片，具体耗时
+须在目标设备上测量，不能预先假定。
 
 ## 平台差异
 
@@ -302,22 +303,14 @@ manifest 必须包含：
 
 每一步单独提交，提交后仓库必须能配置、构建、通过测试。
 
-1. **删死代码**，拆三个提交：
-   - 1a 删未编译文件与旧 ABI（`src/main.cpp`、`src/app/ViewerApp*.cpp`、
-     `src/control/`、`src/ui/`、`include/app/Viewer*.hpp`、`gs3d_ffi_*`）。
-     此前必须先把 `gs3d_engine_preprocess_csv` → `gs3d_ffi_preprocess_csv`
-     （`src/ffi/geoscatter3d_ffi.cpp:1108`）迁到新的管线 ABI。
-   - 1b 拆掉仍被引用的依赖：`include/app/ScreenshotService.hpp:3` 去掉
-     `control/CapturedImage.hpp`；`src/app/CMakeLists.txt:21-22` 去掉
-     `src/ui/{LayoutRegistry,WorkspaceManager}.cpp` 与 `ViewerWorkbenchLayout`。
-   - 1c 删测试：16 个测试文件引用死代码，按 suite 挑着留
-     （`RuntimeLogicTests.cpp` 只多两个 include，91 个用例里 3 个属旧代码）。
-     同一提交重写 `scripts/check_engineering_guardrails.py`：删掉
-     `docs/architecture.md` 行数指标与 `ViewerApp.cpp` 预算，改为 `engine/` 预算。
+1. **清理旧代码**：先删已确认没有构建或运行依赖的代码；其余部分按依赖顺序迁移。
+   旧 ABI 的预处理入口仍被引擎使用，必须先实现并接通替代入口，再与调用方、测试和
+   构建配置一起删除旧实现。每次删除都保留仍有价值的测试，并让该次提交通过构建和测试。
+   调整目录时同步更新工程守卫，不能提前移除仍适用的检查。
 2. **目录搬迁**：只改路径与 include，不改逻辑；同时把 `check_include_deps.py` 的
    扫描根扩到 `engine/`，按两级模块（`engine/<层>/<模块>`）校验依赖方向。
 3. **格式 v3**：写入器、读取器、迁移工具、校验和与恢复；删除 v1/v2 与旧 spec。
-4. **ABI v1**：快照双缓冲、异步命令与任务表、管线 ABI、JSON 通道；同一提交重写
+4. **ABI v1**：受锁保护的快照、异步命令与任务表、管线 ABI、JSON 通道；逐步重写
    Dart 绑定（Dart 只依赖 `gs3d_engine_*`，无第二消费者需要共存）。
 5. **前端**：视口 → 数据集 → 渲染设置 → 测量 → 导出 → 最近项目；把 1a 删掉的
    约 4,000 行行为重写进 `engine/session/`。
