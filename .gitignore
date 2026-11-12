@@ -71,3 +71,6 @@ rebuild.cmd
 /.claude/
 /.pi/skills/
 
+
+# codebase-memory-mcp 本地索引
+.codebase-memory/
