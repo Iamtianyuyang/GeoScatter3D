@@ -292,10 +292,11 @@ manifest 必须包含：
 | `src/ffi/HeadlessRenderKernel.cpp`（2,036 行） | 按职责拆进 `engine/session/` 与 `engine/render/` |
 | `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
 | `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
-| `src/ffi/AndroidSurfaceJni.cpp`, `platform/Window.cpp` | `platform/android/`, `platform/windows/` |
+| `src/ffi/AndroidSurfaceJni.cpp` | `platform/android/` |
+| `src/platform/Window.cpp` | 旧 GLFW 查看器移除后删除 |
 | `ui_flutter/` | `app/` |
-| `src/control/*`（2,554 行，仅测试引用 `Base64`） | 删除 |
-| `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 删除（第一版不做工作区布局） |
+| `src/control/*` | 旧 ABI 及其调用方迁移后删除；目前仍由 `gs3d_ffi` 使用 |
+| `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 在现有引擎与控制层依赖迁移后删除（第一版不做工作区布局） |
 | `src/app/ViewerApp*.cpp`（约 4,000 行） | 删除；其中的导入、测量、导出、拾取、截图行为在第 5 步重写 |
 | `src/render/Vulkan{Renderer,Swapchain}.cpp` | 在旧查看器依赖移除后删除 |
 
