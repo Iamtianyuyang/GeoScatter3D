@@ -25,6 +25,7 @@ add_library(gs3d_data STATIC
 
 target_include_directories(gs3d_data PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/engine
 )
 
 target_link_libraries(gs3d_data PUBLIC

@@ -14,7 +14,7 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
-#include "util/Crc32c.hpp"
+#include "foundation/io/Crc32c.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

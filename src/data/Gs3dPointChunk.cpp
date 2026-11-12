@@ -1,7 +1,7 @@
 #include "data/Gs3dPointChunk.hpp"
 
 #include "data/Gs3dByteOrder.hpp"
-#include "util/Crc32c.hpp"
+#include "foundation/io/Crc32c.hpp"
 
 #include <algorithm>
 #include <array>
