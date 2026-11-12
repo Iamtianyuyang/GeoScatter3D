@@ -1,7 +1,7 @@
 # viewer.toml 配置参考
 
 > 核对基准: 2026-08-16, main@8162b1a (TIA-111 之后；主题/布局现状已按
-> 代码核验，见 [operations.md](operations.md) 第 1 节)。
+> 代码核验)。
 > 解析实现: `src/app/AppConfig.cpp` (input/csv_convert) 与
 > `src/app/AppConfigViewerToml.cpp` (其余小节)。
 > 默认模板: `config/viewer.toml`; 可提交样例: `config/sample-viewer.toml`。
@@ -47,7 +47,7 @@
 | `resizable` | bool | true | 窗口可缩放 |
 | `ui_scale_multiplier` | float | 1.15 | PPI 推导 ui_scale 之上的用户舒适系数, 最终 `clamp(ppi_scale × multiplier, 1.0, 2.5)` |
 | `theme` | string | `carbon-blue` | UI 主题，共 **5 套**（`include/ui/Theme.hpp`、`src/ui/Theme.cpp`）：`carbon-blue` (碳蓝·浅色) / `carbon-blue-dark` (碳蓝 2.0·深色) / `deep-graphite` (石墨·深色) / `instrument-amber` (仪器琥珀·深色) / `high-contrast` (高对比·浅色)。**代码默认是深色 `kCarbonBlueDark`** (`src/ui/Theme.cpp:294`)，本文件默认值将其覆盖为浅色 `carbon-blue`。运行期可在 视图→主题 菜单切换（5 套全列），写入用户偏好 `[ui] theme` 后优先于本文件；不回写本文件 |
-| `layout` | string | `workbench` | 顶层布局键（`workbench` / `floating-dock` / `analysis-rail`），解析见 `AppState.hpp` `ui_layout_from_string`。**TIA-111 后仅 workbench 实际渲染**：floating-dock / analysis-rail 的绘制代码无调用点（休眠），该键在 HEAD 上无视觉效果（实测三值启动窗口像素一致）。详见 [operations.md](operations.md) §1.1 |
+| `layout` | string | `workbench` | 旧 ImGui 工作台的布局键，目前只被解析、无任何渲染影响（Flutter 界面自己决定布局）。新代码不要读这个键 |
 
 ## [vulkan]
 

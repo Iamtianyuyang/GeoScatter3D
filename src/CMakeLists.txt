@@ -16,7 +16,7 @@ add_subdirectory(ffi)
 # 独立命令行工具（CSV/DAT → GS3D v2 bundle、格式校验）
 #
 # 5e884c8 重写本文件时把这两个目标漏掉了，但源码（src/preprocess_main.cpp、
-# tools/gs3d_groundtruth.cpp）、文档（docs/operations.md、docs/architecture.md、
+# tools/gs3d_groundtruth.cpp）、文档（docs/architecture.md、
 # docs/spec/gs3d-format.md）、打包清单（cmake/Packaging.cmake）以及
 # tests/FreshClonePreprocess 测试都还在引用它们。缺了目标 → 测试靠构建树里
 # 遗留的旧 exe 假绿，干净克隆直接 Not Run。

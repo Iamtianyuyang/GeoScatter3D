@@ -51,8 +51,6 @@ FFI、Vulkan 引擎和预处理器；Flutter 构建时部署 DLL、shader、字�
 首次运行需要 Flutter SDK、Visual Studio C++ 桌面工具、CMake 3.28+、Vulkan SDK
 以及 GLFW/nlohmann-json 依赖；新构建优先使用 `VCPKG_ROOT`，已有构建沿用 CMake 缓存。
 
-功能接线和 ImGui 残留的实际检查结论见 [Flutter 集成检查](docs/flutter-integration-audit.md)。
-
 ### 1. 快速开始（一键编译与完整发布）
 
 推荐使用根目录自带的一键自动化编译部署脚本。该脚本会自动构建 C++ 原生 FFI 动态库 (`gs3d_ffi.dll`)，打包 Shader 与中文字体资源，并完成 Flutter Windows 桌面端最终打包：
@@ -163,4 +161,4 @@ GeoScatter3D/
 - **Flutter 前端详细文档**：详见 [ui_flutter/README.md](ui_flutter/README.md)（含详细组件结构、按键映射与交互设计规范）；
 - **系统架构与历史演进**：详见 [docs/architecture.md](docs/architecture.md)；
 - **配置项详细参考**：详见 [docs/config-reference.md](docs/config-reference.md)；
-- **构建、运行与控制面操作手册**：详见 [docs/operations.md](docs/operations.md)。
+- **强制规则与配方**：详见 [docs/RULES.md](docs/RULES.md) 与 [docs/recipes/](docs/recipes/)。
