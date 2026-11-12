@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace gs3d::data {
 
@@ -169,11 +170,11 @@ bool Gs3dDataset::is_consistent() const noexcept {
 }
 
 Gs3dDataset Gs3dDatasetLoader::load(const std::filesystem::path& path) {
-    const auto read_result = Gs3dReader::read_all(path);
+    auto read_result = Gs3dReader::read_all(path);
 
     return Gs3dDataset(
         read_result.header,
-        read_result.points,
+        std::move(read_result.points),
         path
     );
 }
