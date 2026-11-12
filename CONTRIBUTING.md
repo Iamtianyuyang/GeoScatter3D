@@ -15,7 +15,7 @@ GeoScatter3D 是一个单进程应用：C++ 引擎负责数据、渲染和状态
 | C++ 编译器 | C++20 | Linux: g++ 16 或 clang 23；Windows: MSVC 19.4+ |
 | Vulkan | loader + headers 1.3+ | 三端唯一图形后端，不做 GLES 降级 |
 | glslangValidator | 任意近期版本 | 编译 `engine/render/*/shaders/*.glsl` 到 SPIR-V |
-| Flutter | 3.50+ / Dart 3.12+ | 前端与 Android/Windows 宿主 |
+| Flutter | 3.50+ / Dart 3.12+ | 前端与 Android/Windows/Linux 宿主 |
 | JDK | 17+ | Android 构建；`flutter doctor --android-licenses` 需已接受 |
 | catch2 | submodule | `git submodule update --init third_party/catch2` |
 
@@ -28,6 +28,13 @@ Linux 上 `Vulkan` 只需 `vulkan-icd-loader` + `vulkan-headers`，着色器编�
 git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+```
+
+Linux Flutter 桌面应用（另需 GTK 3 开发包和 Ninja）：
+
+```bash
+scripts/build_flutter_linux.sh
+# ui_flutter/build/linux/x64/release/bundle/ui_flutter
 ```
 
 Windows：

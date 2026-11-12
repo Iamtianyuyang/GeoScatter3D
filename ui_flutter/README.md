@@ -1,6 +1,6 @@
 # GeoScatter3D Flutter Desktop 与 Android 移动端前端
 
-GeoScatter3D 的 Windows 桌面端与 Android 平板/移动端应用前端，采用 Flutter 构建。彻底取代了原有的 C++ ImGui 立即模式界面，通过标准 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用原生 C++20 / Vulkan 引擎（桌面 1.3、Android 最低 1.1）：**唯一渲染路径为单进程内核**（`gs3d_engine_*`，RGBA 帧回读）。引擎不可用时显式报错，无纯 Dart 软件预览、无双进程 Viewer。
+GeoScatter3D 的 Windows、Linux 桌面端与 Android 平板/移动端应用前端采用 Flutter 构建，通过标准 C ABI 动态链接库调用 C++20 / Vulkan 引擎。引擎在应用进程内运行；桌面使用 RGBA 帧回读，Android 支持原生纹理呈现。引擎不可用时显式报错。
 
 本项目遵循严格的架构解耦与工程护栏：**UI 纯只读投影或产生纯数据命令（UiActions）、图形句柄不穿透、临时中间产物收敛至 `tmp/`**。
 
@@ -125,6 +125,14 @@ flutter run -d windows
 
 构建产物生成于：
 `ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe`
+
+Linux 桌面发布构建（从项目根目录执行）：
+
+```bash
+scripts/build_flutter_linux.sh
+```
+
+产物为 `ui_flutter/build/linux/x64/release/bundle/`，包含原生引擎与编译后的着色器；需要 Vulkan、GTK 3 和 Ninja。
 
 Android Debug APK（Maestro/本地联调）：
 

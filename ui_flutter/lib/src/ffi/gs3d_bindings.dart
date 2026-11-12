@@ -301,7 +301,11 @@ class Gs3dBindings {
       return ffi.DynamicLibrary.open('gs3d_ffi.dll');
     }
     if (Platform.isLinux) {
-      return ffi.DynamicLibrary.open('libgs3d_ffi.so');
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      final bundled = File('$exeDir/lib/libgs3d_ffi.so');
+      return ffi.DynamicLibrary.open(
+        bundled.existsSync() ? bundled.path : 'libgs3d_ffi.so',
+      );
     }
     if (Platform.isMacOS || Platform.isIOS) {
       return ffi.DynamicLibrary.open('libgs3d_ffi.dylib');

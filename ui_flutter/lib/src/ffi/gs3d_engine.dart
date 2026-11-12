@@ -37,6 +37,9 @@ class Gs3dEngine {
       if (shaderDir == null || shaderDir.isEmpty) {
         throw StateError('Android 着色器目录不可用');
       }
+    } else if (Platform.isLinux) {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      shaderDir = '$exeDir/data/gs3d_shaders';
     }
     return create(width: width, height: height, shaderDir: shaderDir);
   }
