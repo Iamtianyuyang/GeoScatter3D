@@ -1,5 +1,7 @@
 #include "ffi/geoscatter3d_ffi.h"
 
+#include "util/Gs3dVersion.hpp"
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -189,7 +191,7 @@ void gs3d_ffi_shutdown(void)
 
 const char* gs3d_ffi_get_version(void)
 {
-    return "0.0.1000";
+    return GS3D_PRODUCT_VERSION;
 }
 
 int32_t gs3d_ffi_load_dataset(const char* path)
