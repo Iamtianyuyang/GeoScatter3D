@@ -27,7 +27,13 @@ EXEMPT_EDGES = {
 }
 
 SCAN_ROOTS = ("include", "src")
-SCAN_SUFFIXES = {".hpp", ".cpp"}
+SCAN_SUFFIXES = {".h", ".hpp", ".c", ".cc", ".cpp", ".mm"}
+ENGINE_INCLUDE_RE = re.compile(r'^\s*#include\s+"([^\"]+)"')
+ENGINE_ORDER = {
+    "foundation": 0, "data": 1, "pipeline": 2, "render": 3,
+    "config": 3, "session": 4, "abi": 5, "cli": 6,
+}
+ENGINE_FLAT_MODULES = {"config", "abi", "cli"}
 
 
 def module_for(path: pathlib.Path, root: pathlib.Path) -> str | None:
@@ -84,9 +90,56 @@ def is_violation(src_module: str, dst_module: str) -> bool:
     return MODULE_ORDER[src_module] >= MODULE_ORDER[dst_module]
 
 
+def engine_module(parts: tuple[str, ...]) -> tuple[str, ...] | None:
+    if not parts or parts[0] not in ENGINE_ORDER:
+        return None
+    if parts[0] in ENGINE_FLAT_MODULES:
+        return (parts[0],)
+    if len(parts) < 3:
+        return None
+    return parts[:2]
+
+
+def collect_engine_violations(root: pathlib.Path) -> list[str]:
+    base = root / "engine"
+    violations = []
+    if not base.exists():
+        return violations
+    for path in base.rglob("*"):
+        if not path.is_file() or path.suffix not in SCAN_SUFFIXES:
+            continue
+        src = engine_module(path.relative_to(base).parts)
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            match = ENGINE_INCLUDE_RE.match(line)
+            if not match:
+                continue
+            include = match.group(1)
+            if include.startswith("engine/"):
+                candidate = base / include.removeprefix("engine/")
+            elif include.startswith("."):
+                candidate = path.parent / include
+            elif include.split("/", 1)[0] in ENGINE_ORDER:
+                candidate = base / include
+            else:
+                continue
+            try:
+                parts = candidate.resolve().relative_to(base.resolve()).parts
+            except ValueError:
+                parts = ()
+            dst = engine_module(parts)
+            invalid = src is None or dst is None
+            if not invalid and src != dst:
+                invalid = (ENGINE_ORDER[src[0]] <= ENGINE_ORDER[dst[0]] or
+                           (src[0] == "cli" and dst[0] in {"render", "session", "abi"}))
+            if invalid:
+                violations.append(f"{path.relative_to(root)}:{line_number}: {src} -> {dst}")
+    return sorted(violations)
+
+
 def main() -> int:
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     edges = collect_edges(repo_root)
+    engine_violations = collect_engine_violations(repo_root)
 
     violations = []
     for (src_module, dst_module), refs in sorted(edges.items()):
@@ -96,13 +149,16 @@ def main() -> int:
     print("GeoScatter3D include dependency check")
     print(f"repo = {repo_root}")
     print("tracked modules =", ", ".join(MODULE_ORDER.keys()))
+    print("engine layers =", ", ".join(ENGINE_ORDER.keys()))
     print("exempt edges =", ", ".join(f"{a}->{b}" for a, b in sorted(EXEMPT_EDGES)))
 
-    if not violations:
+    if not violations and not engine_violations:
         print("result = OK")
         return 0
 
     print("result = VIOLATION")
+    for violation in engine_violations:
+        print(f"- {violation}")
     for src_module, dst_module, refs in violations:
         print(f"- {src_module} -> {dst_module}")
         for ref in refs[:10]:

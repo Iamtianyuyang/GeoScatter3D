@@ -12,7 +12,10 @@ foundation  ←  data  ←  pipeline  ←  render  ←  session  ←  abi
 ```
 
 - 下层不知道上层存在。`data` 不许 include `render`，`render` 不许 include `abi`。
-- 兄弟层之间不互相 include；需要共享的类型放 `foundation`。
+- 同层的兄弟模块之间不互相 include；需要共享的类型放在更低层。
+- `config` 只依赖 `foundation`、`data`、`pipeline`，`session` 和 `abi` 可依赖
+  `config`。`cli` 可依赖 `config` 及其下层，但不依赖 `render`、`session`、`abi`，
+  以便预处理和校验工具不需要 Vulkan。
 - `abi` 之上一层是 Flutter（`app/`），C++ 侧只通过 `engine/abi/geoscatter3d.h`
   暴露能力，不许把内部头文件塞进 Dart 的构建。
 

@@ -10,6 +10,9 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/catch2 ${CMAKE_CURRENT_BINARY
 
 # Unit Tests
 
+add_test(NAME GeoScatter3D.IncludeDependencyGuard
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_include_deps.py)
+
 # The GLFW Viewer target was removed from the active single-process engine
 # build. Keep its historical tests available for the future window frontend,
 # but do not let stale gs3d_app/gs3d_viewport_lod links block the headless core.
