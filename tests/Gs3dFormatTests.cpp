@@ -13,6 +13,7 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
+#include "util/Crc32c.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1805,6 +1806,12 @@ void test_tile_big_endian_bundle_is_rejected()
 }
 
 } // namespace
+
+TEST_CASE("CRC32C matches standard vectors", "[data_format]") {
+    constexpr std::string_view input = "123456789";
+    CHECK(gs3d::util::crc32c(std::as_bytes(std::span(input))) == 0xe3069283u);
+    CHECK(gs3d::util::crc32c({}) == 0u);
+}
 
 #define LEGACY_TEST_CASE(test_function) \
     TEST_CASE(#test_function, "[data_format]") { test_function(); }
