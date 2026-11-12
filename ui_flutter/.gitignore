@@ -53,3 +53,7 @@ tmp_*
 *.ply
 *.csv
 
+# Bundled sample required by pubspec.yaml
+!/assets/data/
+!/assets/data/sample-points.csv
+
