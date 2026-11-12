@@ -189,7 +189,7 @@ void gs3d_ffi_shutdown(void)
 
 const char* gs3d_ffi_get_version(void)
 {
-    return "0.1.0-flutter";
+    return "0.0.1000";
 }
 
 int32_t gs3d_ffi_load_dataset(const char* path)

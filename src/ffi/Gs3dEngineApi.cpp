@@ -567,7 +567,7 @@ uint64_t gs3d_engine_point_count(gs3d_engine* e) {
 }
 
 const char* gs3d_engine_version(void) {
-    return "0.3.0-engine";
+    return "0.0.1000";
 }
 
 int32_t gs3d_engine_preprocess_csv(
