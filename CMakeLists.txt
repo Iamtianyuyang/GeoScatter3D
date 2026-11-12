@@ -10,6 +10,10 @@ endif()
 
 project(GeoScatter3D VERSION ${CMAKE_MATCH_1} LANGUAGES CXX)
 
+# gs3d_ffi is a shared library built from static libs; Linux toolchains need
+# those objects to be position independent (Windows/Android are unaffected).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
