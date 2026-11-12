@@ -11,6 +11,7 @@ add_library(gs3d_data STATIC
     DataSchema.cpp
     Delimiter.cpp
     Gs3dFormat.cpp
+    Gs3dPointChunk.cpp
     Gs3dReader.cpp
     Gs3dVerifier.cpp
     Gs3dDataset.cpp

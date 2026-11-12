@@ -8,6 +8,7 @@
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dReader.hpp"
+#include "data/Gs3dPointChunk.hpp"
 #include "data/Gs3dTileFormat.hpp"
 #include "data/Gs3dTileReader.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
@@ -1811,6 +1812,34 @@ TEST_CASE("CRC32C matches standard vectors", "[data_format]") {
     constexpr std::string_view input = "123456789";
     CHECK(gs3d::util::crc32c(std::as_bytes(std::span(input))) == 0xe3069283u);
     CHECK(gs3d::util::crc32c({}) == 0u);
+}
+
+TEST_CASE("v3 point chunks round trip and reject corruption", "[data_format]") {
+    const std::vector<gs3d::data::Gs3dPoint> source{{1.0f, -2.0f, 0.5f, 7.0f}};
+    const auto encoded = gs3d::data::encode_point_chunk(source);
+    REQUIRE(encoded.size() == 48);
+    CHECK(encoded[32] == std::byte{0x00});
+    CHECK(encoded[34] == std::byte{0x80});
+    CHECK(encoded[35] == std::byte{0x3f});
+    const auto decoded = gs3d::data::decode_point_chunk(encoded);
+    REQUIRE(decoded.size() == 1);
+    CHECK(decoded[0].x == source[0].x);
+    CHECK(decoded[0].y == source[0].y);
+    CHECK(decoded[0].z == source[0].z);
+    CHECK(decoded[0].value == source[0].value);
+
+    auto corrupt = encoded;
+    corrupt.back() ^= std::byte{1};
+    CHECK_THROWS_AS(gs3d::data::decode_point_chunk(corrupt), std::runtime_error);
+    CHECK_THROWS_AS(gs3d::data::decode_point_chunk(std::span(encoded).first(47)), std::runtime_error);
+    corrupt = encoded;
+    corrupt[16] = std::byte{2};
+    CHECK_THROWS_AS(gs3d::data::decode_point_chunk(corrupt), std::runtime_error);
+    CHECK_THROWS_AS(gs3d::data::encode_point_chunk({}), std::invalid_argument);
+    const std::vector<gs3d::data::Gs3dPoint> full(gs3d::data::GS3D_POINT_CHUNK_MAX_POINTS, source[0]);
+    CHECK(gs3d::data::decode_point_chunk(gs3d::data::encode_point_chunk(full)).size() == full.size());
+    const std::vector<gs3d::data::Gs3dPoint> oversized(gs3d::data::GS3D_POINT_CHUNK_MAX_POINTS + 1);
+    CHECK_THROWS_AS(gs3d::data::encode_point_chunk(oversized), std::invalid_argument);
 }
 
 #define LEGACY_TEST_CASE(test_function) \
