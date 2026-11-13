@@ -94,3 +94,22 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+
+      - name: Fetch Flutter dependencies
+        working-directory: ui_flutter
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        working-directory: ui_flutter
+        run: flutter analyze --no-pub --no-fatal-infos
+
+      - name: Test Flutter and native pipeline ABI
+        working-directory: ui_flutter
+        env:
+          GS3D_PIPELINE_LIBRARY: ${{ github.workspace }}/build/src/libgs3d_pipeline_ffi.so
+        run: flutter test --no-pub
