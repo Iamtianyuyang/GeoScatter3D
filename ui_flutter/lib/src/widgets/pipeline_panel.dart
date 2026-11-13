@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ffi/document_picker.dart';
+import '../ffi/pipeline_history.dart';
 import '../ffi/pipeline_service.dart';
 import '../theme/app_tokens.dart';
 
@@ -24,6 +25,7 @@ class PipelinePanel extends StatefulWidget {
 
 class _PipelinePanelState extends State<PipelinePanel> {
   String? _error;
+  bool _preparing = false;
 
   Future<void> _pick({required bool directory}) async {
     try {
@@ -47,14 +49,17 @@ class _PipelinePanelState extends State<PipelinePanel> {
     }
   }
 
-  void _run({required bool resume}) {
+  Future<void> _run({required bool resume}) async {
     final source = widget.source.text.trim();
     final bundle = widget.bundle.text.trim();
     if (bundle.isEmpty || (!resume && source.isEmpty)) {
       setState(() => _error = resume ? '请选择工程包目录。' : '请选择输入文件和工程包目录。');
       return;
     }
+    setState(() => _preparing = true);
     try {
+      await savePipelineHistory(await pipelineHistoryFile(), source, bundle);
+      if (!mounted) return;
       final pipeline = widget.getPipeline();
       if (resume) {
         pipeline.resume(bundle);
@@ -63,7 +68,9 @@ class _PipelinePanelState extends State<PipelinePanel> {
       }
       setState(() => _error = null);
     } catch (error) {
-      setState(() => _error = '无法启动任务：$error');
+      if (mounted) setState(() => _error = '无法启动任务：$error');
+    } finally {
+      if (mounted) setState(() => _preparing = false);
     }
   }
 
@@ -81,6 +88,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
   Widget _content(BuildContext context, PipelineStatus? status) {
     final tokens = context.tokens;
     final running = status?.state == PipelineState.running;
+    final busy = running || _preparing;
     final textStyle = tokens.typography.meta.copyWith(
       color: tokens.colors.chromeTextPrimary,
     );
@@ -94,14 +102,14 @@ class _PipelinePanelState extends State<PipelinePanel> {
     ) {
       return TextField(
         controller: controller,
-        enabled: !running,
+        enabled: !busy,
         style: textStyle,
         decoration: InputDecoration(
           labelText: label,
           labelStyle: labelStyle,
           suffixIcon: IconButton(
             tooltip: directory ? '选择工程目录' : '选择点云文件',
-            onPressed: running ? null : () => _pick(directory: directory),
+            onPressed: busy ? null : () => _pick(directory: directory),
             color: tokens.colors.chromeTextPrimary,
             icon: Icon(directory ? Icons.folder_open : Icons.file_open),
           ),
@@ -139,11 +147,11 @@ class _PipelinePanelState extends State<PipelinePanel> {
           OutlinedButton(onPressed: pipelineCancel, child: const Text('取消任务'))
         else ...[
           FilledButton(
-            onPressed: () => _run(resume: false),
+            onPressed: _preparing ? null : () => _run(resume: false),
             child: const Text('创建工程包'),
           ),
           TextButton(
-            onPressed: () => _run(resume: true),
+            onPressed: _preparing ? null : () => _run(resume: true),
             child: const Text('恢复未完成的任务'),
           ),
         ],

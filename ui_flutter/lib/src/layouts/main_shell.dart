@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../ffi/pipeline_history.dart';
 import '../ffi/pipeline_service.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/pipeline_panel.dart';
@@ -46,6 +48,26 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _ownsService = widget.service == null;
     _service = widget.service ?? GeoScatter3dService();
+    unawaited(_restorePipelineHistory());
+  }
+
+  Future<void> _restorePipelineHistory() async {
+    try {
+      final history = await readPipelineHistory(await pipelineHistoryFile());
+      if (mounted &&
+          history != null &&
+          _sourcePath.text.isEmpty &&
+          _bundlePath.text.isEmpty) {
+        _sourcePath.text = history.$1;
+        _bundlePath.text = history.$2;
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text('无法读取上次任务：$error')));
+      }
+    }
   }
 
   @override
