@@ -60,7 +60,12 @@ jobs:
           Remove-Item -Force -ErrorAction SilentlyContinue build/tests/pipeline-abi-steps.log
           ctest --test-dir build -C Release --timeout 300 --output-on-failure
 
-      # 超时被杀时 ctest 不保留任何输出，用例自己写的进度文件是唯一线索。
+      # 超时被杀时 ctest 不保留任何输出：先用 -V 单独重跑该用例，输出会边跑边转发；
+      # 再打印用例自己写的进度文件兜底。
+      - name: Pipeline ABI verbose
+        if: failure()
+        run: ctest --test-dir build -C Release -R GeoScatter3D.PipelineAbi -V --timeout 60
+
       - name: Pipeline ABI progress
         if: failure()
         run: Get-Content build/tests/pipeline-abi-steps.log -ErrorAction SilentlyContinue
