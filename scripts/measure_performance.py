@@ -15,6 +15,7 @@ import ctypes
 import json
 import os
 import shutil
+import resource
 import subprocess
 import sys
 import time
@@ -53,11 +54,13 @@ def measure_open(ffi_path: str, bundle: str) -> dict:
             "peak_rss_mib": round(peak_rss_kib() / 1024)}
 
 
-def measure_pack(pack: str, source: str, out_dir: str) -> dict:
+def measure_pack(pack: str, source: str, out_dir: str, write_lod: bool = True) -> dict:
     shutil.rmtree(out_dir, ignore_errors=True)
     started = time.perf_counter()
-    completed = subprocess.run([pack, "--csv", source, "--out", out_dir],
-                               capture_output=True, text=True)
+    args = [pack, "--csv", source, "--out", out_dir]
+    if not write_lod:
+        args.append("--no-lod")
+    completed = subprocess.run(args, capture_output=True, text=True)
     elapsed = time.perf_counter() - started
     if completed.returncode != 0:
         raise SystemExit(f"gs3d_pack failed:\n{completed.stderr}")
@@ -66,7 +69,9 @@ def measure_pack(pack: str, source: str, out_dir: str) -> dict:
         os.path.getsize(os.path.join(out_dir, "points", name))
         for name in os.listdir(os.path.join(out_dir, "points"))
     )
+    peak_kib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     return {"seconds": round(elapsed, 2),
+            "peak_rss_mib": round(peak_kib / 1024),
             "points": int(manifest["points"]["count"]),
             "chunks": len(manifest.get("chunks", [])),
             "bundle_points_mib": round(bundle_bytes / (1 << 20)),
@@ -88,13 +93,16 @@ def main() -> int:
     pack_parser.add_argument("--source", required=True)
     pack_parser.add_argument("--out", required=True)
     pack_parser.add_argument("--repeat", type=int, default=1, help="runs after the first")
+    pack_parser.add_argument("--no-lod", action="store_true",
+                             help="跳过 lod 阶段（会失去 1.5 s 级开包，但预处理快一倍）")
     args = parser.parse_args()
 
     for index in range(max(1, args.repeat)):
         if args.command == "open":
             result = measure_open(args.ffi, args.bundle)
         else:
-            result = measure_pack(args.pack, args.source, args.out)
+            result = measure_pack(args.pack, args.source, args.out,
+                                  write_lod=not args.no_lod)
         print(json.dumps(result, ensure_ascii=False))
     return 0
 

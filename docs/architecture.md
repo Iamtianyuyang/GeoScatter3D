@@ -365,6 +365,34 @@ manifest 必须包含：
 瓦片选择应利用网格索引或缓存缩小候选范围；当前包有 30,479 个瓦片，具体耗时
 须在目标设备上测量，不能预先假定。
 
+### 本机实测（2026-11-13）
+
+硬件 Ryzen 9 7945HX（32 线程）、RTX 5060 Laptop 8 GB、DDR5；GCC Release（`tmp/build-linux`）；
+数据 `data/field_and_ele_source_rec_50m.dat`（3.35 GB、50,000,000 点、763 块）。
+
+| 指标 | 预算 | 实测 | 结论 |
+| --- | --- | --- | --- |
+| 预处理 50M（写 lod sidecar） | ≤ 60 s / ≤ 2 GB | 115.1–119.6 s / 3.09 GB | 两项都超：lod 阶段把整包再读进内存（约多 64 s、+2.4 GB） |
+| 预处理 50M（`--no-lod`） | ≤ 60 s | 54.3–55.5 s，峰值 637 MiB | 达标，代价是开包回落到约 47 s |
+| 打开到可交互（带 sidecar，1920×1080） | ≤ 1.5 s | 2.40–2.46 s，峰值 1.22 GB | 超预算约 0.9 s |
+| 稳态帧时间 / 首帧 | ≤ 16 ms | 4.5 ms / 22 ms | 达标 |
+| 打开峰值 RSS | ≤ 2 GB | 1.22 GB | 达标 |
+
+复现：
+
+```bash
+/usr/bin/python3 scripts/measure_performance.py pack \
+  --pack tmp/build-linux/src/gs3d_pack \
+  --source data/field_and_ele_source_rec_50m.dat --out tmp/bench-50m [--no-lod]
+# 打开与帧时间需要在带 data/gs3d_shaders（或 assets/shaders）的 cwd 下跑：
+cd ui_flutter && ../tmp/build-linux/src/gs3d_bench --bundle ../tmp/bench-50m \
+  --frames 60 --width 1920 --height 1080
+```
+
+两条超预算的取舍已写在「工程包格式」与「未决」：lod 阶段把 5 层粗化串行遍历全量点，
+要么接受更长的预处理，要么接受打开回落到约 47 s；下一步只有把 lod 与 points 阶段
+合并成一趟读写，才可能两头都达标。
+
 ## 平台差异
 
 | 能力 | Windows | Linux | Android |
