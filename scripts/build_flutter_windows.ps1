@@ -52,8 +52,9 @@ Write-Host "==> Building native runtime ($NativeConfig)..."
 Invoke-Checked $Cmake $ConfigureArgs
  # Flutter 桌面端通过 gs3d_ffi 直连单进程引擎；不要再构建已移除的
  # GeoScatter3D / GeoScatter3DPreprocess 双进程目标。
+# gs3d_shaders 是 ALL 目标，单独构建 DLL 不会带上它；下面暂存要拷 .spv。
 Invoke-Checked $Cmake @('--build', $BuildDir, '--config', $NativeConfig, '--target',
-    'gs3d_ffi', 'gs3d_pipeline_ffi', '--parallel')
+    'gs3d_ffi', 'gs3d_pipeline_ffi', 'gs3d_shaders', '--parallel')
 
 # 原生资源只暂存到 tmp；Flutter CMake 的 install 步骤负责部署 Debug/Release。
 $StageDir = Join-Path $RepoRoot "tmp/flutter-native/$Config"
