@@ -8,7 +8,9 @@ import '../ffi/document_picker.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../ffi/pipeline_history.dart';
 import '../ffi/pipeline_service.dart';
+import '../ffi/render_settings.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/display_panel.dart';
 import '../widgets/pipeline_panel.dart';
 import '../widgets/telemetry_hud.dart';
 import '../widgets/viewport_canvas.dart';
@@ -20,6 +22,7 @@ class MainShell extends StatefulWidget {
     this.viewport,
     this.service,
     this.pickBundle,
+    this.settingsFile,
   });
 
   /// 测试可注入轻量占位；正式应用默认创建真实 Vulkan 视口。
@@ -30,6 +33,9 @@ class MainShell extends StatefulWidget {
 
   /// 选择工程包目录（测试注入）；默认走平台选择器。
   final Future<String?> Function()? pickBundle;
+
+  /// 显示设置文件（测试注入）；默认放平台应用状态目录。
+  final File? settingsFile;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -60,6 +66,20 @@ class _MainShellState extends State<MainShell> {
     _service = widget.service ?? GeoScatter3dService();
     if (Platform.isAndroid) _pipeline = PipelineService();
     unawaited(_restorePipelineHistory());
+    unawaited(_restoreRenderSettings());
+  }
+
+  Future<void> _restoreRenderSettings() async {
+    try {
+      final file = widget.settingsFile ?? await renderSettingsFile();
+      await _service.loadRenderSettings(file);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text('无法读取显示设置：$error')));
+      }
+    }
   }
 
   Future<void> _restorePipelineHistory() async {
@@ -225,7 +245,9 @@ class _MainShellState extends State<MainShell> {
                             onClose: () {
                               setState(() => _rightDrawerIndex = null);
                             },
-                            child: const _PropertySkeleton(),
+                            child: _rightDrawerIndex == 2
+                                ? DisplayPanel(service: _service)
+                                : const _PropertySkeleton(),
                           ),
                         ),
                       Positioned(

@@ -39,6 +39,14 @@ void main() {
         expect(listEquals(initial, await pixels()), isTrue);
         engine.resize(320, 240);
         expect((await pixels()).length, 320 * 240 * 4);
+
+        // 普通命令走异步入队：非法参数在调用线程就被拒绝，合法命令不阻塞。
+        expect(engine.submitPointSize(-1), -1);
+        expect(engine.submitPointSize(2.5), 0);
+        expect(engine.submitColormap(2), 0);
+        final recolored = await pixels();
+        expect(recolored.length, 320 * 240 * 4);
+        expect(engine.lastError, isEmpty);
       } finally {
         engine.dispose();
       }

@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'gs3d_engine.dart';
+import 'render_settings.dart';
 import 'present_surface.dart';
 
 /// 基准/压力测试入口：以 --dart-define=GS3D_BENCH_POINTS=10000000 构建，
@@ -97,6 +99,8 @@ class GeoScatter3dService extends ChangeNotifier {
   double _frameTimeMs = 0;
   double _renderTimeMs = 0;
   String _gpuName = 'Vulkan GPU';
+  RenderSettings _renderSettings = RenderSettings.defaults;
+  File? _renderSettingsFile;
 
   ui.Image? get frame => _frame;
   String? get error => _error;
@@ -130,6 +134,46 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 当前取帧通路的展示名（HUD/诊断用）。
   String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
+
+  /// 当前显示设置（配色与点大小）。
+  RenderSettings get renderSettings => _renderSettings;
+
+  /// 读上次保存的显示设置；文件不存在就保留默认值。
+  Future<void> loadRenderSettings(File file) async {
+    _renderSettingsFile = file;
+    final settings = await readRenderSettings(file);
+    if (settings == null || _disposed) return;
+    _renderSettings = settings;
+    if (_started) _applyRenderSettings();
+    notifyListeners();
+  }
+
+  /// 落盘失败会抛出，由界面决定是否提示；没有计数文件时静默跳过。
+  Future<void> saveRenderSettings() async {
+    final file = _renderSettingsFile;
+    if (file == null) return;
+    await writeRenderSettings(file, _renderSettings);
+  }
+
+  void setColormapIndex(int index) {
+    _renderSettings = _renderSettings.copyWith(colormapIndex: index);
+    if (_started) _applyRenderSettings();
+    notifyListeners();
+  }
+
+  void setPointSize(double size) {
+    _renderSettings = _renderSettings.copyWith(pointSize: size);
+    if (_started) _applyRenderSettings();
+    notifyListeners();
+  }
+
+  /// 只入队：渲染线程按顺序执行，记录值已先更新。
+  void _applyRenderSettings() {
+    final engine = _engine;
+    if (engine == null || _disposed) return;
+    engine.submitColormap(_renderSettings.colormapIndex);
+    engine.submitPointSize(_renderSettings.pointSize);
+  }
 
   /// 最近一次成功打开的工程包（`null` = 仍是内置样例/合成数据）。
   String? get datasetPath => _datasetPath;
@@ -190,8 +234,8 @@ class GeoScatter3dService extends ChangeNotifier {
       // Black backgrounds need a bright, cheap control-point colormap:
       // Turbo avoids both the dark low end of seismic and rainbow256's
       // 256-entry fragment branch.
-      engine.setColormap(6);
-      engine.setPointSize(1.5);
+      engine.setColormap(_renderSettings.colormapIndex);
+      engine.setPointSize(_renderSettings.pointSize);
       final size = _pendingSize;
       final pixelRatio = _pendingPixelRatio;
       _pendingSize = null;

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
+import 'package:ui_flutter/src/widgets/display_panel.dart';
 import 'support/fake_engine.dart';
 
 void main() {
@@ -197,6 +198,48 @@ void main() {
 
     expect(engine.openedPaths, isEmpty);
     expect(service.datasetPath, isNull);
+  });
+
+  testWidgets('display drawer queues colormap and point size off the UI thread', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      _testApp(
+        MainShell(viewport: const SizedBox.expand(), service: service),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('rail_display')));
+    await tester.pump();
+    expect(find.byType(DisplayPanel), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('colormap_dropdown')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Jet').last);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(engine.submittedColormaps, [2]);
+    expect(engine.colormap, 2);
+    expect(service.renderSettings.colormapIndex, 2);
+
+    await tester.drag(
+      find.byKey(const ValueKey('point_size_slider')),
+      const Offset(-40, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(engine.submittedPointSizes, isNotEmpty);
+    expect(service.renderSettings.pointSize, engine.submittedPointSizes.last);
+    expect(tester.takeException(), isNull);
   });
 }
 

@@ -94,6 +94,24 @@ class FakeEngine implements Gs3dEngine {
     pointBudget = maxPoints;
   }
 
+  /// 异步提交路径收到的参数（顺序与调用一致）。
+  final List<int> submittedColormaps = [];
+  final List<double> submittedPointSizes = [];
+
+  @override
+  int submitColormap(int index) {
+    submittedColormaps.add(index);
+    colormap = index;
+    return 0;
+  }
+
+  @override
+  int submitPointSize(double size) {
+    submittedPointSizes.add(size);
+    pointSize = size;
+    return 0;
+  }
+
   @override
   void setColormap(int index) {
     colormap = index;

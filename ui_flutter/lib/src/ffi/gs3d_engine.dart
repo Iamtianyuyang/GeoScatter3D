@@ -269,6 +269,34 @@ class Gs3dEngine {
     _bindings.setPointSize(_ptr, size);
   }
 
+  /// 点大小：只入队，不等渲染线程（界面拖动不会卡在 Vulkan 提交上）。
+  int submitPointSize(double size) {
+    if (_disposed) return -2;
+    final command = calloc<Gs3dCommandNative>();
+    try {
+      command.ref.op = gs3dCmdPointSize;
+      command.ref.args[0] = size;
+      return submitCommand(command);
+    } finally {
+      calloc.free(command);
+    }
+  }
+
+  /// 配色索引（0–8）：并集里的 colormap 与首个 float 共用 4 字节。
+  int submitColormap(int index) {
+    if (_disposed) return -2;
+    final command = calloc<Gs3dCommandNative>();
+    try {
+      command.ref.op = gs3dCmdColormap;
+      ffi.Pointer<ffi.Int32>.fromAddress(
+        command.address + ffi.sizeOf<ffi.Uint32>() * 3,
+      ).value = index;
+      return submitCommand(command);
+    } finally {
+      calloc.free(command);
+    }
+  }
+
   /// 设置「渲染像素 / 逻辑像素」汇率（见 `Config::view_scale`）：
   /// 纹理按物理像素建立时必须告知引擎，否则内核的像素门槛（瓦片投影尺寸、
   /// 底图目标点距、自动点预算）整体偏大，会把瓦片层挤出预算。

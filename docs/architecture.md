@@ -125,6 +125,10 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 - 界面已接线：`GeoScatter3dService.openBundle` 调用 `loadDatasetAsync`（每 200 ms
   轮询快照），“数据”抽屉里的「打开工程包」通过平台目录选择器选包并显示阶段；
   基准/样例路径仍用同步 `gs3d_engine_load_dataset`。二者共用同一内核装载代码。
+- 显示设置（“显示”抽屉）：配色索引与点大小先改本地状态，拖动结束才通过
+  `submitColormap`/`submitPointSize` 入队，落盘到平台应用状态目录的
+  `render-settings.json`（临时文件 + 改名）；读回失败回到默认值，不影响启动。
+  设置只影响本机显示，工程包内容不变。
 
 ### 命令
 
