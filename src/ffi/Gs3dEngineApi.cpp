@@ -1,8 +1,11 @@
 #include "ffi/geoscatter3d_ffi.h"
 
+#include "app/RecentProjects.hpp"
+#include "app/UserPreferences.hpp"
 #include "ffi/EngineHost.hpp"
 #include "ffi/HeadlessRenderKernel.hpp"
 #include "foundation/Gs3dVersion.hpp"
+#include "render/VulkanGpuInfo.hpp"
 
 #include <cstddef>
 #include <cstdio>
@@ -28,6 +31,39 @@ const char* retain_cstr(const std::string& value) {
     static thread_local std::string storage;
     storage = value;
     return storage.c_str();
+}
+
+std::string path_utf8(const std::filesystem::path& path) {
+    const auto value = path.u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
+
+// 枚举可用 GPU；不使用缓存，每次调用新建并用完即销毁 instance。
+std::vector<gs3d::render::VulkanGpuInfo> enumerate_suitable_gpus() {
+    std::vector<gs3d::render::VulkanGpuInfo> gpus;
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    app.pApplicationName = "GeoScatter3D device discovery";
+    try {
+        app.apiVersion = gs3d::render::negotiate_vulkan_instance_api_version();
+    } catch (const std::exception&) {
+        return gpus;
+    }
+    VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    create.pApplicationInfo = &app;
+    VkInstance instance = VK_NULL_HANDLE;
+    if (vkCreateInstance(&create, nullptr, &instance) != VK_SUCCESS) {
+        return gpus;
+    }
+    try {
+        for (const auto& gpu :
+             gs3d::render::enumerate_gpus(instance, VK_NULL_HANDLE)) {
+            if (gpu.suitable) gpus.push_back(gpu);
+        }
+    } catch (const std::exception&) {
+        gpus.clear();
+    }
+    vkDestroyInstance(instance, nullptr);
+    return gpus;
 }
 
 std::string resolve_default_shader_dir() {
@@ -90,6 +126,12 @@ gs3d_engine* gs3d_engine_create(const gs3d_engine_config* cfg) {
                 kcfg.shader_dir = cfg->shader_dir;
             }
             kcfg.enable_validation = cfg->enable_validation != 0;
+        }
+        // 未显式指定时用上次在界面上选的 GPU（多 GPU 笔记本）。
+        if (kcfg.preferred_gpu.empty()) {
+            if (const auto saved = gs3d::app::load_preferred_gpu_preference()) {
+                kcfg.preferred_gpu = *saved;
+            }
         }
         // 未显式指定时回退到与 DLL 同目录解析出的资产路径。否则
         // PointPipeline 会退回相对路径 assets/shaders，一旦工作目录不是
@@ -684,6 +726,97 @@ uint64_t gs3d_engine_point_count(gs3d_engine* e) {
         return 0;
     });
     return rc == 0 ? *count : 0;
+}
+
+const char* gs3d_engine_dataset_info_json(gs3d_engine* e) {
+    if (e == nullptr) return retain_cstr("{}");
+    auto payload = std::make_shared<std::string>();
+    const int rc = e->host.invoke([payload](gs3d::ffi::HeadlessRenderKernel& k) {
+        *payload = k.dataset_info_json();
+        return 0;
+    });
+    if (rc != 0 || payload->empty()) return retain_cstr("{}");
+    return retain_cstr(*payload);
+}
+
+const char* gs3d_engine_gpus_json(void) {
+    const auto gpus = enumerate_suitable_gpus();
+    const auto preferred = gs3d::app::load_preferred_gpu_preference();
+    nlohmann::json list = nlohmann::json::array();
+    int active = -1;
+    int best_score = -1;
+    for (std::size_t i = 0; i < gpus.size(); ++i) {
+        const std::string uuid = "uuid:" + gpus[i].device_uuid;
+        const bool preferred_match = preferred.has_value() && *preferred == uuid;
+        const bool discrete =
+            gpus[i].device_type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+        const int score = preferred_match ? 100 : discrete ? 3 : 1;
+        if (score > best_score) {
+            best_score = score;
+            active = static_cast<int>(i);
+        }
+        list.push_back({
+            {"index", static_cast<int>(i)},
+            {"name", gpus[i].name},
+            {"type", gs3d::render::gpu_type_label(gpus[i].device_type)},
+            {"uuid", uuid},
+            {"preferred", preferred_match},
+        });
+    }
+    for (auto& entry : list) {
+        entry["active"] = entry["index"].get<int>() == active;
+    }
+    return retain_cstr(list.dump());
+}
+
+int32_t gs3d_engine_set_preferred_gpu(int32_t index) {
+    if (index < 0) {
+        return gs3d::app::save_preferred_gpu_preference("") ? 0 : -3;
+    }
+    const auto gpus = enumerate_suitable_gpus();
+    if (static_cast<std::size_t>(index) >= gpus.size()) return -1;
+    const std::string uuid = "uuid:" + gpus[static_cast<std::size_t>(index)].device_uuid;
+    return gs3d::app::save_preferred_gpu_preference(uuid) ? 0 : -3;
+}
+
+const char* gs3d_engine_recent_projects_json(void) {
+    nlohmann::json list = nlohmann::json::array();
+    for (const auto& entry : gs3d::app::load_recent_projects(8)) {
+        list.push_back({
+            {"path", path_utf8(entry.path)},
+            {"last_opened", entry.last_opened_unix},
+        });
+    }
+    return retain_cstr(list.dump());
+}
+
+int32_t gs3d_engine_remember_project(const char* path) {
+    if (path == nullptr || path[0] == '\0') return -1;
+    try {
+        gs3d::app::remember_recent_project(std::filesystem::u8path(path), 8);
+        return 0;
+    } catch (const std::exception&) {
+        return -3;
+    }
+}
+
+int32_t gs3d_engine_forget_project(const char* path) {
+    if (path == nullptr || path[0] == '\0') return -1;
+    try {
+        gs3d::app::remove_recent_project(std::filesystem::u8path(path));
+        return 0;
+    } catch (const std::exception&) {
+        return -3;
+    }
+}
+
+int32_t gs3d_engine_clear_recent_projects(void) {
+    try {
+        gs3d::app::clear_recent_projects();
+        return 0;
+    } catch (const std::exception&) {
+        return -3;
+    }
 }
 
 const char* gs3d_engine_version(void) {

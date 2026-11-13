@@ -130,6 +130,8 @@ public:
         gs3d::data::Gs3dDataset dataset;
         std::filesystem::path dataset_path;
         std::filesystem::path bundle_dir;
+        /// 装载时算好的数据集摘要（路径/范围/属性/CRS），供前端只读展示。
+        std::string info_json;
     };
 
     /// 只读文件系统，可在任意线程执行。失败时写入 error 并返回 false。
@@ -291,6 +293,10 @@ public:
     [[nodiscard]] std::uint64_t point_count() const noexcept {
         return point_count_;
     }
+    /// 数据集摘要 JSON；未装载时为空串（调用方按 "{}" 处理）。
+    [[nodiscard]] const std::string& dataset_info_json() const noexcept {
+        return dataset_info_json_;
+    }
 
     /// 活动 GPU 与 Profile 诊断（供 ABI 曝光，不泄露 Vulkan 句柄）。
     struct GpuDiagnostics {
@@ -364,6 +370,7 @@ private:
     std::optional<gs3d::data::Gs3dLodDataset> lod_dataset_;
     std::filesystem::path dataset_path_;
     std::filesystem::path bundle_dir_;
+    std::string dataset_info_json_;
     std::size_t drawn_level_ = 0;
     std::uint64_t drawn_point_count_ = 0;
     std::uint64_t point_budget_ = 0;

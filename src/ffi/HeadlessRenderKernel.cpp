@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 
 // 仅本编译单元定义 STB 写实现；gs3d_ffi 不链接 gs3d_app（ViewerAppScreenshot），
 // 不会在同一镜像内重复符号。
@@ -364,6 +365,45 @@ bool HeadlessRenderKernel::load_dataset_from_disk(
         // sidecar 与数据集同目录（bundle 为 lod.gs3dlod / tiles.gs3dtiles*）。
         out->dataset_path = fs_path;
         out->bundle_dir = bundle_directory;
+
+        // 摘要在这里算：读盘线程握有 manifest，渲染线程只读字符串。
+        const auto& ds = out->dataset;
+        nlohmann::json info;
+        info["path"] = path;
+        info["bundle"] = !bundle_directory.empty();
+        info["point_count"] = ds.point_count();
+        info["origin"] = {ds.origin_x(), ds.origin_y(), ds.origin_z()};
+        info["bbox_min"] = {ds.bbox_min_x(), ds.bbox_min_y(), ds.bbox_min_z()};
+        info["bbox_max"] = {ds.bbox_max_x(), ds.bbox_max_y(), ds.bbox_max_z()};
+        info["value_min"] = ds.value_min();
+        info["value_max"] = ds.value_max();
+        info["lod_sidecar"] = !bundle_directory.empty() &&
+            std::filesystem::exists(bundle_directory / "lod.gs3dlod");
+        info["attributes"] = nlohmann::json::array();
+        if (v3_bundle) {
+            const auto manifest = gs3d::data::load_bundle_manifest(bundle_directory);
+            info["format_version"] = manifest.format_version;
+            info["stride"] = manifest.stride;
+            info["chunk_count"] = manifest.chunks.size();
+            info["crs"] = {
+                {"authority", manifest.crs.authority},
+                {"code", manifest.crs.code},
+                {"axis_order", manifest.crs.axis_order},
+                {"unit", manifest.crs.unit},
+                {"vertical_unit", manifest.crs.vertical_unit},
+                {"datum", manifest.crs.datum},
+            };
+            for (const auto& attribute : manifest.attributes) {
+                info["attributes"].push_back({
+                    {"name", attribute.name},
+                    {"type", attribute.type},
+                    {"unit", attribute.unit},
+                    {"has_null", attribute.has_null},
+                });
+            }
+            info["source"] = manifest.job.source_path;
+        }
+        out->info_json = info.dump();
         return true;
     } catch (const std::exception& ex) {
         if (error != nullptr) *error = ex.what();
@@ -387,6 +427,7 @@ int HeadlessRenderKernel::install_dataset(DatasetLoad loaded) {
 
     dataset_path_ = loaded.dataset_path;
     bundle_dir_ = loaded.bundle_dir;
+    dataset_info_json_ = std::move(loaded.info_json);
     open_sidecars_locked(dataset_path_, bundle_dir_);
 
     const int lod_rc = rebuild_lod_locked();
@@ -559,6 +600,7 @@ int HeadlessRenderKernel::load_synthetic(std::uint64_t point_count) {
     try {
         dataset_path_.clear();
         bundle_dir_.clear();
+        dataset_info_json_.clear();
         const int rc = generate_synthetic_grid(point_count);
         if (rc != 0) {
             has_dataset_ = false;
@@ -890,6 +932,7 @@ void HeadlessRenderKernel::unload_dataset() noexcept {
     dataset_ = {};
     has_dataset_ = false;
     point_count_ = 0;
+    dataset_info_json_.clear();
 }
 
 int HeadlessRenderKernel::resize(std::uint32_t width, std::uint32_t height) {

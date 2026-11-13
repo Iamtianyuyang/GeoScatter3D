@@ -112,6 +112,19 @@ add_custom_command(TARGET GeoScatter3DPipelineAbiTests POST_BUILD
     VERBATIM)
 add_test(NAME GeoScatter3D.PipelineAbi COMMAND GeoScatter3DPipelineAbiTests)
 
+# 应用态 ABI（数据集摘要 / GPU 枚举 / 最近项目）不需要 GPU 设备。
+add_executable(GeoScatter3DEngineAppAbiTests EngineAppAbiTests.cpp)
+target_include_directories(GeoScatter3DEngineAppAbiTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(GeoScatter3DEngineAppAbiTests PRIVATE gs3d_ffi Catch2::Catch2WithMain)
+add_custom_command(TARGET GeoScatter3DEngineAppAbiTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:gs3d_ffi>
+        $<TARGET_FILE_DIR:GeoScatter3DEngineAppAbiTests>
+    VERBATIM)
+add_test(NAME GeoScatter3D.EngineAppAbi COMMAND GeoScatter3DEngineAppAbiTests)
+
 add_test(NAME GeoScatter3D.PackSample
     COMMAND $<TARGET_FILE:gs3d_pack>
         --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv

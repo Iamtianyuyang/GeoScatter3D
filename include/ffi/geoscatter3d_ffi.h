@@ -539,6 +539,35 @@ GS3D_FFI_API int32_t gs3d_pipeline_poll(gs3d_pipeline*, gs3d_pipeline_status*);
 GS3D_FFI_API int32_t gs3d_pipeline_cancel(gs3d_pipeline*, uint64_t task);
 GS3D_FFI_API void gs3d_pipeline_destroy(gs3d_pipeline*);
 
+/* ── §24 应用态查询 ────────────────────────────────────────────────────
+ *
+ * 前端只读展示 + 用户偏好。返回的 JSON 字符串由 ABI 内部持有，调用方必须
+ * 在下次同线程调用前复制；不得 free。
+ */
+
+/// 数据集摘要：path/bundle/point_count/origin/bbox_min/bbox_max/value_min/
+/// value_max/lod_sidecar/attributes[]/crs{}/chunk_count/format_version。
+/// 未装载数据集（或引擎未启动）时返回 "{}"。
+GS3D_FFI_API const char* gs3d_engine_dataset_info_json(gs3d_engine* e);
+
+/// 可用 GPU 数组：
+/// [{"index":0,"name":"...","type":"独显","uuid":"uuid:...",
+///   "preferred":true,"active":false}]。枚举失败返回 "[]"。
+GS3D_FFI_API const char* gs3d_engine_gpus_json(void);
+
+/// 记住/清除首选 GPU（按 gpus_json 的 index，-1 表示清除）。
+/// 下次 gs3d_engine_create 在 cfg->preferred_gpu_uuid 为空时使用。0 成功。
+GS3D_FFI_API int32_t gs3d_engine_set_preferred_gpu(int32_t index);
+
+/// 最近打开的工程包：
+/// [{"path":"...","last_opened":1699999999}]（新→旧）。
+GS3D_FFI_API const char* gs3d_engine_recent_projects_json(void);
+
+/// 记录/移除/清空最近项目；路径为 UTF-8。0 成功。-1 参数非法。
+GS3D_FFI_API int32_t gs3d_engine_remember_project(const char* path);
+GS3D_FFI_API int32_t gs3d_engine_forget_project(const char* path);
+GS3D_FFI_API int32_t gs3d_engine_clear_recent_projects(void);
+
 #ifdef __cplusplus
 }
 #endif
