@@ -13,7 +13,7 @@
 *.exp
 /data/
 /bench/
-/tools/__pycache__/
+__pycache__/
 /.cache/
 /assets/shaders/*.spv
 

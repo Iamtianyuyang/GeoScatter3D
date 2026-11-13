@@ -1,5 +1,7 @@
 #pragma once
 
+#include "data/format/Point.hpp"
+
 #include <cstdint>
 #include <iosfwd>
 #include <span>
@@ -44,15 +46,6 @@ struct Gs3dHeader {
     std::uint64_t reserved1;
     std::uint64_t reserved2;
 };
-
-struct Gs3dPoint {
-    float x;
-    float y;
-    float z;
-    float value;
-};
-
-static_assert(sizeof(Gs3dPoint) == 16, "Gs3dPoint must be 16 bytes");
 
 /*
  * Gs3dPointWithId — v2 tile data format.
