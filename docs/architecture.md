@@ -120,9 +120,9 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
   `tests/EngineHostTests.cpp` 的 “async open reports a snapshot before and after
   loading” 在有 Vulkan 设备的机器上真实跑通：建 64 点工程包、提交、轮询到 Done、
   校验点数与终态一次性释放，并验证取消后装载被丢弃。
-- Flutter 界面尚未用 `loadDatasetAsync` 打开工程包：现有“打开”路径仍是同步
-  `gs3d_engine_load_dataset`；`ui_flutter/lib/src/ffi/gs3d_engine.dart` 的
-  `loadDatasetAsync`/`pollState`/`cancelTask` 已可调用，接线属于前端任务。
+- 界面已接线：`GeoScatter3dService.openBundle` 调用 `loadDatasetAsync`（每 200 ms
+  轮询快照），“数据”抽屉里的「打开工程包」通过平台目录选择器选包并显示阶段；
+  基准/样例路径仍用同步 `gs3d_engine_load_dataset`。二者共用同一内核装载代码。
 
 ### 命令
 

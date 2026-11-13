@@ -70,6 +70,9 @@ class GeoScatter3dService extends ChangeNotifier {
   double _pendingPixelRatio = 1.0;
   ui.Image? _frame;
   String? _error;
+  String? _datasetPath;
+  bool _openingDataset = false;
+  String _datasetStage = '';
   int _pointCount = 0;
   int _sourcePointCount = 0;
   String _lodSummary = '';
@@ -127,6 +130,51 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 当前取帧通路的展示名（HUD/诊断用）。
   String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
+
+  /// 最近一次成功打开的工程包（`null` = 仍是内置样例/合成数据）。
+  String? get datasetPath => _datasetPath;
+
+  /// 正在后台读取或装载工程包。
+  bool get openingDataset => _openingDataset;
+
+  /// 装载阶段名（`''` = 尚未开始）。
+  String get datasetStage => _datasetStage;
+
+  /// 打开 v3 工程包：读盘在引擎工作线程，这里只轮询状态。
+  ///
+  /// 同一时间只允许一个开包任务；失败写入 [error] 并返回 false。
+  Future<bool> openBundle(String path) async {
+    final engine = _engine;
+    if (_disposed || engine == null || path.isEmpty) return false;
+    if (_openingDataset) return false;
+    _openingDataset = true;
+    _datasetStage = '排队';
+    _error = null;
+    notifyListeners();
+    try {
+      await engine.loadDatasetAsync(
+        path,
+        onProgress: (progress, stage) {
+          if (_disposed) return;
+          _datasetStage = stage;
+          notifyListeners();
+        },
+      );
+      if (_disposed) return false;
+      _datasetPath = path;
+      _sourcePointCount = engine.sourcePointCount;
+      _pointCount = engine.drawnPointCount;
+      _refreshLodSummary(engine);
+      return true;
+    } catch (error) {
+      _fail(error);
+      return false;
+    } finally {
+      _openingDataset = false;
+      _datasetStage = '';
+      if (!_disposed) notifyListeners();
+    }
+  }
 
   Future<void> initialize({bool loadSample = true}) async {
     if (_started || _disposed) return;

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
+import 'support/fake_engine.dart';
 
 void main() {
   testWidgets('MainShell keeps the viewport as the full-screen base layer', (
@@ -149,9 +151,65 @@ void main() {
     expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('data drawer opens a bundle off the UI thread', (tester) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      _testApp(_shellWith(service, () async => '/tmp/gs3d-test-bundle')),
+    );
+    await tester.tap(find.byKey(const ValueKey('rail_data')));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('open_bundle_button')));
+    await tester.pumpAndSettle();
+
+    expect(engine.openedPaths, ['/tmp/gs3d-test-bundle']);
+    expect(service.datasetPath, '/tmp/gs3d-test-bundle');
+    expect(find.text('/tmp/gs3d-test-bundle'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cancelled picker leaves the current dataset alone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(_testApp(_shellWith(service, () async => null)));
+    await tester.tap(find.byKey(const ValueKey('rail_data')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('open_bundle_button')));
+    await tester.pumpAndSettle();
+
+    expect(engine.openedPaths, isEmpty);
+    expect(service.datasetPath, isNull);
+  });
 }
 
 Widget _shell() => const MainShell(viewport: SizedBox.expand());
+
+Widget _shellWith(
+  GeoScatter3dService service,
+  Future<String?> Function() pickBundle,
+) => MainShell(
+  viewport: const SizedBox.expand(),
+  service: service,
+  pickBundle: pickBundle,
+);
 
 Widget _testApp(Widget home) {
   return MaterialApp(

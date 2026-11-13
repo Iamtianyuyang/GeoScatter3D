@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../ffi/document_picker.dart';
 import '../ffi/geoscatter3d_service.dart';
 import '../ffi/pipeline_history.dart';
 import '../ffi/pipeline_service.dart';
@@ -14,13 +15,21 @@ import '../widgets/viewport_canvas.dart';
 
 /// 全屏点云工作台：画布是底层，导航、工具和状态均为按需浮层。
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, this.viewport, this.service});
+  const MainShell({
+    super.key,
+    this.viewport,
+    this.service,
+    this.pickBundle,
+  });
 
   /// 测试可注入轻量占位；正式应用默认创建真实 Vulkan 视口。
   final Widget? viewport;
 
   /// 外部已有状态中枢时可注入；否则由 Shell 负责创建与释放。
   final GeoScatter3dService? service;
+
+  /// 选择工程包目录（测试注入）；默认走平台选择器。
+  final Future<String?> Function()? pickBundle;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -69,6 +78,20 @@ class _MainShellState extends State<MainShell> {
           context,
         )?.showSnackBar(SnackBar(content: Text('无法读取上次任务：$error')));
       }
+    }
+  }
+
+  Future<void> _openBundle() async {
+    final picker = widget.pickBundle ?? pickBundleDirectory;
+    final path = await picker();
+    if (path == null || path.isEmpty || !mounted) return;
+    final opened = await _service.openBundle(path);
+    if (opened || !mounted) return;
+    final error = _service.error;
+    if (error != null) {
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -183,6 +206,8 @@ class _MainShellState extends State<MainShell> {
                                 : _WorkspaceDrawerContent(
                                     section:
                                         _workspaceSections[_leftDrawerIndex!],
+                                    service: _service,
+                                    onOpenBundle: _openBundle,
                                   ),
                           ),
                         ),
@@ -459,9 +484,15 @@ class _ChromeDrawer extends StatelessWidget {
 }
 
 class _WorkspaceDrawerContent extends StatelessWidget {
-  const _WorkspaceDrawerContent({required this.section});
+  const _WorkspaceDrawerContent({
+    required this.section,
+    required this.service,
+    required this.onOpenBundle,
+  });
 
   final _WorkspaceSection section;
+  final GeoScatter3dService service;
+  final VoidCallback onOpenBundle;
 
   @override
   Widget build(BuildContext context) {
@@ -475,6 +506,10 @@ class _WorkspaceDrawerContent extends StatelessWidget {
             color: tokens.colors.chromeTextSecondary,
           ),
         ),
+        if (section.keyName == 'data') ...[
+          SizedBox(height: tokens.spacing.lg),
+          _OpenBundleAction(service: service, onPressed: onOpenBundle),
+        ],
         SizedBox(height: tokens.spacing.xl),
         const _PlaceholderBar(widthFactor: 1, onChrome: true),
         SizedBox(height: tokens.spacing.md),
@@ -484,6 +519,63 @@ class _WorkspaceDrawerContent extends StatelessWidget {
         SizedBox(height: tokens.spacing.md),
         const _PlaceholderBar(widthFactor: 0.56, onChrome: true),
       ],
+    );
+  }
+}
+
+/// 打开 v3 工程包：装载在引擎工作线程，这里只显示阶段与结果。
+class _OpenBundleAction extends StatelessWidget {
+  const _OpenBundleAction({required this.service, required this.onPressed});
+
+  final GeoScatter3dService service;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, child) {
+        final opening = service.openingDataset;
+        final path = service.datasetPath;
+        return _ChromeSurface(
+          raised: true,
+          child: Padding(
+            padding: EdgeInsets.all(tokens.spacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '当前工程包',
+                  style: tokens.typography.sectionTitle.copyWith(
+                    color: tokens.colors.chromeTextPrimary,
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.xs),
+                Text(
+                  opening
+                      ? '正在装载${service.datasetStage.isEmpty ? '' : '（${service.datasetStage}）'}'
+                      : (path ?? '尚未打开，显示内置样例'),
+                  key: const ValueKey('open_bundle_status'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.typography.meta.copyWith(
+                    color: tokens.colors.chromeTextSecondary,
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.md),
+                FilledButton.icon(
+                  key: const ValueKey('open_bundle_button'),
+                  onPressed: opening ? null : onPressed,
+                  icon: const Icon(Icons.folder_open_rounded, size: 18),
+                  label: Text(opening ? '装载中…' : '打开工程包'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

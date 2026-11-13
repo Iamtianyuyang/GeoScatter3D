@@ -39,6 +39,24 @@ class FakeEngine implements Gs3dEngine {
     _lodLevelCount = levelCount;
   }
 
+  /// 异步开包被调用时记录的路径（顺序与调用一致）。
+  final List<String> openedPaths = [];
+  Object? openError;
+
+  @override
+  Future<void> loadDatasetAsync(
+    String path, {
+    Duration interval = const Duration(milliseconds: 200),
+    void Function(int progress, String stage)? onProgress,
+  }) async {
+    if (openError case final Object error) throw error;
+    openedPaths.add(path);
+    onProgress?.call(500, 'install');
+    _sourcePointCount = 4242;
+    _drawnPointCount = 4242;
+    onProgress?.call(1000, 'done');
+  }
+
   @override
   bool get isDisposed => disposeCount > 0;
   @override
