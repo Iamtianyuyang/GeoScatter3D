@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ffi/document_picker.dart';
@@ -62,11 +64,11 @@ class _PipelinePanelState extends State<PipelinePanel> {
       if (!mounted) return;
       final pipeline = widget.getPipeline();
       if (resume) {
-        pipeline.resume(bundle);
+        await pipeline.resume(bundle);
       } else {
-        pipeline.start(source, bundle);
+        await pipeline.start(source, bundle);
       }
-      setState(() => _error = null);
+      if (mounted) setState(() => _error = null);
     } catch (error) {
       if (mounted) setState(() => _error = '无法启动任务：$error');
     } finally {
@@ -137,6 +139,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
         if (running) ...[
           SizedBox(height: tokens.spacing.md),
           const LinearProgressIndicator(),
+          if (status!.error.isNotEmpty) Text(status.error, style: labelStyle),
         ],
         SizedBox(height: tokens.spacing.lg),
         pathField('输入文件', widget.source, false),
@@ -160,17 +163,22 @@ class _PipelinePanelState extends State<PipelinePanel> {
           Text(_error!, style: textStyle.copyWith(color: tokens.colors.error)),
         ],
         SizedBox(height: tokens.spacing.lg),
-        Text('取消将在当前阶段结束后生效。退出应用会停止当前任务；可选择工程包目录恢复。', style: labelStyle),
+        Text(
+          Platform.isAndroid
+              ? '取消将在当前阶段结束后生效。任务可在后台继续；系统中断后可恢复。'
+              : '取消将在当前阶段结束后生效。退出应用会停止当前任务；可选择工程包目录恢复。',
+          style: labelStyle,
+        ),
       ],
     );
   }
 
-  void pipelineCancel() {
+  Future<void> pipelineCancel() async {
     try {
-      widget.pipeline!.cancel();
-      setState(() => _error = null);
+      await widget.pipeline!.cancel();
+      if (mounted) setState(() => _error = null);
     } catch (error) {
-      setState(() => _error = '无法取消任务：$error');
+      if (mounted) setState(() => _error = '无法取消任务：$error');
     }
   }
 }

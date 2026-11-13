@@ -1,12 +1,19 @@
 package com.geoscatter3d.ui_flutter
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.ComponentName
+import android.content.Context
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.media.ImageReader
 import android.net.Uri
 import android.os.Handler
+import android.os.Build
+import android.os.IBinder
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -34,9 +41,11 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val DOCUMENT_CHANNEL = "com.geoscatter3d.ui_flutter/documents"
         private const val SURFACE_CHANNEL = "com.geoscatter3d.ui_flutter/surface"
+        private const val PIPELINE_CHANNEL = "com.geoscatter3d.ui_flutter/pipeline"
         private const val PICK_FILE_REQUEST = 4101
         private const val PICK_DIRECTORY_REQUEST = 4102
         private const val SAVE_FILE_REQUEST = 4103
+        private const val NOTIFICATION_PERMISSION_REQUEST = 4104
         private const val IMPORT_BUFFER_SIZE = 64 * 1024
 
         init {
@@ -68,6 +77,11 @@ class MainActivity : FlutterActivity() {
 
     /** 供 Dart 侧把引擎句柄交给平台层做 surface 附加。 */
     private fun engineHandleOf(resultHandle: Number?): Long = resultHandle?.toLong() ?: 0L
+    private var pendingPipelineConnection: ServiceConnection? = null
+    private var pendingPipelineResult: MethodChannel.Result? = null
+    private var pendingPipelineTimeout: Runnable? = null
+    private var pendingPipelinePermission: Pair<MethodCall, MethodChannel.Result>? = null
+    private var askedNotificationPermission = false
     private var pendingPickerResult: MethodChannel.Result? = null
     private var pendingSaveSource: String? = null
 
@@ -142,6 +156,22 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIPELINE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "start", "resume" -> startPipeline(call, result)
+                        "poll" -> result.success(PipelineJobs.snapshot())
+                        "cancel" -> {
+                            val id = call.argument<Number>("id")?.toLong() ?: 0L
+                            result.success(PipelineJobs.cancel(id))
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error("pipeline_error", error.message, null)
+                }
+            }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             SURFACE_CHANNEL,
@@ -391,6 +421,116 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun startPipeline(call: MethodCall, result: MethodChannel.Result) {
+        if (pendingPipelinePermission != null) {
+            result.error("pipeline_busy", "正在请求通知权限", null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !askedNotificationPermission &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            askedNotificationPermission = true
+            pendingPipelinePermission = call to result
+            try {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+            } catch (error: Exception) {
+                pendingPipelinePermission = null
+                throw error
+            }
+            return
+        }
+        startPipelineService(call, result)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST) {
+            val pending = pendingPipelinePermission
+            pendingPipelinePermission = null
+            if (pending != null) startPipelineService(pending.first, pending.second)
+        }
+    }
+
+    private fun startPipelineService(call: MethodCall, result: MethodChannel.Result) {
+        val source = call.argument<String>("source") ?: ""
+        val bundle = call.argument<String>("bundle") ?: ""
+        val points = call.argument<Number>("pointsPerChunk")?.toInt() ?: 65536
+        if (bundle.isEmpty() || (call.method == "start" && source.isEmpty()) || points <= 0) {
+            result.error("invalid_pipeline_args", "任务参数不完整", null)
+            return
+        }
+        if (pendingPipelineConnection != null || PipelineJobs.snapshot()["state"] == 1L) {
+            result.error("pipeline_busy", "已有预处理任务正在运行", null)
+            return
+        }
+        val intent = Intent(this, PipelineJobService::class.java)
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                if (pendingPipelineConnection !== this) return
+                pendingPipelineTimeout?.let(mainHandler::removeCallbacks)
+                pendingPipelineTimeout = null
+                try {
+                    val service = (binder as PipelineJobService.LocalBinder).service
+                    val task = service.startJob(source, bundle, points, call.method == "resume")
+                    if (task > 0) result.success(task)
+                    else result.error("pipeline_start_failed", "无法启动预处理任务 ($task)", null)
+                } catch (error: Exception) {
+                    result.error("pipeline_start_failed", error.message, null)
+                    stopService(intent)
+                } finally {
+                    pendingPipelineConnection = null
+                    pendingPipelineResult = null
+                    unbindService(this)
+                }
+            }
+
+            private fun failed() {
+                if (pendingPipelineConnection !== this) return
+                pendingPipelineTimeout?.let(mainHandler::removeCallbacks)
+                pendingPipelineTimeout = null
+                pendingPipelineConnection = null
+                pendingPipelineResult = null
+                unbindService(this)
+                stopService(intent)
+                result.error("pipeline_service_failed", "后台服务连接已断开", null)
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) = failed()
+            override fun onBindingDied(name: ComponentName?) = failed()
+            override fun onNullBinding(name: ComponentName?) = failed()
+        }
+        pendingPipelineConnection = connection
+        pendingPipelineResult = result
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
+            else startService(intent)
+            if (!bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+                pendingPipelineConnection = null
+                pendingPipelineResult = null
+                stopService(intent)
+                result.error("pipeline_service_failed", "无法连接后台服务", null)
+            } else {
+                val timeout = Runnable {
+                    if (pendingPipelineConnection === connection) {
+                        pendingPipelineConnection = null
+                        pendingPipelineResult = null
+                        pendingPipelineTimeout = null
+                        unbindService(connection)
+                        stopService(intent)
+                        result.error("pipeline_service_failed", "连接后台服务超时", null)
+                    }
+                }
+                pendingPipelineTimeout = timeout
+                mainHandler.postDelayed(timeout, 15000)
+            }
+        } catch (error: Exception) {
+            pendingPipelineConnection = null
+            pendingPipelineResult = null
+            stopService(intent)
+            result.error("pipeline_service_failed", error.message, null)
+        }
+    }
+
     private fun openPicker(
         action: String,
         requestCode: Int,
@@ -464,6 +604,21 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        pendingPipelinePermission?.second?.error("activity_destroyed", "页面已关闭", null)
+        pendingPipelinePermission = null
+        pendingPipelineConnection?.let {
+            pendingPipelineTimeout?.let(mainHandler::removeCallbacks)
+            pendingPipelineTimeout = null
+            pendingPipelineConnection = null
+            pendingPipelineResult?.error("activity_destroyed", "页面已关闭", null)
+            pendingPipelineResult = null
+            unbindService(it)
+            try {
+                if (PipelineJobs.snapshot()["state"] != 1L) {
+                    stopService(Intent(this, PipelineJobService::class.java))
+                }
+            } catch (_: Exception) { }
+        }
         // 活动销毁前释放纹理通路：避免引擎持有已失效的 ANativeWindow。
         detachPresentSurface()
         super.onDestroy()

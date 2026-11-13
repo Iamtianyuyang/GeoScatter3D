@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -48,6 +49,7 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _ownsService = widget.service == null;
     _service = widget.service ?? GeoScatter3dService();
+    if (Platform.isAndroid) _pipeline = PipelineService();
     unawaited(_restorePipelineHistory());
   }
 

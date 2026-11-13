@@ -34,11 +34,11 @@ void main() {
       }
 
       try {
-        service.start(source.path, bundle);
+        await service.start(source.path, bundle);
         final first = await waitForTerminal();
         expect(first.state, PipelineState.done);
         expect(first.points, 1);
-        service.resume(bundle);
+        await service.resume(bundle);
         final resumed = await waitForTerminal();
         expect(resumed.state, PipelineState.done);
         expect(resumed.id, isNot(first.id));
@@ -57,7 +57,7 @@ void main() {
     final source = File('${directory.path}/source.csv');
     await source.writeAsString('X,Y,Z,value\n1,2,3,4\n');
     final service = PipelineService(libraryPath: libraryPath);
-    service.start(source.path, '${directory.path}/bundle');
+    await service.start(source.path, '${directory.path}/bundle');
     service.dispose();
     await service.closed;
     await Future<void>.delayed(const Duration(milliseconds: 300));

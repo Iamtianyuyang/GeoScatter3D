@@ -6,6 +6,7 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'pipeline_bindings.dart';
 
@@ -62,7 +63,16 @@ String _nativeText(ffi.Array<ffi.Char> chars, int capacity) {
 
 /// Owns one native background pipeline and publishes snapshots to the UI.
 class PipelineService extends ChangeNotifier {
-  PipelineService({String? libraryPath}) : _libraryPath = libraryPath {
+  PipelineService({
+    String? libraryPath,
+    @visibleForTesting bool? useAndroidService,
+  }) : _libraryPath = libraryPath,
+       _android =
+           useAndroidService ?? (Platform.isAndroid && libraryPath == null) {
+    if (_android) {
+      unawaited(_watch());
+      return;
+    }
     final library = _openPipelineLibrary(libraryPath);
     final create = library.lookupFunction<PipelineCreateNative, PipelineCreate>(
       'gs3d_pipeline_create',
@@ -89,7 +99,9 @@ class PipelineService extends ChangeNotifier {
     if (_pipeline == ffi.nullptr) throw StateError('无法创建预处理任务');
   }
 
+  static const _channel = MethodChannel('com.geoscatter3d.ui_flutter/pipeline');
   final String? _libraryPath;
+  final bool _android;
   late final PipelinePtr _pipeline;
   late final PipelineStart _start;
   late final PipelineResume _resume;
@@ -98,6 +110,8 @@ class PipelineService extends ChangeNotifier {
   Timer? _timer;
   Future<void>? _closing;
   bool _disposed = false;
+  int _watchVersion = 0;
+  Completer<void>? _refreshDone;
   PipelineStatus _status = const PipelineStatus(
     id: 0,
     state: PipelineState.idle,
@@ -110,8 +124,21 @@ class PipelineService extends ChangeNotifier {
   PipelineStatus get status => _status;
   Future<void> get closed => _closing ?? Future.value();
 
-  void start(String source, String bundle, {int pointsPerChunk = 65536}) {
+  Future<void> start(
+    String source,
+    String bundle, {
+    int pointsPerChunk = 65536,
+  }) async {
     _ensureOpen();
+    if (_android) {
+      await _channel.invokeMethod<int>('start', {
+        'source': source,
+        'bundle': bundle,
+        'pointsPerChunk': pointsPerChunk,
+      });
+      if (!_disposed) await _watch();
+      return;
+    }
     final job = calloc<PipelineJobNative>();
     final task = calloc<ffi.Uint64>();
     final sourcePath = source.toNativeUtf8();
@@ -122,43 +149,108 @@ class PipelineService extends ChangeNotifier {
       job.ref.bundlePath = bundlePath;
       job.ref.pointsPerChunk = pointsPerChunk;
       _check(_start(_pipeline, job, task));
-      _watch();
     } finally {
       calloc.free(bundlePath);
       calloc.free(sourcePath);
       calloc.free(task);
       calloc.free(job);
     }
+    await _watch();
   }
 
-  void resume(String bundle) {
+  Future<void> resume(String bundle) async {
     _ensureOpen();
+    if (_android) {
+      await _channel.invokeMethod<int>('resume', {'bundle': bundle});
+      if (!_disposed) await _watch();
+      return;
+    }
     final path = bundle.toNativeUtf8();
     final task = calloc<ffi.Uint64>();
     try {
       _check(_resume(_pipeline, path, task));
-      _watch();
     } finally {
       calloc.free(task);
       calloc.free(path);
     }
+    await _watch();
   }
 
-  void cancel() {
+  Future<void> cancel() async {
     _ensureOpen();
-    _check(_cancel(_pipeline, _status.id));
+    if (_android) {
+      _check(
+        await _channel.invokeMethod<int>('cancel', {'id': _status.id}) ?? -3,
+      );
+    } else {
+      _check(_cancel(_pipeline, _status.id));
+    }
   }
 
-  void _watch() {
+  Future<void> _watch() async {
+    final version = ++_watchVersion;
     _timer?.cancel();
-    _timer = Timer.periodic(
-      const Duration(milliseconds: 250),
-      (_) => _refresh(),
-    );
-    _refresh();
+    await _refreshDone?.future;
+    await _refresh();
+    if (!_disposed &&
+        version == _watchVersion &&
+        (_android || _status.state == PipelineState.running)) {
+      _timer = Timer.periodic(Duration(milliseconds: _android ? 1000 : 250), (
+        _,
+      ) {
+        unawaited(_refresh());
+      });
+    }
   }
 
-  void _refresh() {
+  Future<void> _refresh() async {
+    if (_disposed || _refreshDone != null) return;
+    final done = _refreshDone = Completer<void>();
+    try {
+      if (_android) {
+        final value = await _channel.invokeMapMethod<String, dynamic>('poll');
+        if (_disposed) return;
+        if (value == null ||
+            value['state'] is! int ||
+            (value['state'] as int) < 0 ||
+            (value['state'] as int) >= PipelineState.values.length) {
+          throw StateError('无法识别预处理状态');
+        }
+        _status = PipelineStatus(
+          id: value['id'] as int,
+          state: PipelineState.values[value['state'] as int],
+          stage: value['stage'] as String,
+          error: value['error'] as String,
+          points: value['points'] as int,
+          chunks: value['chunks'] as int,
+        );
+      } else {
+        _refreshNative();
+      }
+      if (!_android && _status.state != PipelineState.running) _timer?.cancel();
+      notifyListeners();
+    } catch (error) {
+      if (!_disposed) {
+        if (!_android) _timer?.cancel();
+        _status = PipelineStatus(
+          id: _status.id,
+          state: _status.state == PipelineState.running
+              ? PipelineState.running
+              : PipelineState.failed,
+          stage: _status.stage,
+          error: '无法读取任务状态：$error',
+          points: _status.points,
+          chunks: _status.chunks,
+        );
+        notifyListeners();
+      }
+    } finally {
+      _refreshDone = null;
+      done.complete();
+    }
+  }
+
+  void _refreshNative() {
     final native = calloc<PipelineStatusNative>();
     try {
       native.ref.structSize = ffi.sizeOf<PipelineStatusNative>();
@@ -175,8 +267,6 @@ class PipelineService extends ChangeNotifier {
         points: value.points,
         chunks: value.chunks,
       );
-      if (_status.state != PipelineState.running) _timer?.cancel();
-      notifyListeners();
     } finally {
       calloc.free(native);
     }
@@ -194,7 +284,12 @@ class PipelineService extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _watchVersion++;
     _timer?.cancel();
+    if (_android) {
+      super.dispose();
+      return;
+    }
     final address = _pipeline.address;
     final libraryPath = _libraryPath;
     // Native destruction waits for the current stage; never join on the UI isolate.

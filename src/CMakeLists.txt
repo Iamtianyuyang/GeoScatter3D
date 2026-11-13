@@ -10,6 +10,7 @@ add_library(gs3d_pipeline_ffi SHARED ${PROJECT_SOURCE_DIR}/engine/abi/gs3d_pipel
 target_compile_definitions(gs3d_pipeline_ffi PRIVATE GS3D_PIPELINE_EXPORTS)
 target_link_libraries(gs3d_pipeline_ffi PRIVATE gs3d_preprocess)
 if(ANDROID)
+    target_sources(gs3d_pipeline_ffi PRIVATE ${PROJECT_SOURCE_DIR}/engine/abi/AndroidPipelineJni.cpp)
     target_link_libraries(gs3d_pipeline_ffi PRIVATE log)
 endif()
 add_subdirectory(render)
