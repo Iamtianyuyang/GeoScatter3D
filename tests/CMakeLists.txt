@@ -51,6 +51,22 @@ add_test(
     COMMAND GeoScatter3DManifestTests
 )
 
+add_executable(GeoScatter3DPointStageTests
+    PointStageTests.cpp
+)
+target_include_directories(GeoScatter3DPointStageTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/engine
+)
+target_link_libraries(GeoScatter3DPointStageTests PRIVATE
+    gs3d_preprocess
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.PointStage
+    COMMAND GeoScatter3DPointStageTests
+)
+
 add_executable(GeoScatter3DCpuInfoTests
     CpuInfoTests.cpp
 )
