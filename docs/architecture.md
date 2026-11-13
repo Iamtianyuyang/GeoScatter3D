@@ -9,71 +9,52 @@
 ## 目录
 
 ```
-engine/
-  foundation/      无业务依赖的地基
-    diagnostics/     Log, CpuInfo, Stopwatch, FrameClock, Percentile
-    io/              FileIO, MemoryMappedFile, Crc32c, Base64, ResourcePath
-    concurrency/     ThreadPool, Cancellation, TaskQueue
-    math/            Camera 数学, Ray, BoxSelect 几何, Bounds
-  data/            只读的数据理解，不碰 GPU
-    csv/             Sniffer, Delimiter, Schema, 分块读取
-    format/          Gs3dFormat, ByteOrder, Reader, Dataset, Exporter, Verifier
-    lod/             LodFormat, LodReader, LodDataset
-    tile/            TileFormat, TileReader, 索引与网格
-  pipeline/        写数据：原始文件 → 工程包（无 Vulkan 依赖）
-    stages/         阶段机、进度、恢复、原子提交
-    compute/        统计、CSV→点、体素降采样
-    writers/        点块、LOD 块、瓦片块写入器
-  render/          Vulkan，只认 GPU，不认窗口
-    device/         Context, Buffer, DepthBuffer, GpuInfo, FrameTimer
-    scene/          Viewport, Camera, Selection, LodSelector, NearestPoint
-    point/          PointPipeline, PointCloud{Gpu,Lod,Tile}, AxisGrid
-    targets/        OffscreenFramebuffer, PresentSurface
-    streaming/      TileDeviceArena, TilePointCache, TileLoadCommit, FrameChannel
-  session/         一次运行的业务状态
-    project/        Bundle 打开/关闭、最近项目、任务表
-    measure/        MeasurementManager、结果存取
-    view/           Viewport{Interaction,Presentation}State、预算
-  config/          AppConfig、命令行、校验、viewer.toml
-  abi/             geoscatter3d.h、EngineApi、PipelineApi、EngineHost
-  cli/             preprocess、verify（无 GPU 也能跑）
-app/               Flutter
-  lib/ffi/         绑定、结构体镜像、中枢（GeoScatter3dService）
-  lib/state/       快照模型（不可变）
-  lib/viewport/    视口画布、手势、纹理通路
-  lib/panels/      数据集 / 渲染设置 / 测量 / 导出 / 最近项目
-  lib/theme/       设计令牌、配色
-  lib/widgets/     通用组件
-  android/ windows/ linux/
-platform/          三端原生工具（只被 app/ 链接）
-  android/         Surface/JNI、后台服务、SAF
-  windows/         窗口句柄、文件对话框、安装包钩子
-  linux/           同上
-packaging/         cmake 模块、安装包、签名
-assets/  config/  examples/  scripts/  tests/  docs/
+engine/                 引擎核心，不依赖窗口与 Dart
+  foundation/             diagnostics、io（含 SHA-256）、concurrency、math、util
+  data/                   csv（分块读取）、format（Manifest、PointChunk、V3BundleReader）、
+                          lod（Gs3dLodDataset/Writer）、tile
+  pipeline/               stages（BundleBuild、BundleJob、各阶段）、compute、writers、verify
+include/ffi/             C ABI 头 geoscatter3d_ffi.h，宿主侧 EngineHost、TaskBoard、
+                          HeadlessRenderKernel、LodBuilder、FrameChannel
+src/                     ffi（C ABI 实现与内核）、render、camera、app；
+                         control/ui 与 platform 是旧查看器遗留，Flutter 不依赖
+ui_flutter/              Flutter 应用
+  lib/src/layouts/        main_shell（顶栏 + 工具轨 + 面板 + 视口 + 状态条）
+  lib/src/widgets/        七个面板、视口画布、状态条、视图轴、色标图例
+  lib/src/ui/             ui_kit、format
+  lib/src/ffi/            ABI 绑定、引擎包装、中枢服务、应用态、显示设置、管线服务
+  lib/src/theme/          app_tokens
+  android/ linux/ windows/ linux 与 windows runner、Android 前台服务
+tests/                   C++ 测试（Catch2）
+scripts/                 构建、打包、依赖与护栏检查、性能测量
+data/  assets/  config/  docs/  tools/  third_party/
 ```
 
-依赖方向见 [RULES.md](RULES.md) 规则一。`platform/` 位于最上层：它调用 `engine/abi`，
-引擎从不 include、也不链接 `platform/`。
+依赖方向见 [RULES.md](RULES.md) 规则一。宿主层（`ui_flutter/linux`、
+`ui_flutter/windows`、`ui_flutter/android` 与 `src/ffi` 里的 JNI 胶水）位于最上层：
+只调用 C ABI，引擎从不 include、也不链接宿主代码。
 
 ## 线程模型
 
 | 线程 | 拥有 | 不许做 |
 | --- | --- | --- |
-| 主线程（Flutter UI） | Dart 快照、界面 | 等待长任务、读文件、提交 GPU |
-| 渲染线程 | `VkDevice`、队列、视口资源 | 回调 Dart、阻塞在 IO |
-| 分发线程 | 唤醒通知（原子掩码 → 回调） | 访问 GPU、加锁渲染 |
-| 工作池（N = 核数） | 分块读、解码、预处理 | 提交 GPU、改引擎状态 |
+| 主线程（Flutter UI） | Dart 侧状态、界面、命令参数校验 | 等待长任务、读文件、提交 GPU |
+| 渲染线程 | `VkDevice`、队列、视口与 GPU 资源、快照发布 | 回调 Dart、阻塞在 IO |
+| IO 线程（单个） | 打开工程包时的读盘与解码 | 提交 GPU、改引擎状态 |
+| 工作池 | 点块解码、预处理各阶段、统计 | 提交 GPU、改引擎状态 |
 
-- 对外的调用要么立即返回，要么返回任务号；没有"调用了就等它做完"的接口。
-  `EngineHost::invoke()` 这种阻塞形态在迁移第 4 步取消。
-- 长任务（开包、预处理、LOD、导出）可取消；取消点是阶段边界。
+- 普通命令（相机、点大小、配色、背景、缩放、出帧、卸载）经 `gs3d_engine_submit`
+  入队即返回；开包这类长任务返回任务号，由 Dart 每 200 ms 轮询快照。
+- 长任务（预处理任务、开包）可取消，取消点是阶段边界；导出与读帧是渲染线程上的
+  同步调用，没有取消点，所以有明确点数上限。
 - 只有渲染线程发布快照；只有主线程读取快照。见下文「状态快照」。
-- 4 GB Android 设备上工作池为 `min(4, 核数)`，且同时只允许一个重任务。
+- 引擎侧只有一个 IO 线程，同一时刻只跑一个开包任务；4 GB Android 设备上统计线程
+  上限为 4（`StatisticsPass`），管线同时只允许一个重任务（`BundleJob` 的 `JobSlot`）。
 
 ## ABI 契约
 
-头文件：`engine/abi/geoscatter3d.h`。规则二（只增不改）优先于本文任何写法示例。
+头文件：`include/ffi/geoscatter3d_ffi.h`（`engine/abi/geoscatter3d.h` 是早期设计稿，API 与现在的 ABI 不同、
+不参与构建，不要 include）。规则二（只增不改）优先于本文任何写法示例。
 
 ### 通则
 
@@ -83,7 +64,8 @@ assets/  config/  examples/  scripts/  tests/  docs/
   保存调用方指针。
 - 错误：`int32_t` 返回 0 成功、负数错误码；引擎任务的错误文本放在已发布的
   快照里（定长 `char[256]`），管线任务放在其状态中；不返回裸指针。
-- 任何一次 ABI 改动同时改 `app/lib/ffi/` 的镜像与一个布局测试。
+- 任何一次 ABI 改动同时改 `ui_flutter/lib/src/ffi/gs3d_bindings.dart` 的镜像与
+  `ui_flutter/test/engine_state_layout_test.dart` 的布局断言。
 
 ### 状态快照
 
@@ -93,7 +75,7 @@ assets/  config/  examples/  scripts/  tests/  docs/
 typedef struct {
     uint32_t struct_size;
     uint64_t generation;      /* 每次发布 +1 */
-    /* …相机、点数、预算、任务表、表面操作状态、last_error[256]… */
+    /* …相机、点数、预算、任务表、char error[256]… */
 } gs3d_state;
 
 /* 拷贝最近一次已发布的完整一代；没有发布过则返回 -2 */
@@ -105,10 +87,9 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 回调，禁止半写半读。不得仅靠双缓冲和序号重试：写者再次复用缓冲时仍可能与读者并发访问。
 
 任务表也在这份快照里（固定上限 4 项）：`{id, stage, state, progress}`。任务结束时
-状态保留到被读取一次为止，防止 Dart 错过终态。任务表已满时必须明确返回错误；
-宿主须保留表面句柄，并在能提交 detach 后等待该任务完成。
+状态保留到被读取一次为止，防止 Dart 错过终态；任务表已满时必须明确返回错误。
 
-**当前实现**：`include/ffi/geoscatter3d_ffi.h` 第 21 节与 `ffi/TaskBoard`（
+**当前实现**：`include/ffi/geoscatter3d_ffi.h` 第 21 节与 `include/ffi/TaskBoard.hpp`（
 `TaskBoard::Snapshot` 由 `EngineHost::poll_state` 复制）。`gs3d_engine_open_dataset`
 先登记任务再投递到单个 IO 线程；该线程只调 `HeadlessRenderKernel::load_dataset_from_disk`
 （纯读盘），完成后把结果投回渲染线程调 `install_dataset`。限制：
@@ -123,16 +104,16 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
   loading” 在有 Vulkan 设备的机器上真实跑通：建 64 点工程包、提交、轮询到 Done、
   校验点数与终态一次性释放，并验证取消后装载被丢弃。
 - 界面已接线：`GeoScatter3dService.openBundle` 调用 `loadDatasetAsync`（每 200 ms
-  轮询快照），“数据”抽屉里的「打开工程包」通过平台目录选择器选包并显示阶段；
+  轮询快照），预处理面板与顶栏的「打开工程包」通过平台目录选择器选包并显示阶段；
   基准/样例路径仍用同步 `gs3d_engine_load_dataset`。二者共用同一内核装载代码。
-- 导出（“成果”抽屉）：`gs3d_engine_export` 写 PLY/CSV、`gs3d_engine_read_frame_png`
+- 导出（成果面板）：`gs3d_engine_export` 写 PLY/CSV、`gs3d_engine_read_frame_png`
   取当前帧 PNG，文件落在应用状态目录的 `exports/`，界面只展示路径。导出仍是同步
   调用（占渲染线程），因此超过 200 万点直接拒绝并说明原因，另存为对话框也尚未做。
-- 测量（“属性”抽屉）：视口单击调用 `gs3d_engine_pick_point`，依次记录起点和终点，
+- 测量（测量面板）：视口单击调用 `gs3d_engine_pick_point`，依次记录起点和终点，
   显示两点距离与带符号高差；第三次点击开始新的一组，未命中不改变现有测量。
   拾取在渲染线程上线性扫描已装载的点（`src/ffi/HeadlessRenderKernel.cpp` 的
   `pick_point`），样例数据即时，50M 数据集一次点击要数秒，尚未接 GPU id 缓冲。
-- 显示设置（“显示”抽屉）：配色索引与点大小先改本地状态，拖动结束才通过
+- 显示设置（渲染面板）：配色索引与点大小先改本地状态，拖动结束才通过
   `submitColormap`/`submitPointSize` 入队，落盘到平台应用状态目录的
   `render-settings.json`（临时文件 + 改名）；读回失败回到默认值，不影响启动。
   设置只影响本机显示，工程包内容不变。
@@ -143,7 +124,7 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 typedef struct {
     uint32_t struct_size;
     uint32_t op;
-    uint32_t flags;           /* GS3D_CMD_ASYNC；0 = 普通入队命令 */
+    uint32_t flags;           /* 保留，必须为 0 */
     union { /* 每类命令一个 POD 参数块，字符串为 const char* */ } args;
 } gs3d_command;
 
@@ -154,54 +135,50 @@ int32_t gs3d_engine_cancel(gs3d_engine*, uint64_t task);
 
 普通命令包括相机输入、点大小、配色、背景、请求一帧；返回成功表示已校验并入队，
 不表示渲染线程已执行。调用线程只做参数校验与深拷贝，不等待执行。
-开包、卸载、预处理、LOD 重建、导出和截图写盘使用异步任务号跟踪执行与终态。
+只有 `gs3d_engine_open_dataset` 返回任务号：读盘在 IO 线程、装载在渲染线程，
+用 `poll_state` 看阶段与终态。卸载、导出、PNG 与 JSON 快照都是同步调用
+（`unload_dataset` 走 submit，导出与读帧在渲染线程内完成），因此有明确上限。
 
 ### 唤醒
 
-```c
-enum { GS3D_WAKE_FRAME = 1u << 0, GS3D_WAKE_TASK = 1u << 1,
-       GS3D_WAKE_ERROR = 1u << 2, GS3D_WAKE_PROGRESS = 1u << 3 };
-
-int32_t gs3d_engine_set_wake(gs3d_engine*,
-                             void (*on_wake)(void* user, uint32_t mask),
-                             void* user);
-```
-
-只传掩码。`on_wake` 由分发线程调用，可能高频触发，必须立即返回；收到后 Dart
-下一次 `poll_state` 拿全量。
+没有唤醒回调：Dart 侧按固定间隔（界面 200 ms，Android 服务 1 s）轮询
+`gs3d_engine_poll_state`。回调在 Flutter 平台通道上会引入线程归属问题，
+轮询的实现代价低于它，所以不做。
 
 ### 像素与表面
 
 ```c
 int32_t gs3d_engine_read_frame_rgba(gs3d_engine*, uint8_t* out, uint32_t cap,
                                     uint32_t* w, uint32_t* h, uint32_t* stride);
-
-typedef struct { uint32_t struct_size; void* handle; uint32_t width, height, kind; }
-    gs3d_native_surface;
-int32_t gs3d_engine_attach_surface(gs3d_engine*, const gs3d_native_surface*,
-                                    uint64_t* out_task);
-/* 请求释放；对应任务完成前宿主须保留句柄 */
-int32_t gs3d_engine_detach_surface(gs3d_engine*, uint64_t* out_task);
+int32_t gs3d_engine_read_frame_png(gs3d_engine*, uint8_t* out, uint32_t cap,
+                                   uint32_t* out_len);
+int32_t gs3d_engine_request_frame(gs3d_engine*);
 ```
 
-- 表面由宿主（`app/android`）创建与销毁；attach 只登记，不接管所有权。
-- 宿主销毁前请求 `detach_surface`；引擎完成 GPU 资源释放并确认后，宿主才能释放句柄。
-  实现须保证句柄引用覆盖异步处理期间，并处理旋转、锁屏和退出。
-- attach/detach 入队后立即返回任务号；快照中的任务终态标识具体操作是否完成或失败。
-  引擎在渲染线程执行操作，等待 GPU 的操作不能阻塞 Flutter UI 线程。
+- 桌面与测试走回读：Flutter 把 RGBA 缓冲解成 `ui.Image` 贴到 `Texture`。
+  1080p 回读加绘制约 4.5 ms，回读同步占渲染线程，因此一次只允许一个未完成的请求。
+- 窗口呈现走 `gs3d_engine_set_surface(provider)` / `gs3d_engine_clear_surface`：
+  `gs3d_surface_provider` 只带 instance 扩展名、`create_surface` 回调与 `user_data`，
+  由平台适配层把 `HWND` / `ANativeWindow` 转成句柄，ABI 里不出现 Vulkan 类型。
+  之后 `present_frame` 把帧呈到交换链，`has_surface` 查询当前模式。
+- 表面句柄的所有权留在宿主（Windows runner、Kotlin 前台服务）；宿主在销毁前
+  停止任务并 `clear_surface`，引擎不接管句柄生命周期。
+- Android 的零拷贝：Kotlin 侧持有 `Surface`，经 JNI（`MainActivity.nativeAttachSurface`
+  → `gs3d_engine_set_surface`）交给引擎，Dart 只拿到 texture id 用于显示；失败时
+  自动退回 RGBA 回读（`ui_flutter/lib/src/ffi/present_surface.dart`）。
 
 ### JSON 通道
 
-配置文件、对话框、诊断这类低频结构化数据走 JSON，不塞进结构体：
+低频结构化数据走 JSON，不塞进结构体。打开数据集后由专用 getter 返回，字符串由
+ABI 内部持有到下一次同线程调用：
 
 ```c
-/* 返回 -3 表示 cap 不足，out_len 给出所需字节数；成功时 out 内含完整应答 */
-int32_t gs3d_engine_request(gs3d_engine*, const char* request_json,
-                            char* out, uint32_t cap, uint32_t* out_len);
+const char* gs3d_engine_dataset_info_json(gs3d_engine*);   /* 路径、点数、范围、值域、属性、CRS */
+const char* gs3d_engine_get_snapshot_json(gs3d_engine*);
+const char* gs3d_engine_get_diagnostics_json(gs3d_engine*);
 ```
 
-请求与应答都带 `"v": 1`；字段只增不改，未知字段忽略。同步请求仅处理内存中的
-短操作；涉及文件或其他长操作时，返回任务号并通过快照取得结果。热点路径禁止走这里。
+字段只增不改，未知字段忽略；热点路径（出帧、相机输入、拾取）不走 JSON。
 
 ### 管线 ABI（无 GPU）
 
@@ -226,10 +203,7 @@ Android 前台服务通过 JNI 直接调这一组，不经过 `EngineHost`，不
 <bundle>/
   manifest.json         版本、CRS、原点、属性表、块表、任务与阶段状态
   points/000000.chunk   点块，定长，小端，mmap 直读，不压缩
-  lod/level-000.chunk   预计算层级
-  tiles/index.bin       网格尺寸 + 每格偏移/点数
-  tiles/000000.chunk
-  analysis.json         测量结果
+  lod.gs3dlod           预计算层级（包旁单个 sidecar，临时文件 + 改名发布）
 ```
 
 不存"全分辨率单体文件"：点只存在于 chunk 中，打开时只读 manifest 与块表，
@@ -241,7 +215,7 @@ manifest 必须包含：
 {
   "format_version": 3,
   "min_reader_version": 3,
-  "required_features": ["tiles"],
+  "required_features": ["points"],
   "crs": { "authority": "EPSG", "code": 32650, "axis_order": "east,north,up",
            "unit": "m", "vertical_unit": "m", "datum": "WGS84" },
   "origin": [28165200.0, 57031700.0, 3243.5],
@@ -327,7 +301,7 @@ manifest 必须包含：
   验证，性能数字必须取 `tmp/build-linux`（Release）。
 - 打开 50M 工程包（Release，Linux，RTX 5060）：没有 sidecar 时 `gs3d_engine_load_dataset`
   同步读盘 + 运行时建链共 29.7 s；其中 LOD 建链 22.3 s、块解码并行后约 2.6 s、GPU 上传
-  0.17 s。预处理的 `lod` 阶段补上 sidecar 后同一命令 **2.3 s**，LOD 5 层、总 GPU 点 3.15 M、
+  0.17 s。预处理的 `lod` 阶段补上 sidecar 后同一命令 **2.40–2.46 s**（多次测量），LOD 5 层、总 GPU 点 3.15 M、
   默认视角绘制 813 k 点，峰值 RSS 1.2 GB。距离“打开到可交互 ≤ 1.5 s”仍有差距，差距来自
   766 MB 点块的解码与上传，不是建链。
   代价：50M 建包多出 `lod` 阶段（读回点块 + 建 5 层 + 写 50 MB sidecar，实测 +49 s），
@@ -362,8 +336,9 @@ manifest 必须包含：
 任务失败）；当前 CI 只做构建与测试，逐渐落到门禁还需要基线机器。Android 在发布前手工在 4 GB 设备上跑同一组
 数字并记入 PR。
 
-瓦片选择应利用网格索引或缓存缩小候选范围；当前包有 30,479 个瓦片，具体耗时
-须在目标设备上测量，不能预先假定。
+瓦片选择应利用网格索引或缓存缩小候选范围。注意瓦片流式只对旧版带
+`tiles.gs3dtiles(.index)` 的数据集生效，v3 工程包没有瓦片，走的是
+`lod.gs3dlod` 的多层 LOD；两者不能混为一谈，耗时须在目标设备上测量。
 
 ### 本机实测（2026-11-13）
 
@@ -397,7 +372,7 @@ cd ui_flutter && ../tmp/build-linux/src/gs3d_bench --bundle ../tmp/bench-50m \
 
 | 能力 | Windows | Linux | Android |
 | --- | --- | --- | --- |
-| 图形 | Vulkan 1.1+ | Vulkan 1.1+ | Vulkan 1.0+ 驱动 |
+| 图形 | Vulkan 1.1+ | Vulkan 1.1+ | Vulkan 1.1+ 驱动 |
 | 视口呈现 | RGBA 回读 | RGBA 回读 | 原生纹理零拷贝 |
 | 后台预处理 | 进程常驻 | 进程常驻 | 前台服务 + 管线 ABI |
 | 文件选择 | 原生对话框 | 原生对话框 | SAF / 应用私有目录 |
@@ -409,8 +384,8 @@ cd ui_flutter && ../tmp/build-linux/src/gs3d_bench --bundle ../tmp/bench-50m \
 
 | 平台 | 方法 | 结果 |
 | --- | --- | --- |
-| Linux 窗口 | `flutter build linux --release` 后直接运行 `bundle/ui_flutter`（Wayland 会话），用 `grim` 截屏核对视口 | 通过：窗口起来、Vulkan 选中 RTX 5060、样例 10 000 点可见（截图不入库）、无崩溃。GTK 报过一次 `Timed out waiting for subsurface frame of size 1372x2388 (have 1390x2396)`，来自平铺窗口管理器与装饰边，不影响出图 |
-| Linux 离屏 | `GS3D_ENGINE_E2E=1 GS3D_PIPELINE_LIBRARY=... flutter test`，读回 RGBA 断言像素 | 通过：回读、轨道、复位、resize、拾取，全套 66 用例 0 跳过 |
+| Linux 窗口 | `flutter build linux --release` 后直接运行 `bundle/ui_flutter`（Wayland 会话），用 `grim` 截屏核对视口 | 部分：窗口起来、Vulkan 选中 RTX 5060、样例 10 000 点可见、无崩溃；但 Flutter 3.50 的 GTK embedder 在本机分数缩放（1.25）下把窗口内容只合成一部分（`flutter create` 空模板同样复现，改缩放/软件渲染/XWayland 都无效），窗口级界面核对不可靠，界面检查改用离屏 golden 预览 |
+| Linux 离屏 | `GS3D_ENGINE_E2E=1 GS3D_PIPELINE_LIBRARY=... flutter test`，读回 RGBA 断言像素 | 通过：回读、轨道、复位、resize、拾取，全套 60 用例 0 跳过 |
 | Windows | 无机器 | 未验证：只有 CI 构建与单元测试，窗口与呈现未跑 |
 | Android | 无设备、无模拟器（SDK 缺 emulator 包，下载 <1%/20 s，已放弃） | 部分：两个 ABI 的原生库与 `flutter build apk --debug` 均在本机通过，APK 内两个 ABI 的 `libgs3d_ffi.so`、`libgs3d_pipeline_ffi.so` 与 `libc++_shared.so` 齐全（管线库随仓库预置，干净克隆也能直接出包；换引擎代码后必须重新交叉编译并覆盖）；JNI 建包与 Kotlin 直接编译已过。前台服务、后台恢复、零拷贝呈现仍未上机 |
 
@@ -479,58 +454,6 @@ ui_flutter/lib/
 一次性 golden 预览（`FontLoader` 加载 Noto CJK，1440×900）而非真机截图——
 Hyprland 平铺会在 subsurface 尺寸不一致时把界面合成为残缺画面，不能作为界面证据。
 
-## 迁移映射
-
-当前树 → 目标树（`git mv` 保留历史）：
-
-| 现在 | 以后 |
-| --- | --- |
-| `src/data/Csv*.cpp`, `Delimiter`, `DataSchema` | `engine/data/csv/` |
-| `src/data/Gs3d{Format,Reader,Dataset,Exporter,Verifier,ByteOrder}.cpp` | `engine/data/format/` |
-| `src/data/Gs3dLod*.cpp` | `engine/data/lod/` |
-| `src/data/Gs3dTile*.cpp` | `engine/data/tile/` |
-| `src/preprocess/*` | `engine/pipeline/{stages,compute,writers}/` |
-| `src/render/*` | `engine/render/{device,scene,point,targets,streaming}/` |
-| `src/camera/*` | `engine/render/scene/`（纯数学部分进 `foundation/math/`） |
-| `src/app/{config/*, session/*}` | `engine/config/`, `engine/session/project/` |
-| `src/app/systems/MeasurementManager.cpp` | `engine/session/measure/` |
-| `src/app/state/*` | `engine/session/view/` |
-| `src/ffi/{EngineHost,FrameChannel,Gs3dEngineApi}` | `engine/abi/` |
-| `src/ffi/HeadlessRenderKernel.cpp`（2,036 行） | 按职责拆进 `engine/session/` 与 `engine/render/` |
-| `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
-| `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
-| `include/{util,core}` 下的头文件 | `engine/foundation/`、`engine/data/core/` |
-| `src/ffi/AndroidSurfaceJni.cpp` | `platform/android/` |
-| `ui_flutter/` | `app/` |
-| `src/control/*` | 旧 ABI 及其调用方迁移后删除；目前仍由 `gs3d_ffi` 使用 |
-| `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 在现有引擎与控制层依赖迁移后删除（第一版不做工作区布局） |
-
-已完成：`engine/foundation/{Gs3dVersion,diagnostics,concurrency,io}`、
-`engine/data/{core,format,csv,lod,tile}`、`engine/pipeline/{compute,writers,verify}`。
-`src/{data,preprocess}` 只剩目标定义，源码都在 `engine/` 下；CMake 目标名未变。
-剩余 `src/{render,camera,app,control,ui,ffi,platform}` 随 ABI 与平台步骤迁移。
-
-旧 GLFW 查看器中不参与构建的实现已移除；其需要保留的行为在第 5 步迁移。
-旧查看器测试开关当前无法链接，相关测试须迁移后才能作为验收依据。
-
-## 迁移顺序
-
-每一步单独提交，提交后仓库必须能配置、构建、通过测试。
-
-1. **清理旧代码**：先删已确认没有构建或运行依赖的代码；其余部分按依赖顺序迁移。
-   旧 ABI 的预处理入口仍被引擎使用，必须先实现并接通替代入口，再与调用方、测试和
-   构建配置一起删除旧实现。每次删除都保留仍有价值的测试，并让该次提交通过构建和测试。
-   调整目录时同步更新工程守卫，不能提前移除仍适用的检查。
-2. **目录搬迁**：只改路径与 include，不改逻辑；同时把 `check_include_deps.py` 的
-   扫描根扩到 `engine/`，按两级模块（`engine/<层>/<模块>`）校验依赖方向。
-3. **格式 v3**：写入器、读取器、迁移工具、校验和与恢复；删除 v1/v2 与旧 spec。
-4. **ABI v1**：受锁保护的快照、异步命令与任务表、管线 ABI、JSON 通道；逐步重写
-   Dart 绑定（Dart 只依赖 `gs3d_engine_*`，无第二消费者需要共存）。
-5. **前端**：视口 → 数据集 → 渲染设置 → 测量 → 导出 → 最近项目；将旧查看器中
-   需要保留的行为迁移到 `engine/session/`。
-6. **CI**：Windows / Linux / Android 三矩阵 + lavapipe 渲染冒烟 + `gs3d_bench`
-   基线比较（移植 `tools/gs3d_bench_bundle.cpp`）。
-
 ## 验收记录
 
 对照本文档的成功标准，逐项证据（2026-11-13，Linux 本机 + GitHub Actions）：
@@ -543,9 +466,9 @@ Hyprland 平铺会在 subsurface 尺寸不一致时把界面合成为残缺画�
 | Android 后台与阶段恢复 | `PipelineJobService` 持有 JNI 任务、`BundleJob` 阶段检查点与 `--resume`；JVM 直连冒烟（UTF-8 路径建包、poll、NUL 拒绝）与 Kotlin 直接编译通过 | 代码级通过，设备级未验证 |
 | 单进程 ABI / 快照 / 异步任务 | `geoscatter3d_ffi.h` §21–23 + `TaskBoard`、`EngineHost` 单 IO 线程；`TaskBoardTests`、`EngineHostTests`（真实 GPU）、Dart `engine_state_layout_test` | 通过 |
 | 视口/相机/拾取/数据集/渲染设置/测量/导出/最近项目/偏好 | 对应 widget 与服务测试：`main_shell_test`、`measurement_panel_test`、`export_test`、`render_settings_test`、`pipeline_history_test`、`engine_test` | 通过（离屏 + 窗口冒烟） |
-| 自动化测试 | CTest 40/40；Flutter 60 通过 6 跳过，带 `GS3D_ENGINE_E2E=1` 时 66 通过 0 跳过；`check_include_deps.py`、`check_engineering_guardrails.py` 均 OK | 通过 |
+| 自动化测试 | CTest 41/41；Flutter 54 通过 6 跳过，带 `GS3D_ENGINE_E2E=1` 与 `GS3D_PIPELINE_LIBRARY` 时 60 通过 0 跳过；`check_include_deps.py`、`check_engineering_guardrails.py` 均 OK | 通过 |
 | 三端 CI | run 43455696344（引擎收尾）与 run 43477435097（前端重设计）：Linux、Android、Windows 三条均通过，含 Flutter Windows 打包与三端 Flutter 测试 | 通过 |
-| 渲染冒烟 | Linux 窗口运行 + 截屏见点云；Vulkan 缺失给出可读报错并退出 1 | 通过（Linux） |
+| 渲染冒烟 | 离屏回读与真实 GPU 测试全过；Linux 窗口能起且点云可见（窗口合成受本机 Flutter GTK 分数缩放缺陷影响，见「渲染冒烟记录」）；Vulkan 缺失给出可读报错并退出 1 | 通过（离屏）；窗口级受限 |
 | 可复现性能测量 | `scripts/measure_performance.py`（open/pack，含 `--no-lod`）与 `gs3d_bench`；数字见性能预算 | 通过，两条超预算已记录 |
 
 ## 未决

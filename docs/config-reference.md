@@ -1,12 +1,18 @@
 # viewer.toml 配置参考
 
+> 适用范围：这份配置由旧查看器留下的 `src/app`、`src/ui` 库、基准工具与 C++ 测试
+> 读取（`src/app/AppConfig.cpp`）；旧查看器的可执行目标已从构建里移除。
+> **Flutter 应用不读 `viewer.toml`**：界面里的显示设置存在平台应用状态目录的
+> `render-settings.json`，最近项目与显卡偏好在同一目录，工程包由
+> `gs3d_engine_open_dataset` 直接打开。见 [architecture.md](architecture.md) 的「前端」。
+
 > 核对基准: 2026-08-16, main@8162b1a (TIA-111 之后；主题/布局现状已按
 > 代码核验)。
 > 解析实现: `src/app/AppConfig.cpp` (input/csv_convert) 与
-> `src/app/AppConfigViewerToml.cpp` (其余小节)。
+> `src/app/config/AppConfigViewerToml.cpp` (其余小节)。
 > 默认模板: `config/viewer.toml`; 可提交样例: `config/sample-viewer.toml`。
 
-所有相对路径按 `ResourcePath` 搜索根依次解析 (`src/app/ResourcePath.cpp`):
+所有相对路径按 `ResourcePath` 搜索根依次解析 (`src/app/config/ResourcePath.cpp`):
 配置文件所在目录的父目录 (发布根)、可执行文件目录、配置文件所在目录,
 最后才是当前工作目录 (仅作兼容回退, 避免开发树混入其他 checkout 的资源)。
 
@@ -46,7 +52,7 @@
 | `title` | string | GeoScatter3D 三维散点查看器 | 窗口标题 |
 | `resizable` | bool | true | 窗口可缩放 |
 | `ui_scale_multiplier` | float | 1.15 | PPI 推导 ui_scale 之上的用户舒适系数, 最终 `clamp(ppi_scale × multiplier, 1.0, 2.5)` |
-| `theme` | string | `carbon-blue` | UI 主题，共 **5 套**（`include/ui/Theme.hpp`、`src/ui/Theme.cpp`）：`carbon-blue` (碳蓝·浅色) / `carbon-blue-dark` (碳蓝 2.0·深色) / `deep-graphite` (石墨·深色) / `instrument-amber` (仪器琥珀·深色) / `high-contrast` (高对比·浅色)。**代码默认是深色 `kCarbonBlueDark`** (`src/ui/Theme.cpp:294`)，本文件默认值将其覆盖为浅色 `carbon-blue`。运行期可在 视图→主题 菜单切换（5 套全列），写入用户偏好 `[ui] theme` 后优先于本文件；不回写本文件 |
+| `theme` | string | `carbon-blue` | UI 主题，共 **5 套**（`include/ui/color/Theme.hpp`、`src/ui/color/Theme.cpp`）：`carbon-blue` (碳蓝·浅色) / `carbon-blue-dark` (碳蓝 2.0·深色) / `deep-graphite` (石墨·深色) / `instrument-amber` (仪器琥珀·深色) / `high-contrast` (高对比·浅色)。**代码默认是深色 `kCarbonBlueDark`** (`src/ui/color/Theme.cpp:81`)，本文件默认值将其覆盖为浅色 `carbon-blue`。运行期可在 视图→主题 菜单切换（5 套全列），写入用户偏好 `[ui] theme` 后优先于本文件；不回写本文件 |
 | `layout` | string | `workbench` | 旧 ImGui 工作台的布局键，目前只被解析、无任何渲染影响（Flutter 界面自己决定布局）。新代码不要读这个键 |
 
 ## [vulkan]
@@ -59,7 +65,7 @@
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `preferred_gpu` | string | `auto` | 图形设备: `auto` (自动, 优先独显/显存大者) 或 `uuid:<32位十六进制>`。欢迎页的个人选择写入用户偏好 (见下), 不修改本文件 |
+| `preferred_gpu` | string | `auto` | 图形设备: `auto` (自动, 优先独显/显存大者) 或 `uuid:<32位十六进制>`。界面里选择的显卡写入用户偏好 (见下), 不修改本文件 |
 
 ## [render]
 
@@ -141,11 +147,11 @@
 运行期修改不回写 `viewer.toml`, 而是写入用户偏好文件:
 Linux `$XDG_CONFIG_HOME/geoscatter3d/preferences.toml` (默认
 `~/.config/geoscatter3d/`), Windows `%APPDATA%\geoscatter3d\preferences.toml`
-(实现: `src/app/UserPreferences.cpp`)。当前键:
+(实现: `src/app/config/UserPreferences.cpp`)。当前键:
 
 | 小节 | 键 | 说明 |
 |---|---|---|
-| `[graphics]` | `preferred_gpu` | 欢迎页选择的 GPU UUID |
+| `[graphics]` | `preferred_gpu` | 界面里选定的 GPU UUID |
 | `[ui]` | `theme` | 运行期选定的主题 id（如 `carbon-blue` / `deep-graphite`）；启动时优先于 `viewer.toml [window] theme` |
 | `[ui]` | `layout` | 运行期选定的布局字符串；启动时优先于 `viewer.toml [window] layout`（HEAD 上仅 workbench 有视觉效果） |
 | `[render_settings]` | `point_size` | 点大小 |

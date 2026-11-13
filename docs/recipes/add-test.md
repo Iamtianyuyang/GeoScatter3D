@@ -6,43 +6,51 @@
 
 1. **位置**：`tests/<模块><对象>Tests.cpp`，一个文件一个可执行目标。
 2. **注册**（`tests/CMakeLists.txt`）：
+   ```cmake
+   add_executable(GeoScatter3D<模块><对象>Tests
+       <模块><对象>Tests.cpp
+       ${PROJECT_SOURCE_DIR}/src/ffi/TaskBoard.cpp   # 需要时列出被测源文件
+   )
+   target_include_directories(GeoScatter3D<模块><对象>Tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+   target_link_libraries(GeoScatter3D<模块><对象>Tests PRIVATE Catch2::Catch2WithMain gs3d_data)
+   add_test(NAME GeoScatter3D.<模块>.<对象> COMMAND GeoScatter3D<模块><对象>Tests)
    ```
-   gs3d_add_test(NAME GeoScatter3D.<模块>.<对象>
-                 SOURCES <模块><对象>Tests.cpp
-                 LIBS gs3d_<层>)
-   ```
-   命名对齐已有风格（`GeoScatter3D.Gs3dV2`、`GeoScatter3D.ThreadPool`）。
+   测试名对齐已有风格（`GeoScatter3D.TaskBoard`、`GeoScatter3D.BundleBuild`）。
+   链接 DLL 的目标要加 `POST_BUILD` 拷贝（Windows 没有 rpath，缺 DLL 时进程在
+   `main()` 之前就卡住，CTest 只会报超时）。
 3. **写什么**：至少三条——正常路径、边界（空/零/最后一项/最大值）、错误输入
    （断言得到预期错误码或异常，而不是"没崩"）。
-4. **用标签**：`[gs3d]`、`[tile]`、`[abi]`，方便 `ctest -R` 与本地过滤。
-5. **禁止**：依赖真实 GPU 的用例放进 `RenderSmoke`；其余用例不许需要显卡。
-6. **并发**：改快照发布或任务状态这类跨线程代码时，加一条压测——两个线程反复
-   读写完整数次，断言 `generation` 单调且同一代内字段自洽；不允许出现半新半旧。
+4. **标签**：用 Catch2 的 `[gs3d]`、`[tile]`、`[abi]` 分节，方便 `-R` 过滤。
+5. **GPU**：需要真实 Vulkan 的用例放 `tests/EngineHostTests.cpp`；设备创建失败时用
+   `SUCCEED("no Vulkan device; …")` 明确跳过（见该文件第 367、447 行），
+   不要靠断言失败来表达"没显卡"。其余用例不许需要显卡。
+6. **并发**：改快照或任务状态这类跨线程代码时，加一条压测——多个线程反复读写，
+   断言 `generation` 单调、同一代内字段自洽、终态只被读取一次。
 
 ## Dart
 
-1. **位置**：`app/test/<分区>/<对象>_test.dart`；组件测试放 `app/test/panels/`。
-2. **不碰真引擎**：用假中枢注入快照；`app/lib/ffi/` 的绑定测试用固定字节缓冲。
-3. **布局断言**：任何结构体镜像都要有 `sizeOf` 与字段偏移断言——这类错误不崩，
-   只会显示错数，唯一能拦住它的就是测试。
+1. **位置**：`ui_flutter/test/<对象>_test.dart`；需要真实动态库的用例用环境变量门控，
+   默认跳过（见 `engine_test.dart` 的 `GS3D_ENGINE_E2E`、`pipeline_service_test.dart`
+   的 `GS3D_PIPELINE_LIBRARY`）。
+2. **不碰真引擎**：界面测试用 `ui_flutter/test/support/fake_engine.dart` 的
+   FakeEngine，记录调用并伪造数据集信息。
+3. **布局断言**：结构体镜像都要有 `sizeOf` 与字段偏移断言
+   （`ui_flutter/test/engine_state_layout_test.dart`）。这类错误不崩，只会显示错数，
+   唯一能拦住它的就是测试。
+4. **别在 widget 测试里做文件 IO**：`testWidgets` 的 FakeAsync 会让真实 `await`
+   永远挂住；把落盘逻辑放在 service 单测里，`pumpAndSettle` 遇到 service 定时器
+   不收敛，用 `pump(Duration(...))`。
 
 ## 端到端
 
-- 无 GPU 冒烟：样例 CSV → 工程包 → 生产 reader 回读（对齐
-  `GeoScatter3D.FreshClonePreprocess` / `FreshCloneBundle`）。
-- 有 GPU 冒烟：`RenderSmoke` 用 lavapipe 渲一帧，比像素与帧时间。
-
-## 反面例子
-
-```cpp
-REQUIRE_NOTHROW(reader.open(path));   // 错了也绿
-```
-应该断言：`CHECK(reader.open(truncated) == ErrorCode::TruncatedHeader)` 且
-`CHECK(reader.last_error().find("truncated") != std::string::npos)`。
+- 原生包链路：`scripts/package-linux.sh` 或 CI 的 Android 作业构建后由 Dart 测试
+  实际建包（`GS3D_PIPELINE_LIBRARY` 指到 `libgs3d_pipeline_ffi.so`）。
+- 三端 CI 在 `.github/workflows/windows-build.yml`，作业名 `windows` / `linux` /
+  `android`；`ctest` 带 `--timeout 300`，避免无 GPU runner 卡满作业时限。
 
 ## 检查
 
-- [ ] 失败用例断言的是具体错误，不是"没崩"
-- [ ] 不依赖 GPU（除非在 `RenderSmoke`）
-- [ ] 新增结构体镜像有 `sizeOf` 断言
-- [ ] `ctest` 与 `flutter test` 都跑过
+- [ ] 失败用例断言了具体错误码或异常类型
+- [ ] GPU / 设备相关用例有门控，默认能跳过
+- [ ] 新增结构体有布局断言
+- [ ] `cd build && ctest -j8` 全绿，`cd ui_flutter && flutter test --no-pub` 全绿

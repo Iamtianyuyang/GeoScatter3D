@@ -4,19 +4,25 @@
 
 ## 步骤
 
-1. **写规范**（`docs/spec/gs3d-format.md`）：块名、块头字段、字节序（小端）、
-   元素大小、对齐、版本。块头固定含 `magic`、`version`、`count`、`bytes`、`crc32c`。
+1. **写规范**（`docs/architecture.md` 的「工程包格式 v3」与 `docs/spec/gs3d-format.md`）：
+   块名、块头字段、字节序（小端）、元素大小、对齐、版本。点块的头是 8 字节 magic 加
+   六个 u32（version、header 字节数、点数、载荷字节数、载荷 CRC32C、保留 0），见
+   `engine/data/format/PointChunk.hpp` 顶部注释。
 2. **定必需性**：在 manifest 的 `required_features` 里登记。缺了这一块就打不开的
    写进必需；读不出来也能用的（比如额外的分析层）留可选，未知可选块必须忽略。
-3. **块头常量**（`engine/data/<area>/`）：与规范同名同字段，`static_assert` 尺寸。
+3. **块头常量**（`engine/data/format/` 或 `engine/data/<area>/`）：与规范同名同字段，
+   `static_assert` 尺寸，读写共用同一个头结构。
 4. **写**（`engine/pipeline/writers/`）：只追加，不改已写块；每块写完 `fsync`
    文件与目录，再更新 `manifest.json`（临时文件 + `rename` + `fsync` 目录）。
-5. **读**（`engine/data/<area>/`）：先校验块头、`bytes`、`crc32c`，与文件大小一致
-   再 `mmap`；不许先 `reserve(count)` 后校验。
-6. **校**（`engine/data/format/Verifier`）：被 `verify` 命令与 ctest 共用。
+5. **读**（`engine/data/format/`）：先校验块头、`bytes`、`crc32c`，与文件大小一致
+   再 `mmap`；不许先 `reserve(count)` 后校验。点块的载荷校验由 `decode_point_chunk`
+   做，已经算过的头校验和用 `point_chunk_header_checksum` 复用，不要重复扫一遍载荷。
+6. **校**：v3 包的整包校验在 `engine/pipeline/verify/Gs3dVerifier`，由 ctest 的
+   `GeoScatter3D.FreshClonePreprocess` 等用例使用；旧单文件格式的校验在
+   `engine/data/format/` 的读取器里。
 7. **恢复**：块写完后在 manifest 里标记该阶段完成；续跑要求 `job.id`、源文件指纹、
    `options_hash` 三者一致，否则拒绝续跑。
-8. **测试**：
+8. **测试**（`tests/PointStageTests.cpp`、`tests/BundleBuildTests.cpp` 是现成例子）：
    - 写→读回环，逐字段比对；
    - 截断文件（少一个块、`bytes` 大于文件）与篡改校验和都必须被拒绝且不崩；
    - 未知可选块被忽略；未知必需块（`required_features` 未识别）被拒绝；

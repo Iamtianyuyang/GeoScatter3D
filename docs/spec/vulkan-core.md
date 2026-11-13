@@ -93,9 +93,14 @@ Instance 创建前必须通过 `negotiate_vulkan_instance_api_version()` 查询 
 
 - 一个 `gs3d_engine*` 内部持有**唯一渲染线程**（`gs3d::ffi::EngineHost`）：
   所有 `Vk*` 调用都发生在该线程上，内核对象在渲染线程创建、在渲染线程销毁。
-- 控制面命令（load/resize/camera/settings/export/pick/snapshot）通过
-  `EngineHost::invoke` 入队并在渲染线程执行，调用线程按原同步语义等待结果，
-  但自身不接触 Vulkan；命令串行执行，不存在并行提交。
+- 普通命令（resize/camera/settings/request frame/unload）通过
+  `EngineHost::submit` 入队后立即返回，由渲染线程执行，调用线程只做参数校验，
+  自身不接触 Vulkan；命令串行执行，不存在并行提交。执行失败写进快照的 error。
+- 打开工程包不占用渲染线程读盘：`gs3d_engine_open_dataset` 交给单个 IO 线程
+  `load_dataset_from_disk`（纯读盘），结果投回渲染线程 `install_dataset`。
+- 读取型查询（导出、拾取、PNG/JSON 快照）仍走 `EngineHost::invoke`，在渲染线程
+  执行并同步返回；所以它们有明确上限：导出超过 200 万点直接拒绝，
+  50M 数据集拾取一次要数秒。
 - 帧请求是异步且**可合并**的：渲染中重复 `request_frame` 不会排队堆积。
 - 同一 `VkDevice` 的命令池、command buffer、fence、semaphore 和资源所有权必须
   有唯一 C++ owner。跨 owner 传递只能是短生命周期的只读引用。
@@ -150,11 +155,16 @@ C++ 层可以使用异常表达构造失败；跨过 C ABI 时必须捕获异常
 1. ✅ 完成 `gs3d_camera_core`、`gs3d_render`、`gs3d_engine_core` 三层拆分并保持
    `gs3d_ffi` ABI 兼容。
 2. ✅ 以 Windows 1.3 和 Android 1.1 的离屏 RGBA 路径为验收基线；
-   渲染线程 + 非阻塞帧通道 + 帧资源复用已在 Windows 与 Android arm64 真机
-   （三星 Tab S7 / Adreno 650）上验证。
+   渲染线程 + 非阻塞帧通道 + 帧资源复用由 CI（Windows / Linux）与
+   `GS3D_ENGINE_E2E=1 flutter test` 覆盖；Android 目前只有构建与 JVM 级冒烟，
+   没有设备级验证。
 3. ✅ 大规模数据的双层渲染：粗尺度读 `lod.gs3dlod` 按点预算选层，细尺度由
    `tiles.gs3dtiles(.index)` 按视锥 + 屏幕空间误差选取并流式上传全精度点，
-   合成时用 `kSpatialClip` 让 LOD 只在瓦片未覆盖区域出现。已在 Tab S7 真机
-   验证「贴合视图走 LOD、拉近后切瓦片全精度」。
-4. ⏭ 再接入窗口 Surface/swapchain 适配；不得为兼容旧 Viewer 把 GLFW 引入离屏目标。
+   合成时用 `kSpatialClip` 让 LOD 只在瓦片未覆盖区域出现。本轮用
+   `EngineHostTests`（真实 GPU）与 `TileStreaming` 覆盖；早先的 Tab S7 真机验证
+   早于 v3 工程包与 sidecar 改动，不代表当前管线的设备表现。
+4. ✅ Surface/swapchain 适配按需接入：Android 由 Kotlin 侧把 `Surface` 经 JNI 交给
+   `gs3d_engine_set_surface`（失败自动退回回读），桌面 Flutter 仍走 RGBA 回读，
+   Windows 的隐藏窗口呈现由 `PresentSurfaceTests` 覆盖；不得为兼容旧 Viewer 把
+   GLFW 引入离屏目标。
 5. 每增加一个前端能力，同时增加 ABI、引擎单测和 Flutter 投影测试。

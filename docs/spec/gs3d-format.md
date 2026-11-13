@@ -1,17 +1,19 @@
 # GS3D / GS3D-LOD / GS3D-Tile 二进制格式规范
 
-> 状态: 现行 | 核对基准: 2026-08-14, main@1f0eb84 + TIA-93 数据格式修复
-> (LOD v1 废弃 / tile stride 强校验 / LOD·tile 显式小端)
+> 状态: 旧版单文件格式。应用的预处理（`gs3d_pack`、管线 ABI、Android 前台服务）
+> 写的是 **v3 工程包**，布局见 [../architecture.md](../architecture.md) 的
+> 「工程包格式 v3」；本文描述的是旧 CLI `gs3d_preprocess` 的单文件输出，以及
+> v3 包仍沿用的 LOD sidecar（包旁的 `lod.gs3dlod` 就是这里的 `.gs3dlod`）。
 >
-> 本规范描述磁盘上的字节布局。实现位于
-> `include/data/Gs3dFormat.hpp`、`Gs3dLodFormat.hpp`、`Gs3dTileFormat.hpp`、
-> `Gs3dByteOrder.hpp` 与 `src/data/`、`src/preprocess/` 对应读写器。
-> 权威语义以代码为准，本文档与代码不一致时以代码为准并应更新本文档。
+> 实现位于 `engine/data/format/`（`Gs3dFormat`、`ByteOrder`、`PointChunk`）、
+> `engine/data/lod/Gs3dLodFormat`、`engine/data/tile/Gs3dTileFormat` 与
+> `engine/pipeline/writers/` 的写入器。权威语义以代码为准，本文档与代码不一致时
+> 以代码为准并应更新本文档。
 
 ## 通用约定
 
 - 所有多字节整数与 IEEE-754 浮点字段一律**显式小端（little-endian）编码**，
-  与宿主字节序无关。参考实现见 `src/data/Gs3dFormat.cpp:21-59` 的
+  与宿主字节序无关。参考实现见 `engine/data/format/ByteOrder.hpp` 与 `PointChunk.cpp` 的
   `write_u32_le` / `write_u64_le` / `write_float_le` / `write_double_le`。
   小端主机上该编码与 C++ struct 原生直写字节级一致，因此既有产物读取兼容。
 - 文件头中的 `header_size` 字段保留前向兼容：读取端允许 v2 头部
@@ -52,7 +54,7 @@
 
 ### 1.3 版本与校验
 
-- **v2 (现行)**: 写入端固定写 v2; `header_size` 必须 >= 108;
+- **v2 (旧版单文件格式的最新版本)**: 写入端固定写 v2; `header_size` 必须 >= 108;
   `point_data_offset` 必须 >= `header_size`; bbox/value 必须 min <= max;
   点数上限防溢出 (`point_count <= UINT64_MAX / 16`)。
 - **v1 (遗留)**: 仅保留**读取**兼容路径, 按原生布局直读 (非显式小端),
@@ -111,7 +113,7 @@ magic 为 8 字节 `'G' 'S' '3' 'D' 'L' 'O' 'D' '\0'` (`GS3D_LOD_MAGIC`)。
 
 ### 2.4 版本与校验
 
-- **v2 (现行)**: 唯一受支持版本。v1 已**正式废弃**: `validate_file_header`
+- **v2**: 唯一受支持的 LOD sidecar 版本，v3 包的 `lod.gs3dlod` 用的就是它。v1 已**正式废弃**: `validate_file_header`
   对 v1 显式报错 "v1 is deprecated and no longer supported; regenerate
   the file with v2", 不再提供任何 v1 兼容读取路径。
 - 层头校验: `level_index` 必须等于序号; `point_count`/`point_data_bytes`
@@ -244,29 +246,30 @@ magic 为 8 字节 `'G' 'S' '3' 'D' 'T' 'I' 'L' '\0'` (`GS3D_TILE_DATA_MAGIC`)�
 
 ## 4. Bundle 目录布局
 
-预处理器 (`GeoScatter3DPreprocess`) 产出目录式 bundle
-(`<name>.gs3d.bundle/`, 见 `src/app/PreprocessedBundle.cpp`):
+存在两种目录式工程包，别混用：
+
+**旧版 `.gs3d.bundle`**（`manifest.toml` + 全量 `source.gs3d` + sidecar + tiles），
+由已移除的 `GeoScatter3DPreprocess` 产出，现在只剩读取路径
+（`src/app/session/PreprocessedBundle.cpp`，旧查看器 `input.mode = "bundle"` 用）。
+
+**当前 v3 工程包**（`gs3d_pack`、管线 ABI、Android 前台服务产出，布局与字段见
+[../architecture.md](../architecture.md) 的「工程包格式 v3」）：
 
 ```
-<name>.gs3d.bundle/
-  manifest.toml         # 元数据清单 (TOML)
-  source.gs3d           # 全量点 (GS3D v2)
-  lod.gs3dlod           # LOD sidecar (GS3D-LOD v2)
-  tiles.gs3dtiles       # tile 数据 (GS3D-Tile v2, stride 20)
-  tiles.gs3dtiles.index # tile 索引
+<bundle>/
+  manifest.json         # JSON 清单：format_version 3、CRS、原点、属性、块表、阶段状态
+  points/NNNNNN.chunk   # 点块（本文 v3 点块布局）
+  lod.gs3dlod           # LOD sidecar（本文 GS3D-LOD v2）
 ```
 
-`manifest.toml` 含 `[bundle]` (version=1, source_mode/source_path/
-source_size_bytes)、`[files]` (各文件名)、`[dataset]` (point_count、
-bbox_min/max、value_min/max、origin) 与 `[csv_convert]` (字段映射)。
-查看器 `input.mode = "bundle"` 时按 manifest 解析并打开上述文件。
+v3 包不复制源文件、不含 tiles，LOD 是包旁的单个 sidecar 而不是 manifest 里的块。
 
 ## 5. 工具
 
 - `gs3d_groundtruth`: 独立真值查询 CLI (`info` / `nearest` / `region`,
   `--list`, `--gs3d`), 用生产 reader 读取 GS3D 文件, 用于验证查看器
   查询结果。用法见 `tools/gs3d_groundtruth.md`。
-- 测试: `GeoScatter3DDataTests` (Catch2) 覆盖三种格式的 round-trip、
+- 测试: `GeoScatter3DDataTests` 可执行文件（CTest 名 `GeoScatter3D.DataFormat`）覆盖三种格式的 round-trip、
   字节序字节级一致性 (memcmp vs 原生布局)、v1 LOD 拒绝、混合 stride
   拒绝、payload 空洞拒绝等; `GeoScatter3D.FreshCloneBundle` 用生产
   reader 回读预处理产物 (25 golden 点)。

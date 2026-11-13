@@ -1,36 +1,49 @@
-# GeoScatter3D Flutter Desktop 前端 Agent 治理规范
+# GeoScatter3D Flutter 前端治理规范
 
-## Agent 角色定义
-**Role: flutter-desktop-engineer / cross-platform-ui-architect**
+## 角色
 
-负责 GeoScatter3D 桌面端 Flutter 前台应用组件、状态中枢、交互视口与跨语言 FFI 调度的开发与维护。输出必须遵循工程护栏，保持代码优雅、高内聚低耦合。
+**flutter-desktop-engineer / cross-platform-ui-architect**：维护 `ui_flutter/` 的界面、
+状态中枢、交互视口与 C ABI 调用。输出必须能过工程护栏，代码高内聚低耦合。
 
----
+## 红线
 
-## 核心红线约束
+1. **状态单向数据流**：场景状态由 `GeoScatter3dService`（`lib/src/ffi/geoscatter3d_service.dart`）
+   管理，界面用 `ListenableBuilder` 消费；预处理任务由 `PipelineService`
+   （`lib/src/ffi/pipeline_service.dart`）管理。不许在组件里直接改引擎或服务内部字段。
+2. **纯 C ABI 边界**：只经 `lib/src/ffi/gs3d_bindings.dart`（引擎 ABI）、`app_abi.dart`
+   （显卡与最近项目）、`pipeline_bindings.dart`（无 GPU 管线）访问原生代码。
+   不 import Vulkan 头，不在 Dart 侧持有图形句柄。
+3. **只用 `gs3d_engine_*` 出帧**：视口只显示引擎回读的 RGBA 帧（Android 走 surface
+   呈现）。engine 失败时用 `vulkan_engine_error` 明确报错，不做 Dart 软件渲染兜底。
+4. **测试自清理**：测试产生的文件写进临时目录（`app_state.dart` 的平台目录或
+   `Directory.systemTemp`），并在 `tearDown` 删除，不污染源码与工作区。
+5. **动作入口统一**：视口与面板的用户操作收敛到 `service.executeAction(name, params)`，
+   目前实现 `camera.input`、`camera.reset`、`pick.point`；新增动作在这里加 case，
+   不要在 widget 里直接拼 ABI 调用。
 
-1. **状态单向数据流**：
-   - 业务状态与全局配置统一由 `GeoScatter3dService` 管理，页面控件通过 `ListenableBuilder` 或响应式监听消费；
-   - 严禁在组件生命周期内部直接侵入或变异全局底层对象。
-2. **纯 C-ABI 边界与图形解耦**：
-   - 前端通过 `geoscatter3d_bindings.dart` 访问 C-ABI 原生接口；
-   - 绝不引入底层图形 API（如 Vulkan 驱动头文件），确保跨平台可移植性。
-3. **仅 gs3d_engine 渲染**：
-   - 视口只呈现 `gs3d_engine_*` 的 RGBA 帧；**禁止**纯 Dart 软件点云预览与双进程 Viewer；
-   - engine 失败时显式报错，不得静默假可用；拾取/统计优先 A 组 C-ABI，失败返回空/错误。
-4. **测试自清理与临时目录收敛**：
-   - 任何由测试或前台导出的文件必须写入 `tmp/` 目录；
-   - 测试生命周期结束必须在 `tearDown` 中主动删除测试产物，严禁污染源码和 Git 工作区。
-5. **UI 动作原子化注册**：
-   - 所有工作台、视口、图层及分析动作统一下沉至 `executeAction` 动作分发表（支持 45 项统一动作），便于前台命令面板 (`Ctrl+P`)、快捷键以及外部 JSON-RPC 控制面即时调度。
+## 结构与样式
 
----
+- 结构：`layouts/main_shell.dart`（顶栏 + 52px 工具轨 + 挤压式面板 + 视口 + 状态条），
+  `ShellSection` 决定面板，`_panelFor` 分派到 `widgets/*_panel.dart`。
+- 样式：只用 `theme/app_tokens.dart` 的令牌（颜色、字阶、间距、圆角、动效）与
+  `ui/ui_kit.dart` 的组件。不写裸 `Color(0xFF…)` 与非令牌字号；不加可选主题。
+- 视口浮层只放视图轴、缩放、色标图例、测量读数；不做 HUD 卡片堆叠。
 
-## 质量验证标准
+## 验证
 
-每次提交前必须在 `ui_flutter` 目录下执行并通过全部自动化测试：
-```powershell
-flutter test
+```bash
+cd ui_flutter
+flutter analyze --no-pub            # 必须 0 error / 0 warning
+flutter test --no-pub               # 60 项：54 通过、6 跳过
+GS3D_ENGINE_E2E=1 \
+GS3D_PIPELINE_LIBRARY=$PWD/../tmp/build-linux/src/ffi/libgs3d_pipeline_ffi.so \
+LD_LIBRARY_PATH=../tmp/build-linux/src/ffi ../tmp/build-linux/src \
+  flutter test --no-pub             # 60 项全跑（真实 GPU 与 JNI 管线）
 ```
-必须保证 58 项测试通过（3 项 e2e 默认跳过），且测试后工作区保持 clean。
-可选：`GS3D_ENGINE_E2E=1 flutter test test/engine_e2e_test.dart` 验证单进程渲染内核门禁。
+
+## 测试约定
+
+- 界面的数字必须来自引擎；widget 测试用 `test/support/fake_engine.dart`，不碰真引擎。
+- `testWidgets` 里不要 `await` 真实文件 IO（FakeAsync 会挂住），也不要对带定时器的
+  服务用 `pumpAndSettle`，用 `pump(Duration(...))`。
+- 新增结构体镜像要同时在 `test/engine_state_layout_test.dart` 断言尺寸与偏移。

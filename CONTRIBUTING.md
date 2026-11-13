@@ -4,8 +4,7 @@ GeoScatter3D 是一个单进程应用：C++ 引擎负责数据、渲染和状态
 这份文件是入口，规则细节见 [docs/RULES.md](docs/RULES.md)，目录与契约见
 [docs/architecture.md](docs/architecture.md)，加功能照 [docs/recipes/](docs/recipes/) 做。
 
-> 仓库处于重写期，迁移顺序见 `docs/architecture.md` 末尾的映射表。提交必须让仓库
-> 在当次提交后仍能配置、构建、通过测试。
+> 提交必须让仓库在当次提交后仍能配置、构建、通过测试。
 
 ## 环境依赖
 
@@ -14,13 +13,14 @@ GeoScatter3D 是一个单进程应用：C++ 引擎负责数据、渲染和状态
 | CMake | 3.28+ | 配置期硬性要求 `Python3`（跑两个守卫脚本） |
 | C++ 编译器 | C++20 | Linux: g++ 16 或 clang 23；Windows: MSVC 19.4+ |
 | Vulkan | loader + headers 1.3+ | 三端唯一图形后端，不做 GLES 降级 |
-| glslangValidator | 任意近期版本 | 编译 `engine/render/*/shaders/*.glsl` 到 SPIR-V |
+| glslangValidator | 任意近期版本 | 编译 `assets/shaders/*.{vert,frag}` 到 SPIR-V |
 | Flutter | 3.50+ / Dart 3.12+ | 前端与 Android/Windows/Linux 宿主 |
 | JDK | 17+ | Android 构建；`flutter doctor --android-licenses` 需已接受 |
 | catch2 | submodule | `git submodule update --init third_party/catch2` |
 
 Linux 上 `Vulkan` 只需 `vulkan-icd-loader` + `vulkan-headers`，着色器编译用
-`glslangValidator`。CI 里额外安装 `mesa-vulkan-drivers` 以使用软件光栅（lavapipe）。
+`glslangValidator`（把 `assets/shaders/point.{vert,frag}` 编成 `.spv`，由 `gs3d_shaders`
+目标完成）。需要真实 GPU 的测试在没有 Vulkan 设备的机器上会用 `SUCCEED(...)` 跳过。
 
 ## 构建
 
@@ -46,10 +46,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
 cmake --build build --config Release --parallel
 ```
 
-Android（产物为含 `libgs3d_ffi.so` 的 APK/AAB）：
+Android（APK 里带 `libgs3d_ffi.so` 与 `libgs3d_pipeline_ffi.so`）：
 
 ```bash
-cd app && flutter build apk --release
+./scripts/build_android_arm64.ps1                 # 编译 arm64-v8a 原生库
+cd ui_flutter && flutter build apk --release      # 签名配置见 android/key.properties
 ```
 
 ## 测试与门禁
@@ -57,19 +58,22 @@ cd app && flutter build apk --release
 提交前必须全绿，四项缺一不可：
 
 ```bash
-ctest --test-dir build --output-on-failure          # C++，含守卫脚本自测
-cd app && flutter analyze && flutter test           # Dart
+ctest --test-dir build --output-on-failure          # C++，41 项
+cd ui_flutter && flutter analyze --no-pub && flutter test --no-pub   # Dart，60 项
 python3 scripts/check_include_deps.py               # 依赖方向
 python3 scripts/check_engineering_guardrails.py     # 诊断输出与预算
 ```
 
-- 渲染改动额外在 Linux 上跑一次软件光栅冒烟：`ctest -R RenderSmoke`（迁移第 6 步落地），它用
-  lavapipe 渲染一帧并比对像素与帧时间；没有 GPU 的 CI 也靠它发现渲染崩溃。
-- 性能：`build/gs3d_bench`（第 6 步从 `tools/gs3d_bench_bundle.cpp` 移植）输出开包毫秒、
-  预处理各阶段秒数、一帧耗时、峰值 RSS。CI 与基线比较，超过 1.5× 判为回归。
+- 渲染改动额外在 Linux 上跑 `ctest -R GeoScatter3D.EngineHost`：它用真实 GPU 回读像素、
+  执行命令与取消；没有 Vulkan 设备时用例显式跳过。
+- 性能：`gs3d_bench`（`engine/cli/gs3d_bench.cpp`）输出开包毫秒、首帧与稳态帧毫秒、
+  峰值 RSS；`scripts/measure_performance.py pack|open` 给出同一组数字。注意 `build/`
+  是 Debug，性能必须用 Release 目录（如 `tmp/build-linux`）。CI 目前只构建与测试，
+  还没有自动性能门禁。
 - `GeoScatter3D.FreshClonePreprocess` / `FreshCloneBundle` 是无 GPU 的端到端
   冒烟：样例 CSV → 工程包 → 用生产 reader 回读。
-- CI 三矩阵：Windows、Linux、Android。Android 只做构建，不做设备测试。
+- CI 三个作业：`windows`、`linux`、`android`（见 `.github/workflows/windows-build.yml`）。
+  Android 只做构建与包内容检查，不做设备测试。
 
 ## 提交与 PR
 

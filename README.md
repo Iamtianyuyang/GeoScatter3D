@@ -1,164 +1,120 @@
 # GeoScatter3D
 
-GeoScatter3D 是一个面向大规模三维散点/点云数据的现代 Flutter 桌面端与 Android 平板可视化、分析系统。
-底层由 C++20 / Vulkan 核心引擎提供海量数据流式处理与离屏图形计算，桌面 Profile 为 Vulkan 1.3，Android Profile 最低为 Vulkan 1.1；前端经纯 C-ABI 动态链接库（Windows `gs3d_ffi.dll`、Android `libgs3d_ffi.so`）调用**单进程 `gs3d_engine_*` 渲染内核**；JSON-RPC 仅作为标准控制面协议，不再启动独立 Viewer。
-Android 发布包声明最低具备 Vulkan 1.1；引擎不可用时不使用 Dart 软渲染替代。
+大规模三维散点／点云的离线可视化工具。C++20 + Vulkan 引擎负责数据、渲染与状态，
+Flutter 只负责界面，两者在同一进程里通过 C ABI 相连：Windows、Linux、Android
+三端都能自己完成预处理，工程包在三端之间可以直接拷贝。
 
----
+- 引擎不依赖窗口系统，也不依赖 Dart；图形句柄不出 C++ 边界。
+- 视图只显示 `gs3d_engine_*` 产出的 RGBA 帧；引擎不可用时明确报错，不用 Dart 软件渲染冒充。
+- 重任务（预处理、开包）有任务号、阶段与取消点，界面线程不等它们；导出与读帧是同步调用，
+  因此有明确点数上限。
 
-## 一、核心能力与技术亮点
+## 能力
 
-### 1. 大规模海量点云流式处理核心
-- **高并发离线切片**：CSV / DAT 文件高并发解析并切片生成自研 GS3D v2 显式小端二进制格式；
-- **三层 GPU 数据路径**：八叉树空间分级组织，支持全量点云、LOD 视锥金字塔与局部瓦片（Tile）三种渲染数据路径；
-- **动态显存水位控制**：基于屏幕空间的瓦片挑选算法、异步后台线程读取、带字节预算的 LRU 缓存与逐帧限流 GPU 上传；
-- **高性能离屏着色**：按平台 Profile 运行的 Vulkan 点渲染管线，支持动态点大小调节与高程 `z` / 属性 `value` 双通道色标平滑映射。
+**预处理**：CSV / DAT → 工程包（GS3D v3）。阶段依次是 `fingerprint`（SHA-256 与选项摘要）、
+`stats`（点数、范围、值域、属性）、`points`（分块解析、并行写点块）、`lod`（写 `lod.gs3dlod`
+sidecar）。每个阶段完成时原子提交检查点，中断后用 `gs3d_pack --resume <bundle-dir>` 从
+检查点续跑；源文件或选项变了、块校验失败、检查点不完整都会被拒绝，不会覆盖已有工程包。
 
-### 2. 现代化 Flutter 桌面工作台
-- **欢迎页与工程工作流**：支持新建工程、本地海量点云数据浏览、离线切片构建进度追踪与最近工程管理；
-- **三套专业工作台布局**：标准三栏工作台 (`StandardWorkbenchLayout`)、悬浮停靠工作台 (`FloatingDockLayout`)、紧凑分析导轨 (`AnalysisRailLayout`) 一键无缝切换；
-- **三维主视口深度交互**：
-  - **悬停 HUD 浮窗**：鼠标移动毫秒级捕获最近物理测点坐标 $(X, Y, Z)$ 与标量值；
-  - **快捷复制与旋转对焦**：`C` 键一键复制坐标至剪贴板，双击任意测点平滑对焦旋转中心 (Orbit Pivot)；
-  - **3D 空间几何测距**：`M` 键开启测距标尺，视口连续点选生成带端点标签的三维连线，实时计算空间直距与 $\Delta Z$ 高差；
-  - **选区框选与属性统计**：`Shift + 拖拽` 矩形框选，即时计算选区样本数、均值、极差、方差并生成 5-Bin 直方图；
-  - **局部聚焦与无损截图**：`Ctrl + 拖拽` 视口框选缩放聚焦，支持 2.0x 高清 PNG 视口无损显存回读与保存；
-  - **交互式 3D 罗盘 (Gizmo)**：支持点击 X / Y / Z 正负极球体平滑过渡至预设视角（顶视、底视、前视、侧视）。
-- **二维鸟瞰小地图**：实时投影工区平面边界与当前主相机的世界视锥多边形，支持在小地图上点击快速定位平移；
-- **全局命令面板与视察器套件**：
-  - `Ctrl+P` 全局交互式命令面板，模糊检索全量动作并即时调度；
-  - `F1` 快捷键全屏速查速览；
-  - 实时性能与显存诊断仪表盘 (`PerformancePanel`)，支持一键清空瓦片缓存；
-  - 八叉树瓦片与 LOD 流式加载视察器 (`TileInspectorDialog`)；
-  - 点云全量数据集导出 (`ExportPointCloudDialog`)，支持标准 ASCII PLY 与 CSV 双格式。
+**渲染**：离屏 Vulkan 点管线，多层 LOD（`lod.gs3dlod`，按绘制预算选层）与有限预算的
+GPU 上传。配色、点大小、点形状、背景、高程与着色来源、值域裁剪、绘制上限都能在界面里改。
+瓦片流式只对旧版带 `tiles.gs3dtiles` 的数据集生效，v3 工程包没有瓦片。
+帧经回读到 Flutter 纹理显示，1080p 回读加绘制约 4.5 ms。
 
-### 3. 严谨的架构解耦与工程护栏
-- **图形句柄不穿透**：UI 纯只读投影或产出 `UiActions` 纯数据命令，严禁直接持有 Vulkan 句柄；
-- **显式引擎能力**：工作台渲染、拾取、相机与截图走 `gs3d_engine_*` C-ABI；引擎不可用时明确报告错误，不伪造 Dart 点云预览；
-- **统一控制面**：前台动作统一由 `GeoScatter3dService` 调度，并可通过 JSON-RPC 2.0 `ui_action` 调用；
-- **文件隔离纪律**：测试与运行时临时产物严格收敛于 `tmp/` 目录，并配置自动化测试自清理，杜绝 Git 工作树污染。
+**异步 ABI**（`include/ffi/geoscatter3d_ffi.h`）：4 槽任务表与整代状态快照
+（`gs3d_engine_poll_state`），开包在单独的 IO 线程读盘、渲染线程装载；普通命令
+（相机、点大小、配色、背景、缩放、出帧、卸载）经 `gs3d_engine_submit` 入队即返回。
+无 GPU 的 `gs3d_pipeline_ffi` 提供预处理任务 ABI，供 Flutter 与 Android 前台服务使用。
 
----
+**界面**：单一控制台。顶部是数据集与「打开工程包」，左侧 52px 工具轨加一列面板
+（工程、预处理、渲染、相机、测量、成果、诊断），面板展开时挤压视口而不是盖住点云，
+底部一条状态条（点数、`源 → 绘制`、LOD、FPS、帧时间、渲染时间、GPU）。
+视口里只有视图轴、缩放、色标图例和测量读数。
 
-## 二、构建与运行指南
+**Android**：前台服务持有预处理任务，退出界面后继续跑，重新进入界面时重连；
+用 `dataSync` 服务类型与部分唤醒锁，系统回收进程后按最近项目手动续跑。
 
-### VS Code F5（整个程序）
+## 构建
 
-用 VS Code 打开仓库根目录，安装推荐的 Dart/Flutter 扩展，选择
-`GeoScatter3D (Flutter + Native)` 后按 F5。预启动任务自动构建 Debug 版
-FFI、Vulkan 引擎和预处理器；Flutter 构建时部署 DLL、shader、字体及配置。
-打开数据集后由同一进程的 `gs3d_engine_*` 内核提供离屏帧回读。停止调试后可再次按 F5。
-首次运行需要 Flutter SDK、Visual Studio C++ 桌面工具、CMake 3.28+、Vulkan SDK
-以及 GLFW/nlohmann-json 依赖；新构建优先使用 `VCPKG_ROOT`，已有构建沿用 CMake 缓存。
+需要 CMake 3.28+、C++20 编译器、Vulkan SDK、Flutter 3.50+；Windows 另需 Visual Studio
+桌面 C++ 工具与 vcpkg（glslang、glfw、nlohmann-json）。
 
-### 1. 快速开始（一键编译与完整发布）
-
-推荐使用根目录自带的一键自动化编译部署脚本。该脚本会自动构建 C++ 原生 FFI 动态库 (`gs3d_ffi.dll`)，打包 Shader 与中文字体资源，并完成 Flutter Windows 桌面端最终打包：
+```bash
+# Linux：引擎 + Flutter 发布包（产物在 ui_flutter/build/linux/x64/release/bundle/）
+scripts/build_flutter_linux.sh
+# 只构建引擎与命令行工具
+cmake -B tmp/build-linux -DCMAKE_BUILD_TYPE=Release && cmake --build tmp/build-linux -j
+```
 
 ```powershell
+# Windows：构建 DLL、复制 shader 与中文字体、出 Flutter 包
 ./scripts/build_flutter_windows.ps1 -Config Release
+# Android：两个 ABI 的原生库 + APK
+./scripts/build_android_arm64.ps1
+./scripts/build_android_release.ps1   # 需要 ui_flutter/android/key.properties
 ```
 
-构建成功后即可直接启动发布产物：
-```powershell
-./ui_flutter/build/windows/x64/runner/Release/ui_flutter.exe
+Android 包内的 `libgs3d_ffi.so`、`libgs3d_pipeline_ffi.so` 随仓库跟踪；改过引擎代码后要
+用上面的脚本重新交叉编译并覆盖 `ui_flutter/android/app/src/main/jniLibs/<abi>/`。
+
+## 测试与测量
+
+```bash
+cd build && ctest -j8                     # 41 项 C++ 测试
+cd ui_flutter && flutter test --no-pub    # 60 项：54 通过、6 跳过
+# 跳过的是 3 个真实 GPU 用例（需 GS3D_ENGINE_E2E=1）与 3 个管线库用例（需 GS3D_PIPELINE_LIBRARY）
+GS3D_ENGINE_E2E=1 GS3D_PIPELINE_LIBRARY=$PWD/../tmp/build-linux/src/ffi/libgs3d_pipeline_ffi.so \
+  LD_LIBRARY_PATH=../tmp/build-linux/src/ffi ../tmp/build-linux/src \
+  flutter test --no-pub                   # 60 项全跑，含真实 GPU 与 JNI 管线
+python3 scripts/check_include_deps.py
+python3 scripts/check_engineering_guardrails.py
 ```
 
-Android 正式发布使用带签名校验的一键脚本：
-```powershell
-./scripts/build_android_release.ps1
-```
-运行前请按 `ui_flutter/android/key.properties.example` 配置生产 keystore；
-脚本会拒绝缺失、占位值或 debug 证书，并校验 AAB 内包含两种 Android ABI、
-SPIR-V 着色器与内置示例数据。
+性能用 `scripts/measure_performance.py`（`pack` / `open`）与 `gs3d_bench`，两者都读 `VmHWM`，
+`open`/`gs3d_bench` 必须在带 `assets/shaders` 的目录（`ui_flutter/`）下运行。本机实测
+（Ryzen 9 7945HX，GCC Release，`data/field_and_ele_source_rec_50m.dat`，50,000,000 点、3.35 GB）：
 
-Android 实机 Maestro 回归使用：
+| 项目 | 结果 | 预算 |
+| --- | --- | --- |
+| 预处理（含 lod sidecar） | 115 s，峰值 3.09 GiB | ≤ 60 s、≤ 2 GB，未达标 |
+| 预处理 `--no-lod` | 55 s，峰值 637 MiB | 达标 |
+| 打开工程包 | 2.40 s，1.20 GiB | ≤ 1.5 s，未达标 |
+| 1080p 帧 / 首帧 | 4.5 ms / 22 ms | ≤ 16 ms，达标 |
 
-```powershell
-./scripts/run_maestro_android.ps1 -Device emulator-5554 -Suite all
-```
+`build/` 是 Debug 目录，其中的耗时不能当性能依据。
 
-脚本会把 `tmp/maestro/geoscatter3d-import-test.csv` 作为 SAF 流程前置文件推送到
-模拟器 Downloads，并将本次运行产物统一写入 `tmp/maestro/`。
-
-### 2. 独立开发与测试
-
-#### 运行 Flutter 前台自动化测试
-涵盖 FFI 动态加载、欢迎页向导、三套布局路由、视口深度交互、命令弹窗及导出对话框：
-```powershell
-cd ui_flutter
-flutter test
-```
-
-#### 单进程渲染内核 e2e（可选）
-```powershell
-cd ui_flutter
-$env:GS3D_ENGINE_E2E='1'
-flutter test test/engine_e2e_test.dart
-```
-
-#### 本地 Flutter 开发模式启动
-```powershell
-cd ui_flutter
-flutter run -d windows
-```
-
-#### 运行 C++ 底层单元测试与工程质量门禁（当前 43 项通过）
-```powershell
-# 1. 静态头文件依赖拓扑与单向依赖合规检查
-python scripts/check_include_deps.py
-
-# 2. 架构解耦与工程护栏指标核查
-python scripts/check_engineering_guardrails.py
-
-# 3. 运行全量底层单元测试（数据格式、相机系统、Vulkan管线、控制面等）
-ctest --test-dir tmp/build-win -C Release --output-on-failure
-```
-
----
-
-## 三、代码物理拓扑与架构分层
+## 目录
 
 ```text
-GeoScatter3D/
-├── ui_flutter/                               # [前端表现层 UI] Flutter Desktop 与 Android 移动端应用
-│   ├── lib/main.dart                         # 桌面应用根入口与全局模态浮层挂载
-│   ├── lib/src/ffi/                          # C-ABI FFI 绑定与核心调度服务 (geoscatter3d_service.dart)
-│   ├── lib/src/platform/                     # Android SAF 等平台桥接
-│   ├── lib/src/panels/                       # 3D视口画布、小地图、测量统计、菜单栏与诊断对话框
-│   ├── lib/src/widgets/                      # 命令面板、快捷键帮助、三种工作台布局组件
-│   └── test/                                 # Flutter 单元与组件集成测试套件
-│
-├── include/ & src/
-│   ├── [跨语言桥接层 FFI]
-│   │   └── ffi/                              # C-ABI 动态链接库导出接口 (geoscatter3d_ffi.h / .cpp)
-│   │
-│   ├── [基础层 Foundation]
-│   │   ├── core/                             # 通用领域数据契约 (PointData, TileData, DatasetDescriptor)
-│   │   ├── platform/                         # 跨平台环境支撑 (GLFW 窗口封装、CpuInfo 硬件探测)
-│   │   └── util/                             # 基础通用工具箱 (ThreadPool 线程池、分级日志、计时器)
-│   │
-│   ├── [引擎层 Engine]
-│   │   ├── render/                           # Vulkan Profile 显存资源、Shader 管线、GPU 缓存与离屏绘制
-│   │   ├── camera/                           # 3D 视口相机变换矩阵、局部事件映射与同步组 (CameraHub)
-│   │   ├── data/                             # GS3D v2、LOD 与瓦片数据集格式、索引、全量导出器 (Gs3dExporter)
-│   │   └── preprocess/                       # 离线高并发 CSV 切片、统计直方图与八叉树瓦片生成
-│   │
-│   └── [应用编排与控制面 App Shell & Control]
-│       ├── app/                              # 顶层主循环生命周期与运行时领域子系统 (systems/, session/, config/)
-│       └── control/                          # TCP + JSON-RPC 2.0 自动化控制面与组件树反射 (ControlPlane)
-│
-├── config/                                   # TOML 配置文件模板 (viewer.toml, sample-viewer.toml)
-├── assets/                                   # 字体与 GLSL 离屏着色器资源
-├── scripts/                                  # 自动化构建、打包、依赖检查与工程护栏脚本
-└── docs/                                     # 架构说明、操作手册与配置参考文档
+engine/         引擎核心（不依赖窗口与 Dart）
+  foundation/     diagnostics、io、concurrency、math、util
+  data/           csv 解析、format（manifest、点块、v3 读取）、lod、tile
+  pipeline/       stages（阶段机、检查点、恢复）、compute、writers、verify
+include/ffi/     C ABI 头（geoscatter3d_ffi.h）与宿主侧头（EngineHost、TaskBoard…）
+src/             ffi（C ABI 实现、内核、宿主）、render、camera、app、control、ui、platform
+ui_flutter/      Flutter 应用：lib/src/{layouts,widgets,ui,ffi,theme}、android/、linux/
+tests/           C++ 测试（Catch2）
+scripts/         构建、打包、依赖与护栏检查、性能测量
+docs/            架构、规则、格式规范、配置参考、配方
+data/            样例数据与 shader
 ```
 
----
+依赖方向与边界见 [docs/RULES.md](docs/RULES.md)；线程、ABI、工程包格式与实测记录见
+[docs/architecture.md](docs/architecture.md)。
 
-## 四、文档与参考索引
+## 已知限制
 
-- **Flutter 前端详细文档**：详见 [ui_flutter/README.md](ui_flutter/README.md)（含详细组件结构、按键映射与交互设计规范）；
-- **系统架构与历史演进**：详见 [docs/architecture.md](docs/architecture.md)；
-- **配置项详细参考**：详见 [docs/config-reference.md](docs/config-reference.md)；
-- **强制规则与配方**：详见 [docs/RULES.md](docs/RULES.md) 与 [docs/recipes/](docs/recipes/)。
+- Android 只有构建与 JVM 级冒烟（JNI 建包、污染输入拒绝），没有在设备上跑过完整流程。
+- 打开工程包 2.40 s、带 lod 的预处理 115 s 都超预算，原因与改法记在 `docs/architecture.md` 的「未决」。
+- 导出仍是同步调用，超过 200 万点直接拒绝；拾取在渲染线程线性扫描，50M 数据集点一次要数秒。
+- `gs3d_ffi_*` 旧段里的区域统计、导航图缩略图、属性列表与 `performance_metrics` 读的是旧数据集缓存，
+  本应用走 `gs3d_engine_*` 开包，这些调用返回空数据或 stub，界面没有接入。
+
+## 文档
+
+- [docs/architecture.md](docs/architecture.md)：目标、线程模型、ABI 契约、工程包格式、平台差异、前端结构、验收记录
+- [docs/RULES.md](docs/RULES.md)：六条硬规则与校验命令
+- [docs/config-reference.md](docs/config-reference.md)：`viewer.toml` 与 `preferences.toml`（旧查看器与 CLI 使用）
+- [docs/spec/](docs/spec/)：旧版单文件格式与 Vulkan 核心边界
+- [docs/recipes/](docs/recipes/)：加数据块、加命令、加面板、加平台适配、加测试的步骤
+- [ui_flutter/README.md](ui_flutter/README.md)：前端结构、交互与测试
