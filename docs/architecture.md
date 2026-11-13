@@ -298,10 +298,16 @@ manifest 必须包含：
 | `src/ffi/HeadlessRenderKernel.cpp`（2,036 行） | 按职责拆进 `engine/session/` 与 `engine/render/` |
 | `src/ffi/LodBuilder.cpp` | `engine/pipeline/compute/` |
 | `src/platform/{CpuInfo,MemoryMappedFile}` | `engine/foundation/{diagnostics,io}/` |
+| `include/{util,core}` 下的头文件 | `engine/foundation/`、`engine/data/core/` |
 | `src/ffi/AndroidSurfaceJni.cpp` | `platform/android/` |
 | `ui_flutter/` | `app/` |
 | `src/control/*` | 旧 ABI 及其调用方迁移后删除；目前仍由 `gs3d_ffi` 使用 |
 | `src/ui/{layouts,color,WorkspaceManager}`, `include/app/ViewerWorkbenchLayout.hpp` | 在现有引擎与控制层依赖迁移后删除（第一版不做工作区布局） |
+
+已完成：`engine/foundation/{Gs3dVersion,diagnostics,concurrency,io}`、
+`engine/data/{core,format,csv,lod,tile}`、`engine/pipeline/{compute,writers,verify}`。
+`src/{data,preprocess}` 只剩目标定义，源码都在 `engine/` 下；CMake 目标名未变。
+剩余 `src/{render,camera,app,control,ui,ffi,platform}` 随 ABI 与平台步骤迁移。
 
 旧 GLFW 查看器中不参与构建的实现已移除；其需要保留的行为在第 5 步迁移。
 旧查看器测试开关当前无法链接，相关测试须迁移后才能作为验收依据。
