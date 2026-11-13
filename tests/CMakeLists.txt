@@ -116,6 +116,7 @@ add_test(NAME GeoScatter3D.PipelineAbi COMMAND GeoScatter3DPipelineAbiTests)
 add_executable(GeoScatter3DEngineAppAbiTests EngineAppAbiTests.cpp)
 target_include_directories(GeoScatter3DEngineAppAbiTests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
+    ${NLOHMANN_JSON_INCLUDE_DIR}
 )
 target_link_libraries(GeoScatter3DEngineAppAbiTests PRIVATE gs3d_ffi Catch2::Catch2WithMain)
 add_custom_command(TARGET GeoScatter3DEngineAppAbiTests POST_BUILD
