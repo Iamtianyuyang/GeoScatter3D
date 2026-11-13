@@ -319,6 +319,15 @@ manifest 必须包含：
   54.5 s、峰值 RSS 626 MiB（指纹 15.6 s、统计 5.0 s、点块 33.8 s），文件系统缓存已热，
   达到本机 60 s 预算。冷缓存、Windows 和 Android 设备性能尚未测量；Windows 和 Android
   目前使用内置指纹实现。
+  注意 `build/` 是 Debug 构建：同一命令在其中跑 50M 要 177 s、开包要 394 s，只能用于功能
+  验证，性能数字必须取 `tmp/build-linux`（Release）。
+- 打开 50M 工程包（Release，Linux，RTX 5060）：`gs3d_engine_load_dataset` 同步读盘 +
+  建链共 46.9 s，峰值 RSS 1.37 GB，LOD 4 层、总 GPU 点 3.37 M、默认视角绘制 633 k 点。
+  其中运行时 LOD 建链 29.2 s、GPU 上传 0.17 s、块读盘与解码约 17 s。距离“打开到可交互
+  ≤ 1.5 s”的预算还很远：界面在异步开包期间保持可交互，但数据要等这么久才出现。
+  `estimate_spacing` 曾按输入顺序取连续块，50M 数据按列导出时估出 537,970 的“点距”，
+  整份数据被压成一层、屏幕上只剩 67 k 点；现以 bbox 最大面的面密度 sqrt(area/n) 作为
+  与顺序无关的上界，同一数据改为 4 层。Android 设备没有实测数据。
 
 
 ## 性能预算

@@ -370,6 +370,33 @@ TEST_CASE("spacing estimation stays local on large row-major grids") {
     CHECK(spacing > 0.5f);
 }
 
+TEST_CASE("spacing estimation survives column-major ordering") {
+    // 回归：真实 50M 数据按列导出时，连续点在 x 上隔着整行，
+    // 连续块估计曾给出 537,970（真实点距个位数），建链把数据压成一层。
+    std::vector<gs3d::data::Gs3dPoint> points;
+    points.reserve(64000);
+    for (std::uint32_t column = 0; column < 400; ++column) {
+        for (std::uint32_t row = 0; row < 160; ++row) {
+            gs3d::data::Gs3dPoint point{};
+            point.x = static_cast<float>(column) * 0.25f;
+            point.y = static_cast<float>(row) * 0.25f;
+            point.z = 0.0f;
+            points.push_back(point);
+        }
+    }
+    // 顺序已按列：相邻两点相距 40.0，真实点距 0.25。
+    const float spacing = gs3d::ffi::LodBuilder::estimate_spacing(points, 1024);
+    CHECK(spacing < 2.0f);
+    CHECK(spacing > 0.1f);
+
+    gs3d::ffi::LodBuildConfig config;
+    config.min_points = 4000;
+    const auto chain = gs3d::ffi::LodBuilder::build(points, config);
+    // 不能只剩“全量 + 一层”：160x400 的面上要能分出多级。
+    CHECK(chain.levels.size() >= 2);
+    CHECK(chain.levels.front().source_point_count == points.size());
+}
+
 TEST_CASE("lod chain keeps levels near the point budget on a realistic grid") {
     // 10 万点、间距 1.0：链不应从“全量”直接跳到几乎没有点。
     const auto points = make_grid(320);  // 102400 点

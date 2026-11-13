@@ -259,7 +259,37 @@ float LodBuilder::estimate_spacing(
     if (counted == 0) {
         return 0.0f;
     }
-    return static_cast<float>(total / static_cast<double>(counted));
+    /*
+     * 连续块的估计只在「输入顺序≈空间相邻」时成立。真实 50M 数据按列主序导出时，
+     * 相邻两点在 x 上隔着整行（实测估出 537,970，而真实点距只有个位数），
+     * 建链会把整份数据压成一层、屏幕上只剩几万点。这里用 bbox 最大面的密度
+     * 给一个与输入顺序无关的上界：面密度 sqrt(area/n) 对铺满一个面的点云
+     * 接近真实点距，且不会小于真实值的一半（体积分布时也只是偏小，
+     * 结果是链多一层，不会把层压塌）。
+     */
+    double min_x = sample.front()->x, max_x = min_x;
+    double min_y = sample.front()->y, max_y = min_y;
+    double min_z = sample.front()->z, max_z = min_z;
+    for (const auto& point : points) {
+        min_x = std::min(min_x, static_cast<double>(point.x));
+        max_x = std::max(max_x, static_cast<double>(point.x));
+        min_y = std::min(min_y, static_cast<double>(point.y));
+        max_y = std::max(max_y, static_cast<double>(point.y));
+        min_z = std::min(min_z, static_cast<double>(point.z));
+        max_z = std::max(max_z, static_cast<double>(point.z));
+    }
+    const double dx = max_x - min_x;
+    const double dy = max_y - min_y;
+    const double dz = max_z - min_z;
+    const double face = std::max({dx * dy, dx * dz, dy * dz});
+    const double density = face > 0.0
+        ? std::sqrt(face / static_cast<double>(points.size()))
+        : 0.0;
+    const double estimate = total / static_cast<double>(counted);
+    if (density > 0.0) {
+        return static_cast<float>(std::min(estimate, density * 2.0));
+    }
+    return static_cast<float>(estimate);
 }
 
 std::vector<gs3d::data::Gs3dPoint> LodBuilder::decimate_voxel(
