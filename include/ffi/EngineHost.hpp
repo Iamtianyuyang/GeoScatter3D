@@ -2,7 +2,9 @@
 
 #include "ffi/FrameChannel.hpp"
 #include "ffi/HeadlessRenderKernel.hpp"
+#include "ffi/TaskBoard.hpp"
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -31,6 +33,7 @@ class EngineHost {
 public:
     using KernelCommand = std::function<int(HeadlessRenderKernel&)>;
 
+
     EngineHost() = default;
     ~EngineHost();
 
@@ -51,6 +54,17 @@ public:
 
     /// 请求渲染一帧；渲染中重复请求返回 0 且不重复排队。
     int request_frame();
+
+    /// 异步读取工程包：工作线程读盘，渲染线程装载。路径按值拷贝。
+    /// 0 成功（任务号写入 out_task），-1 参数错误，-2 未运行，-3 无法排队，
+    /// -4 任务表已满（上限 4 项，含尚未被读取的终态）。
+    int submit_open_dataset(const std::string& path, std::uint64_t* out_task);
+
+    /// 请求取消；文件读取本身不可中断，任务在装载前被丢弃。0 成功、-1 未知或已结束。
+    int cancel(std::uint64_t task);
+
+    /// 拷贝最近发布的一代状态；终态任务在读取后释放。0 成功、-1 参数错误、-2 未发布。
+    int poll_state(TaskBoard::Snapshot* out);
 
     /// 读取最近完成帧（不触发 Vulkan）。0 成功、-1 容量不足、-2 尚无帧。
     int read_frame_rgba(
@@ -79,6 +93,11 @@ public:
 private:
     void worker_loop();
     bool post(std::function<void()> job);
+
+    void io_loop();
+    bool post_io(std::function<void()> job);
+    void stop_io();
+    void run_open_dataset(std::uint64_t id, std::string path);
     void render_pending_frame();
     void set_error(const std::string& message);
 
@@ -95,6 +114,13 @@ private:
     // 仅渲染线程访问
     std::unique_ptr<HeadlessRenderKernel> kernel_;
     std::vector<std::uint8_t> scratch_;
+
+    TaskBoard board_;
+    std::thread io_thread_;
+    std::mutex io_mutex_;
+    std::condition_variable io_cv_;
+    std::deque<std::function<void()>> io_jobs_;
+    bool io_stopping_ = false;
 
     FrameChannel channel_;
     std::atomic<bool> frame_in_flight_{false};

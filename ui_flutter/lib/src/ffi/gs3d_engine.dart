@@ -140,6 +140,76 @@ class Gs3dEngine {
     return _bindings.drawnPointCount(_ptr);
   }
 
+  /// 提交异步开包：读盘在引擎工作线程，主线程只做装载。返回任务号。
+  int openDatasetAsync(String path) {
+    _checkDisposed();
+    if (path.isEmpty) {
+      throw ArgumentError.value(path, 'path', '工程包路径不能为空');
+    }
+    final pPath = path.toNativeUtf8();
+    final pTask = calloc<ffi.Uint64>();
+    try {
+      final rc = _bindings.openDataset(_ptr, pPath, pTask);
+      if (rc != 0) {
+        throw StateError('无法提交开包任务 (rc=$rc): $lastError');
+      }
+      return pTask.value;
+    } finally {
+      calloc.free(pTask);
+      calloc.free(pPath);
+    }
+  }
+
+  /// 请求取消；已终止的任务返回 -1。
+  int cancelTask(int task) {
+    if (_disposed) return -1;
+    return _bindings.cancel(_ptr, task);
+  }
+
+  /// 读取一代状态。终态任务只在本次读取中出现，漏读就会永久丢失。
+  Gs3dStateNative? pollState(ffi.Pointer<Gs3dStateNative> buffer) {
+    if (_disposed) return null;
+    buffer.ref.structSize = ffi.sizeOf<Gs3dStateNative>();
+    final rc = _bindings.pollState(_ptr, buffer);
+    if (rc == -2) return null;
+    if (rc != 0) {
+      throw StateError('读取引擎状态失败 (rc=$rc)');
+    }
+    return buffer.ref;
+  }
+
+  /// 异步打开工程包并等待终态。UI 线程只做轮询，不读盘。
+  Future<void> loadDatasetAsync(
+    String path, {
+    Duration interval = const Duration(milliseconds: 200),
+    void Function(int progress, String stage)? onProgress,
+  }) async {
+    final task = openDatasetAsync(path);
+    final state = calloc<Gs3dStateNative>();
+    try {
+      while (true) {
+        await Future<void>.delayed(interval);
+        if (_disposed) return;
+        final snapshot = pollState(state);
+        if (snapshot == null) continue;
+        for (var i = 0; i < snapshot.taskCount; ++i) {
+          if (snapshot.tasks[i].id != task) continue;
+          final taskState = snapshot.tasks[i].state;
+          onProgress?.call(snapshot.tasks[i].progress, snapshot.stageAt(i));
+          if (taskState == gs3dTaskDone) return;
+          if (taskState == gs3dTaskFailed) {
+            throw StateError('打开工程包失败: ${snapshot.errorText}');
+          }
+          if (taskState == gs3dTaskCancelled) {
+            throw StateError('打开工程包已取消');
+          }
+        }
+      }
+    } finally {
+      calloc.free(state);
+    }
+  }
+
   int loadDataset(String path) {
     _checkDisposed();
     final pUtf8 = path.toNativeUtf8();

@@ -1,5 +1,6 @@
 #include "ffi/EngineHost.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <future>
@@ -74,6 +75,7 @@ void EngineHost::stop() noexcept {
         }
         stopping_ = true;
     }
+    stop_io();
     cv_.notify_all();
     worker_.join();
 
@@ -148,6 +150,114 @@ int EngineHost::invoke(const KernelCommand& command) {
         return -2;
     }
     return future.get();
+}
+
+void EngineHost::io_loop() {
+    for (;;) {
+        std::function<void()> job;
+        {
+            std::unique_lock<std::mutex> lock(io_mutex_);
+            io_cv_.wait(lock, [this] { return io_stopping_ || !io_jobs_.empty(); });
+            if (io_jobs_.empty()) {
+                if (io_stopping_) {
+                    break;
+                }
+                continue;
+            }
+            job = std::move(io_jobs_.front());
+            io_jobs_.pop_front();
+        }
+        job();
+    }
+}
+
+bool EngineHost::post_io(std::function<void()> job) {
+    {
+        std::lock_guard<std::mutex> lock(io_mutex_);
+        if (io_stopping_) {
+            return false;
+        }
+        if (!io_thread_.joinable()) {
+            io_thread_ = std::thread([this] { io_loop(); });
+        }
+        io_jobs_.push_back(std::move(job));
+    }
+    io_cv_.notify_one();
+    return true;
+}
+
+void EngineHost::stop_io() {
+    {
+        std::lock_guard<std::mutex> lock(io_mutex_);
+        if (!io_thread_.joinable()) {
+            return;
+        }
+        io_stopping_ = true;
+        io_jobs_.clear();
+    }
+    io_cv_.notify_all();
+    io_thread_.join();
+}
+
+int EngineHost::submit_open_dataset(const std::string& path, std::uint64_t* out_task) {
+    if (!running()) {
+        return -2;
+    }
+    if (path.empty()) {
+        return -1;
+    }
+    const std::uint64_t id = board_.add("queue");
+    if (id == 0) {
+        return -4;  // unread terminal rows still hold the four slots
+    }
+
+    const bool queued = post_io([this, id, path] { run_open_dataset(id, path); });
+    if (!queued) {
+        board_.finish(id, TaskBoard::State::Failed, "cannot queue dataset open");
+        return -3;
+    }
+    if (out_task != nullptr) {
+        *out_task = id;
+    }
+    return 0;
+}
+
+// Runs on the IO worker: no Vulkan, no kernel state.
+void EngineHost::run_open_dataset(std::uint64_t id, std::string path) {
+    auto loaded = std::make_shared<HeadlessRenderKernel::DatasetLoad>();
+    std::string error;
+    const bool ok = HeadlessRenderKernel::load_dataset_from_disk(path, loaded.get(), &error);
+    post([this, id, loaded, ok, error]() {
+        if (!board_.begin(id, "install")) {
+            return;  // cancelled before install
+        }
+        if (!ok) {
+            board_.finish(id, TaskBoard::State::Failed, error);
+            return;
+        }
+        if (!kernel_) {
+            board_.finish(id, TaskBoard::State::Failed, "engine not created");
+            return;
+        }
+        const int rc = kernel_->install_dataset(std::move(*loaded));
+        if (rc != 0) {
+            board_.finish(id, TaskBoard::State::Failed, kernel_->last_error());
+            return;
+        }
+        board_.set_dataset(kernel_->has_dataset(), kernel_->point_count());
+        board_.finish(id, TaskBoard::State::Done, std::string{});
+    });
+}
+
+int EngineHost::cancel(std::uint64_t task_id) {
+    return board_.cancel(task_id) ? 0 : -1;
+}
+
+int EngineHost::poll_state(TaskBoard::Snapshot* out) {
+    if (out == nullptr) {
+        return -1;
+    }
+    return board_.poll(out) ? 0 : -2;
 }
 
 int EngineHost::request_frame() {

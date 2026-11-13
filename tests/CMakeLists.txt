@@ -35,6 +35,21 @@ add_test(
     COMMAND GeoScatter3DThreadPoolTests
 )
 
+add_executable(GeoScatter3DTaskBoardTests
+    TaskBoardTests.cpp
+    ${PROJECT_SOURCE_DIR}/src/ffi/TaskBoard.cpp
+)
+target_include_directories(GeoScatter3DTaskBoardTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(GeoScatter3DTaskBoardTests PRIVATE
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.TaskBoard
+    COMMAND GeoScatter3DTaskBoardTests
+)
+
 add_executable(GeoScatter3DManifestTests
     ManifestTests.cpp
 )

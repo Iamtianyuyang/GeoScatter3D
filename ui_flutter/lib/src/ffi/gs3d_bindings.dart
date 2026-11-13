@@ -14,6 +14,58 @@ final class Gs3dEngineConfigNative extends ffi.Struct {
   external int enableValidation;
 }
 
+// 任务状态（与 include/ffi/geoscatter3d_ffi.h 第 21 节一致）
+const int gs3dMaxTasks = 4;
+const int gs3dTaskStageMax = 32;
+const int gs3dTaskQueued = 1;
+const int gs3dTaskRunning = 2;
+const int gs3dTaskDone = 3;
+const int gs3dTaskFailed = 4;
+const int gs3dTaskCancelled = 5;
+
+final class Gs3dTaskStateNative extends ffi.Struct {
+  @ffi.Uint64()
+  external int id;
+  @ffi.Uint32()
+  external int state;
+  @ffi.Uint32()
+  external int progress;
+  @ffi.Array(gs3dTaskStageMax)
+  external ffi.Array<ffi.Char> stage;
+}
+
+final class Gs3dStateNative extends ffi.Struct {
+  @ffi.Uint32()
+  external int structSize;
+  @ffi.Uint64()
+  external int generation;
+  @ffi.Uint64()
+  external int pointCount;
+  @ffi.Uint32()
+  external int datasetLoaded;
+  @ffi.Uint32()
+  external int taskCount;
+  @ffi.Array(256)
+  external ffi.Array<ffi.Char> error;
+  @ffi.Array(gs3dMaxTasks)
+  external ffi.Array<Gs3dTaskStateNative> tasks;
+
+  /// 读取第 [index] 个任务的阶段名（定长、可截断）。
+  String stageAt(int index) => _readCString(tasks[index].stage, gs3dTaskStageMax);
+
+  String get errorText => _readCString(error, 256);
+}
+
+String _readCString(ffi.Array<ffi.Char> buffer, int capacity) {
+  final bytes = <int>[];
+  for (var i = 0; i < capacity; ++i) {
+    final code = buffer[i];
+    if (code == 0) break;
+    bytes.add(code);
+  }
+  return String.fromCharCodes(bytes);
+}
+
 // Opaque engine pointer
 final class Gs3dEngineOpaque extends ffi.Opaque {}
 
@@ -164,6 +216,30 @@ typedef DartLastError = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 typedef CPointCount = ffi.Uint64 Function(Gs3dEnginePtr e);
 typedef DartPointCount = int Function(Gs3dEnginePtr e);
 
+typedef CEngineAbiVersion = ffi.Uint32 Function();
+typedef DartEngineAbiVersion = int Function();
+
+typedef CPollState =
+    ffi.Int32 Function(Gs3dEnginePtr e, ffi.Pointer<Gs3dStateNative> out);
+typedef DartPollState =
+    int Function(Gs3dEnginePtr e, ffi.Pointer<Gs3dStateNative> out);
+
+typedef COpenDataset =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Utf8> path,
+      ffi.Pointer<ffi.Uint64> outTask,
+    );
+typedef DartOpenDataset =
+    int Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Utf8> path,
+      ffi.Pointer<ffi.Uint64> outTask,
+    );
+
+typedef CCancel = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Uint64 task);
+typedef DartCancel = int Function(Gs3dEnginePtr e, int task);
+
 /// 低层动态链接库函数表
 class Gs3dBindings {
   final ffi.DynamicLibrary lib;
@@ -196,6 +272,10 @@ class Gs3dBindings {
   late final DartGetDiagnosticsJson getDiagnosticsJson;
   late final DartLastError lastError;
   late final DartPointCount pointCount;
+  late final DartEngineAbiVersion abiVersion;
+  late final DartPollState pollState;
+  late final DartOpenDataset openDataset;
+  late final DartCancel cancel;
 
   Gs3dBindings(this.lib) {
     version = lib.lookupFunction<CVersion, DartVersion>('gs3d_engine_version');
@@ -275,6 +355,16 @@ class Gs3dBindings {
     pointCount = lib.lookupFunction<CPointCount, DartPointCount>(
       'gs3d_engine_point_count',
     );
+    abiVersion = lib.lookupFunction<CEngineAbiVersion, DartEngineAbiVersion>(
+      'gs3d_engine_abi_version',
+    );
+    pollState = lib.lookupFunction<CPollState, DartPollState>(
+      'gs3d_engine_poll_state',
+    );
+    openDataset = lib.lookupFunction<COpenDataset, DartOpenDataset>(
+      'gs3d_engine_open_dataset',
+    );
+    cancel = lib.lookupFunction<CCancel, DartCancel>('gs3d_engine_cancel');
   }
 
   static ffi.DynamicLibrary openLibrary() {

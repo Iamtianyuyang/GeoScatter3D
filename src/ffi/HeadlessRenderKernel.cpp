@@ -308,17 +308,18 @@ void HeadlessRenderKernel::destroy() noexcept {
     last_w_ = last_h_ = 0;
 }
 
-int HeadlessRenderKernel::load_dataset(const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!context_) {
-        set_error("engine not created");
-        return -2;
+bool HeadlessRenderKernel::load_dataset_from_disk(
+    const std::string& path, DatasetLoad* out, std::string* error
+) {
+    if (out == nullptr) {
+        if (error != nullptr) *error = "no dataset output";
+        return false;
     }
     try {
         auto fs_path = std::filesystem::u8path(path);
         if (!std::filesystem::exists(fs_path)) {
-            set_error("dataset not found: " + path);
-            return -2;
+            if (error != nullptr) *error = "dataset not found: " + path;
+            return false;
         }
         // v3 工程包（manifest.json + points/*.chunk）优先；旧 bundle 走 source.gs3d。
         std::filesystem::path bundle_directory;
@@ -336,42 +337,72 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
                 bundle_directory = fs_path;
                 fs_path = fs_path / "source.gs3d";
                 if (!std::filesystem::exists(fs_path)) {
-                    set_error("bundle has neither manifest.json (v3) nor source.gs3d");
-                    return -2;
+                    if (error != nullptr) {
+                        *error = "bundle has neither manifest.json (v3) nor source.gs3d";
+                    }
+                    return false;
                 }
             }
             loaded = gs3d::data::Gs3dDatasetLoader::load(fs_path);
         }
 
-        // sidecar 与数据集同目录（bundle 为 lod.gs3dlod / tiles.gs3dtiles*）。
-        const std::filesystem::path dataset_path = fs_path;
-        const std::filesystem::path bundle_dir = bundle_directory;
         if (!loaded.has_point_data() || loaded.empty()) {
-            set_error("dataset has no point data");
-            return -3;
+            if (error != nullptr) *error = "dataset has no point data";
+            return false;
         }
-        dataset_ = std::move(loaded);
-        point_count_ = dataset_.point_count();
-        has_dataset_ = true;
-
-        dataset_path_ = dataset_path;
-        bundle_dir_ = bundle_dir;
-        open_sidecars_locked(dataset_path, bundle_dir);
-
-        const int lod_rc = rebuild_lod_locked();
-        if (lod_rc != 0) {
-            has_dataset_ = false;
-            return lod_rc;
-        }
-
-        reset_camera_to_bounds_locked();
-        last_error_.clear();
-        return 0;
+        out->dataset = std::move(loaded);
+        // sidecar 与数据集同目录（bundle 为 lod.gs3dlod / tiles.gs3dtiles*）。
+        out->dataset_path = fs_path;
+        out->bundle_dir = bundle_directory;
+        return true;
     } catch (const std::exception& ex) {
-        set_error(ex.what());
+        if (error != nullptr) *error = ex.what();
+        return false;
+    }
+}
+
+int HeadlessRenderKernel::install_dataset(DatasetLoad loaded) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!context_) {
+        set_error("engine not created");
+        return -2;
+    }
+    if (!loaded.dataset.has_point_data() || loaded.dataset.empty()) {
+        set_error("dataset has no point data");
+        return -3;
+    }
+    dataset_ = std::move(loaded.dataset);
+    point_count_ = dataset_.point_count();
+    has_dataset_ = true;
+
+    dataset_path_ = loaded.dataset_path;
+    bundle_dir_ = loaded.bundle_dir;
+    open_sidecars_locked(dataset_path_, bundle_dir_);
+
+    const int lod_rc = rebuild_lod_locked();
+    if (lod_rc != 0) {
+        has_dataset_ = false;
+        return lod_rc;
+    }
+
+    reset_camera_to_bounds_locked();
+    last_error_.clear();
+    return 0;
+}
+
+int HeadlessRenderKernel::load_dataset(const std::string& path) {
+    if (!context_) {
+        set_error("engine not created");
+        return -2;
+    }
+    DatasetLoad loaded;
+    std::string error;
+    if (!load_dataset_from_disk(path, &loaded, &error)) {
+        set_error(error);
         has_dataset_ = false;
         return -3;
     }
+    return install_dataset(std::move(loaded));
 }
 
 void HeadlessRenderKernel::open_sidecars_locked(

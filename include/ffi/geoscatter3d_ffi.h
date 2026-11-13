@@ -376,6 +376,58 @@ GS3D_FFI_API const char* gs3d_engine_get_diagnostics_json(gs3d_engine* e);
 GS3D_FFI_API const char* gs3d_engine_last_error(gs3d_engine* e);
 GS3D_FFI_API uint64_t gs3d_engine_point_count(gs3d_engine* e);
 
+// ============================================================================
+// 21. 异步任务与状态快照 (docs/architecture.md「状态快照」「命令」)
+// ============================================================================
+
+#define GS3D_ENGINE_ABI_VERSION 1u
+
+#define GS3D_MAX_TASKS 4u
+#define GS3D_TASK_STAGE_MAX 32u
+
+enum {
+    GS3D_TASK_FREE = 0,
+    GS3D_TASK_QUEUED = 1,
+    GS3D_TASK_RUNNING = 2,
+    GS3D_TASK_DONE = 3,
+    GS3D_TASK_FAILED = 4,
+    GS3D_TASK_CANCELLED = 5
+};
+
+typedef struct gs3d_task_state {
+    uint64_t id;                  /* 0 = 空槽 */
+    uint32_t state;               /* GS3D_TASK_* */
+    uint32_t progress;            /* 0..1000 千分比 */
+    char stage[GS3D_TASK_STAGE_MAX]; /* NUL 结尾，UTF-8 */
+} gs3d_task_state;
+
+/* 主线程读取的完整一代快照：只由引擎写入，调用方不得回写。 */
+typedef struct gs3d_state {
+    uint32_t struct_size;         /* sizeof(gs3d_state)，用于版本协商 */
+    uint64_t generation;          /* 每次发布 +1 */
+    uint64_t point_count;         /* 已载入点数，未载入为 0 */
+    uint32_t dataset_loaded;
+    uint32_t task_count;          /* tasks 中非空槽位数 */
+    char error[256];              /* 最近一次任务失败文本，UTF-8 */
+    gs3d_task_state tasks[GS3D_MAX_TASKS];
+} gs3d_state;
+
+/* ABI 版本：与结构体布局绑定，不随构建变化。 */
+GS3D_FFI_API uint32_t gs3d_engine_abi_version(void);
+
+/* 拷贝最近发布的一代快照。out->struct_size 必须是 sizeof(gs3d_state)。
+ * 终态任务在本次读取后释放；返回 0 成功、-1 参数错误、-2 尚未发布。 */
+GS3D_FFI_API int32_t gs3d_engine_poll_state(gs3d_engine* e, gs3d_state* out);
+
+/* 在工作线程读取工程包，完成后由渲染线程装载。立即返回任务号；
+ * 路径按 UTF-8 深拷贝，不保留调用方指针。任务表满返回 -4。 */
+GS3D_FFI_API int32_t gs3d_engine_open_dataset(
+    gs3d_engine* e, const char* path_utf8, uint64_t* out_task);
+
+/* 取消排队或运行中的任务：渲染线程在装载前观察到取消即丢弃结果。
+ * 文件读取本身不可中断。0 成功、-1 未知或已结束的任务。 */
+GS3D_FFI_API int32_t gs3d_engine_cancel(gs3d_engine* e, uint64_t task);
+
 GS3D_FFI_API const char* gs3d_engine_version(void);
 GS3D_FFI_API int32_t gs3d_engine_preprocess_csv(
     const char* csv_path,

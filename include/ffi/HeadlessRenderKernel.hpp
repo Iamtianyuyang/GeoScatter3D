@@ -125,6 +125,20 @@ public:
     int create(const Config& config);
     void destroy() noexcept;
 
+    /// 工作线程可调用的磁盘读取结果；装载前不触碰任何 Vulkan 对象。
+    struct DatasetLoad {
+        gs3d::data::Gs3dDataset dataset;
+        std::filesystem::path dataset_path;
+        std::filesystem::path bundle_dir;
+    };
+
+    /// 只读文件系统，可在任意线程执行。失败时写入 error 并返回 false。
+    static bool load_dataset_from_disk(
+        const std::string& path, DatasetLoad* out, std::string* error);
+
+    /// 装载已读取的数据集；只能在渲染线程调用（上传 LOD、重置相机）。
+    int install_dataset(DatasetLoad loaded);
+
     int load_dataset(const std::string& path);
     int load_sample();
     /// 生成 grid×grid 的内置地形（基准/压力测试用；point_count 会取为完全平方数）。

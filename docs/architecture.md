@@ -108,6 +108,19 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 状态保留到被读取一次为止，防止 Dart 错过终态。任务表已满时必须明确返回错误；
 宿主须保留表面句柄，并在能提交 detach 后等待该任务完成。
 
+**当前实现**：`include/ffi/geoscatter3d_ffi.h` 第 21 节与 `ffi/TaskBoard`（
+`TaskBoard::Snapshot` 由 `EngineHost::poll_state` 复制）。`gs3d_engine_open_dataset`
+先登记任务再投递到单个 IO 线程；该线程只调 `HeadlessRenderKernel::load_dataset_from_disk`
+（纯读盘），完成后把结果投回渲染线程调 `install_dataset`。限制：
+
+- 只读一次终态：任何漏读都会独占一个槽位，直到进程退出；Dart 侧每 200 ms 轮询。
+- 取消只保证结果不被装载，文件读取本身不可中断；`gs3d_engine_destroy` 会等 IO 线程
+  读完当前文件后返回。
+- 只有一个 IO 线程，`gs3d_engine_submit`（普通命令）尚未实现，相机等仍走同步入口。
+- Flutter 界面尚未用 `loadDatasetAsync` 打开工程包：现有“打开”路径仍是同步
+  `gs3d_engine_load_dataset`；`ui_flutter/lib/src/ffi/gs3d_engine.dart` 的
+  `loadDatasetAsync`/`pollState`/`cancelTask` 已可调用，接线属于前端任务。
+
 ### 命令
 
 ```c

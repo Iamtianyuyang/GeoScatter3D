@@ -4,6 +4,7 @@
 
 add_library(gs3d_engine_core STATIC
     EngineHost.cpp
+    TaskBoard.cpp
     FrameChannel.cpp
     HeadlessRenderKernel.cpp
     LodBuilder.cpp

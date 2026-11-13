@@ -4,9 +4,12 @@
 #include "ffi/HeadlessRenderKernel.hpp"
 #include "foundation/Gs3dVersion.hpp"
 
+#include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <cstring>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -123,6 +126,67 @@ gs3d_engine* gs3d_engine_create_simple(uint32_t width, uint32_t height) {
 
 void gs3d_engine_destroy(gs3d_engine* e) {
     delete e;
+}
+
+// 布局与 Dart 镜像（ui_flutter/lib/src/ffi/gs3d_bindings.dart）绑定。
+static_assert(sizeof(gs3d_task_state) == 48, "gs3d_task_state layout drifted");
+static_assert(offsetof(gs3d_state, error) == 32, "gs3d_state layout drifted");
+static_assert(offsetof(gs3d_state, tasks) == 288, "gs3d_state layout drifted");
+static_assert(sizeof(gs3d_state) == 480, "gs3d_state layout drifted");
+
+uint32_t gs3d_engine_abi_version(void) {
+    return GS3D_ENGINE_ABI_VERSION;
+}
+
+int32_t gs3d_engine_poll_state(gs3d_engine* e, gs3d_state* out) {
+    if (e == nullptr || out == nullptr || out->struct_size < sizeof(gs3d_state)) {
+        return -1;
+    }
+    gs3d::ffi::TaskBoard::Snapshot snapshot;
+    if (e->host.poll_state(&snapshot) != 0) {
+        return -2;
+    }
+    const uint32_t struct_size = out->struct_size;
+    std::memset(out, 0, sizeof(gs3d_state));
+    out->struct_size = struct_size;
+    out->generation = snapshot.generation;
+    out->point_count = snapshot.point_count;
+    out->dataset_loaded = snapshot.dataset_loaded ? 1u : 0u;
+    out->task_count = 0;
+    for (const auto& task : snapshot.tasks) {
+        if (out->task_count >= GS3D_MAX_TASKS) {
+            break;
+        }
+        gs3d_task_state& slot = out->tasks[out->task_count++];
+        slot.id = task.id;
+        slot.state = static_cast<uint32_t>(task.state);
+        slot.progress = task.progress;
+        std::snprintf(slot.stage, sizeof(slot.stage), "%s", task.stage.c_str());
+    }
+    std::snprintf(out->error, sizeof(out->error), "%s", snapshot.error.c_str());
+    return 0;
+}
+
+int32_t gs3d_engine_open_dataset(
+    gs3d_engine* e, const char* path_utf8, uint64_t* out_task) {
+    if (e == nullptr) {
+        return -1;
+    }
+    if (out_task != nullptr) {
+        *out_task = 0;
+    }
+    if (path_utf8 == nullptr) {
+        return -1;
+    }
+    // The host copies the string; the caller's pointer is never retained.
+    return e->host.submit_open_dataset(std::string(path_utf8), out_task);
+}
+
+int32_t gs3d_engine_cancel(gs3d_engine* e, uint64_t task) {
+    if (e == nullptr) {
+        return -1;
+    }
+    return e->host.cancel(task);
 }
 
 int32_t gs3d_engine_load_dataset(gs3d_engine* e, const char* path) {
