@@ -42,6 +42,10 @@ if (-not (Test-Path (Join-Path $BuildDir 'CMakeCache.txt'))) {
     }
     if ($VcpkgRoot) {
         $ConfigureArgs += "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+        $Glslang = Join-Path $VcpkgRoot 'installed/x64-windows/tools/glslang/glslangValidator.exe'
+        if (Test-Path -LiteralPath $Glslang) {
+            $ConfigureArgs += "-DGS3D_GLSLANG_VALIDATOR=$Glslang"
+        }
     }
 }
 Write-Host "==> Building native runtime ($NativeConfig)..."

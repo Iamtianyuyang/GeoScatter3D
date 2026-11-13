@@ -10,7 +10,7 @@ jobs:
   windows:
     name: Windows
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       # Submodules (Catch2) are required; a checkout without submodules
@@ -56,6 +56,16 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+
+      - name: Build Flutter Windows application
+        env:
+          VCPKG_ROOT: C:\vcpkg
+        run: ./scripts/build_flutter_windows.ps1
+
   linux:
     name: Linux
     runs-on: ubuntu-latest
@@ -82,7 +92,7 @@ jobs:
           # the mirror; nlohmann-json3-dev lives in universe.
           sudo add-apt-repository -y "deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble universe"
           sudo apt-get update
-          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools nlohmann-json3-dev
+          sudo apt-get install --yes ninja-build libglfw3-dev libvulkan-dev glslang-tools libssl-dev nlohmann-json3-dev
 
       - name: Configure
         run: >
@@ -113,3 +123,55 @@ jobs:
         env:
           GS3D_PIPELINE_LIBRARY: ${{ github.workspace }}/build/src/libgs3d_pipeline_ffi.so
         run: flutter test --no-pub
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ninja-build glslang-tools
+          sdkmanager 'platforms;android-36' 'ndk;28.2.13676358'
+      - name: Build native libraries
+        run: |
+          ndk="$ANDROID_HOME/ndk/28.2.13676358"
+          for abi in arm64-v8a x86_64; do
+            cmake -S . -B "tmp/android-$abi" -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI="$abi" -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
+              -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+              -DNLOHMANN_JSON_INCLUDE_DIR="$GITHUB_WORKSPACE/third_party/nlohmann/include"
+            cmake --build "tmp/android-$abi" --target gs3d_ffi gs3d_pipeline_ffi --parallel 2
+            jni="ui_flutter/android/app/src/main/jniLibs/$abi"
+            mkdir -p "$jni"
+            cp "tmp/android-$abi/src/ffi/libgs3d_ffi.so" "$jni/"
+            cp "tmp/android-$abi/src/libgs3d_pipeline_ffi.so" "$jni/"
+            triple=aarch64-linux-android
+            if [ "$abi" = x86_64 ]; then triple=x86_64-linux-android; fi
+            cp "$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$triple/libc++_shared.so" "$jni/"
+          done
+      - name: Build and inspect Android APK
+        working-directory: ui_flutter
+        run: |
+          flutter pub get
+          flutter build apk --debug --no-pub --target-platform android-arm64,android-x64
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          for abi in arm64-v8a x86_64; do
+            for library in libflutter.so libc++_shared.so libgs3d_ffi.so libgs3d_pipeline_ffi.so; do
+              unzip -Z1 "$apk" | grep -Fx "lib/$abi/$library"
+            done
+          done

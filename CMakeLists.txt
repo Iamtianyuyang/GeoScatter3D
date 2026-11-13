@@ -17,6 +17,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# No C++ modules are used; scanning can select host modules in Android cross-builds.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # New engine tree: headers are included as "<layer>/<module>/<file>.hpp".
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/engine)
