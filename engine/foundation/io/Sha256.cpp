@@ -8,9 +8,42 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef GS3D_USE_OPENSSL
+#include <memory>
+#include <openssl/evp.h>
+#endif
+
 namespace gs3d::foundation {
 namespace {
 
+#ifdef GS3D_USE_OPENSSL
+class Sha256 {
+public:
+    Sha256() : context_(EVP_MD_CTX_new(), EVP_MD_CTX_free) {
+        if (!context_ || EVP_DigestInit_ex(context_.get(), EVP_sha256(), nullptr) != 1) {
+            throw std::runtime_error("sha256: cannot initialize digest");
+        }
+    }
+
+    void update(const std::uint8_t* data, std::size_t size) {
+        if (EVP_DigestUpdate(context_.get(), data, size) != 1) {
+            throw std::runtime_error("sha256: cannot update digest");
+        }
+    }
+
+    Sha256Digest finish() {
+        Sha256Digest digest{};
+        unsigned int size = 0;
+        if (EVP_DigestFinal_ex(context_.get(), digest.data(), &size) != 1 || size != digest.size()) {
+            throw std::runtime_error("sha256: cannot finalize digest");
+        }
+        return digest;
+    }
+
+private:
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context_;
+};
+#else
 constexpr std::uint32_t kRoundConstants[64] = {
     0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u, 0x923f82a4u,
     0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u, 0x72be5d74u, 0x80deb1feu,
@@ -125,6 +158,7 @@ private:
     std::size_t used_ = 0;
     std::uint64_t total_bytes_ = 0;
 };
+#endif
 
 } // namespace
 
@@ -153,6 +187,9 @@ std::string sha256_file_hex(const std::filesystem::path& path) {
         if (got > 0) {
             hasher.update(buffer.data(), static_cast<std::size_t>(got));
         }
+    }
+    if (stream.bad()) {
+        throw std::runtime_error("sha256: cannot read " + path.string());
     }
     return to_hex(hasher.finish());
 }

@@ -150,5 +150,9 @@ TEST_CASE("source fingerprints match the published SHA-256 vectors")
     empty.close();
     REQUIRE(gs3d::foundation::sha256_file_hex(path) ==
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    std::ofstream(path, std::ios::binary | std::ios::trunc) << std::string(1000000, 'a');
+    REQUIRE(gs3d::foundation::sha256_file_hex(path) ==
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
     std::filesystem::remove(path);
+    REQUIRE_THROWS(gs3d::foundation::sha256_file_hex(std::filesystem::temp_directory_path()));
 }

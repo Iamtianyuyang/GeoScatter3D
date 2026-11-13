@@ -63,6 +63,7 @@ TEST_CASE("large CSV chunks preserve point order and ignore invalid records")
     }
     auto options = options_for(source, source.parent_path() / "bundle");
     options.points_per_chunk = 65536;
+    options.value_field = "elevation";
     const auto result = gs3d::pipeline::build_bundle(options);
     REQUIRE(result.points == 2200000);
     const auto bundle = gs3d::data::read_v3_bundle(options.bundle_dir);
@@ -75,6 +76,10 @@ TEST_CASE("large CSV chunks preserve point order and ignore invalid records")
         }
     }
     REQUIRE(ordered);
+    REQUIRE(bundle.points.front().y == -2.0f);
+    REQUIRE(bundle.points.front().z == -2.0f);
+    REQUIRE(bundle.points.front().value == 4.0f);
+    REQUIRE(bundle.points.back().value == 8.0f);
     std::error_code ignored;
     fs::remove_all(source.parent_path(), ignored);
 }
