@@ -24,6 +24,18 @@ void set_env(const char* name, const char* value) {
 
 void unset_env(const char* name) { set_env(name, ""); }
 
+/// Windows 上窄字符是 ANSI，非 ASCII 路径必须显式转 UTF-8。
+std::string utf8(const fs::path& path) {
+    const auto text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+
+/// 比较用正斜杠形式，免得 Windows 的反斜杠和 ABI 的规范化打架。
+std::string comparable(const std::string& utf8_path) {
+    const auto text = fs::u8path(utf8_path).generic_u8string();
+    return std::string(text.begin(), text.end());
+}
+
 /// 把两个存储路径都指到临时目录，测试不碰真实用户配置。
 class ScopedAppStateDir {
 public:
@@ -33,8 +45,8 @@ public:
         );
         root_ = fs::temp_directory_path() / ("gs3d-app-abi-" + stamp);
         fs::create_directories(root_);
-        set_env("GS3D_USER_CONFIG_DIR", root_.string().c_str());
-        set_env("GS3D_RECENT_PROJECTS_PATH", (root_ / "recent.txt").string().c_str());
+        set_env("GS3D_USER_CONFIG_DIR", utf8(root_).c_str());
+        set_env("GS3D_RECENT_PROJECTS_PATH", utf8(root_ / "recent.txt").c_str());
     }
 
     ~ScopedAppStateDir() {
@@ -59,8 +71,8 @@ TEST_CASE(
     ScopedAppStateDir dir;
     REQUIRE(gs3d_engine_clear_recent_projects() == 0);
 
-    const std::string first = (dir.root() / "甲 工程包").string();
-    const std::string second = (dir.root() / "bundle-b").string();
+    const std::string first = utf8(dir.root() / u8"甲 工程包");
+    const std::string second = utf8(dir.root() / "bundle-b");
     REQUIRE(gs3d_engine_remember_project(first.c_str()) == 0);
     REQUIRE(gs3d_engine_remember_project(second.c_str()) == 0);
 
@@ -68,8 +80,8 @@ TEST_CASE(
     REQUIRE(listed.is_array());
     REQUIRE(listed.size() == 2);
     // 最近打开的排在最前。
-    REQUIRE(listed[0]["path"].get<std::string>() == second);
-    REQUIRE(listed[1]["path"].get<std::string>() == first);
+    REQUIRE(comparable(listed[0]["path"]) == comparable(second));
+    REQUIRE(comparable(listed[1]["path"]) == comparable(first));
     REQUIRE(listed[0]["last_opened"].get<std::int64_t>() > 0);
 
     REQUIRE(gs3d_engine_forget_project(second.c_str()) == 0);
@@ -77,7 +89,7 @@ TEST_CASE(
         gs3d_engine_recent_projects_json()
     );
     REQUIRE(after_forget.size() == 1);
-    REQUIRE(after_forget[0]["path"].get<std::string>() == first);
+    REQUIRE(comparable(after_forget[0]["path"]) == comparable(first));
 
     REQUIRE(gs3d_engine_clear_recent_projects() == 0);
     REQUIRE(nlohmann::json::parse(gs3d_engine_recent_projects_json()).empty());

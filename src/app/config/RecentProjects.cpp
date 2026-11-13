@@ -20,9 +20,11 @@ std::filesystem::path normalized_path(
     return (ec ? path : absolute).lexically_normal();
 }
 
+// 存盘与去重都用 UTF-8：Windows 上窄字符是 ANSI，非 ASCII 路径会损坏。
 std::string path_key(const std::filesystem::path& path)
 {
-    return normalized_path(path).generic_string();
+    const auto value = normalized_path(path).generic_u8string();
+    return std::string(value.begin(), value.end());
 }
 
 } // namespace
@@ -85,7 +87,9 @@ std::vector<RecentProjectEntry> load_recent_projects(
             RecentProjectEntry entry;
             entry.last_opened_unix =
                 std::stoll(line.substr(0, separator));
-            entry.path = line.substr(separator + 1);
+            entry.path = std::filesystem::u8path(
+                line.substr(separator + 1)
+            );
             if (!entry.path.empty()) {
                 entries.push_back(std::move(entry));
             }
@@ -143,7 +147,7 @@ void save_recent_projects_internal(
             output
                 << entry.last_opened_unix
                 << '\t'
-                << entry.path.generic_string()
+                << path_key(entry.path)
                 << '\n';
         }
     }
