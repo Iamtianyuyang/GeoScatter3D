@@ -133,12 +133,12 @@ class _Gesture extends StatelessWidget {
           Expanded(
             child: Text(
               gesture,
-              style: tokens.type.body.copyWith(color: tokens.colors.textMid),
+              style: tokens.text.body.copyWith(color: tokens.colors.textMid),
             ),
           ),
           Text(
             effect,
-            style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+            style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
           ),
         ],
       ),

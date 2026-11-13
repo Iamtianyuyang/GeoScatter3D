@@ -89,7 +89,7 @@ class ProjectPanel extends StatelessWidget {
                       ),
                       child: Text(
                         '清除',
-                        style: tokens.type.meta.copyWith(
+                        style: tokens.text.meta.copyWith(
                           color: tokens.colors.textLow,
                         ),
                       ),
@@ -200,7 +200,7 @@ class _DatasetSummary extends StatelessWidget {
                 key: const ValueKey('project_dataset_name'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: context.tokens.type.bodyStrong.copyWith(
+                style: context.tokens.text.bodyStrong.copyWith(
                   color: context.tokens.colors.textHigh,
                   fontSize: 14,
                 ),
@@ -209,7 +209,7 @@ class _DatasetSummary extends StatelessWidget {
               SelectableText(
                 path,
                 maxLines: 2,
-                style: context.tokens.type.meta.copyWith(
+                style: context.tokens.text.meta.copyWith(
                   color: context.tokens.colors.textLow,
                   fontSize: 11,
                 ),
@@ -245,7 +245,7 @@ class _DatasetSummary extends StatelessWidget {
           padding: const EdgeInsets.only(top: 6),
           child: Text(
             '数值来自工程包清单；「绘制」是当前 LOD 实际送进显卡的点数。',
-            style: context.tokens.type.meta.copyWith(
+            style: context.tokens.text.meta.copyWith(
               color: context.tokens.colors.textLow,
               fontSize: 10.5,
             ),
@@ -303,7 +303,7 @@ class _RecentTile extends StatelessWidget {
                     fileName(project.path),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: tokens.type.body.copyWith(
+                    style: tokens.text.body.copyWith(
                       color: active
                           ? tokens.colors.signal
                           : tokens.colors.textHigh,
@@ -314,7 +314,7 @@ class _RecentTile extends StatelessWidget {
                     '${shortPath(project.path)} · ${formatRelativeTime(opened)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tokens.colors.textLow,
                       fontSize: 10.5,
                     ),

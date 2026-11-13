@@ -71,7 +71,7 @@ class CameraGizmo extends StatelessWidget {
               icon: const Icon(Icons.restart_alt, size: 14),
               label: Text(
                 '复位视图',
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -113,7 +113,7 @@ class _AxisButton extends StatelessWidget {
           child: Center(
             child: Text(
               label,
-              style: tokens.type.numeric.copyWith(
+              style: tokens.text.numeric.copyWith(
                 fontSize: 11,
                 color: enabled ? tokens.colors.textMid : tokens.colors.textLow,
               ),

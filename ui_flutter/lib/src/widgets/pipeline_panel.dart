@@ -138,7 +138,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
           trailing: running
               ? Text(
                   '${status!.chunks} 块',
-                  style: tokens.type.meta.copyWith(
+                  style: tokens.text.meta.copyWith(
                     color: tokens.colors.textLow,
                   ),
                 )
@@ -149,7 +149,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
               Text(
                 headline,
                 key: const ValueKey('pipeline_headline'),
-                style: tokens.type.body.copyWith(
+                style: tokens.text.body.copyWith(
                   color: failed
                       ? tokens.colors.alert
                       : done
@@ -178,7 +178,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
                 const SizedBox(height: 8),
                 Text(
                   '取消在当前阶段结束后生效，已提交的块会保留。',
-                  style: tokens.type.meta.copyWith(
+                  style: tokens.text.meta.copyWith(
                     color: tokens.colors.textLow,
                     fontSize: 10.5,
                   ),
@@ -252,7 +252,7 @@ class _PipelinePanelState extends State<PipelinePanel> {
                   Platform.isAndroid
                       ? '任务在后台前台服务里继续；系统回收进程后可用同一目录恢复。'
                       : '退出应用会停止当前任务；重新打开同一个工程包目录即可从完成的阶段继续。',
-                  style: tokens.type.meta.copyWith(
+                  style: tokens.text.meta.copyWith(
                     color: tokens.colors.textLow,
                     fontSize: 10.5,
                     height: 1.5,
@@ -317,7 +317,7 @@ class _PathField extends StatelessWidget {
               child: TextField(
                 controller: controller,
                 enabled: enabled,
-                style: tokens.type.numeric.copyWith(
+                style: tokens.text.numeric.copyWith(
                   fontSize: 12,
                   color: tokens.colors.textHigh,
                 ),
@@ -328,7 +328,7 @@ class _PathField extends StatelessWidget {
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
                   hintText: '未选择',
-                  hintStyle: tokens.type.meta.copyWith(
+                  hintStyle: tokens.text.meta.copyWith(
                     color: tokens.colors.textLow,
                   ),
                   border: OutlineInputBorder(
@@ -416,7 +416,7 @@ class _StageTrack extends StatelessWidget {
               const SizedBox(height: 5),
               Text(
                 stages[i].$2,
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   fontSize: 10,
                   color: i <= activeIndex
                       ? tokens.colors.textMid

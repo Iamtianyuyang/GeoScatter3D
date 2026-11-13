@@ -45,7 +45,7 @@ class MeasurementPanel extends StatelessWidget {
                             Text(
                               '距离 ${distance!.toStringAsFixed(3)}',
                               key: const ValueKey('measurement_distance'),
-                              style: tokens.type.display.copyWith(
+                              style: tokens.text.display.copyWith(
                                 color: tokens.colors.signal,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
@@ -57,7 +57,7 @@ class MeasurementPanel extends StatelessWidget {
                               '高差 ${heightDelta! >= 0 ? '+' : ''}'
                               '${heightDelta.toStringAsFixed(3)}',
                               key: const ValueKey('measurement_height_delta'),
-                              style: tokens.type.numeric.copyWith(
+                              style: tokens.text.numeric.copyWith(
                                 fontSize: 14,
                                 color: tokens.colors.textHigh,
                               ),
@@ -65,7 +65,7 @@ class MeasurementPanel extends StatelessWidget {
                             const SizedBox(height: 6),
                             Text(
                               '距离为两点三维直线距离；高差 = 终点 − 起点。',
-                              style: tokens.type.meta.copyWith(
+                              style: tokens.text.meta.copyWith(
                                 color: tokens.colors.textLow,
                                 fontSize: 10.5,
                               ),
@@ -146,7 +146,7 @@ class _PointRow extends StatelessWidget {
                 ),
                 child: Text(
                   '${index + 1}',
-                  style: tokens.type.meta.copyWith(
+                  style: tokens.text.meta.copyWith(
                     fontSize: 10,
                     color: tokens.colors.signal,
                     fontWeight: FontWeight.w700,
@@ -156,7 +156,7 @@ class _PointRow extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   color: tokens.colors.textMid,
                   fontWeight: FontWeight.w700,
                 ),
@@ -164,7 +164,7 @@ class _PointRow extends StatelessWidget {
               const Spacer(),
               Text(
                 '值 ${formatNumber(value, digits: 3)}',
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   color: tokens.colors.textLow,
                   fontSize: 10.5,
                 ),
@@ -177,7 +177,7 @@ class _PointRow extends StatelessWidget {
             'Y ${y.toStringAsFixed(3)}\n'
             'Z ${z.toStringAsFixed(3)}',
             key: ValueKey('measurement_point_$index'),
-            style: tokens.type.numeric.copyWith(
+            style: tokens.text.numeric.copyWith(
               fontSize: 12,
               height: 1.45,
               color: tokens.colors.textHigh,

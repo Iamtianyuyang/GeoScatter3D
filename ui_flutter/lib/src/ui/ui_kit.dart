@@ -56,7 +56,7 @@ class PanelHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: tokens.type.panelTitle.copyWith(
+                  style: tokens.text.panelTitle.copyWith(
                     color: tokens.colors.textHigh,
                   ),
                 ),
@@ -64,7 +64,7 @@ class PanelHeader extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tokens.colors.textLow,
                     ),
                   ),
@@ -72,7 +72,7 @@ class PanelHeader extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null) trailing!,
+          ?trailing,
           if (onClose != null)
             IconButton(
               tooltip: '关闭面板',
@@ -119,12 +119,12 @@ class PanelSection extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title!.toUpperCase(),
-                    style: tokens.type.sectionLabel.copyWith(
+                    style: tokens.text.sectionLabel.copyWith(
                       color: tokens.colors.textLow,
                     ),
                   ),
                 ),
-                if (trailing != null) trailing!,
+                ?trailing,
               ],
             ),
             const SizedBox(height: 10),
@@ -156,7 +156,7 @@ class KeyValueRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    final style = (numeric ? tokens.type.numeric : tokens.type.body).copyWith(
+    final style = (numeric ? tokens.text.numeric : tokens.text.body).copyWith(
       color: valueColor ?? tokens.colors.textHigh,
     );
     return Padding(
@@ -168,7 +168,7 @@ class KeyValueRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+              style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
             ),
           ),
           const SizedBox(width: 8),
@@ -204,7 +204,7 @@ class FieldLabel extends StatelessWidget {
         children: [
           Text(
             text,
-            style: tokens.type.meta.copyWith(color: tokens.colors.textMid),
+            style: tokens.text.meta.copyWith(color: tokens.colors.textMid),
           ),
           if (help != null) ...[
             const SizedBox(width: 8),
@@ -213,7 +213,7 @@ class FieldLabel extends StatelessWidget {
                 help!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   color: tokens.colors.textLow,
                   fontSize: 11,
                 ),
@@ -266,7 +266,7 @@ class Segmented<T> extends StatelessWidget {
               color: selected ? tokens.colors.signalSoft : Colors.transparent,
               child: Text(
                 label,
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   color: selected
                       ? tokens.colors.signal
                       : tokens.colors.textMid,
@@ -334,7 +334,7 @@ class SelectField<T> extends StatelessWidget {
                 size: 16,
                 color: tokens.colors.textLow,
               ),
-              style: tokens.type.body.copyWith(color: tokens.colors.textHigh),
+              style: tokens.text.body.copyWith(color: tokens.colors.textHigh),
               items: [
                 for (final (value, text) in items)
                   DropdownMenuItem<T>(value: value, child: Text(text)),
@@ -384,12 +384,12 @@ class SliderField extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: tokens.type.meta.copyWith(color: tokens.colors.textMid),
+                style: tokens.text.meta.copyWith(color: tokens.colors.textMid),
               ),
             ),
             Text(
               display,
-              style: tokens.type.numeric.copyWith(color: tokens.colors.textHigh),
+              style: tokens.text.numeric.copyWith(color: tokens.colors.textHigh),
             ),
           ],
         ),
@@ -441,12 +441,12 @@ class ToggleRow extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: tokens.type.body.copyWith(color: tokens.colors.textHigh),
+                    style: tokens.text.body.copyWith(color: tokens.colors.textHigh),
                   ),
                   if (help != null)
                     Text(
                       help!,
-                      style: tokens.type.meta.copyWith(
+                      style: tokens.text.meta.copyWith(
                         color: tokens.colors.textLow,
                         fontSize: 11,
                       ),
@@ -524,7 +524,7 @@ class AppButton extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: (dense ? tokens.type.meta : tokens.type.body).copyWith(
+            style: (dense ? tokens.text.meta : tokens.text.body).copyWith(
               color: foreground,
               fontWeight: FontWeight.w700,
             ),
@@ -590,7 +590,7 @@ class NoticeBanner extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: tokens.type.meta.copyWith(color: tokens.colors.textHigh),
+              style: tokens.text.meta.copyWith(color: tokens.colors.textHigh),
             ),
           ),
         ],
@@ -629,7 +629,7 @@ class EmptyHint extends StatelessWidget {
               Expanded(
                 child: Text(
                   text,
-                  style: tokens.type.body.copyWith(color: tokens.colors.textMid),
+                  style: tokens.text.body.copyWith(color: tokens.colors.textMid),
                 ),
               ),
             ],
@@ -640,7 +640,7 @@ class EmptyHint extends StatelessWidget {
               padding: const EdgeInsets.only(left: 23),
               child: Text(
                 hint!,
-                style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+                style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
               ),
             ),
           ],

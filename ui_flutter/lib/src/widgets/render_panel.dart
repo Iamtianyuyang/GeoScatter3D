@@ -262,7 +262,7 @@ class _RenderPanelState extends State<RenderPanel> {
                         ),
                         child: Text(
                           '恢复完整值域',
-                          style: tokens.type.meta.copyWith(
+                          style: tokens.text.meta.copyWith(
                             color: tokens.colors.signal,
                           ),
                         ),
@@ -292,7 +292,7 @@ class _RenderPanelState extends State<RenderPanel> {
                   const SizedBox(height: 8),
                   Text(
                     '自动 = 由 LOD 按屏幕像素决定；上限只影响绘制，不改数据集。',
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tokens.colors.textLow,
                       fontSize: 10.5,
                     ),

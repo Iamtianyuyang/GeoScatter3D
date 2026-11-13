@@ -69,7 +69,7 @@ class StatusStrip extends StatelessWidget {
             ),
           Text(
             name,
-            style: tokens.type.meta.copyWith(
+            style: tokens.text.meta.copyWith(
               color: colors.textLow,
               fontSize: 10.5,
             ),
@@ -78,7 +78,7 @@ class StatusStrip extends StatelessWidget {
           Text(
             value,
             key: ValueKey(key),
-            style: tokens.type.numeric.copyWith(
+            style: tokens.text.numeric.copyWith(
               fontSize: 11,
               color: colors.textHigh,
             ),
@@ -106,7 +106,7 @@ class StatusStrip extends StatelessWidget {
           Text(
             label,
             key: const ValueKey('status_state'),
-            style: tokens.type.meta.copyWith(
+            style: tokens.text.meta.copyWith(
               color: colors.textMid,
               fontWeight: FontWeight.w700,
               fontSize: 10.5,
@@ -121,7 +121,7 @@ class StatusStrip extends StatelessWidget {
               key: const ValueKey('status_dataset'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: tokens.type.meta.copyWith(
+              style: tokens.text.meta.copyWith(
                 color: colors.textHigh,
                 fontSize: 11,
               ),
@@ -131,7 +131,7 @@ class StatusStrip extends StatelessWidget {
           Text(
             '${_count(sourcePoints)} → ${_count(drawnPoints)}',
             key: const ValueKey('status_points'),
-            style: tokens.type.numeric.copyWith(
+            style: tokens.text.numeric.copyWith(
               fontSize: 11,
               color: colors.textMid,
             ),
@@ -142,7 +142,7 @@ class StatusStrip extends StatelessWidget {
               onTap: onOpenBundle,
               child: Text(
                 '打开工程包',
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   fontSize: 10.5,
                   color: colors.signal,
                   fontWeight: FontWeight.w700,
@@ -156,7 +156,7 @@ class StatusStrip extends StatelessWidget {
             key: const ValueKey('status_lod'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: tokens.type.meta.copyWith(
+            style: tokens.text.meta.copyWith(
               color: colors.textLow,
               fontSize: 10.5,
             ),

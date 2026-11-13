@@ -100,7 +100,7 @@ class _DiagnosticsPanelState extends State<DiagnosticsPanel> {
                           service.preferredGpuIndex == null
                               ? '当前：自动选择（优先独显）。点一下可固定到某块卡，重启后生效。'
                               : '已固定到所选显卡，重启应用后生效。再点一次可恢复自动。',
-                          style: tokens.type.meta.copyWith(
+                          style: tokens.text.meta.copyWith(
                             color: tokens.colors.textLow,
                             fontSize: 10.5,
                           ),
@@ -116,7 +116,7 @@ class _DiagnosticsPanelState extends State<DiagnosticsPanel> {
                 children: [
                   Text(
                     '瓦片按需上传；外部替换工程包后清一次缓存可以避免读到旧块。',
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tokens.colors.textMid,
                     ),
                   ),
@@ -152,7 +152,7 @@ class _DiagnosticsPanelState extends State<DiagnosticsPanel> {
                   child: SelectableText(
                     diagnostics.isEmpty ? '暂无诊断数据' : diagnostics,
                     key: const ValueKey('diagnostics_json'),
-                    style: tokens.type.numeric.copyWith(
+                    style: tokens.text.numeric.copyWith(
                       fontSize: 10.5,
                       height: 1.45,
                       color: tokens.colors.textMid,
@@ -216,7 +216,7 @@ class _GpuTile extends StatelessWidget {
                     name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: tokens.type.body.copyWith(
+                    style: tokens.text.body.copyWith(
                       fontSize: 12,
                       color: tokens.colors.textHigh,
                     ),
@@ -224,7 +224,7 @@ class _GpuTile extends StatelessWidget {
                   Text(
                     '${type.isEmpty ? 'GPU' : type}'
                     '${active ? ' · 当前使用' : ''}',
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       fontSize: 10.5,
                       color: active
                           ? tokens.colors.signal

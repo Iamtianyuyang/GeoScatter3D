@@ -136,14 +136,14 @@ class ColormapLegend extends StatelessWidget {
                 Text(
                   maxLabel,
                   key: const ValueKey('legend_max'),
-                  style: tokens.type.numeric.copyWith(
+                  style: tokens.text.numeric.copyWith(
                     fontSize: 10.5,
                     color: tokens.colors.textHigh,
                   ),
                 ),
                 Text(
                   unit ?? '值域',
-                  style: tokens.type.meta.copyWith(
+                  style: tokens.text.meta.copyWith(
                     fontSize: 9.5,
                     color: tokens.colors.textLow,
                   ),
@@ -151,7 +151,7 @@ class ColormapLegend extends StatelessWidget {
                 Text(
                   minLabel,
                   key: const ValueKey('legend_min'),
-                  style: tokens.type.numeric.copyWith(
+                  style: tokens.text.numeric.copyWith(
                     fontSize: 10.5,
                     color: tokens.colors.textHigh,
                   ),

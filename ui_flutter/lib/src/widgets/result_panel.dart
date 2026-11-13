@@ -48,7 +48,7 @@ class ResultPanel extends StatelessWidget {
                   Text(
                     status,
                     key: const ValueKey('result_status'),
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tooLarge
                           ? tokens.colors.warn
                           : tokens.colors.textMid,
@@ -110,7 +110,7 @@ class ResultPanel extends StatelessWidget {
                       path,
                       key: const ValueKey('result_last_path'),
                       maxLines: 3,
-                      style: tokens.type.meta.copyWith(
+                      style: tokens.text.meta.copyWith(
                         color: tokens.colors.textLow,
                         fontSize: 10.5,
                       ),

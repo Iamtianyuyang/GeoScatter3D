@@ -1,4 +1,3 @@
-import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 
@@ -9,7 +8,7 @@ import 'package:flutter/material.dart';
 class AppTokens extends ThemeExtension<AppTokens> {
   const AppTokens({
     required this.colors,
-    required this.type,
+    required this.text,
     required this.space,
     required this.radii,
     required this.motion,
@@ -17,14 +16,14 @@ class AppTokens extends ThemeExtension<AppTokens> {
 
   static const AppTokens dark = AppTokens(
     colors: AppColors.dark,
-    type: AppType(),
+    text: AppType(),
     space: AppSpace(),
     radii: AppRadii(),
     motion: AppMotion(),
   );
 
   final AppColors colors;
-  final AppType type;
+  final AppType text;
   final AppSpace space;
   final AppRadii radii;
   final AppMotion motion;
@@ -32,14 +31,14 @@ class AppTokens extends ThemeExtension<AppTokens> {
   @override
   AppTokens copyWith({
     AppColors? colors,
-    AppType? type,
+    AppType? text,
     AppSpace? space,
     AppRadii? radii,
     AppMotion? motion,
   }) {
     return AppTokens(
       colors: colors ?? this.colors,
-      type: type ?? this.type,
+      text: text ?? this.text,
       space: space ?? this.space,
       radii: radii ?? this.radii,
       motion: motion ?? this.motion,
@@ -247,11 +246,11 @@ ThemeData buildAppTheme([AppTokens tokens = AppTokens.dark]) {
       space: 1,
     ),
     textTheme: TextTheme(
-      bodyMedium: tokens.type.body.copyWith(color: colors.textHigh),
-      bodySmall: tokens.type.meta.copyWith(color: colors.textMid),
-      labelSmall: tokens.type.sectionLabel.copyWith(color: colors.textLow),
-      titleSmall: tokens.type.panelTitle.copyWith(color: colors.textHigh),
-      headlineSmall: tokens.type.display.copyWith(color: colors.textHigh),
+      bodyMedium: tokens.text.body.copyWith(color: colors.textHigh),
+      bodySmall: tokens.text.meta.copyWith(color: colors.textMid),
+      labelSmall: tokens.text.sectionLabel.copyWith(color: colors.textLow),
+      titleSmall: tokens.text.panelTitle.copyWith(color: colors.textHigh),
+      headlineSmall: tokens.text.display.copyWith(color: colors.textHigh),
     ),
     iconTheme: IconThemeData(color: colors.textMid, size: 18),
     tooltipTheme: TooltipThemeData(
@@ -261,7 +260,7 @@ ThemeData buildAppTheme([AppTokens tokens = AppTokens.dark]) {
         border: Border.all(color: colors.line),
         borderRadius: tokens.radii.smAll,
       ),
-      textStyle: tokens.type.meta.copyWith(color: colors.textHigh),
+      textStyle: tokens.text.meta.copyWith(color: colors.textHigh),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     ),
     sliderTheme: SliderThemeData(
@@ -273,7 +272,7 @@ ThemeData buildAppTheme([AppTokens tokens = AppTokens.dark]) {
       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
       overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
       valueIndicatorColor: colors.raised,
-      valueIndicatorTextStyle: tokens.type.numeric.copyWith(
+      valueIndicatorTextStyle: tokens.text.numeric.copyWith(
         color: colors.textHigh,
       ),
     ),
@@ -303,7 +302,7 @@ ThemeData buildAppTheme([AppTokens tokens = AppTokens.dark]) {
     popupMenuTheme: PopupMenuThemeData(
       color: colors.raised,
       surfaceTintColor: Colors.transparent,
-      textStyle: tokens.type.body.copyWith(color: colors.textHigh),
+      textStyle: tokens.text.body.copyWith(color: colors.textHigh),
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.mdAll,
         side: BorderSide(color: colors.line),
@@ -311,7 +310,7 @@ ThemeData buildAppTheme([AppTokens tokens = AppTokens.dark]) {
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: colors.raised,
-      contentTextStyle: tokens.type.body.copyWith(color: colors.textHigh),
+      contentTextStyle: tokens.text.body.copyWith(color: colors.textHigh),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.mdAll,

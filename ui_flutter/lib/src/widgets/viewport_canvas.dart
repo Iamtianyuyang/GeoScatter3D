@@ -104,7 +104,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
           const SizedBox(height: 10),
           Text(
             '正在准备渲染通道',
-            style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+            style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
           ),
         ],
       ),
@@ -138,7 +138,7 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                   const SizedBox(width: 8),
                   Text(
                     '渲染引擎未能启动',
-                    style: tokens.type.bodyStrong.copyWith(
+                    style: tokens.text.bodyStrong.copyWith(
                       color: tokens.colors.textHigh,
                     ),
                   ),
@@ -147,13 +147,13 @@ class _ViewportCanvasState extends State<ViewportCanvas>
               const SizedBox(height: 10),
               Text(
                 _service.error!,
-                style: tokens.type.meta.copyWith(color: tokens.colors.textMid),
+                style: tokens.text.meta.copyWith(color: tokens.colors.textMid),
               ),
               const SizedBox(height: 12),
               Text(
                 '常见原因：缺少 Vulkan 1.1 驱动 / ICD，或显卡不支持本机要求。'
                 'Linux 可用 vulkaninfo 检查，Windows 请更新显卡驱动。',
-                style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+                style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
               ),
             ],
           ),

@@ -367,7 +367,7 @@ class _TopBar extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 'GeoScatter 3D',
-                style: tokens.type.bodyStrong.copyWith(
+                style: tokens.text.bodyStrong.copyWith(
                   color: tokens.colors.textHigh,
                   fontSize: 13,
                   letterSpacing: 0.01,
@@ -386,7 +386,7 @@ class _TopBar extends StatelessWidget {
                       key: const ValueKey('topbar_dataset'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: tokens.type.body.copyWith(
+                      style: tokens.text.body.copyWith(
                         color: tokens.colors.textHigh,
                         fontSize: 12.5,
                       ),
@@ -397,7 +397,7 @@ class _TopBar extends StatelessWidget {
                           : shortPath(path),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: tokens.type.meta.copyWith(
+                      style: tokens.text.meta.copyWith(
                         color: tokens.colors.textLow,
                         fontSize: 10,
                       ),
@@ -466,7 +466,7 @@ class _GpuChip extends StatelessWidget {
                 key: const ValueKey('open_bundle_status'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: tokens.type.meta.copyWith(
+                style: tokens.text.meta.copyWith(
                   fontSize: 10.5,
                   color: tokens.colors.textMid,
                 ),
@@ -619,14 +619,14 @@ class _ViewportOverlays extends StatelessWidget {
                     children: [
                       Text(
                         '没有打开的数据',
-                        style: tokens.type.panelTitle.copyWith(
+                        style: tokens.text.panelTitle.copyWith(
                           color: tokens.colors.textHigh,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         '打开预处理好的 .gs3d 工程包，或先建一个新的。',
-                        style: tokens.type.meta.copyWith(
+                        style: tokens.text.meta.copyWith(
                           color: tokens.colors.textMid,
                         ),
                       ),
@@ -698,7 +698,7 @@ class _ViewportOverlays extends StatelessWidget {
                         Text(
                           '距离 ${distance.toStringAsFixed(3)}',
                           key: const ValueKey('overlay_measure_distance'),
-                          style: tokens.type.numeric.copyWith(
+                          style: tokens.text.numeric.copyWith(
                             fontSize: 13,
                             color: tokens.colors.textHigh,
                           ),
@@ -713,7 +713,7 @@ class _ViewportOverlays extends StatelessWidget {
                           '高差 ${height! >= 0 ? '+' : ''}'
                           '${height.toStringAsFixed(3)}',
                           key: const ValueKey('overlay_measure_height'),
-                          style: tokens.type.numeric.copyWith(
+                          style: tokens.text.numeric.copyWith(
                             fontSize: 13,
                             color: tokens.colors.textMid,
                           ),
@@ -731,7 +731,7 @@ class _ViewportOverlays extends StatelessWidget {
                 child: Center(
                   child: Text(
                     '已拾取起点，再点一个点完成测量',
-                    style: tokens.type.meta.copyWith(
+                    style: tokens.text.meta.copyWith(
                       color: tokens.colors.textMid,
                       fontSize: 11,
                     ),
@@ -811,7 +811,7 @@ class _ShortcutSheet extends StatelessWidget {
             children: [
               Text(
                 '操作',
-                style: tokens.type.panelTitle.copyWith(
+                style: tokens.text.panelTitle.copyWith(
                   color: tokens.colors.textHigh,
                 ),
               ),
@@ -824,14 +824,14 @@ class _ShortcutSheet extends StatelessWidget {
                       Expanded(
                         child: Text(
                           gesture,
-                          style: tokens.type.body.copyWith(
+                          style: tokens.text.body.copyWith(
                             color: tokens.colors.textMid,
                           ),
                         ),
                       ),
                       Text(
                         effect,
-                        style: tokens.type.meta.copyWith(
+                        style: tokens.text.meta.copyWith(
                           color: tokens.colors.textLow,
                         ),
                       ),
@@ -841,7 +841,7 @@ class _ShortcutSheet extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 '数据与预处理都在本机完成，不上传、不联网。',
-                style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+                style: tokens.text.meta.copyWith(color: tokens.colors.textLow),
               ),
             ],
           ),
