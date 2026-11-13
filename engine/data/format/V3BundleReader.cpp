@@ -1,7 +1,6 @@
 #include "data/format/V3BundleReader.hpp"
 
 #include "data/format/PointChunk.hpp"
-#include "foundation/io/Crc32c.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -83,12 +82,10 @@ V3BundleData read_v3_bundle(const fs::path& bundle_dir) {
         if (bytes.size() < GS3D_POINT_CHUNK_HEADER_SIZE) {
             throw std::runtime_error("v3 bundle: " + chunk.path + " is shorter than a header");
         }
-        const std::uint32_t crc =
-            gs3d::util::crc32c(std::span<const std::byte>(bytes).subspan(GS3D_POINT_CHUNK_HEADER_SIZE));
-        if (crc != chunk.crc32c) {
+        std::vector<Gs3dPoint> decoded = decode_point_chunk(bytes);
+        if (point_chunk_header_checksum(bytes) != chunk.crc32c) {
             throw std::runtime_error("v3 bundle: " + chunk.path + " fails its CRC check");
         }
-        std::vector<Gs3dPoint> decoded = decode_point_chunk(bytes);
         if (decoded.size() != chunk.points) {
             throw std::runtime_error("v3 bundle: " + chunk.path + " holds " +
                                      std::to_string(decoded.size()) + " points, manifest says " +

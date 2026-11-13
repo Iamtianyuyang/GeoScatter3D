@@ -1,7 +1,6 @@
 #include "pipeline/stages/PointStage.hpp"
 
 #include "foundation/io/AtomicFile.hpp"
-#include "foundation/io/Crc32c.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -35,13 +34,6 @@ std::vector<std::byte> read_file(const fs::path& file) {
         throw std::runtime_error("point chunk: short read on " + file.string());
     }
     return bytes;
-}
-
-std::uint32_t payload_crc(std::span<const std::byte> chunk_bytes) {
-    if (chunk_bytes.size() < gs3d::data::GS3D_POINT_CHUNK_HEADER_SIZE) {
-        throw std::runtime_error("point chunk: truncated header");
-    }
-    return gs3d::util::crc32c(chunk_bytes.subspan(gs3d::data::GS3D_POINT_CHUNK_HEADER_SIZE));
 }
 
 } // namespace
@@ -95,7 +87,7 @@ void PointChunkWriter::flush_full_chunks() {
         chunks_.push_back(gs3d::data::ManifestChunk{path,
                                                     static_cast<std::uint64_t>(pending_.size()),
                                                     static_cast<std::uint64_t>(encoded.size()),
-                                                    payload_crc(encoded)});
+                                                    gs3d::data::point_chunk_header_checksum(encoded)});
         written_points_ += pending_.size();
         pending_.clear();
     }
@@ -112,7 +104,7 @@ PointStageResult PointChunkWriter::finish() {
         chunks_.push_back(gs3d::data::ManifestChunk{path,
                                                     static_cast<std::uint64_t>(pending_.size()),
                                                     static_cast<std::uint64_t>(encoded.size()),
-                                                    payload_crc(encoded)});
+                                                    gs3d::data::point_chunk_header_checksum(encoded)});
         written_points_ += pending_.size();
         pending_.clear();
     }
@@ -187,7 +179,8 @@ bool verify_point_chunks(const fs::path& bundle_dir, std::string* error) {
         try {
             const std::vector<std::byte> bytes = read_file(bundle_dir / chunk.path);
             const auto decoded = gs3d::data::decode_point_chunk(bytes);
-            if (bytes.size() != chunk.bytes || payload_crc(bytes) != chunk.crc32c ||
+            if (bytes.size() != chunk.bytes ||
+                gs3d::data::point_chunk_header_checksum(bytes) != chunk.crc32c ||
                 decoded.size() != chunk.points || chunk.points > manifest.point_count - points) {
                 if (error != nullptr) {
                     *error = "chunk " + chunk.path + " does not match the manifest";

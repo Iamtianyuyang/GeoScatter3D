@@ -155,6 +155,21 @@ TEST_CASE("v3 bundle reads back every point it was written with")
     std::filesystem::remove_all(dir, ignored);
 }
 
+TEST_CASE("A valid point chunk with a different manifest checksum is rejected")
+{
+    const std::filesystem::path dir = temp_dir();
+    write_point_stage(dir, make_points(50), options(50));
+    auto manifest = gs3d::data::load_bundle_manifest(dir);
+    manifest.chunks.front().crc32c ^= 1;
+    gs3d::data::save_bundle_manifest(dir, manifest);
+
+    REQUIRE_FALSE(verify_point_chunks(dir));
+    REQUIRE_THROWS_AS(gs3d::data::read_v3_bundle(dir), std::runtime_error);
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
 TEST_CASE("v3 bundle reader rejects a corrupted chunk before handing out points")
 {
     const std::filesystem::path dir = temp_dir();

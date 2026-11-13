@@ -3,6 +3,7 @@
 #include "data/format/Point.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -16,5 +17,7 @@ inline constexpr std::size_t GS3D_POINT_CHUNK_HEADER_SIZE = 32;
 
 std::vector<std::byte> encode_point_chunk(std::span<const Gs3dPoint> points);
 std::vector<Gs3dPoint> decode_point_chunk(std::span<const std::byte> bytes);
+// The caller must validate untrusted chunks with decode_point_chunk first.
+std::uint32_t point_chunk_header_checksum(std::span<const std::byte> bytes);
 
 } // namespace gs3d::data

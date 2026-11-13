@@ -52,6 +52,16 @@ std::vector<std::byte> encode_point_chunk(std::span<const Gs3dPoint> points) {
     return bytes;
 }
 
+std::uint32_t point_chunk_header_checksum(std::span<const std::byte> bytes) {
+    if (bytes.size() < GS3D_POINT_CHUNK_HEADER_SIZE) {
+        throw std::runtime_error("point chunk: invalid header");
+    }
+    std::array<std::byte, 4> checksum{};
+    std::copy_n(bytes.begin() + 24, checksum.size(), checksum.begin());
+    std::size_t offset = 0;
+    return read_u32_le(checksum, offset);
+}
+
 std::vector<Gs3dPoint> decode_point_chunk(std::span<const std::byte> bytes) {
     if (bytes.size() < GS3D_POINT_CHUNK_HEADER_SIZE ||
         !std::equal(magic.begin(), magic.end(), bytes.begin())) {
