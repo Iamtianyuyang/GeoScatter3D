@@ -117,6 +117,9 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 - 取消只保证结果不被装载，文件读取本身不可中断；`gs3d_engine_destroy` 会等 IO 线程
   读完当前文件后返回。
 - 只有一个 IO 线程，`gs3d_engine_submit`（普通命令）尚未实现，相机等仍走同步入口。
+  `tests/EngineHostTests.cpp` 的 “async open reports a snapshot before and after
+  loading” 在有 Vulkan 设备的机器上真实跑通：建 64 点工程包、提交、轮询到 Done、
+  校验点数与终态一次性释放，并验证取消后装载被丢弃。
 - Flutter 界面尚未用 `loadDatasetAsync` 打开工程包：现有“打开”路径仍是同步
   `gs3d_engine_load_dataset`；`ui_flutter/lib/src/ffi/gs3d_engine.dart` 的
   `loadDatasetAsync`/`pollState`/`cancelTask` 已可调用，接线属于前端任务。

@@ -1,6 +1,7 @@
 #include "ffi/EngineHost.hpp"
 #include "ffi/FrameChannel.hpp"
 #include "ffi/HeadlessRenderKernel.hpp"
+#include "pipeline/stages/BundleBuild.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <thread>
 #include <vector>
 
@@ -319,4 +321,96 @@ TEST_CASE("tile streaming uploads and composes a large bundle") {
     // 让引擎在渲染线程上销毁内核（teardown 回归点），失败会以原生异常暴露。
     host.stop();
     SUCCEED("tile streaming teardown completed");
+}
+
+// ─── 异步开包：读盘离开调用线程，装载在渲染线程 ─────────────────────────────
+
+TEST_CASE("async open reports a snapshot before and after loading") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "gs3d-async-open";
+    std::error_code ignored;
+    fs::remove_all(dir, ignored);
+    fs::create_directories(dir);
+    {
+        std::ofstream out(dir / "input.csv");
+        out << "X,Y,Z,elevation\n";
+        for (int i = 0; i < 64; ++i) {
+            out << i << "," << (i % 5) << "," << (i % 3) << "," << i << "\n";
+        }
+    }
+    gs3d::pipeline::BundleBuildOptions options;
+    options.source = dir / "input.csv";
+    options.bundle_dir = dir / "bundle";
+    options.points_per_chunk = 16;
+    options.value_field = "elevation";
+    REQUIRE(gs3d::pipeline::build_bundle(options).points == 64);
+
+    gs3d::ffi::EngineHost host;
+    gs3d::ffi::HeadlessRenderKernel::Config config;
+    config.width = 320;
+    config.height = 200;
+    const fs::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (fs::exists(shader_dir / "point.vert.spv")) {
+        config.shader_dir = shader_dir.string();
+    }
+    if (host.start(config) != 0) {
+        SUCCEED("no Vulkan device; async open needs a render thread");
+        return;
+    }
+
+    gs3d::ffi::TaskBoard::Snapshot snapshot;
+    REQUIRE(host.poll_state(&snapshot) == -2);  // nothing published yet
+
+    std::uint64_t task = 0;
+    REQUIRE(host.submit_open_dataset((dir / "bundle").string(), &task) == 0);
+    REQUIRE(task != 0);
+
+    bool saw_running = false;
+    bool saw_done = false;
+    for (int attempt = 0; attempt < 600 && !saw_done; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (host.poll_state(&snapshot) != 0) {
+            continue;
+        }
+        for (const auto& entry : snapshot.tasks) {
+            if (entry.id != task) {
+                continue;
+            }
+            saw_running = saw_running || entry.state == gs3d::ffi::TaskBoard::State::Running;
+            if (entry.state == gs3d::ffi::TaskBoard::State::Done) {
+                saw_done = true;
+                REQUIRE(snapshot.dataset_loaded);
+                REQUIRE(snapshot.point_count == 64);
+            }
+            REQUIRE(entry.state != gs3d::ffi::TaskBoard::State::Failed);
+        }
+    }
+    REQUIRE(saw_done);
+
+    // The terminal row is released by the read above.
+    REQUIRE(host.poll_state(&snapshot) == 0);
+    CHECK(snapshot.tasks.empty());
+    CHECK(snapshot.dataset_loaded);
+
+    // Unknown ids are rejected, and a queued task can be cancelled before install.
+    CHECK(host.cancel(task) == -1);
+    REQUIRE(host.submit_open_dataset((dir / "bundle").string(), &task) == 0);
+    CHECK(host.cancel(task) == 0);
+    bool cancelled = false;
+    for (int attempt = 0; attempt < 300 && !cancelled; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (host.poll_state(&snapshot) != 0) {
+            continue;
+        }
+        for (const auto& entry : snapshot.tasks) {
+            if (entry.id == task &&
+                entry.state == gs3d::ffi::TaskBoard::State::Cancelled) {
+                cancelled = true;
+            }
+        }
+    }
+    CHECK(cancelled);
+
+    host.stop();
+    fs::remove_all(dir, ignored);
 }

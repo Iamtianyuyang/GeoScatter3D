@@ -728,6 +728,7 @@ target_compile_definitions(GeoScatter3DEngineHostTests PRIVATE
 )
 target_link_libraries(GeoScatter3DEngineHostTests PRIVATE
     gs3d_engine_core
+    gs3d_preprocess
     Vulkan::Vulkan
     Catch2::Catch2WithMain
 )
