@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../ffi/geoscatter3d_service.dart';
+import '../ffi/pipeline_service.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/pipeline_panel.dart';
 import '../widgets/telemetry_hud.dart';
 import '../widgets/viewport_canvas.dart';
 
@@ -27,6 +29,17 @@ class _MainShellState extends State<MainShell> {
   bool? _bottomExpanded;
   late final bool _ownsService;
   late final GeoScatter3dService _service;
+  final _sourcePath = TextEditingController();
+  final _bundlePath = TextEditingController();
+  PipelineService? _pipeline;
+
+  PipelineService _getPipeline() {
+    if (_pipeline == null) {
+      final pipeline = PipelineService();
+      setState(() => _pipeline = pipeline);
+    }
+    return _pipeline!;
+  }
 
   @override
   void initState() {
@@ -37,6 +50,9 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    _pipeline?.dispose();
+    _sourcePath.dispose();
+    _bundlePath.dispose();
     if (_ownsService) _service.dispose();
     super.dispose();
   }
@@ -133,9 +149,17 @@ class _MainShellState extends State<MainShell> {
                             onClose: () {
                               setState(() => _leftDrawerIndex = null);
                             },
-                            child: _WorkspaceDrawerContent(
-                              section: _workspaceSections[_leftDrawerIndex!],
-                            ),
+                            child: _leftDrawerIndex == 0
+                                ? PipelinePanel(
+                                    source: _sourcePath,
+                                    bundle: _bundlePath,
+                                    pipeline: _pipeline,
+                                    getPipeline: _getPipeline,
+                                  )
+                                : _WorkspaceDrawerContent(
+                                    section:
+                                        _workspaceSections[_leftDrawerIndex!],
+                                  ),
                           ),
                         ),
                       if (rightDrawerOpen)

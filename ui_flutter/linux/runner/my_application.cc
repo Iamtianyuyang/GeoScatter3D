@@ -7,6 +7,7 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  FlMethodChannel* document_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -14,6 +15,34 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+}
+
+static void document_response_cb(GtkNativeDialog* dialog, int response,
+                                 gpointer user_data) {
+  auto* call = FL_METHOD_CALL(user_data);
+  g_autofree gchar* path = response == GTK_RESPONSE_ACCEPT
+      ? gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)) : nullptr;
+  g_autoptr(FlValue) result = path ? fl_value_new_string(path) : fl_value_new_null();
+  fl_method_call_respond_success(call, result, nullptr);
+  g_object_unref(call);
+  g_object_unref(dialog);
+}
+
+static void document_method_cb(FlMethodChannel*, FlMethodCall* call,
+                               gpointer user_data) {
+  const gchar* method = fl_method_call_get_name(call);
+  const bool file = strcmp(method, "pickFile") == 0;
+  if (!file && strcmp(method, "pickDirectory") != 0) {
+    fl_method_call_respond_not_implemented(call, nullptr);
+    return;
+  }
+  auto* dialog = gtk_file_chooser_native_new(
+      file ? "选择点云文件" : "选择工程目录", GTK_WINDOW(user_data),
+      file ? GTK_FILE_CHOOSER_ACTION_OPEN : GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER,
+      "选择", "取消");
+  g_signal_connect(dialog, "response", G_CALLBACK(document_response_cb),
+                   g_object_ref(call));
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
 }
 
 // Implements GApplication::activate.
@@ -55,6 +84,13 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->document_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "com.geoscatter3d.ui_flutter/documents", FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->document_channel,
+                                           document_method_cb, window, nullptr);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -101,6 +137,7 @@ static void my_application_shutdown(GApplication* application) {
 // Implements GObject::dispose.
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
+  g_clear_object(&self->document_channel);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
