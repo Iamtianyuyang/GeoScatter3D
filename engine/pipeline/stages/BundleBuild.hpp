@@ -9,6 +9,7 @@
 namespace gs3d::pipeline {
 
 inline constexpr const char* kStatsStageName = "stats";
+inline constexpr const char* kLodStageName = "lod";
 
 struct BundleBuildOptions {
     std::filesystem::path source;

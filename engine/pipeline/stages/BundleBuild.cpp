@@ -5,10 +5,13 @@
 #include "data/csv/CsvSniffer.hpp"
 #include "data/csv/CsvStreamReader.hpp"
 #include "data/format/Manifest.hpp"
+#include "data/format/V3BundleReader.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
 #include "foundation/concurrency/ThreadPool.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/compute/StatisticsPass.hpp"
 #include "pipeline/stages/PointStage.hpp"
+#include "pipeline/writers/Gs3dLodWriter.hpp"
 
 #include <algorithm>
 #include <deque>
@@ -27,9 +30,59 @@ std::string options_hash(const BundleBuildOptions& options) {
            "/value-field=" + options.value_field;
 }
 
+/*
+ * 把 LOD 链写进工程包。失败返回 false：没有 sidecar 时读取端会自己建链，
+ * 所以这里不把整个建包判为失败，但也不标记阶段完成，下次续跑还会再试。
+ */
+bool write_bundle_lod(const fs::path& bundle_dir) {
+    gs3d::data::V3BundleData bundle = gs3d::data::read_v3_bundle(bundle_dir);
+    gs3d::data::Gs3dDataset dataset(gs3d::data::v3_bundle_header(bundle),
+                                    std::move(bundle.points),
+                                    bundle_dir / "manifest.json");
+    gs3d::data::Gs3dLodBuildConfig config;
+    config.include_full_resolution_level = false;
+    const auto lod = gs3d::data::Gs3dLodDataset::build(dataset, config);
+    if (lod.empty()) {
+        return false;
+    }
+    // 先写临时文件再改名：半截 sidecar 会被读取端当成损坏文件拒绝。
+    const fs::path temporary = bundle_dir / "lod.gs3dlod.tmp";
+    const fs::path target = bundle_dir / "lod.gs3dlod";
+    std::error_code error;
+    if (!gs3d::preprocess::Gs3dLodWriter::write(temporary, lod).success) {
+        fs::remove(temporary, error);
+        return false;
+    }
+    fs::rename(temporary, target, error);
+    if (error) {
+        fs::remove(temporary, error);
+        return false;
+    }
+    return true;
+}
+
 bool stage_done(const gs3d::data::Manifest& manifest, const char* stage) {
     const auto found = manifest.job.stages.find(stage);
     return found != manifest.job.stages.end() && found->second == "done";
+}
+
+void run_lod_stage(const fs::path& bundle_dir,
+                   gs3d::data::Manifest& manifest,
+                   BundleBuildResult& result,
+                   const std::function<void(const char*)>& on_stage) {
+    if (stage_done(manifest, kLodStageName)) {
+        result.stages_skipped.push_back(kLodStageName);
+        return;
+    }
+    if (on_stage) {
+        on_stage(kLodStageName);
+    }
+    if (!write_bundle_lod(bundle_dir)) {
+        return;  // 读取端没有 sidecar 时会自己建链
+    }
+    manifest.job.stages[kLodStageName] = "done";
+    gs3d::data::save_bundle_manifest(bundle_dir, manifest);
+    result.stages_run.push_back(kLodStageName);
 }
 
 // Resume is only safe when the bundle came from this exact source and options.
@@ -107,6 +160,7 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
         result.points = manifest.point_count;
         result.chunks = manifest.chunks.size();
         result.stages_skipped = {kStatsStageName, kPointStageName};
+        run_lod_stage(options.bundle_dir, manifest, result, on_stage);
         return result;
     }
 
@@ -244,6 +298,12 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     if (!verify_point_chunks(options.bundle_dir, &error)) {
         throw std::runtime_error("build_bundle: written bundle failed verification: " + error);
     }
+
+    /*
+     * LOD 链只在预处理里算一次：运行时的 ffi::LodBuilder 在 50M 点上要 22 s，
+     * 是“打开工程包”耗时的大头，而 sidecar 存在时内核直接读它。
+     */
+    run_lod_stage(options.bundle_dir, manifest, result, on_stage);
     return result;
 }
 

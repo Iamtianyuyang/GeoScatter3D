@@ -286,7 +286,11 @@ manifest 必须包含：
   恢复源路径、选项）、`BundleJob`（单任务后台执行、状态轮询和阶段边界取消）、
   `gs3d_pipeline_ffi`（独立的无 GPU 管线 C 接口及 Dart 结构镜像）、
   `gs3d_pack`（命令行入口）、`V3BundleReader`（引擎直接打开 v3 包）。
-- 未实现：`lod/` 与 `tiles/` 的 v3 写入与读取；在它们落地前，manifest 的
+- 已实现：建包末尾的 `lod` 阶段用 `Gs3dLodDataset` / `Gs3dLodWriter` 生成
+  `lod.gs3dlod`（临时文件 + 改名，失败不阻塞建包，读取端会自行建链）；
+  引擎打开工程包时优先用它，不再运行时建链。
+- 未实现：`lod/` 与 `tiles/` 的 v3 分块写入与读取（现阶段 LOD 是包旁的单个
+  sidecar 文件，不参与 manifest 校验）；在它们落地前，manifest 的
   `required_features` 只应写 `points`。约定：`required_features` 里的特性在包里
   找不到对应块时，读取方必须拒绝加载。
 - 阶段检查点目前写在 `manifest.json` 中；指纹完成后记录 UTF-8 绝对源路径与选项，
@@ -321,10 +325,13 @@ manifest 必须包含：
   目前使用内置指纹实现。
   注意 `build/` 是 Debug 构建：同一命令在其中跑 50M 要 177 s、开包要 394 s，只能用于功能
   验证，性能数字必须取 `tmp/build-linux`（Release）。
-- 打开 50M 工程包（Release，Linux，RTX 5060）：`gs3d_engine_load_dataset` 同步读盘 +
-  建链共 46.9 s，峰值 RSS 1.37 GB，LOD 4 层、总 GPU 点 3.37 M、默认视角绘制 633 k 点。
-  其中运行时 LOD 建链 29.2 s、GPU 上传 0.17 s、块读盘与解码约 17 s。距离“打开到可交互
-  ≤ 1.5 s”的预算还很远：界面在异步开包期间保持可交互，但数据要等这么久才出现。
+- 打开 50M 工程包（Release，Linux，RTX 5060）：没有 sidecar 时 `gs3d_engine_load_dataset`
+  同步读盘 + 运行时建链共 29.7 s；其中 LOD 建链 22.3 s、块解码并行后约 2.6 s、GPU 上传
+  0.17 s。预处理的 `lod` 阶段补上 sidecar 后同一命令 **2.3 s**，LOD 5 层、总 GPU 点 3.15 M、
+  默认视角绘制 813 k 点，峰值 RSS 1.2 GB。距离“打开到可交互 ≤ 1.5 s”仍有差距，差距来自
+  766 MB 点块的解码与上传，不是建链。
+  代价：50M 建包多出 `lod` 阶段（读回点块 + 建 5 层 + 写 50 MB sidecar，实测 +49 s），
+  总建包时间因此超出 60 s 预算；这是把耗时从每次打开搬到一次的取舍。
   `estimate_spacing` 曾按输入顺序取连续块，50M 数据按列导出时估出 537,970 的“点距”，
   整份数据被压成一层、屏幕上只剩 67 k 点；现以 bbox 最大面的面密度 sqrt(area/n) 作为
   与顺序无关的上界，同一数据改为 4 层。Android 设备没有实测数据。

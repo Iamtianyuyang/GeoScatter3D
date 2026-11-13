@@ -2,12 +2,16 @@
 
 #include "data/format/PointChunk.hpp"
 
+#include "foundation/concurrency/ThreadPool.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <fstream>
+#include <future>
 #include <stdexcept>
+#include <thread>
 
 namespace gs3d::data {
 namespace {
@@ -67,12 +71,26 @@ V3BundleData read_v3_bundle(const fs::path& bundle_dir) {
                                  " points but the manifest says " +
                                  std::to_string(data.manifest.point_count));
     }
-    data.points.reserve(static_cast<std::size_t>(data.manifest.point_count));
+    data.points.resize(static_cast<std::size_t>(data.manifest.point_count));
 
+    // 每个点块解码到自己那段，解码顺序不影响结果；50M 顺序解码约 17 s，
+    // 是开包耗时里除 LOD 建链之外最大的一块。
+    struct ChunkJob {
+        const ManifestChunk* chunk = nullptr;
+        std::size_t offset = 0;
+    };
+    std::vector<ChunkJob> jobs;
+    std::size_t offset = 0;
     for (const ManifestChunk& chunk : data.manifest.chunks) {
         if (chunk.path.rfind("points/", 0) != 0) {
             continue;
         }
+        jobs.push_back(ChunkJob{&chunk, offset});
+        offset += static_cast<std::size_t>(chunk.points);
+    }
+
+    const auto decode_chunk = [&bundle_dir](const ChunkJob& job, Gs3dPoint* destination) {
+        const ManifestChunk& chunk = *job.chunk;
         const std::vector<std::byte> bytes = read_file(resolve_chunk_file(bundle_dir, chunk.path));
         if (bytes.size() != chunk.bytes) {
             throw std::runtime_error("v3 bundle: " + chunk.path + " has " +
@@ -91,7 +109,47 @@ V3BundleData read_v3_bundle(const fs::path& bundle_dir) {
                                      std::to_string(decoded.size()) + " points, manifest says " +
                                      std::to_string(chunk.points));
         }
-        data.points.insert(data.points.end(), decoded.begin(), decoded.end());
+        std::copy(decoded.begin(), decoded.end(), destination);
+    };
+
+    const auto available = std::thread::hardware_concurrency();
+#ifdef __ANDROID__
+    const std::size_t thread_cap = 4;
+#else
+    const std::size_t thread_cap = 8;
+#endif
+    const std::size_t workers = std::min<std::size_t>(
+        jobs.size(), std::min<std::size_t>(thread_cap, std::max(1u, available))
+    );
+    if (jobs.size() > 1 && workers > 1) {
+        util::ThreadPool pool(workers);
+        std::vector<std::future<void>> futures;
+        futures.reserve(workers);
+        for (std::size_t worker = 0; worker < workers; ++worker) {
+            futures.push_back(pool.submit([&jobs, &decode_chunk, &data, worker, workers] {
+                for (std::size_t index = worker; index < jobs.size(); index += workers) {
+                    decode_chunk(jobs[index], data.points.data() + jobs[index].offset);
+                }
+            }));
+        }
+        // 先收集全部结果再抛出，保证没有任务还在写 points。
+        std::exception_ptr failure;
+        for (auto& future : futures) {
+            try {
+                future.get();
+            } catch (...) {
+                if (!failure) {
+                    failure = std::current_exception();
+                }
+            }
+        }
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+    } else {
+        for (const ChunkJob& job : jobs) {
+            decode_chunk(job, data.points.data() + job.offset);
+        }
     }
 
     if (data.points.size() != data.manifest.point_count) {

@@ -1,5 +1,6 @@
 #include "data/format/Manifest.hpp"
 #include "data/format/V3BundleReader.hpp"
+#include "data/lod/Gs3dLodFormat.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/stages/BundleBuild.hpp"
 #include "pipeline/stages/BundleJob.hpp"
@@ -80,6 +81,40 @@ TEST_CASE("large CSV chunks preserve point order and ignore invalid records")
     REQUIRE(bundle.points.front().z == -2.0f);
     REQUIRE(bundle.points.front().value == 4.0f);
     REQUIRE(bundle.points.back().value == 8.0f);
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
+TEST_CASE("preprocessing writes the lod sidecar that opening reuses")
+{
+    // 200k 点栅格才分得出层，LOD 阶段也才会真的落盘 sidecar。
+    const fs::path source = make_source("lod-sidecar", "");
+    {
+        std::ofstream out(source, std::ios::app);
+        for (int y = 0; y < 400; ++y) {
+            for (int x = 0; x < 500; ++x) {
+                out << x << ',' << y << ",0," << (x + y) << '\n';
+            }
+        }
+    }
+    auto options = options_for(source, source.parent_path() / "bundle");
+    options.points_per_chunk = 65536;
+    const auto result = gs3d::pipeline::build_bundle(options);
+    REQUIRE(result.points == 200000);
+    REQUIRE(contains(result.stages_run, "lod"));
+    const fs::path sidecar = options.bundle_dir / "lod.gs3dlod";
+    REQUIRE(fs::exists(sidecar));
+    std::ifstream in(sidecar, std::ios::binary);
+    gs3d::data::Gs3dLodFileHeader header;
+    REQUIRE_NOTHROW(
+        gs3d::data::Gs3dLodFormat::read_file_header(in, header, "lod header")
+    );
+    REQUIRE(header.level_count >= 1);
+    REQUIRE(header.source_point_count == 200000);
+
+    // 再打开同一个包：lod 已完成，不再写第二遍。
+    const auto again = gs3d::pipeline::build_bundle(options);
+    REQUIRE(contains(again.stages_skipped, "lod"));
     std::error_code ignored;
     fs::remove_all(source.parent_path(), ignored);
 }
