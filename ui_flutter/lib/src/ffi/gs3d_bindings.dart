@@ -278,6 +278,34 @@ typedef DartPickPoint =
       ffi.Pointer<ffi.Float> outPointXyzv,
     );
 
+typedef CExportDataset =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Utf8> path,
+      ffi.Pointer<Utf8> format,
+    );
+typedef DartExportDataset =
+    int Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Utf8> path,
+      ffi.Pointer<Utf8> format,
+    );
+
+typedef CReadFramePng =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<ffi.Uint8> out,
+      ffi.Uint32 maxBytes,
+      ffi.Pointer<ffi.Uint32> outLen,
+    );
+typedef DartReadFramePng =
+    int Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<ffi.Uint8> out,
+      int maxBytes,
+      ffi.Pointer<ffi.Uint32> outLen,
+    );
+
 typedef CSubmitCommand =
     ffi.Int32 Function(
       Gs3dEnginePtr e,
@@ -329,6 +357,8 @@ class Gs3dBindings {
   late final DartCancel cancel;
   late final DartSubmitCommand submitCommand;
   late final DartPickPoint pickPoint;
+  late final DartExportDataset exportDataset;
+  late final DartReadFramePng readFramePng;
 
   Gs3dBindings(this.lib) {
     version = lib.lookupFunction<CVersion, DartVersion>('gs3d_engine_version');
@@ -423,6 +453,12 @@ class Gs3dBindings {
     );
     pickPoint = lib.lookupFunction<CPickPoint, DartPickPoint>(
       'gs3d_engine_pick_point',
+    );
+    exportDataset = lib.lookupFunction<CExportDataset, DartExportDataset>(
+      'gs3d_engine_export',
+    );
+    readFramePng = lib.lookupFunction<CReadFramePng, DartReadFramePng>(
+      'gs3d_engine_read_frame_png',
     );
   }
 

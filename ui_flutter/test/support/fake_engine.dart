@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:ui_flutter/src/ffi/gs3d_engine.dart';
 
@@ -52,8 +54,8 @@ class FakeEngine implements Gs3dEngine {
     if (openError case final Object error) throw error;
     openedPaths.add(path);
     onProgress?.call(500, 'install');
-    _sourcePointCount = 4242;
-    _drawnPointCount = 4242;
+    _sourcePointCount = openSourcePoints;
+    _drawnPointCount = openDrawnPoints;
     onProgress?.call(1000, 'done');
   }
 
@@ -93,6 +95,28 @@ class FakeEngine implements Gs3dEngine {
   void setPointBudget(int maxPoints) {
     pointBudget = maxPoints;
   }
+
+  /// 导出记录：(路径, 格式)。`writeExportFile` 为 true 时真的落一个文件。
+  final List<(String, String)> exports = [];
+  int exportResult = 0;
+  bool writeExportFile = false;
+  Uint8List? framePng = Uint8List.fromList([137, 80, 78, 71]);
+
+  @override
+  int exportDataset(String path, {String format = 'ply'}) {
+    exports.add((path, format));
+    if (writeExportFile) File(path).writeAsStringSync('fake-points');
+    return exportResult;
+  }
+
+  @override
+  Uint8List? readFramePng({int initialBytes = 4 << 20, int maxBytes = 64 << 20}) {
+    return framePng;
+  }
+
+  /// 打开工程包时报告的点数（默认样例规模）。
+  int openSourcePoints = 4242;
+  int openDrawnPoints = 4242;
 
   /// 拾取命中结果；null 表示未命中。
   PickedPoint? pickResult;

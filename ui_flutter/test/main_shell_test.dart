@@ -5,6 +5,7 @@ import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
 import 'package:ui_flutter/src/widgets/display_panel.dart';
 import 'package:ui_flutter/src/widgets/measurement_panel.dart';
+import 'package:ui_flutter/src/widgets/result_panel.dart';
 import 'support/fake_engine.dart';
 
 void main() {
@@ -199,6 +200,42 @@ void main() {
 
     expect(engine.openedPaths, isEmpty);
     expect(service.datasetPath, isNull);
+  });
+
+  testWidgets('result drawer exports only within the synchronous budget', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      _testApp(MainShell(viewport: const SizedBox.expand(), service: service)),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('rail_result')));
+    await tester.pump();
+
+    expect(find.byType(ResultPanel), findsOneWidget);
+    OutlinedButton button(String key) =>
+        tester.widget<OutlinedButton>(find.byKey(ValueKey(key)));
+    expect(button('export_ply_button').onPressed, isNotNull);
+    expect(button('save_frame_button').onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+
+    // 超过同步上限时按钮禁用，并说明原因。
+    engine.openSourcePoints = 5000000;
+    engine.openDrawnPoints = 100000;
+    expect(await service.openBundle('/tmp/gs3d-big-bundle'), isTrue);
+    await tester.pump();
+    expect(button('export_ply_button').onPressed, isNull);
+    expect(button('export_ply_button').onPressed, isNull);
+    expect(find.textContaining('暂不支持'), findsOneWidget);
   });
 
   testWidgets('properties drawer hosts the measurement panel', (tester) async {

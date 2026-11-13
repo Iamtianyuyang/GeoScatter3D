@@ -12,6 +12,7 @@ import '../ffi/render_settings.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/display_panel.dart';
 import '../widgets/measurement_panel.dart';
+import '../widgets/result_panel.dart';
 import '../widgets/pipeline_panel.dart';
 import '../widgets/telemetry_hud.dart';
 import '../widgets/viewport_canvas.dart';
@@ -217,19 +218,20 @@ class _MainShellState extends State<MainShell> {
                             onClose: () {
                               setState(() => _leftDrawerIndex = null);
                             },
-                            child: _leftDrawerIndex == 0
-                                ? PipelinePanel(
-                                    source: _sourcePath,
-                                    bundle: _bundlePath,
-                                    pipeline: _pipeline,
-                                    getPipeline: _getPipeline,
-                                  )
-                                : _WorkspaceDrawerContent(
-                                    section:
-                                        _workspaceSections[_leftDrawerIndex!],
-                                    service: _service,
-                                    onOpenBundle: _openBundle,
-                                  ),
+                            child: switch (_leftDrawerIndex) {
+                              0 => PipelinePanel(
+                                source: _sourcePath,
+                                bundle: _bundlePath,
+                                pipeline: _pipeline,
+                                getPipeline: _getPipeline,
+                              ),
+                              3 => ResultPanel(service: _service),
+                              _ => _WorkspaceDrawerContent(
+                                section: _workspaceSections[_leftDrawerIndex!],
+                                service: _service,
+                                onOpenBundle: _openBundle,
+                              ),
+                            },
                           ),
                         ),
                       if (rightDrawerOpen)

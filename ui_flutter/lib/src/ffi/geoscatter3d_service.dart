@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'gs3d_engine.dart';
+import 'app_state.dart';
 import 'render_settings.dart';
 import 'present_surface.dart';
 
@@ -50,7 +51,9 @@ class GeoScatter3dService extends ChangeNotifier {
     Gs3dEngine? engine,
     Future<Gs3dEngine> Function()? createEngine,
     PresentSurfaceBinder? presentBinder,
-  }) : _engine = engine,
+    Future<Directory> Function()? exportDirectory,
+  }) : _exportDirectory = exportDirectory ?? exportsDirectory,
+       _engine = engine,
        _ownsEngine = engine == null,
        _presentBinder = presentBinder ?? defaultPresentSurfaceBinder(),
        _createEngine =
@@ -60,6 +63,7 @@ class GeoScatter3dService extends ChangeNotifier {
   final Future<Gs3dEngine> Function() _createEngine;
   final PresentSurfaceBinder _presentBinder;
   final bool _ownsEngine;
+  final Future<Directory> Function() _exportDirectory;
   Gs3dEngine? _engine;
   bool _disposed = false;
   bool _started = false;
@@ -101,6 +105,9 @@ class GeoScatter3dService extends ChangeNotifier {
   String _gpuName = 'Vulkan GPU';
   RenderSettings _renderSettings = RenderSettings.defaults;
   final List<PickedPoint> _pickedPoints = [];
+  bool _exporting = false;
+  String? _lastExportPath;
+  String? _lastExportError;
   File? _renderSettingsFile;
 
   ui.Image? get frame => _frame;
@@ -135,6 +142,76 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 当前取帧通路的展示名（HUD/诊断用）。
   String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
+
+  /// 同步导出的点数上限：导出在渲染线程上写文件，超过这个量界面会长时间无帧。
+  static const int maxSyncExportPoints = 2000000;
+
+  bool get exporting => _exporting;
+  String? get lastExportPath => _lastExportPath;
+  String? get lastExportError => _lastExportError;
+
+  /// 导出点云是否可用（引擎就绪、没有别的导出在跑、点数在同步上限内）。
+  bool get canExport =>
+      _ready && !_disposed && !_exporting && _sourcePointCount <= maxSyncExportPoints;
+
+  /// 把当前数据集写到应用状态目录的 `exports/`；失败返回 null 并写
+  /// [lastExportError]。
+  Future<String?> exportPoints({String format = 'ply'}) async {
+    return _runExport((engine) async {
+      final file = await _exportFile(format, 'points');
+      final rc = engine.exportDataset(file.path, format: format);
+      if (rc != 0) throw StateError('导出失败 ($rc): ${engine.lastError}');
+      return file.path;
+    });
+  }
+
+  /// 当前帧另存 PNG；没渲染过帧时失败。
+  Future<String?> saveScreenshot() async {
+    return _runExport((engine) async {
+      final png = engine.readFramePng();
+      if (png == null) throw StateError('没有可保存的帧: ${engine.lastError}');
+      final file = await _exportFile('png', 'frame');
+      await file.writeAsBytes(png, flush: true);
+      return file.path;
+    });
+  }
+
+  Future<String?> _runExport(
+    Future<String> Function(Gs3dEngine engine) work,
+  ) async {
+    final engine = _engine;
+    if (engine == null || _disposed || _exporting) return null;
+    if (!canExport) {
+      _lastExportError = _ready
+          ? '超过 $maxSyncExportPoints 点的导出尚未实现'
+          : '引擎未就绪，无法导出';
+      notifyListeners();
+      return null;
+    }
+    _exporting = true;
+    _lastExportError = null;
+    notifyListeners();
+    try {
+      final path = await work(engine);
+      _lastExportPath = path;
+      return path;
+    } catch (error) {
+      _lastExportError = error.toString();
+      return null;
+    } finally {
+      _exporting = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  Future<File> _exportFile(String format, String prefix) async {
+    final directory = await _exportDirectory();
+    await directory.create(recursive: true);
+    final stamp = DateTime.now().toUtc().millisecondsSinceEpoch;
+    return File(
+      '${directory.path}${Platform.pathSeparator}$prefix-$stamp.$format',
+    );
+  }
 
   /// 已拾取的点（最多两个：起点、终点）；第三次点击开始新的一组。
   List<PickedPoint> get pickedPoints => List.unmodifiable(_pickedPoints);

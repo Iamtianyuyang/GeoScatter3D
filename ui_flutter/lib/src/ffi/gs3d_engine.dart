@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart';
@@ -270,6 +271,44 @@ class Gs3dEngine {
   void setPointSize(double size) {
     _checkDisposed();
     _bindings.setPointSize(_ptr, size);
+  }
+
+  /// 导出当前数据集：format 为 `ply`（ascii）或 `csv`；0 成功。
+  int exportDataset(String path, {String format = 'ply'}) {
+    _checkDisposed();
+    final nativePath = path.toNativeUtf8();
+    final nativeFormat = format.toNativeUtf8();
+    try {
+      return _bindings.exportDataset(_ptr, nativePath, nativeFormat);
+    } finally {
+      malloc.free(nativePath);
+      malloc.free(nativeFormat);
+    }
+  }
+
+  /// 当前帧编码成 PNG；没有渲染过返回 null，缓冲不够会自动放大重试。
+  Uint8List? readFramePng({
+    int initialBytes = 4 << 20,
+    int maxBytes = 64 << 20,
+  }) {
+    if (_disposed) return null;
+    var capacity = initialBytes;
+    while (capacity <= maxBytes) {
+      final buffer = malloc<ffi.Uint8>(capacity);
+      final outLen = calloc<ffi.Uint32>();
+      try {
+        final rc = _bindings.readFramePng(_ptr, buffer, capacity, outLen);
+        if (rc == 0) {
+          return Uint8List.fromList(buffer.asTypedList(outLen.value));
+        }
+        if (rc != -1) return null; // -2 未渲染过、-3 编码失败
+        capacity *= 4;
+      } finally {
+        malloc.free(buffer);
+        calloc.free(outLen);
+      }
+    }
+    return null;
   }
 
   /// 屏幕坐标拾取（逻辑像素）：命中返回点，未命中返回 null。

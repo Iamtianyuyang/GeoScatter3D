@@ -25,6 +25,12 @@ Future<Directory> appStateDirectory() async {
   return Directory('$base${Platform.pathSeparator}GeoScatter3D');
 }
 
+/// 导出产物目录：点云与截图都写在这里，界面只展示路径。
+Future<Directory> exportsDirectory() async {
+  final state = await appStateDirectory();
+  return Directory('${state.path}${Platform.pathSeparator}exports');
+}
+
 /// 先写临时文件再改名：掉电或崩溃时不会留下半截 JSON。
 Future<void> writeJsonAtomic(File file, Object value) async {
   await file.parent.create(recursive: true);

@@ -125,6 +125,9 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 - 界面已接线：`GeoScatter3dService.openBundle` 调用 `loadDatasetAsync`（每 200 ms
   轮询快照），“数据”抽屉里的「打开工程包」通过平台目录选择器选包并显示阶段；
   基准/样例路径仍用同步 `gs3d_engine_load_dataset`。二者共用同一内核装载代码。
+- 导出（“成果”抽屉）：`gs3d_engine_export` 写 PLY/CSV、`gs3d_engine_read_frame_png`
+  取当前帧 PNG，文件落在应用状态目录的 `exports/`，界面只展示路径。导出仍是同步
+  调用（占渲染线程），因此超过 200 万点直接拒绝并说明原因，另存为对话框也尚未做。
 - 测量（“属性”抽屉）：视口单击调用 `gs3d_engine_pick_point`，依次记录起点和终点，
   显示两点距离与带符号高差；第三次点击开始新的一组，未命中不改变现有测量。
   拾取在渲染线程上线性扫描已装载的点（`src/ffi/HeadlessRenderKernel.cpp` 的
