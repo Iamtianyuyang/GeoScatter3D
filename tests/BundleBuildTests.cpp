@@ -82,6 +82,37 @@ TEST_CASE("background bundle jobs publish completion and errors")
     fs::remove_all(source.parent_path(), ignored);
 }
 
+TEST_CASE("only one background bundle job runs across instances")
+{
+    using gs3d::pipeline::BundleJobState;
+    const fs::path source = make_source("job-limit", "1,2,3,4\n");
+    const fs::path large_source = source.parent_path() / "large.csv";
+    std::ofstream(large_source).close();
+    fs::resize_file(large_source, 64 * 1024 * 1024);
+    gs3d::pipeline::BundleJob first;
+    gs3d::pipeline::BundleJob second;
+    const auto id = first.start(options_for(large_source, source.parent_path() / "first"));
+    REQUIRE_THROWS(second.start(options_for(source, source.parent_path() / "second")));
+    REQUIRE(first.cancel(id));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    auto status = first.poll();
+    while (status.state == BundleJobState::running &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+        status = first.poll();
+    }
+    REQUIRE(status.state == BundleJobState::cancelled);
+    first.start(options_for(source, source.parent_path() / "after"));
+    do {
+        std::this_thread::yield();
+        status = first.poll();
+    } while (status.state == BundleJobState::running &&
+             std::chrono::steady_clock::now() < deadline);
+    REQUIRE(status.state == BundleJobState::done);
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
 TEST_CASE("a second build of the same source skips every finished stage")
 {
     const fs::path source =

@@ -7,6 +7,11 @@ namespace gs3d::pipeline {
 namespace {
 
 struct Cancelled {};
+std::atomic_flag active_job = ATOMIC_FLAG_INIT;
+
+struct JobSlot {
+    ~JobSlot() { active_job.clear(); }
+};
 
 } // namespace
 
@@ -37,12 +42,16 @@ std::uint64_t BundleJob::launch(Work work) {
     if (worker_.joinable()) {
         worker_.join();
     }
+    if (active_job.test_and_set()) {
+        throw std::runtime_error("bundle job: another pipeline job is running");
+    }
     cancel_requested_.store(false);
     status_ = {};
     status_.id = next_id_++;
     status_.state = BundleJobState::running;
     try {
         worker_ = std::thread([this, work = std::move(work)] {
+            JobSlot slot;
             try {
                 const auto result = work([this](const char* stage) {
                     {
@@ -71,6 +80,7 @@ std::uint64_t BundleJob::launch(Work work) {
             }
         });
     } catch (...) {
+        active_job.clear();
         status_ = {};
         throw;
     }
