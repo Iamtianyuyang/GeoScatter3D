@@ -149,6 +149,10 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                 child: GestureDetector(
                   key: const ValueKey('viewport_gestures'),
                   behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) => _action('pick.point', {
+                    'x': details.localPosition.dx,
+                    'y': details.localPosition.dy,
+                  }),
                   onScaleStart: (_) => _lastScale = 1,
                   onScaleUpdate: (details) {
                     if (details.pointerCount == 1) {

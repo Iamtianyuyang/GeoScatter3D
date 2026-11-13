@@ -261,6 +261,23 @@ typedef DartOpenDataset =
 typedef CCancel = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Uint64 task);
 typedef DartCancel = int Function(Gs3dEnginePtr e, int task);
 
+typedef CPickPoint =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Float screenX,
+      ffi.Float screenY,
+      ffi.Float tolerancePx,
+      ffi.Pointer<ffi.Float> outPointXyzv,
+    );
+typedef DartPickPoint =
+    int Function(
+      Gs3dEnginePtr e,
+      double screenX,
+      double screenY,
+      double tolerancePx,
+      ffi.Pointer<ffi.Float> outPointXyzv,
+    );
+
 typedef CSubmitCommand =
     ffi.Int32 Function(
       Gs3dEnginePtr e,
@@ -311,6 +328,7 @@ class Gs3dBindings {
   late final DartOpenDataset openDataset;
   late final DartCancel cancel;
   late final DartSubmitCommand submitCommand;
+  late final DartPickPoint pickPoint;
 
   Gs3dBindings(this.lib) {
     version = lib.lookupFunction<CVersion, DartVersion>('gs3d_engine_version');
@@ -402,6 +420,9 @@ class Gs3dBindings {
     cancel = lib.lookupFunction<CCancel, DartCancel>('gs3d_engine_cancel');
     submitCommand = lib.lookupFunction<CSubmitCommand, DartSubmitCommand>(
       'gs3d_engine_submit',
+    );
+    pickPoint = lib.lookupFunction<CPickPoint, DartPickPoint>(
+      'gs3d_engine_pick_point',
     );
   }
 

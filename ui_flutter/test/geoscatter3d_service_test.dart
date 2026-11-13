@@ -34,6 +34,38 @@ void main() {
       expect(engine.disposeCount, 0);
     },
   );
+  test('picking two points yields distance and signed height difference', () async {
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    engine.pickResult = (x: 0.0, y: 0.0, z: 10.0, value: 1.0);
+    service.pickPointAt(100, 120);
+    expect(service.pickedPoints, hasLength(1));
+    expect(service.measurementDistance, isNull);
+    expect(engine.pickCalls, [(100.0, 120.0)]);
+
+    engine.pickResult = (x: 3.0, y: 4.0, z: 12.5, value: 2.0);
+    service.pickPointAt(140, 160);
+    expect(service.measurementDistance, closeTo(5.590, 0.001));
+    expect(service.measurementHeightDelta, 2.5);
+
+    // 未命中不改变现有测量。
+    engine.pickResult = null;
+    service.pickPointAt(10, 10);
+    expect(service.pickedPoints, hasLength(2));
+
+    // 第三次命中开始新的一组，避免把三点的距离算成一条折线。
+    engine.pickResult = (x: 1.0, y: 1.0, z: 1.0, value: 0.0);
+    service.pickPointAt(200, 200);
+    expect(service.pickedPoints, hasLength(1));
+    expect(service.measurementDistance, isNull);
+
+    service.clearMeasurement();
+    expect(service.pickedPoints, isEmpty);
+  });
+
   test(
     'shutdown before asynchronous creation releases the late owned engine',
     () async {

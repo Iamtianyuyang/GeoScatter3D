@@ -11,6 +11,7 @@ import '../ffi/pipeline_service.dart';
 import '../ffi/render_settings.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/display_panel.dart';
+import '../widgets/measurement_panel.dart';
 import '../widgets/pipeline_panel.dart';
 import '../widgets/telemetry_hud.dart';
 import '../widgets/viewport_canvas.dart';
@@ -245,9 +246,11 @@ class _MainShellState extends State<MainShell> {
                             onClose: () {
                               setState(() => _rightDrawerIndex = null);
                             },
-                            child: _rightDrawerIndex == 2
-                                ? DisplayPanel(service: _service)
-                                : const _PropertySkeleton(),
+                            child: switch (_rightDrawerIndex) {
+                              0 => MeasurementPanel(service: _service),
+                              2 => DisplayPanel(service: _service),
+                              _ => const _PropertySkeleton(),
+                            },
                           ),
                         ),
                       Positioned(

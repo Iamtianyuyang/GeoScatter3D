@@ -100,6 +100,7 @@ class GeoScatter3dService extends ChangeNotifier {
   double _renderTimeMs = 0;
   String _gpuName = 'Vulkan GPU';
   RenderSettings _renderSettings = RenderSettings.defaults;
+  final List<PickedPoint> _pickedPoints = [];
   File? _renderSettingsFile;
 
   ui.Image? get frame => _frame;
@@ -134,6 +135,43 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 当前取帧通路的展示名（HUD/诊断用）。
   String get renderPath => _textureId != null ? '零拷贝纹理' : 'RGBA 回读';
   String get status => _error != null ? '引擎失败' : (_ready ? '就绪' : '正在初始化...');
+
+  /// 已拾取的点（最多两个：起点、终点）；第三次点击开始新的一组。
+  List<PickedPoint> get pickedPoints => List.unmodifiable(_pickedPoints);
+
+  /// 两点空间距离；不足两点返回 null。
+  double? get measurementDistance {
+    if (_pickedPoints.length < 2) return null;
+    final a = _pickedPoints[0];
+    final b = _pickedPoints[1];
+    final dx = b.x - a.x;
+    final dy = b.y - a.y;
+    final dz = b.z - a.z;
+    return math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  /// 终点相对起点的高差（终点减起点，带符号）。
+  double? get measurementHeightDelta {
+    if (_pickedPoints.length < 2) return null;
+    return _pickedPoints[1].z - _pickedPoints[0].z;
+  }
+
+  /// 在视口逻辑坐标处拾取；未命中时保持现有测量。
+  void pickPointAt(double screenX, double screenY) {
+    final engine = _engine;
+    if (engine == null || _disposed || !_ready) return;
+    final hit = engine.pickPoint(screenX, screenY);
+    if (hit == null) return;
+    if (_pickedPoints.length >= 2) _pickedPoints.clear();
+    _pickedPoints.add(hit);
+    notifyListeners();
+  }
+
+  void clearMeasurement() {
+    if (_pickedPoints.isEmpty) return;
+    _pickedPoints.clear();
+    notifyListeners();
+  }
 
   /// 当前显示设置（配色与点大小）。
   RenderSettings get renderSettings => _renderSettings;
@@ -674,6 +712,8 @@ class GeoScatter3dService extends ChangeNotifier {
         );
       case 'camera.reset':
         _engine!.resetCamera();
+      case 'pick.point':
+        pickPointAt(value('x'), value('y'));
       default:
         throw UnsupportedError('尚未实现的动作: $action');
     }

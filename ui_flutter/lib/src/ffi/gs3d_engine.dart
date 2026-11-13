@@ -7,6 +7,9 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart';
 import 'gs3d_bindings.dart';
 
+/// 拾取到的点：坐标与标量值，使用工程包的单位。
+typedef PickedPoint = ({double x, double y, double z, double value});
+
 /// GeoScatter3D 面向对象引擎封装 (纯净 Dart FFI)
 class Gs3dEngine {
   final Gs3dBindings _bindings;
@@ -267,6 +270,32 @@ class Gs3dEngine {
   void setPointSize(double size) {
     _checkDisposed();
     _bindings.setPointSize(_ptr, size);
+  }
+
+  /// 屏幕坐标拾取（逻辑像素）：命中返回点，未命中返回 null。
+  ///
+  /// shortcut: 内核在渲染线程上线性扫描已装载的点，50M 数据集一次拾取要数秒，
+  /// 升级时机：接入 GPU id 缓冲或异步拾取任务时。
+  PickedPoint? pickPoint(
+    double screenX,
+    double screenY, {
+    double tolerancePx = 12,
+  }) {
+    if (_disposed) return null;
+    final out = calloc<ffi.Float>(4);
+    try {
+      final rc = _bindings.pickPoint(
+        _ptr,
+        screenX,
+        screenY,
+        tolerancePx,
+        out,
+      );
+      if (rc != 1) return null;
+      return (x: out[0], y: out[1], z: out[2], value: out[3]);
+    } finally {
+      calloc.free(out);
+    }
   }
 
   /// 点大小：只入队，不等渲染线程（界面拖动不会卡在 Vulkan 提交上）。

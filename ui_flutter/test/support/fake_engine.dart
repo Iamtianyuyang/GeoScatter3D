@@ -94,6 +94,20 @@ class FakeEngine implements Gs3dEngine {
     pointBudget = maxPoints;
   }
 
+  /// 拾取命中结果；null 表示未命中。
+  PickedPoint? pickResult;
+  final List<(double, double)> pickCalls = [];
+
+  @override
+  PickedPoint? pickPoint(
+    double screenX,
+    double screenY, {
+    double tolerancePx = 12,
+  }) {
+    pickCalls.add((screenX, screenY));
+    return pickResult;
+  }
+
   /// 异步提交路径收到的参数（顺序与调用一致）。
   final List<int> submittedColormaps = [];
   final List<double> submittedPointSizes = [];

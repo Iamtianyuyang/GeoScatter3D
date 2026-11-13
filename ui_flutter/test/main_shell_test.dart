@@ -4,6 +4,7 @@ import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
 import 'package:ui_flutter/src/widgets/display_panel.dart';
+import 'package:ui_flutter/src/widgets/measurement_panel.dart';
 import 'support/fake_engine.dart';
 
 void main() {
@@ -198,6 +199,28 @@ void main() {
 
     expect(engine.openedPaths, isEmpty);
     expect(service.datasetPath, isNull);
+  });
+
+  testWidgets('properties drawer hosts the measurement panel', (tester) async {
+    tester.view.physicalSize = const Size(1668, 944);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final engine = FakeEngine();
+    final service = GeoScatter3dService(engine: engine);
+    await service.initialize();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      _testApp(MainShell(viewport: const SizedBox.expand(), service: service)),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('rail_properties')));
+    await tester.pump();
+
+    expect(find.byType(MeasurementPanel), findsOneWidget);
+    expect(find.textContaining('拾取起点和终点'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('display drawer queues colormap and point size off the UI thread', (

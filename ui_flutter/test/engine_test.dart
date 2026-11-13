@@ -47,6 +47,14 @@ void main() {
         final recolored = await pixels();
         expect(recolored.length, 320 * 240 * 4);
         expect(engine.lastError, isEmpty);
+
+        // 拾取走同一套逻辑像素坐标；样例地形中心应能命中一个点。
+        PickedPoint? hit;
+        for (var dx = 0; dx <= 120 && hit == null; dx += 20) {
+          hit = engine.pickPoint(160.0 + dx, 120.0);
+        }
+        expect(hit, isNotNull, reason: '中心附近应有点');
+        expect(engine.lastError, isEmpty);
       } finally {
         engine.dispose();
       }
