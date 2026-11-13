@@ -59,6 +59,21 @@ class FakeEngine implements Gs3dEngine {
     onProgress?.call(1000, 'done');
   }
 
+  /// 数据集摘要（面板渲染用）；测试可直接覆盖。
+  @override
+  Map<String, dynamic> datasetInfo = const {
+    'point_count': 10000,
+    'value_min': 0.0,
+    'value_max': 1.0,
+    'attributes': <Map<String, dynamic>>[],
+  };
+
+  @override
+  Map<String, dynamic> get snapshot => const {};
+
+  @override
+  int get abiVersion => 1;
+
   @override
   bool get isDisposed => disposeCount > 0;
   @override

@@ -3,13 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_flutter/src/ffi/geoscatter3d_service.dart';
 import 'package:ui_flutter/src/layouts/main_shell.dart';
 import 'package:ui_flutter/src/theme/app_tokens.dart';
-import 'package:ui_flutter/src/widgets/display_panel.dart';
 import 'package:ui_flutter/src/widgets/measurement_panel.dart';
+import 'package:ui_flutter/src/widgets/project_panel.dart';
+import 'package:ui_flutter/src/widgets/render_panel.dart';
 import 'package:ui_flutter/src/widgets/result_panel.dart';
 import 'support/fake_engine.dart';
 
 void main() {
-  testWidgets('MainShell keeps the viewport as the full-screen base layer', (
+  testWidgets('shell reads as one console: top bar, rail, panel, status', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -20,48 +21,41 @@ void main() {
 
     expect(find.byKey(const ValueKey('top_navigation')), findsOneWidget);
     expect(find.byKey(const ValueKey('left_tool_rail')), findsOneWidget);
-    expect(find.byKey(const ValueKey('right_tool_rail')), findsOneWidget);
     expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
     expect(find.byKey(const ValueKey('bottom_status_bar')), findsOneWidget);
-    expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
-    expect(find.byKey(const ValueKey('left_project_drawer')), findsNothing);
-    expect(find.byKey(const ValueKey('right_property_drawer')), findsNothing);
-
+    // 默认停在工作台上：工程面板展开，视口让位。
+    expect(find.byKey(const ValueKey('side_panel')), findsOneWidget);
+    expect(find.byType(ProjectPanel), findsOneWidget);
     expect(find.text('GeoScatter 3D'), findsOneWidget);
-    expect(find.text('顶部导航区'), findsOneWidget);
-    expect(find.text('地形扫描演示场景'), findsNothing);
+    expect(find.text('顶部导航区'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('left rail opens contextual drawers without resizing viewport', (
-    tester,
-  ) async {
+  testWidgets('panel expands and the viewport gives up width instead of '
+      'being covered', (tester) async {
     tester.view.physicalSize = const Size(1668, 944);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(_testApp(_shell()));
     final center = find.byKey(const ValueKey('center_viewport_panel'));
-    final initialSize = tester.getSize(center);
-
-    await tester.tap(find.byKey(const ValueKey('rail_project')));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('left_project_drawer')), findsOneWidget);
-    expect(find.text('项目资源'), findsOneWidget);
-    expect(tester.getSize(center), initialSize);
-
-    await tester.tap(find.byKey(const ValueKey('rail_data')));
-    await tester.pump();
-    expect(find.text('数据图层'), findsOneWidget);
-    expect(find.text('项目资源'), findsNothing);
+    final openWidth = tester.getSize(center).width;
 
     await tester.tap(find.byTooltip('关闭面板'));
     await tester.pump();
-    expect(find.byKey(const ValueKey('left_project_drawer')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byKey(const ValueKey('side_panel')), findsNothing);
+    expect(tester.getSize(center).width, greaterThan(openWidth));
+
+    await tester.tap(find.byKey(const ValueKey('rail_measure')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(MeasurementPanel), findsOneWidget);
+    expect(tester.getSize(center).width, closeTo(openWidth, 1));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('right rail opens the contextual property drawer', (
+  testWidgets('rail switches sections and closes on a second tap', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -70,43 +64,18 @@ void main() {
 
     await tester.pumpWidget(_testApp(_shell()));
 
-    await tester.tap(find.byKey(const ValueKey('rail_properties')));
+    await tester.tap(find.byKey(const ValueKey('rail_render')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('right_property_drawer')), findsOneWidget);
-    expect(find.text('属性检查器'), findsOneWidget);
+    expect(find.byType(RenderPanel), findsOneWidget);
+    expect(find.byType(ProjectPanel), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('rail_layers')));
+    await tester.tap(find.byKey(const ValueKey('rail_render')));
     await tester.pump();
-    expect(find.text('图层控制'), findsOneWidget);
-    expect(find.text('属性检查器'), findsNothing);
+    expect(find.byType(RenderPanel), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('collapsed status keeps telemetry and viewport size', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1668, 944);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(_testApp(_shell()));
-    final center = find.byKey(const ValueKey('center_viewport_panel'));
-    final initialSize = tester.getSize(center);
-
-    await tester.tap(find.byKey(const ValueKey('toggle_bottom_status')));
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('bottom_status_collapsed')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('telemetry_status_bar')), findsOneWidget);
-    expect(find.textContaining('FPS'), findsOneWidget);
-    expect(tester.getSize(center), initialSize);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('drawers and telemetry remain overflow-free at 200% text scale', (
+  testWidgets('panels and status stay overflow-free at 200% text scale', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -122,23 +91,14 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const ValueKey('rail_project')));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('left_project_drawer')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-
-    await tester.tap(find.byKey(const ValueKey('toggle_bottom_status')));
-    await tester.pump();
-    expect(
-      find.byKey(const ValueKey('bottom_status_collapsed')),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isNull);
+    for (final rail in ['rail_project', 'rail_render', 'rail_measure']) {
+      await tester.tap(find.byKey(ValueKey(rail)));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
   });
 
-  testWidgets('compact layouts default to a collapsed edge status', (
-    tester,
-  ) async {
+  testWidgets('compact 800x600 keeps the console usable', (tester) async {
     tester.view.physicalSize = const Size(800, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -146,16 +106,12 @@ void main() {
     await tester.pumpWidget(_testApp(_shell()));
 
     expect(find.byKey(const ValueKey('left_tool_rail')), findsOneWidget);
-    expect(find.byKey(const ValueKey('right_tool_rail')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('bottom_status_collapsed')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('bottom_status_bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('center_viewport_panel')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('data drawer opens a bundle off the UI thread', (tester) async {
+  testWidgets('top bar opens a bundle off the UI thread', (tester) async {
     tester.view.physicalSize = const Size(1668, 944);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -168,15 +124,13 @@ void main() {
     await tester.pumpWidget(
       _testApp(_shellWith(service, () async => '/tmp/gs3d-test-bundle')),
     );
-    await tester.tap(find.byKey(const ValueKey('rail_data')));
-    await tester.pump();
-
     await tester.tap(find.byKey(const ValueKey('open_bundle_button')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(engine.openedPaths, ['/tmp/gs3d-test-bundle']);
     expect(service.datasetPath, '/tmp/gs3d-test-bundle');
-    expect(find.text('/tmp/gs3d-test-bundle'), findsOneWidget);
+    expect(find.text('gs3d-test-bundle'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -193,16 +147,15 @@ void main() {
     addTearDown(service.dispose);
 
     await tester.pumpWidget(_testApp(_shellWith(service, () async => null)));
-    await tester.tap(find.byKey(const ValueKey('rail_data')));
-    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('open_bundle_button')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(engine.openedPaths, isEmpty);
     expect(service.datasetPath, isNull);
   });
 
-  testWidgets('result drawer exports only within the synchronous budget', (
+  testWidgets('result panel exports only within the synchronous budget', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -218,14 +171,14 @@ void main() {
       _testApp(MainShell(viewport: const SizedBox.expand(), service: service)),
     );
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('rail_result')));
+    await tester.tap(find.byKey(const ValueKey('rail_output')));
     await tester.pump();
 
     expect(find.byType(ResultPanel), findsOneWidget);
-    OutlinedButton button(String key) =>
-        tester.widget<OutlinedButton>(find.byKey(ValueKey(key)));
-    expect(button('export_ply_button').onPressed, isNotNull);
-    expect(button('save_frame_button').onPressed, isNotNull);
+    VoidCallback? onTap(String key) =>
+        tester.widget<InkWell>(find.byKey(ValueKey(key))).onTap;
+    expect(onTap('export_ply_button'), isNotNull);
+    expect(onTap('save_frame_button'), isNotNull);
     expect(tester.takeException(), isNull);
 
     // 超过同步上限时按钮禁用，并说明原因。
@@ -233,12 +186,11 @@ void main() {
     engine.openDrawnPoints = 100000;
     expect(await service.openBundle('/tmp/gs3d-big-bundle'), isTrue);
     await tester.pump();
-    expect(button('export_ply_button').onPressed, isNull);
-    expect(button('export_ply_button').onPressed, isNull);
+    expect(onTap('export_ply_button'), isNull);
     expect(find.textContaining('暂不支持'), findsOneWidget);
   });
 
-  testWidgets('properties drawer hosts the measurement panel', (tester) async {
+  testWidgets('measure section hosts the measurement panel', (tester) async {
     tester.view.physicalSize = const Size(1668, 944);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -252,15 +204,15 @@ void main() {
       _testApp(MainShell(viewport: const SizedBox.expand(), service: service)),
     );
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('rail_properties')));
+    await tester.tap(find.byKey(const ValueKey('rail_measure')));
     await tester.pump();
 
     expect(find.byType(MeasurementPanel), findsOneWidget);
-    expect(find.textContaining('拾取起点和终点'), findsOneWidget);
+    expect(find.text('还没有拾取点'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('display drawer queues colormap and point size off the UI thread', (
+  testWidgets('render panel queues colormap and point size off the UI thread', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1668, 944);
@@ -273,14 +225,12 @@ void main() {
     addTearDown(service.dispose);
 
     await tester.pumpWidget(
-      _testApp(
-        MainShell(viewport: const SizedBox.expand(), service: service),
-      ),
+      _testApp(MainShell(viewport: const SizedBox.expand(), service: service)),
     );
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('rail_display')));
+    await tester.tap(find.byKey(const ValueKey('rail_render')));
     await tester.pump();
-    expect(find.byType(DisplayPanel), findsOneWidget);
+    expect(find.byType(RenderPanel), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('colormap_dropdown')));
     await tester.pump(const Duration(milliseconds: 400));

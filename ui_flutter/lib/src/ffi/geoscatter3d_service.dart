@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
@@ -5,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'gs3d_engine.dart';
+import 'app_abi.dart';
 import 'app_state.dart';
 import 'render_settings.dart';
 import 'present_surface.dart';
@@ -104,6 +106,12 @@ class GeoScatter3dService extends ChangeNotifier {
   double _renderTimeMs = 0;
   String _gpuName = 'Vulkan GPU';
   RenderSettings _renderSettings = RenderSettings.defaults;
+  Map<String, dynamic> _datasetInfo = const {};
+  Map<String, dynamic> _snapshot = const {};
+  List<RecentProject> _recentProjects = const [];
+  List<GpuInfo> _gpus = const [];
+  int? _preferredGpuIndex;
+  String _diagnosticsJson = '';
   final List<PickedPoint> _pickedPoints = [];
   bool _exporting = false;
   String? _lastExportPath;
@@ -131,6 +139,9 @@ class GeoScatter3dService extends ChangeNotifier {
   /// 原生渲染线程的帧耗时（毫秒）；与 UI 端解码/绘制解耦。
   double get renderTimeMs => _renderTimeMs;
   String get gpuName => _gpuName;
+
+  /// 引擎 ABI 版本；引擎未创建时为 null。
+  int? get abiVersion => _engine?.abiVersion;
 
   /// Flutter 纹理 id；null 表示没有零拷贝通路（视图层回退到 RawImage）。
   /// 注意 0 是合法纹理 id，不可用 0 当哨兵值。
@@ -250,8 +261,23 @@ class GeoScatter3dService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 当前显示设置（配色与点大小）。
+  /// 当前显示设置（配色、点大小、形状、背景、值域…）。
   RenderSettings get renderSettings => _renderSettings;
+
+  /// 数据集摘要（路径/包围盒/值域/属性/CRS）；未装载时为空。
+  Map<String, dynamic> get datasetInfo => _datasetInfo;
+
+  /// 最近一次相机+渲染快照 JSON（诊断面板用）。
+  Map<String, dynamic> get renderSnapshot => _snapshot;
+
+  /// 最近项目（新→旧，最多 8 条）。
+  List<RecentProject> get recentProjects => _recentProjects;
+
+  /// 本机可用 GPU。
+  List<GpuInfo> get gpus => _gpus;
+
+  /// 首选 GPU 索引（持久化在用户配置里，下次创建引擎生效）。
+  int? get preferredGpuIndex => _preferredGpuIndex;
 
   /// 读上次保存的显示设置；文件不存在就保留默认值。
   Future<void> loadRenderSettings(File file) async {
@@ -271,23 +297,81 @@ class GeoScatter3dService extends ChangeNotifier {
   }
 
   void setColormapIndex(int index) {
-    _renderSettings = _renderSettings.copyWith(colormapIndex: index);
-    if (_started) _applyRenderSettings();
-    notifyListeners();
+    updateRenderSettings(_renderSettings.copyWith(colormapIndex: index));
   }
 
   void setPointSize(double size) {
-    _renderSettings = _renderSettings.copyWith(pointSize: size);
-    if (_started) _applyRenderSettings();
+    updateRenderSettings(_renderSettings.copyWith(pointSize: size));
+  }
+
+  /// 一次性替换显示设置：只把变了的字段交给引擎。
+  void updateRenderSettings(RenderSettings next) {
+    final previous = _renderSettings;
+    _renderSettings = next;
+    if (_started) _applyRenderSettings(previous);
     notifyListeners();
   }
 
-  /// 只入队：渲染线程按顺序执行，记录值已先更新。
-  void _applyRenderSettings() {
+  /// shortcut: 这些设置走渲染线程的直接调用（同步几毫秒），未拆成异步命令；
+  /// 升级时机：出现单次 set 超过一帧耗时的设备时。
+  void _applyRenderSettings([RenderSettings? previous]) {
     final engine = _engine;
     if (engine == null || _disposed) return;
-    engine.submitColormap(_renderSettings.colormapIndex);
-    engine.submitPointSize(_renderSettings.pointSize);
+    final current = _renderSettings;
+    try {
+      if (previous == null || previous.colormapIndex != current.colormapIndex) {
+        engine.submitColormap(current.colormapIndex);
+      }
+      if (previous == null || previous.pointSize != current.pointSize) {
+        engine.submitPointSize(current.pointSize);
+      }
+      if (previous == null || previous.pointShape != current.pointShape) {
+        engine.setPointShape(current.pointShape);
+      }
+      if (previous == null || previous.background != current.background) {
+        engine.setBackground(
+          current.backgroundRed,
+          current.backgroundGreen,
+          current.backgroundBlue,
+        );
+      }
+      if (previous == null || previous.heightSource != current.heightSource) {
+        engine.setHeightSource(current.heightSource);
+      }
+      if (previous == null || previous.colorSource != current.colorSource) {
+        engine.setColorSource(current.colorSource);
+      }
+      if (previous == null ||
+          previous.heightExaggeration != current.heightExaggeration) {
+        engine.setHeightExaggeration(current.heightExaggeration);
+      }
+      if (previous == null ||
+          previous.valueClipEnabled != current.valueClipEnabled ||
+          previous.valueClipMin != current.valueClipMin ||
+          previous.valueClipMax != current.valueClipMax) {
+        final clip = _valueClipRange();
+        engine.setValueClip(
+          enabled: current.valueClipEnabled,
+          min: clip.$1,
+          max: clip.$2,
+        );
+      }
+      if (previous == null || previous.pointBudget != current.pointBudget) {
+        engine.setPointBudget(current.pointBudget);
+      }
+    } catch (error) {
+      _fail(error);
+    }
+  }
+
+  /// 值域裁剪区间：未显式设置时用数据集自己的值域。
+  (double, double) _valueClipRange() {
+    final settings = _renderSettings;
+    final min = settings.valueClipMin ??
+        (_datasetInfo['value_min'] as num?)?.toDouble() ?? 0.0;
+    final max = settings.valueClipMax ??
+        (_datasetInfo['value_max'] as num?)?.toDouble() ?? 1.0;
+    return max > min ? (min, max) : (min, min + 1.0);
   }
 
   /// 最近一次成功打开的工程包（`null` = 仍是内置样例/合成数据）。
@@ -324,6 +408,10 @@ class GeoScatter3dService extends ChangeNotifier {
       _sourcePointCount = engine.sourcePointCount;
       _pointCount = engine.drawnPointCount;
       _refreshLodSummary(engine);
+      _datasetInfo = engine.datasetInfo;
+      _snapshot = engine.snapshot;
+      Gs3dAppAbi.tryOpen()?.remember(path);
+      unawaited(refreshRecentProjects());
       return true;
     } catch (error) {
       _fail(error);
@@ -332,6 +420,132 @@ class GeoScatter3dService extends ChangeNotifier {
       _openingDataset = false;
       _datasetStage = '';
       if (!_disposed) notifyListeners();
+    }
+  }
+
+  // ── 应用态：数据集摘要 / 相机快照 / 最近项目 / GPU ─────────────────
+
+  /// 刷新数据集摘要与相机快照（开包后或需要精确数值时调用）。
+  Future<void> refreshDatasetInfo() async {
+    final engine = _engine;
+    if (_disposed || engine == null) return;
+    try {
+      _datasetInfo = engine.datasetInfo;
+      _snapshot = engine.snapshot;
+      notifyListeners();
+    } catch (error) {
+      _fail(error);
+    }
+  }
+
+  /// 最近一次诊断 JSON（GPU/LOD/瓦片/帧耗时），已格式化为缩进文本。
+  String get diagnosticsJson => _diagnosticsJson;
+
+  /// 从引擎重新拉诊断 JSON；用于诊断面板的“刷新”。
+  Future<void> refreshDiagnostics() async {
+    final engine = _engine;
+    if (_disposed || engine == null) return;
+    try {
+      _diagnosticsJson = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(engine.diagnostics);
+      _snapshot = engine.snapshot;
+      notifyListeners();
+    } catch (error) {
+      _fail(error);
+    }
+  }
+
+  /// 重读最近项目列表（打开/删除后调用）。
+  Future<void> refreshRecentProjects() async {
+    if (_disposed) return;
+    _recentProjects = Gs3dAppAbi.tryOpen()?.recentProjects() ?? const [];
+    notifyListeners();
+  }
+
+  /// 从最近项目移除；返回是否成功。
+  Future<bool> forgetRecentProject(String path) async {
+    if (_disposed || path.isEmpty) return false;
+    final rc = Gs3dAppAbi.tryOpen()?.forget(path) ?? -3;
+    await refreshRecentProjects();
+    return rc == 0;
+  }
+
+  Future<void> clearRecentProjects() async {
+    if (_disposed) return;
+    Gs3dAppAbi.tryOpen()?.clearRecent();
+    await refreshRecentProjects();
+  }
+
+  /// 重读可用 GPU；同时读出持久化的首选索引。
+  Future<void> refreshGpus() async {
+    if (_disposed) return;
+    final abi = Gs3dAppAbi.tryOpen();
+    _gpus = abi?.gpus() ?? const [];
+    _preferredGpuIndex = null;
+    for (final gpu in _gpus) {
+      if (gpu.preferred) _preferredGpuIndex = gpu.index;
+    }
+    notifyListeners();
+  }
+
+  /// 记住首选 GPU：下次创建引擎时生效（当前进程不重建通道），返回是否已保存。
+  Future<bool> selectGpu(int index) async {
+    if (_disposed) return false;
+    final rc = Gs3dAppAbi.tryOpen()?.setPreferredGpu(index) ?? -3;
+    if (rc != 0) return false;
+    _preferredGpuIndex = index >= 0 ? index : null;
+    notifyListeners();
+    return true;
+  }
+
+  /// 卸载数据集，回到空视口（点与测量一并清空）。
+  Future<bool> unloadDataset() async {
+    final engine = _engine;
+    if (_disposed || engine == null) return false;
+    try {
+      engine.unloadDataset();
+      _datasetPath = null;
+      _datasetInfo = const {};
+      _snapshot = const {};
+      _sourcePointCount = 0;
+      _pointCount = 0;
+      _lodSummary = '';
+      _pickedPoints.clear();
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _fail(error);
+      return false;
+    }
+  }
+
+  /// 对齐到预设轴（0..5），随后刷新快照。
+  void gizmoAxis(int axis) {
+    final engine = _engine;
+    if (_disposed || engine == null) return;
+    try {
+      engine.gizmoAxis(axis);
+      engine.requestFrame();
+      _snapshot = engine.snapshot;
+      notifyListeners();
+    } catch (error) {
+      _fail(error);
+    }
+  }
+
+  /// 丢弃瓦片缓存并重建上传（外部改包 / 诊断修复用）。
+  Future<bool> clearTileCache() async {
+    final engine = _engine;
+    if (_disposed || engine == null) return false;
+    try {
+      engine.clearTileCache();
+      engine.requestFrame();
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _fail(error);
+      return false;
     }
   }
 

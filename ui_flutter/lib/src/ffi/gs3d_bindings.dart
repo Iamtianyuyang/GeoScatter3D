@@ -231,6 +231,73 @@ typedef DartLastRenderMs = double Function(Gs3dEnginePtr e);
 typedef CGetDiagnosticsJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 typedef DartGetDiagnosticsJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 
+typedef CGetSnapshotJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
+typedef DartGetSnapshotJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
+
+typedef CDatasetInfoJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
+typedef DartDatasetInfoJson = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
+
+typedef CGpusJson = ffi.Pointer<Utf8> Function();
+typedef DartGpusJson = ffi.Pointer<Utf8> Function();
+
+typedef CSetPreferredGpu = ffi.Int32 Function(ffi.Int32 index);
+typedef DartSetPreferredGpu = int Function(int index);
+
+typedef CRecentProjectsJson = ffi.Pointer<Utf8> Function();
+typedef DartRecentProjectsJson = ffi.Pointer<Utf8> Function();
+
+typedef CPathArg = ffi.Int32 Function(ffi.Pointer<Utf8> path);
+typedef DartPathArg = int Function(ffi.Pointer<Utf8> path);
+
+typedef CVoidInt = ffi.Int32 Function();
+typedef DartVoidInt = int Function();
+
+typedef CVoidIntEngine = ffi.Int32 Function(Gs3dEnginePtr e);
+typedef DartVoidIntEngine = int Function(Gs3dEnginePtr e);
+
+typedef CSetValueClip =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Int32 enabled,
+      ffi.Float minV,
+      ffi.Float maxV,
+    );
+typedef DartSetValueClip =
+    int Function(Gs3dEnginePtr e, int enabled, double minV, double maxV);
+
+typedef CSetInt32Arg = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Int32 value);
+typedef DartSetInt32Arg = int Function(Gs3dEnginePtr e, int value);
+
+typedef CSetFloatArg = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Float value);
+typedef DartSetFloatArg = int Function(Gs3dEnginePtr e, double value);
+
+typedef CSetCameraLookAt =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Float px,
+      ffi.Float py,
+      ffi.Float pz,
+      ffi.Float tx,
+      ffi.Float ty,
+      ffi.Float tz,
+      ffi.Float ux,
+      ffi.Float uy,
+      ffi.Float uz,
+    );
+typedef DartSetCameraLookAt =
+    int Function(
+      Gs3dEnginePtr e,
+      double px,
+      double py,
+      double pz,
+      double tx,
+      double ty,
+      double tz,
+      double ux,
+      double uy,
+      double uz,
+    );
+
 typedef CLastError = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 typedef DartLastError = ffi.Pointer<Utf8> Function(Gs3dEnginePtr e);
 
@@ -359,6 +426,21 @@ class Gs3dBindings {
   late final DartPickPoint pickPoint;
   late final DartExportDataset exportDataset;
   late final DartReadFramePng readFramePng;
+  late final DartGetSnapshotJson getSnapshotJson;
+  late final DartDatasetInfoJson datasetInfoJson;
+  late final DartGpusJson gpusJson;
+  late final DartSetPreferredGpu setPreferredGpu;
+  late final DartRecentProjectsJson recentProjectsJson;
+  late final DartPathArg rememberProject;
+  late final DartPathArg forgetProject;
+  late final DartVoidInt clearRecentProjects;
+  late final DartSetValueClip setValueClip;
+  late final DartSetInt32Arg setHeightSource;
+  late final DartSetInt32Arg setColorSource;
+  late final DartSetFloatArg setHeightExaggeration;
+  late final DartSetInt32Arg gizmoAxis;
+  late final DartVoidIntEngine clearTileCache;
+  late final DartSetCameraLookAt setCameraLookAt;
 
   Gs3dBindings(this.lib) {
     version = lib.lookupFunction<CVersion, DartVersion>('gs3d_engine_version');
@@ -459,6 +541,52 @@ class Gs3dBindings {
     );
     readFramePng = lib.lookupFunction<CReadFramePng, DartReadFramePng>(
       'gs3d_engine_read_frame_png',
+    );
+    getSnapshotJson = lib.lookupFunction<CGetSnapshotJson, DartGetSnapshotJson>(
+      'gs3d_engine_get_snapshot_json',
+    );
+    datasetInfoJson = lib.lookupFunction<CDatasetInfoJson, DartDatasetInfoJson>(
+      'gs3d_engine_dataset_info_json',
+    );
+    gpusJson = lib.lookupFunction<CGpusJson, DartGpusJson>(
+      'gs3d_engine_gpus_json',
+    );
+    setPreferredGpu = lib.lookupFunction<CSetPreferredGpu, DartSetPreferredGpu>(
+      'gs3d_engine_set_preferred_gpu',
+    );
+    recentProjectsJson = lib.lookupFunction<
+      CRecentProjectsJson,
+      DartRecentProjectsJson
+    >('gs3d_engine_recent_projects_json');
+    rememberProject = lib.lookupFunction<CPathArg, DartPathArg>(
+      'gs3d_engine_remember_project',
+    );
+    forgetProject = lib.lookupFunction<CPathArg, DartPathArg>(
+      'gs3d_engine_forget_project',
+    );
+    clearRecentProjects = lib.lookupFunction<CVoidInt, DartVoidInt>(
+      'gs3d_engine_clear_recent_projects',
+    );
+    setValueClip = lib.lookupFunction<CSetValueClip, DartSetValueClip>(
+      'gs3d_engine_set_value_clip',
+    );
+    setHeightSource = lib.lookupFunction<CSetInt32Arg, DartSetInt32Arg>(
+      'gs3d_engine_set_height_source',
+    );
+    setColorSource = lib.lookupFunction<CSetInt32Arg, DartSetInt32Arg>(
+      'gs3d_engine_set_color_source',
+    );
+    setHeightExaggeration = lib.lookupFunction<CSetFloatArg, DartSetFloatArg>(
+      'gs3d_engine_set_height_exaggeration',
+    );
+    gizmoAxis = lib.lookupFunction<CSetInt32Arg, DartSetInt32Arg>(
+      'gs3d_engine_gizmo_axis',
+    );
+    clearTileCache = lib.lookupFunction<CVoidIntEngine, DartVoidIntEngine>(
+      'gs3d_engine_clear_tile_cache',
+    );
+    setCameraLookAt = lib.lookupFunction<CSetCameraLookAt, DartSetCameraLookAt>(
+      'gs3d_engine_set_camera_look_at',
     );
   }
 

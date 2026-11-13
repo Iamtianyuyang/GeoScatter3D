@@ -1,28 +1,29 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+
 import '../ffi/geoscatter3d_service.dart';
 import '../ffi/gs3d_engine.dart';
 import '../theme/app_tokens.dart';
 
-/// 视口只投影服务状态并转发输入；不直接调度原生引擎。
+/// 视口：只投影服务状态并转发输入，自身不含任何控件。
+///
+/// 控件都放到视口之上的浮层（shell 负责），这样视口在缩放/重建时不会
+/// 连带重排按钮，也能保证 3D 内容始终占满可用区域。
 class ViewportCanvas extends StatefulWidget {
-  final Gs3dEngine? engine;
-  final GeoScatter3dService? service;
-  final bool autoLoadSample;
-  final bool embedded;
-  final EdgeInsets controlInsets;
-
   const ViewportCanvas({
     super.key,
     this.engine,
     this.service,
     this.autoLoadSample = true,
-    this.embedded = false,
-    this.controlInsets = EdgeInsets.zero,
   }) : assert(engine == null || service == null);
+
+  final Gs3dEngine? engine;
+  final GeoScatter3dService? service;
+  final bool autoLoadSample;
 
   @override
   State<ViewportCanvas> createState() => _ViewportCanvasState();
@@ -87,44 +88,83 @@ class _ViewportCanvasState extends State<ViewportCanvas>
     if (_service.frame != null) {
       return _OwnedFrame(image: _service.frame!);
     }
+    final tokens = context.tokens;
     return Center(
-      child: CircularProgressIndicator(
-        color: context.tokens.colors.accent,
-        strokeWidth: 2,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 120,
+            child: LinearProgressIndicator(
+              minHeight: 1,
+              backgroundColor: tokens.colors.line,
+              valueColor: AlwaysStoppedAnimation(tokens.colors.signal),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '正在准备渲染通道',
+            style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      key: const ValueKey('vulkan_engine_error'),
+      color: tokens.colors.viewport,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: tokens.colors.panel,
+            border: Border.all(color: tokens.colors.alert.withValues(alpha: 0.4)),
+            borderRadius: tokens.radii.mdAll,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.report_gmailerrorred_outlined,
+                      size: 18, color: tokens.colors.alert),
+                  const SizedBox(width: 8),
+                  Text(
+                    '渲染引擎未能启动',
+                    style: tokens.type.bodyStrong.copyWith(
+                      color: tokens.colors.textHigh,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _service.error!,
+                style: tokens.type.meta.copyWith(color: tokens.colors.textMid),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '常见原因：缺少 Vulkan 1.1 驱动 / ICD，或显卡不支持本机要求。'
+                'Linux 可用 vulkaninfo 检查，Windows 请更新显卡驱动。',
+                style: tokens.type.meta.copyWith(color: tokens.colors.textLow),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildViewport(BuildContext context) {
-    if (_service.error != null) {
-      return Container(
-        key: const ValueKey('vulkan_engine_error'),
-        color: const Color(0xFF0F172A),
-        padding: const EdgeInsets.all(24),
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 48),
-            const SizedBox(height: 16),
-            const Text(
-              'Vulkan 渲染引擎启动失败',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _service.error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
+    if (_service.error != null) return _buildError(context);
+    final tokens = context.tokens;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -136,7 +176,6 @@ class _ViewportCanvasState extends State<ViewportCanvas>
 
         return Stack(
           children: [
-            // 主视口画布
             Positioned.fill(
               child: Listener(
                 onPointerSignal: (event) {
@@ -170,197 +209,30 @@ class _ViewportCanvasState extends State<ViewportCanvas>
                     _lastScale = details.scale;
                   },
                   child: Container(
-                    color: context.tokens.colors.viewport,
+                    color: tokens.colors.viewport,
                     child: _buildFrameSurface(),
                   ),
                 ),
               ),
             ),
-
-            _buildViewportControls(context),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 相机控制与调试读数共用一层面板材质，避免在内容之上叠加多种浮层风格。
-  Widget _buildViewportControls(BuildContext context) {
-    final tokens = context.tokens;
-    final canControl = _service.ready;
-
-    Widget actionButton({
-      required Key key,
-      required String tooltip,
-      required IconData icon,
-      required VoidCallback? onPressed,
-    }) {
-      return Semantics(
-        button: true,
-        enabled: onPressed != null,
-        label: tooltip,
-        child: Tooltip(
-          message: tooltip,
-          excludeFromSemantics: true,
-          child: SizedBox(
-            width: tokens.sizes.tapTarget,
-            height: tokens.sizes.tapTarget,
-            child: Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: tokens.colors.chromeSurfaceRaised,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: tokens.colors.chromeBorder,
-                    width: tokens.effects.hairline,
-                  ),
-                  boxShadow: [tokens.effects.chromeShadow],
-                ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: InkWell(
-                    key: key,
-                    onTap: onPressed,
-                    customBorder: const CircleBorder(),
-                    highlightColor: tokens.colors.chromeAccentSoft,
-                    splashColor: tokens.colors.chromeAccentSoft,
-                    child: SizedBox(
-                      width: tokens.sizes.controlButtonSize,
-                      height: tokens.sizes.controlButtonSize,
-                      child: Icon(
-                        icon,
-                        size: tokens.sizes.controlIconSize,
-                        color: onPressed == null
-                            ? tokens.colors.chromeTextMuted
-                            : tokens.colors.chromeTextPrimary,
-                      ),
+            // 视口四周压一圈暗角，让点云从平面里「沉」下去，而不是浮在单色底上。
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      radius: 1.1,
+                      colors: [Color(0x00000000), Color(0x66000000)],
+                      stops: [0.55, 1.0],
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-      );
-    }
-
-    final controls = Align(
-      alignment: Alignment.bottomRight,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: tokens.spacing.lg + widget.controlInsets.left,
-          top: tokens.spacing.lg + widget.controlInsets.top,
-          right: tokens.spacing.lg + widget.controlInsets.right,
-          bottom: tokens.spacing.lg + widget.controlInsets.bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: tokens.sizes.controlBarMaxWidth,
-          ),
-          child: ClipRRect(
-            borderRadius: tokens.radii.panelRadius,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(
-                sigmaX: tokens.effects.hudBlur,
-                sigmaY: tokens.effects.hudBlur,
-              ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      tokens.colors.chromeSurfaceRaised,
-                      tokens.colors.chromeSurface,
-                    ],
-                  ),
-                  borderRadius: tokens.radii.panelRadius,
-                  border: Border.all(
-                    color: tokens.colors.chromeBorder,
-                    width: tokens.effects.hairline,
-                  ),
-                  boxShadow: [tokens.effects.chromeShadow],
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.md,
-                    vertical: tokens.spacing.xs,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (kDebugControls) ...[
-                        Flexible(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: tokens.sizes.debugStatsMaxWidth,
-                            ),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: tokens.spacing.md,
-                              ),
-                              child: Text(
-                                _service.debugStats.isEmpty
-                                    ? 'debug: 等待遥测'
-                                    : _service.debugStats,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: tokens.typography.meta.copyWith(
-                                  color: tokens.colors.chromeTextPrimary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: tokens.spacing.md),
-                        Container(
-                          width: tokens.effects.hairline,
-                          height: tokens.sizes.controlDividerHeight,
-                          color: tokens.colors.chromeDivider,
-                        ),
-                        SizedBox(width: tokens.spacing.md),
-                        actionButton(
-                          key: const ValueKey('camera_zoom_out'),
-                          tooltip: '缩小',
-                          icon: Icons.remove,
-                          onPressed: canControl
-                              ? () => _action('camera.input', {
-                                  'scrollY': -kDebugZoomStep,
-                                })
-                              : null,
-                        ),
-                        SizedBox(width: tokens.spacing.sm),
-                        actionButton(
-                          key: const ValueKey('camera_zoom_in'),
-                          tooltip: '放大',
-                          icon: Icons.add,
-                          onPressed: canControl
-                              ? () => _action('camera.input', {
-                                  'scrollY': kDebugZoomStep,
-                                })
-                              : null,
-                        ),
-                        SizedBox(width: tokens.spacing.sm),
-                      ],
-                      actionButton(
-                        key: const ValueKey('camera_reset'),
-                        tooltip: '复位相机',
-                        icon: Icons.center_focus_strong,
-                        onPressed: canControl
-                            ? () => _action('camera.reset')
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+          ],
+        );
+      },
     );
-
-    return widget.embedded ? controls : SafeArea(child: controls);
   }
 }
 

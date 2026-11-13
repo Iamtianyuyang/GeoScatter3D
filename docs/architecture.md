@@ -424,6 +424,61 @@ Linux 可用 vulkaninfo 检查)` 并以 1 退出，不会静默黑屏。
 
 窗口冒烟的前置条件：`data/gs3d_shaders` 必须在可执行文件目录下，否则引擎创建失败并且只在日志里留一行 shader 路径。
 
+## 前端
+
+界面是测绘仪器风工作台：近黑壳体（`viewport 0x070B0F`、`panel 0x0F161C`）、1px 发丝线、
+单一信号色（`0x58D6A8`）、等宽 tabular 数字。没有卡片套卡片，没有装饰性图标，
+视口里只放视图轴、缩放、色标图例与测量读数。
+
+```
+ui_flutter/lib/
+  main.dart                  主题装配（buildAppTheme）
+  src/theme/app_tokens.dart  AppTokens：颜色 / 字阶 / 间距 / 圆角 / 动效
+  src/ui/                    ui_kit（PanelHeader、KeyValueRow、Segmented、SliderField…）与 format
+  src/layouts/main_shell.dart 顶栏 + 工具轨 + 面板 + 视口 + 状态条
+  src/widgets/               viewport_canvas、project、render、camera、measurement、
+                             result、diagnostics、pipeline 七个面板与视口浮层
+  src/ffi/                   ABI 绑定（gs3d_bindings）、引擎包装、中枢服务、
+                             应用态（app_abi：显卡与最近项目）、显示设置与管线服务
+```
+
+布局规则：左侧 52px 工具轨，面板展开时把视口挤窄（IDE 式），不覆盖点云，
+所以缩放窗口时投影中心不跳。工具轨再次点击当前项即收起面板。宽度不超过 520 时
+面板宽度收在 `200..320`；200% 字号下顶栏与面板都不许溢出（顶栏高度随字号放宽，
+面板内容滚动）。底部状态条是唯一的全局状态显示：就绪 / 载入 / 错误、数据集、
+`源 → 绘制`、LOD、FPS、帧时间、渲染时间、GPU。
+
+已接入的能力（C ABI → Dart → 界面）：
+
+| 能力 | ABI | 界面位置 |
+| --- | --- | --- |
+| 打开工程包 / 卸载 | `gs3d_engine_open_dataset`、`poll_state`、`unload_dataset` | 顶栏「打开工程包」、工程面板 |
+| 数据集清单 | `gs3d_engine_dataset_info_json` | 工程面板详情（点数、范围、值域、属性、坐标系） |
+| 最近项目 | `gs3d_engine_recent_projects_json`、`remember/forget/clear` | 工程面板「最近项目」 |
+| 配色 / 点大小 / 点形状 | `set_colormap_index`、`set_point_size`、`set_point_shape` | 渲染面板 |
+| 高程与着色 | `set_height_source`、`set_color_source`、`set_height_exaggeration` | 渲染面板 |
+| 值域裁剪 | `set_value_clip` | 渲染面板（上下限取数据集值域） |
+| 背景 / 绘制上限 | `set_background`、`set_point_budget` | 渲染面板 |
+| 相机 | `camera_input`、`gizmo_axis`、`reset_camera` | 视口浮层、相机面板 |
+| 拾取与测量 | `pick_point` | 视口单击、测量面板、视口读数 |
+| 导出 | `gs3d_engine_export`、`read_frame_png` | 成果面板 |
+| 诊断 | `get_diagnostics_json`、`clear_tile_cache`、`gpus_json`、`set_preferred_gpu` | 诊断面板 |
+| 预处理 | 管线 ABI（`pipeline.start/resume/cancel/poll`） | 预处理面板 |
+
+刻意不接入的：`gs3d_ffi_*` legacy 段的区域统计、导航图缩略图、属性列表与
+`performance_metrics`——它们读 legacy 数据集缓存，本应用走 `gs3d_engine_*` 开包，
+这些调用只会返回空数据或 stub（`performance_metrics` 原生就是 `fps 0.0`、
+`cache hit -1.0`），接上去等于伪造读数。要接就得先让它们在引擎打开的数据上工作。
+
+显示设置（配色、点大小、形状、背景、高程、值域、上限）原子写入应用状态目录，
+重启后恢复；加载失败保留默认值，不阻塞启动。拖动滑块只改本地预览，
+`onChangeEnd` 才提交给引擎并落盘，避免每帧生成一条命令。
+
+界面自检：`flutter test` 覆盖单一控制台结构、面板挤压视口、工具轨开合、200% 字号
+与 800×600 不溢出、开包、渲染设置提交、测量读数、成果上限拒绝。视觉核对用
+一次性 golden 预览（`FontLoader` 加载 Noto CJK，1440×900）而非真机截图——
+Hyprland 平铺会在 subsurface 尺寸不一致时把界面合成为残缺画面，不能作为界面证据。
+
 ## 迁移映射
 
 当前树 → 目标树（`git mv` 保留历史）：

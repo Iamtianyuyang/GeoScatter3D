@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'src/layouts/main_shell.dart';
 import 'src/theme/app_tokens.dart';
-
-const _tokens = AppTokens.dark;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 全屏点云画布延伸到系统栏，使用浅色图标保持可读。
+  const tokens = AppTokens.dark;
+  // 三维视口贴边：系统栏也用视口底色，避免顶部/底部出现第二条色带。
   SystemChrome.setSystemUIOverlayStyle(
     SystemUiOverlayStyle(
-      statusBarColor: _tokens.colors.viewport,
+      statusBarColor: tokens.colors.viewport,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: _tokens.colors.viewport,
+      systemNavigationBarColor: tokens.colors.viewport,
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
@@ -29,16 +29,7 @@ class GeoScatter3dApp extends StatelessWidget {
     return MaterialApp(
       title: 'GeoScatter3D',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: _tokens.colors.viewport,
-        colorScheme: ColorScheme.dark(
-          primary: _tokens.colors.accent,
-          surface: _tokens.colors.hudSurfaceRaised,
-          error: _tokens.colors.error,
-        ),
-        extensions: const [_tokens],
-      ),
+      theme: buildAppTheme(),
       home: const MainShell(),
     );
   }

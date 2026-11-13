@@ -390,6 +390,77 @@ class Gs3dEngine {
     _bindings.setBackground(_ptr, r, g, b, a);
   }
 
+  /// 值域裁剪：只给 [min, max] 内的点着色，其余点被剔除。
+  void setValueClip({required bool enabled, double min = 0, double max = 1}) {
+    _checkDisposed();
+    final rc = _bindings.setValueClip(_ptr, enabled ? 1 : 0, min, max);
+    if (rc != 0) throw StateError('值域裁剪失败 (rc=$rc): $lastError');
+  }
+
+  /// 高度来源：0 = Z，1 = 属性值。
+  void setHeightSource(int source) {
+    _checkDisposed();
+    _bindings.setHeightSource(_ptr, source);
+  }
+
+  /// 着色来源：0 = Z，1 = 属性值。
+  void setColorSource(int source) {
+    _checkDisposed();
+    _bindings.setColorSource(_ptr, source);
+  }
+
+  /// 高程夸张倍数（1.0 = 真实比例）。
+  void setHeightExaggeration(double multiplier) {
+    _checkDisposed();
+    if (!multiplier.isFinite || multiplier <= 0) return;
+    _bindings.setHeightExaggeration(_ptr, multiplier);
+  }
+
+  /// 对齐到预设轴（0..5 = -X/+X/-Y/+Y/-Z/+Z）。
+  void gizmoAxis(int axis) {
+    _checkDisposed();
+    if (axis < 0 || axis > 5) return;
+    _bindings.gizmoAxis(_ptr, axis);
+  }
+
+  /// 丢弃瓦片缓存并重新上传（软复位，用于外部改包后的重建）。
+  void clearTileCache() {
+    _checkDisposed();
+    _bindings.clearTileCache(_ptr);
+  }
+
+  /// 指定相机位置/目标/上方向（用于收藏视角）。
+  void setCameraLookAt({
+    required List<double> position,
+    required List<double> target,
+    List<double> up = const [0, 0, 1],
+  }) {
+    _checkDisposed();
+    if (position.length != 3 || target.length != 3 || up.length != 3) {
+      throw ArgumentError('相机向量必须是 3 个分量');
+    }
+    _bindings.setCameraLookAt(
+      _ptr,
+      position[0], position[1], position[2],
+      target[0], target[1], target[2],
+      up[0], up[1], up[2],
+    );
+  }
+
+  /// 数据集摘要：路径/bundle/点数/包围盒/值域/属性/CRS。未装载时空 Map。
+  Map<String, dynamic> get datasetInfo {
+    if (_disposed) return {};
+    return _decodeJson(_bindings.datasetInfoJson(_ptr));
+  }
+
+  /// 完整渲染状态快照（相机 + 渲染设置 + LOD + 视口）。
+  Map<String, dynamic> get snapshot {
+    if (_disposed) return {};
+    return _decodeJson(_bindings.getSnapshotJson(_ptr));
+  }
+
+  int get abiVersion => _bindings.abiVersion();
+
   /// 渲染一帧离屏 RGBA8，并异步转码为 ui.Image
   ///
   /// 同步兼容路径：会阻塞在原生渲染线程上直到这一帧回读完成。
@@ -534,6 +605,18 @@ class Gs3dEngine {
   void _checkDisposed() {
     if (_disposed) {
       throw StateError('Gs3dEngine has already been disposed.');
+    }
+  }
+
+  static Map<String, dynamic> _decodeJson(ffi.Pointer<Utf8> pointer) {
+    if (pointer == ffi.nullptr) return {};
+    final text = pointer.toDartString();
+    if (text.isEmpty || text == '{}') return {};
+    try {
+      final value = json.decode(text);
+      return value is Map<String, dynamic> ? value : {};
+    } catch (_) {
+      return {};
     }
   }
 }

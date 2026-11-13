@@ -23,7 +23,7 @@ void main() {
         home: Scaffold(body: MeasurementPanel(service: service)),
       ),
     );
-    expect(find.textContaining('拾取起点和终点'), findsOneWidget);
+    expect(find.text('还没有拾取点'), findsOneWidget);
     expect(find.byKey(const ValueKey('measurement_distance')), findsNothing);
 
     engine.pickResult = (x: 0.0, y: 0.0, z: 10.0, value: 0.0);
@@ -35,12 +35,12 @@ void main() {
     service.pickPointAt(120, 130);
     await tester.pump();
     expect(find.text('距离 5.590'), findsOneWidget);
-    expect(find.text('高差 2.500'), findsOneWidget);
+    expect(find.text('高差 +2.500'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('measurement_clear')));
     await tester.pump();
     expect(service.pickedPoints, isEmpty);
-    expect(find.textContaining('拾取起点和终点'), findsOneWidget);
+    expect(find.text('还没有拾取点'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

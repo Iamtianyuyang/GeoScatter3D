@@ -115,7 +115,7 @@ void main() {
     },
   );
 
-  testWidgets('embedded viewport leaves telemetry to the bottom shell', (
+  testWidgets('viewport alone owns gestures and no floating chrome', (
     tester,
   ) async {
     final service = GeoScatter3dService(engine: FakeEngine());
@@ -124,12 +124,12 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: ViewportCanvas(service: service, embedded: true)),
+        home: Scaffold(body: ViewportCanvas(service: service)),
       ),
     );
 
-    expect(find.byKey(const ValueKey('telemetry_hud')), findsNothing);
     expect(find.byKey(const ValueKey('viewport_gestures')), findsOneWidget);
+    expect(find.text('GeoScatter 3D'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
