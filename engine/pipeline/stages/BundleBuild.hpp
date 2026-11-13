@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,8 @@ struct BundleBuildResult {
 // Builds (or resumes) a v3 bundle from a CSV/DAT source. Stages are recorded in
 // manifest.json only after they finish; a run continues only when the source
 // fingerprint and the options hash match, so two runs are never mixed.
-BundleBuildResult build_bundle(const BundleBuildOptions& options);
+// Called at stage boundaries; throwing stops the build before the next stage.
+BundleBuildResult build_bundle(const BundleBuildOptions& options,
+                               const std::function<void(const char*)>& on_stage = {});
 
 } // namespace gs3d::pipeline

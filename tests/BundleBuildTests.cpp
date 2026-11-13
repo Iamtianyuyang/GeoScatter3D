@@ -64,6 +64,26 @@ TEST_CASE("a second build of the same source skips every finished stage")
     fs::remove_all(source.parent_path(), ignored);
 }
 
+TEST_CASE("a build stopped at a stage boundary resumes from its checkpoint")
+{
+    const fs::path source = make_source("cancel-boundary", "1,2,3,4\n2,3,4,5\n");
+    const fs::path bundle = source.parent_path() / "bundle";
+    const auto options = options_for(source, bundle);
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options, [](const char* stage) {
+        if (std::string(stage) == "points") {
+            throw std::runtime_error("cancelled");
+        }
+    }));
+    const auto partial = gs3d::data::load_bundle_manifest(bundle);
+    REQUIRE(partial.job.stages.at("stats") == "done");
+    REQUIRE(partial.job.stages.count("points") == 0);
+    const auto resumed = gs3d::pipeline::build_bundle(options);
+    REQUIRE(contains(resumed.stages_skipped, "stats"));
+    REQUIRE(contains(resumed.stages_run, "points"));
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
 TEST_CASE("an interrupted build resumes at the point stage instead of redoing statistics")
 {
     const fs::path source =

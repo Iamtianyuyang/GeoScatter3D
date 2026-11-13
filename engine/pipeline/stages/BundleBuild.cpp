@@ -36,7 +36,11 @@ bool fingerprints_match(const gs3d::data::Manifest& manifest,
 
 } // namespace
 
-BundleBuildResult build_bundle(const BundleBuildOptions& options) {
+BundleBuildResult build_bundle(const BundleBuildOptions& options,
+                               const std::function<void(const char*)>& on_stage) {
+    if (on_stage) {
+        on_stage("fingerprint");
+    }
     if (options.source.empty()) {
         throw std::runtime_error("build_bundle: source path is required");
     }
@@ -80,6 +84,9 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options) {
     if (have_manifest && stage_done(manifest, kStatsStageName)) {
         result.stages_skipped.push_back(kStatsStageName);
     } else {
+        if (on_stage) {
+            on_stage(kStatsStageName);
+        }
         gs3d::data::CsvReadConfig config;
         if (!options.value_field.empty()) {
             config.schema.primary_value_field = options.value_field;
@@ -100,6 +107,9 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options) {
         result.stages_run.push_back(kStatsStageName);
     }
 
+    if (on_stage) {
+        on_stage(kPointStageName);
+    }
     manifest.attributes = {gs3d::data::ManifestAttribute{
         options.value_field.empty() ? "value" : options.value_field, "f32", "", true, 0.0}};
     gs3d::data::save_bundle_manifest(options.bundle_dir, manifest);
