@@ -56,7 +56,14 @@ jobs:
       - name: Test
         # 单个用例跑挂会吃满整个作业时限：无 GPU 的 runner 上遇到等待设备的用例
         # 必须快速失败，而不是把 90 分钟耗在 Test 步骤里。
-        run: ctest --test-dir build -C Release --timeout 300 --output-on-failure
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue build/tests/pipeline-abi-steps.log
+          ctest --test-dir build -C Release --timeout 300 --output-on-failure
+
+      # 超时被杀时 ctest 不保留任何输出，用例自己写的进度文件是唯一线索。
+      - name: Pipeline ABI progress
+        if: failure()
+        run: Get-Content build/tests/pipeline-abi-steps.log -ErrorAction SilentlyContinue
 
       - uses: subosito/flutter-action@v2
         with:

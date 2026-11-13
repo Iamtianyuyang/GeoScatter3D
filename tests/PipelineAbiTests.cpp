@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <ostream>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -22,11 +23,13 @@ static_assert(offsetof(gs3d_pipeline_status, error) == 52);
 static_assert(offsetof(gs3d_pipeline_status, points) == 312);
 #endif
 
-// 崩溃/卡死只留下 “Timeout” 而没有行号：每一步都往 stderr 刷一行并立即 flush，
-// CI 上就能看出到底停在哪次 ABI 调用里。
+// 卡死时 ctest 只报 Timeout、连 stderr 都不留，所以每步同时写一份文件；
+// CI 在作业失败后把这个文件打出来，就能看出停在哪次 ABI 调用里。
 static void step(const char* name) {
     std::fprintf(stderr, "[pipeline-abi] %s\n", name);
     std::fflush(stderr);
+    std::ofstream log("pipeline-abi-steps.log", std::ios::app);
+    log << name << '\n' << std::flush;
 }
 
 TEST_CASE("pipeline ABI copies arguments and reports background task results") {
