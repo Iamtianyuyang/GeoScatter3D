@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cstdio>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -21,8 +22,16 @@ static_assert(offsetof(gs3d_pipeline_status, error) == 52);
 static_assert(offsetof(gs3d_pipeline_status, points) == 312);
 #endif
 
+// 崩溃/卡死只留下 “Timeout” 而没有行号：每一步都往 stderr 刷一行并立即 flush，
+// CI 上就能看出到底停在哪次 ABI 调用里。
+static void step(const char* name) {
+    std::fprintf(stderr, "[pipeline-abi] %s\n", name);
+    std::fflush(stderr);
+}
+
 TEST_CASE("pipeline ABI copies arguments and reports background task results") {
     namespace fs = std::filesystem;
+    step("begin");
     const auto dir = fs::temp_directory_path() /
         ("gs3d-pipeline-abi-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(dir);
@@ -31,14 +40,17 @@ TEST_CASE("pipeline ABI copies arguments and reports background task results") {
     std::ofstream(source) << "X,Y,Z,elevation\n1,2,3,4\n";
 
     gs3d_pipeline_config bad_config{};
+    step("create-invalid");
     REQUIRE(gs3d_pipeline_create(&bad_config) == nullptr);
     gs3d_pipeline_config config{sizeof(config)};
+    step("create");
     gs3d_pipeline* pipeline = gs3d_pipeline_create(&config);
     REQUIRE(pipeline != nullptr);
     std::string source_path = source.string();
     std::string bundle_path = bundle.string();
     gs3d_pipeline_job input{sizeof(input), source_path.c_str(), bundle_path.c_str(), 8, "elevation"};
     uint64_t task = 0;
+    step("start");
     REQUIRE(gs3d_pipeline_start(pipeline, &input, &task) == 0);
     REQUIRE(task != 0);
     source_path.clear();
@@ -54,9 +66,13 @@ TEST_CASE("pipeline ABI copies arguments and reports background task results") {
     } while (std::chrono::steady_clock::now() < deadline);
     REQUIRE(status.task_id == task);
     REQUIRE(status.state == GS3D_PIPELINE_DONE);
+    step("polled");
     REQUIRE(status.points == 1);
     REQUIRE(gs3d_pipeline_cancel(pipeline, task) == -2);
+    step("destroy");
     gs3d_pipeline_destroy(pipeline);
+    step("destroyed");
     std::error_code ignored;
     fs::remove_all(dir, ignored);
+    step("cleanup");
 }

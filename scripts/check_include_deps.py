@@ -142,7 +142,11 @@ def collect_engine_violations(root: pathlib.Path) -> list[str]:
                     invalid = (ENGINE_ORDER[src[0]] <= ENGINE_ORDER[dst[0]] or
                                (src[0] == "cli" and dst[0] in {"render", "session", "abi"}))
             if invalid:
-                violations.append(f"{path.relative_to(root)}:{line_number}: {src} -> {dst}")
+                # as_posix：CI 在 Windows 上跑，报告要用与平台无关的斜杠，
+                # 测试才能断言具体文件行。
+                violations.append(
+                    f"{path.relative_to(root).as_posix()}:{line_number}: {src} -> {dst}"
+                )
     return sorted(violations)
 
 
