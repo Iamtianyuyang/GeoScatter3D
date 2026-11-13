@@ -83,6 +83,10 @@ add_test(
     COMMAND GeoScatter3DBundleBuildTests
 )
 
+add_executable(GeoScatter3DPipelineAbiTests PipelineAbiTests.cpp)
+target_link_libraries(GeoScatter3DPipelineAbiTests PRIVATE gs3d_pipeline_ffi Catch2::Catch2WithMain)
+add_test(NAME GeoScatter3D.PipelineAbi COMMAND GeoScatter3DPipelineAbiTests)
+
 add_test(NAME GeoScatter3D.PackSample
     COMMAND $<TARGET_FILE:gs3d_pack>
         --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv

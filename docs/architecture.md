@@ -255,6 +255,7 @@ manifest 必须包含：
   校验和、阶段检查点）、`BundleBuild`（按源文件 SHA-256 与 options_hash 判定可否
   续跑，指纹不一致时拒绝，跳过已完成点阶段前校验块；支持阶段边界回调和从包目录
   恢复源路径、选项）、`BundleJob`（单任务后台执行、状态轮询和阶段边界取消）、
+  `gs3d_pipeline_ffi`（独立的无 GPU 管线 C 接口及 Dart 结构镜像）、
   `gs3d_pack`（命令行入口）、`V3BundleReader`（引擎直接打开 v3 包）。
 - 未实现：`lod/` 与 `tiles/` 的 v3 写入与读取；在它们落地前，manifest 的
   `required_features` 只应写 `points`。约定：`required_features` 里的特性在包里
@@ -264,7 +265,9 @@ manifest 必须包含：
   检查点不能作为完整包读取。指纹阶段中断时尚无检查点，需重新提交任务。
 - 未实现：块级续跑（中断的块重写），按决议只做阶段级续跑；正式的独立检查点与最终
   manifest 分离、后台任务持久化和 Android 服务仍待实现。当前后台执行限制仅作用于单个
-  `BundleJob` 实例，尚未实现进程级重任务调度。
+  `BundleJob` 实例，尚未实现进程级重任务调度。管线 C 接口目前暂存于
+  `engine/abi/gs3d_pipeline.h`，尚未合入正式的统一 ABI 头文件，销毁管线实例会等待
+  工作线程，调用方须避开 UI 线程。
 - 实测（Ryzen 9 7945HX / clang / 单流）：682 MB CSV → 33,021,621 点、504 块、
   72.1 s、峰值 RSS 514 MB、包 506 MB。按点数折算 50M 约 110 s，未达 60 s 预算，
   属性能任务待优化（当前主要成本是两遍扫描、逐块 fsync 与 SHA-256）。

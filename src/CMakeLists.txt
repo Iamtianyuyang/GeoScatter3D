@@ -5,6 +5,13 @@
 add_subdirectory(platform)
 add_subdirectory(data)
 add_subdirectory(${PROJECT_SOURCE_DIR}/engine/pipeline ${CMAKE_CURRENT_BINARY_DIR}/pipeline)
+
+add_library(gs3d_pipeline_ffi SHARED ${PROJECT_SOURCE_DIR}/engine/abi/gs3d_pipeline.cpp)
+target_compile_definitions(gs3d_pipeline_ffi PRIVATE GS3D_PIPELINE_EXPORTS)
+target_link_libraries(gs3d_pipeline_ffi PRIVATE gs3d_preprocess)
+if(ANDROID)
+    target_link_libraries(gs3d_pipeline_ffi PRIVATE log)
+endif()
 add_subdirectory(render)
 add_subdirectory(app)
 add_subdirectory(camera)
