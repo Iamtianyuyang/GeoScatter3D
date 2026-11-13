@@ -377,6 +377,17 @@ manifest 必须包含：
 
 三端都必须在启动时检测 Vulkan 并给出可读的失败原因，不许静默退出。
 
+### 渲染冒烟记录
+
+| 平台 | 方法 | 结果 |
+| --- | --- | --- |
+| Linux 窗口 | `flutter build linux --release` 后直接运行 `bundle/ui_flutter`（Wayland 会话），用 `grim` 截屏核对视口 | 通过：窗口起来、Vulkan 选中 RTX 5060、样例 10 000 点可见（截图不入库）、无崩溃。GTK 报过一次 `Timed out waiting for subsurface frame of size 1372x2388 (have 1390x2396)`，来自平铺窗口管理器与装饰边，不影响出图 |
+| Linux 离屏 | `GS3D_ENGINE_E2E=1 GS3D_PIPELINE_LIBRARY=... flutter test`，读回 RGBA 断言像素 | 通过：回读、轨道、复位、resize、拾取，全套 66 用例 0 跳过 |
+| Windows | 无机器 | 未验证：只有 CI 构建与单元测试，窗口与呈现未跑 |
+| Android | 无设备、无模拟器（SDK 缺 emulator 包，下载 <1%/20 s，已放弃） | 未验证：APK 构建、JNI 建包、Kotlin 直接编译已过，前台服务与后台恢复仍未上机 |
+
+窗口冒烟的前置条件：`data/gs3d_shaders` 必须在可执行文件目录下，否则引擎创建失败并且只在日志里留一行 shader 路径。
+
 ## 迁移映射
 
 当前树 → 目标树（`git mv` 保留历史）：

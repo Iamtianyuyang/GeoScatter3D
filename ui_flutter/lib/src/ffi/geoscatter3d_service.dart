@@ -597,6 +597,8 @@ class GeoScatter3dService extends ChangeNotifier {
   void _fail(Object error) {
     if (_disposed) return;
     _error = error.toString();
+    // 窗口冒烟时没有调试器，失败原因必须留在日志里。
+    debugPrint('[GeoScatter3D] $error');
     notifyListeners();
   }
 
