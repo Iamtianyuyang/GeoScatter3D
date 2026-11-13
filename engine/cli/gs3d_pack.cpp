@@ -12,6 +12,7 @@ namespace {
 void usage() {
     std::printf("usage: gs3d_pack --csv <file> --out <bundle-dir> [--chunk-points N]\n"
                 "                [--value-field NAME]\n"
+                "       gs3d_pack --resume <bundle-dir>\n"
                 "Builds a v3 bundle (manifest.json + points/*.chunk). Stages already recorded\n"
                 "as done for the same source and options are skipped, so an interrupted run\n"
                 "resumes from the last finished stage.\n");
@@ -21,17 +22,25 @@ void usage() {
 
 int main(int argc, char** argv) {
     gs3d::pipeline::BundleBuildOptions options;
+    std::filesystem::path resume_dir;
+    bool build_argument = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool has_value = i + 1 < argc;
         if (arg == "--csv" && has_value) {
+            build_argument = true;
             options.source = argv[++i];
         } else if (arg == "--out" && has_value) {
+            build_argument = true;
             options.bundle_dir = argv[++i];
         } else if (arg == "--chunk-points" && has_value) {
+            build_argument = true;
             options.points_per_chunk = static_cast<std::uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--value-field" && has_value) {
+            build_argument = true;
             options.value_field = argv[++i];
+        } else if (arg == "--resume" && has_value) {
+            resume_dir = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             usage();
             return 0;
@@ -41,15 +50,17 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
-    if (options.source.empty() || options.bundle_dir.empty()) {
+    if ((!resume_dir.empty() && build_argument) ||
+        (resume_dir.empty() && (options.source.empty() || options.bundle_dir.empty()))) {
         usage();
         return 2;
     }
 
     try {
         const auto started = std::chrono::steady_clock::now();
-        const gs3d::pipeline::BundleBuildResult result =
-            gs3d::pipeline::build_bundle(options);
+        const gs3d::pipeline::BundleBuildResult result = resume_dir.empty()
+            ? gs3d::pipeline::build_bundle(options)
+            : gs3d::pipeline::resume_bundle(resume_dir);
         const double seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
 

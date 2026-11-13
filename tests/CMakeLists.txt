@@ -86,17 +86,18 @@ add_test(
 add_test(NAME GeoScatter3D.PackSample
     COMMAND $<TARGET_FILE:gs3d_pack>
         --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv
-        --out ${CMAKE_CURRENT_BINARY_DIR}/pack-sample
+        --out ${CMAKE_CURRENT_BINARY_DIR}/pack-resume-sample
         --chunk-points 8)
 set_tests_properties(GeoScatter3D.PackSample PROPERTIES FIXTURES_SETUP pack_sample)
 add_test(NAME GeoScatter3D.PackSampleResume
     COMMAND $<TARGET_FILE:gs3d_pack>
-        --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv
-        --out ${CMAKE_CURRENT_BINARY_DIR}/pack-sample
-        --chunk-points 8)
+        --resume ${CMAKE_CURRENT_BINARY_DIR}/pack-resume-sample)
 set_tests_properties(GeoScatter3D.PackSampleResume PROPERTIES
     FIXTURES_REQUIRED pack_sample
     PASS_REGULAR_EXPRESSION "skipped: stats,points")
+add_test(NAME GeoScatter3D.PackResumeRejectsMixedArguments
+    COMMAND $<TARGET_FILE:gs3d_pack> --resume unused --csv unused)
+set_tests_properties(GeoScatter3D.PackResumeRejectsMixedArguments PROPERTIES WILL_FAIL TRUE)
 
 add_executable(GeoScatter3DCpuInfoTests
     CpuInfoTests.cpp
