@@ -54,7 +54,9 @@ jobs:
       # Runtime, TileStreaming) and the include-dependency lint all run
       # without a display or physical GPU.
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        # 单个用例跑挂会吃满整个作业时限：无 GPU 的 runner 上遇到等待设备的用例
+        # 必须快速失败，而不是把 90 分钟耗在 Test 步骤里。
+        run: ctest --test-dir build -C Release --timeout 300 --output-on-failure
 
       - uses: subosito/flutter-action@v2
         with:
@@ -103,7 +105,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --timeout 300 --output-on-failure
 
       - uses: subosito/flutter-action@v2
         with:
