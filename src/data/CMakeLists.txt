@@ -11,7 +11,7 @@ add_library(gs3d_data STATIC
     DataSchema.cpp
     Delimiter.cpp
     Gs3dFormat.cpp
-    Gs3dPointChunk.cpp
+    ${PROJECT_SOURCE_DIR}/engine/data/format/PointChunk.cpp
     Gs3dReader.cpp
     Gs3dVerifier.cpp
     Gs3dDataset.cpp

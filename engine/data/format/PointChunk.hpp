@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/Gs3dFormat.hpp"
+#include "data/format/Point.hpp"
 
 #include <cstddef>
 #include <span>

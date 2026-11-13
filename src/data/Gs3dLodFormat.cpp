@@ -1,6 +1,6 @@
 #include "data/Gs3dLodFormat.hpp"
 
-#include "data/Gs3dByteOrder.hpp"
+#include "data/format/ByteOrder.hpp"
 
 #include <algorithm>
 #include <array>

@@ -1,6 +1,6 @@
-#include "data/Gs3dPointChunk.hpp"
+#include "data/format/PointChunk.hpp"
 
-#include "data/Gs3dByteOrder.hpp"
+#include "data/format/ByteOrder.hpp"
 #include "foundation/io/Crc32c.hpp"
 
 #include <algorithm>

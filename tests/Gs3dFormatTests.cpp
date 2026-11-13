@@ -8,7 +8,7 @@
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dLodTargets.hpp"
 #include "data/Gs3dReader.hpp"
-#include "data/Gs3dPointChunk.hpp"
+#include "data/format/PointChunk.hpp"
 #include "data/Gs3dTileFormat.hpp"
 #include "data/Gs3dTileReader.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
