@@ -1,10 +1,10 @@
 #include "preprocess/Gs3dWriter.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include "data/CsvChunkPlanner.hpp"
 #include "data/CsvChunkReader.hpp"
 #include "data/CsvSniffer.hpp"
-#include "util/ThreadPool.hpp"
+#include "foundation/concurrency/ThreadPool.hpp"
 
 #include <fstream>
 #include <future>

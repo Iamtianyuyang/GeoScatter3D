@@ -7,7 +7,7 @@
 #include "data/Gs3dTileReader.hpp"
 #include "render/PointCloudTileGpu.hpp"
 #include "render/TileDeviceArena.hpp"
-#include "util/Stopwatch.hpp"
+#include "foundation/diagnostics/Stopwatch.hpp"
 
 #include <array>
 #include <atomic>

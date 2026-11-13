@@ -2,7 +2,7 @@
 #include "app/AppConfigTomlValue.hpp"
 #include "app/AppConfigValidation.hpp"
 #include "app/AppConfigViewerToml.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 #include "app/ResourcePath.hpp"
 
 #include <toml++/toml.hpp>

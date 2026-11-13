@@ -1,7 +1,7 @@
 #include "app/UserPreferences.hpp"
 
 #include "app/AppState.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <toml++/toml.hpp>
 

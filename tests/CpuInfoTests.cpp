@@ -1,4 +1,4 @@
-#include "platform/CpuInfo.hpp"
+#include "foundation/diagnostics/CpuInfo.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,5 +1,5 @@
 #include "data/Gs3dLodReader.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <fstream>
 #include <stdexcept>

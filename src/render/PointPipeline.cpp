@@ -1,5 +1,5 @@
 #include "render/PointPipeline.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <cstddef>
 #include <fstream>

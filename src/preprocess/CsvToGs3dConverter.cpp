@@ -1,13 +1,13 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include "data/CsvChunkPlanner.hpp"
 #include "data/CsvChunkReader.hpp"
 #include "data/CsvSniffer.hpp"
 #include "data/Gs3dFormat.hpp"
 #include "preprocess/StatisticsPass.hpp"
-#include "util/Stopwatch.hpp"
-#include "util/ThreadPool.hpp"
+#include "foundation/diagnostics/Stopwatch.hpp"
+#include "foundation/concurrency/ThreadPool.hpp"
 
 #include <algorithm>
 #include <filesystem>

@@ -1,7 +1,7 @@
 #include "control/ControlPlane.hpp"
 
 #include "control/Base64.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN

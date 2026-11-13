@@ -1,5 +1,5 @@
 #include "data/Gs3dTileReader.hpp"
-#include "platform/MemoryMappedFile.hpp"
+#include "foundation/io/MemoryMappedFile.hpp"
 
 #include <algorithm>
 #include <bit>

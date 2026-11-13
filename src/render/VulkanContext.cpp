@@ -1,5 +1,5 @@
 #include "render/VulkanContext.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>
 #include <cstring>

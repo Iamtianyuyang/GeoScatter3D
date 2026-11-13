@@ -1,7 +1,7 @@
 #include "render/PresentSurface.hpp"
 
 #include "render/VulkanBuffer.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>
 #include <cstring>

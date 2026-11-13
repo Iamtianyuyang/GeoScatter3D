@@ -4,7 +4,7 @@
 #include "camera/MouseRay.hpp"
 #include "data/PointDataAdapters.hpp"
 #include "data/TileDataAdapters.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>
 #include <chrono>

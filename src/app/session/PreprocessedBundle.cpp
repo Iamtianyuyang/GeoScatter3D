@@ -1,5 +1,5 @@
 #include "app/PreprocessedBundle.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <toml++/toml.hpp>
 

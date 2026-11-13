@@ -1,9 +1,9 @@
 #include "preprocess/Gs3dTileWriter.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include "data/Gs3dTileFormat.hpp"
-#include "util/Stopwatch.hpp"
-#include "util/ThreadPool.hpp"
+#include "foundation/diagnostics/Stopwatch.hpp"
+#include "foundation/concurrency/ThreadPool.hpp"
 
 #include <algorithm>
 #include <cmath>

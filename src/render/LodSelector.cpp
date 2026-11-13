@@ -1,5 +1,5 @@
 #include "render/LodSelector.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>
 #include <cstdlib>

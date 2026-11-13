@@ -1,6 +1,6 @@
 #include "ffi/geoscatter3d_ffi.h"
 
-#include "util/Gs3dVersion.hpp"
+#include "foundation/Gs3dVersion.hpp"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -27,7 +27,7 @@
 #include "data/Gs3dLodReader.hpp"
 #include "data/Gs3dReader.hpp"
 #include "render/VulkanGpuInfo.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>
 #include <chrono>

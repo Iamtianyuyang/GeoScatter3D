@@ -1,4 +1,4 @@
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

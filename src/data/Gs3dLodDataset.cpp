@@ -1,6 +1,6 @@
 #include "data/Gs3dLodDataset.hpp"
-#include "util/Log.hpp"
-#include "util/ThreadPool.hpp"
+#include "foundation/diagnostics/Log.hpp"
+#include "foundation/concurrency/ThreadPool.hpp"
 
 #include <algorithm>
 #include <chrono>

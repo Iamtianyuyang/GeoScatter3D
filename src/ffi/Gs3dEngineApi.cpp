@@ -2,7 +2,7 @@
 
 #include "ffi/EngineHost.hpp"
 #include "ffi/HeadlessRenderKernel.hpp"
-#include "util/Gs3dVersion.hpp"
+#include "foundation/Gs3dVersion.hpp"
 
 #include <cstdlib>
 #include <filesystem>

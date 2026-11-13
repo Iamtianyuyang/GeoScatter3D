@@ -13,8 +13,8 @@
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
 #include "render/TileSelection.hpp"
-#include "util/PercentileStats.hpp"
-#include "util/Stopwatch.hpp"
+#include "foundation/diagnostics/PercentileStats.hpp"
+#include "foundation/diagnostics/Stopwatch.hpp"
 
 #include <algorithm>
 #include <cmath>

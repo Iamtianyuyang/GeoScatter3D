@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.28.3)
 
-# The version has one home, include/util/Gs3dVersion.hpp, shared with the FFI.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/util/Gs3dVersion.hpp" _gs3d_version_header)
+# The version has one home, engine/foundation/Gs3dVersion.hpp, shared with the FFI.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/engine/foundation/Gs3dVersion.hpp" _gs3d_version_header)
 string(REGEX MATCH "GS3D_PRODUCT_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _gs3d_version_match
     "${_gs3d_version_header}")
 if(NOT _gs3d_version_match)
-    message(FATAL_ERROR "include/util/Gs3dVersion.hpp: GS3D_PRODUCT_VERSION literal not found")
+    message(FATAL_ERROR "engine/foundation/Gs3dVersion.hpp: GS3D_PRODUCT_VERSION literal not found")
 endif()
 
 project(GeoScatter3D VERSION ${CMAKE_MATCH_1} LANGUAGES CXX)
@@ -17,6 +17,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# New engine tree: headers are included as "<layer>/<module>/<file>.hpp".
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/engine)
 
 if(MSVC)
     # Sources contain UTF-8 (Chinese) string literals; without /utf-8 MSVC

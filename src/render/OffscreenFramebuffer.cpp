@@ -1,5 +1,5 @@
 #include "render/OffscreenFramebuffer.hpp"
-#include "util/Log.hpp"
+#include "foundation/diagnostics/Log.hpp"
 
 #include <iostream>
 #include <stdexcept>

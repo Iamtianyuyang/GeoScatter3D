@@ -1,4 +1,4 @@
-#include "platform/CpuInfo.hpp"
+#include "foundation/diagnostics/CpuInfo.hpp"
 
 #include <algorithm>
 #include <cctype>

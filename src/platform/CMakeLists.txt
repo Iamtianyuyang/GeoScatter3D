@@ -1,10 +1,10 @@
 # ---------------------------------------------------------------------------
-# Platform Subsystem: OS, CPU, and Memory-Mapped Files
+# Platform Subsystem: OS-specific helpers (CpuInfo, mmap live in foundation)
 # ---------------------------------------------------------------------------
 
 add_library(gs3d_platform STATIC
-    CpuInfo.cpp
-    MemoryMappedFile.cpp
+    ${PROJECT_SOURCE_DIR}/engine/foundation/diagnostics/CpuInfo.cpp
+    ${PROJECT_SOURCE_DIR}/engine/foundation/io/MemoryMappedFile.cpp
 )
 
 target_include_directories(gs3d_platform PUBLIC
