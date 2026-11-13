@@ -2,7 +2,6 @@
 
 #include "data/csv/CsvStreamReader.hpp"
 #include "data/format/Manifest.hpp"
-#include "foundation/diagnostics/Log.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/compute/StatisticsPass.hpp"
 #include "pipeline/stages/PointStage.hpp"
@@ -55,15 +54,17 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options) {
     if (have_manifest) {
         manifest = gs3d::data::load_bundle_manifest(options.bundle_dir);
         if (!fingerprints_match(manifest, source_bytes, sha256, hash)) {
-            gs3d::util::log::warning()
-                << "build_bundle: bundle belongs to another source or option set; rebuilding";
-            manifest = gs3d::data::Manifest{};
-            have_manifest = false;
+            throw std::runtime_error(
+                "build_bundle: source or options do not match the existing bundle");
         }
     }
 
     BundleBuildResult result;
     if (have_manifest && stage_done(manifest, kPointStageName)) {
+        std::string error;
+        if (!verify_point_chunks(options.bundle_dir, &error)) {
+            throw std::runtime_error("build_bundle: existing bundle failed verification: " + error);
+        }
         result.points = manifest.point_count;
         result.chunks = manifest.chunks.size();
         result.stages_skipped = {kStatsStageName, kPointStageName};
@@ -98,6 +99,10 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options) {
         gs3d::data::save_bundle_manifest(options.bundle_dir, manifest);
         result.stages_run.push_back(kStatsStageName);
     }
+
+    manifest.attributes = {gs3d::data::ManifestAttribute{
+        options.value_field.empty() ? "value" : options.value_field, "f32", "", true, 0.0}};
+    gs3d::data::save_bundle_manifest(options.bundle_dir, manifest);
 
     PointStageOptions stage;
     stage.points_per_chunk = options.points_per_chunk;
@@ -139,11 +144,6 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options) {
     result.stages_run.push_back(kPointStageName);
     result.points = stage_result.points;
     result.chunks = stage_result.chunks;
-
-    gs3d::data::Manifest written = gs3d::data::load_bundle_manifest(options.bundle_dir);
-    written.attributes = {gs3d::data::ManifestAttribute{
-        options.value_field.empty() ? "value" : options.value_field, "f32", "", true, 0.0}};
-    gs3d::data::save_bundle_manifest(options.bundle_dir, written);
 
     std::string error;
     if (!verify_point_chunks(options.bundle_dir, &error)) {

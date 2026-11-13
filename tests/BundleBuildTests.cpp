@@ -1,6 +1,7 @@
 #include "data/format/Manifest.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/stages/BundleBuild.hpp"
+#include "pipeline/stages/PointStage.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -49,6 +50,7 @@ TEST_CASE("a second build of the same source skips every finished stage")
 
     const gs3d::pipeline::BundleBuildResult first = gs3d::pipeline::build_bundle(options);
     REQUIRE(first.points == 4);
+    REQUIRE(gs3d::data::load_bundle_manifest(bundle).attributes.size() == 1);
     REQUIRE(contains(first.stages_run, "stats"));
     REQUIRE(contains(first.stages_run, "points"));
 
@@ -93,22 +95,41 @@ TEST_CASE("an interrupted build resumes at the point stage instead of redoing st
     fs::remove_all(source.parent_path(), ignored);
 }
 
-TEST_CASE("a changed source rebuilds instead of resuming another file's stages")
+TEST_CASE("resuming a completed bundle rejects corrupt point data")
+{
+    const fs::path source = make_source("corrupt-resume", "1,2,3,4\n2,3,4,5\n");
+    const fs::path bundle = source.parent_path() / "bundle";
+    const auto options = options_for(source, bundle);
+    REQUIRE(gs3d::pipeline::build_bundle(options).points == 2);
+    const auto manifest = gs3d::data::load_bundle_manifest(bundle);
+    REQUIRE_FALSE(manifest.chunks.empty());
+    std::fstream chunk(bundle / manifest.chunks.front().path,
+                       std::ios::binary | std::ios::in | std::ios::out);
+    REQUIRE(chunk.is_open());
+    chunk.seekp(0);
+    chunk.put('\x7f');
+    chunk.close();
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options));
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
+TEST_CASE("a changed source is rejected without changing the existing bundle")
 {
     const fs::path source = make_source("changed", "1,2,3,4\n2,3,4,5\n");
     const fs::path bundle = source.parent_path() / "bundle";
     const gs3d::pipeline::BundleBuildOptions options = options_for(source, bundle);
     REQUIRE(gs3d::pipeline::build_bundle(options).points == 2);
 
-    std::ofstream(source) << "X,Y,Z,elevation\n9,9,9,9\n8,8,8,8\n7,7,7,7\n";
-    const gs3d::pipeline::BundleBuildResult rebuilt = gs3d::pipeline::build_bundle(options);
-    REQUIRE(rebuilt.points == 3);
-    REQUIRE(contains(rebuilt.stages_run, "stats"));
-    REQUIRE(contains(rebuilt.stages_run, "points"));
-    REQUIRE(rebuilt.stages_skipped.empty());
+    auto changed_options = options;
+    changed_options.points_per_chunk = 4;
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(changed_options));
 
+    std::ofstream(source) << "X,Y,Z,elevation\n9,9,9,9\n8,8,8,8\n7,7,7,7\n";
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options));
     const gs3d::data::Manifest manifest = gs3d::data::load_bundle_manifest(bundle);
-    REQUIRE(manifest.bounds_max[2] == 9.0 - manifest.origin[2]);
+    REQUIRE(manifest.point_count == 2);
+    REQUIRE(gs3d::pipeline::verify_point_chunks(bundle, nullptr));
 
     std::error_code ignored;
     fs::remove_all(source.parent_path(), ignored);

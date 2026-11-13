@@ -179,24 +179,34 @@ bool point_stage_complete(const fs::path& bundle_dir) {
 
 bool verify_point_chunks(const fs::path& bundle_dir, std::string* error) {
     const gs3d::data::Manifest manifest = gs3d::data::load_bundle_manifest(bundle_dir);
+    std::uint64_t points = 0;
     for (const gs3d::data::ManifestChunk& chunk : manifest.chunks) {
         if (chunk.path.rfind("points/", 0) != 0) {
             continue;
         }
         try {
             const std::vector<std::byte> bytes = read_file(bundle_dir / chunk.path);
-            if (bytes.size() != chunk.bytes || payload_crc(bytes) != chunk.crc32c) {
+            const auto decoded = gs3d::data::decode_point_chunk(bytes);
+            if (bytes.size() != chunk.bytes || payload_crc(bytes) != chunk.crc32c ||
+                decoded.size() != chunk.points || chunk.points > manifest.point_count - points) {
                 if (error != nullptr) {
                     *error = "chunk " + chunk.path + " does not match the manifest";
                 }
                 return false;
             }
+            points += chunk.points;
         } catch (const std::exception& failure) {
             if (error != nullptr) {
                 *error = failure.what();
             }
             return false;
         }
+    }
+    if (points != manifest.point_count || points == 0) {
+        if (error != nullptr) {
+            *error = "point count does not match the manifest";
+        }
+        return false;
     }
     return true;
 }
