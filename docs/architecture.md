@@ -544,7 +544,7 @@ Hyprland 平铺会在 subsurface 尺寸不一致时把界面合成为残缺画�
 | 单进程 ABI / 快照 / 异步任务 | `geoscatter3d_ffi.h` §21–23 + `TaskBoard`、`EngineHost` 单 IO 线程；`TaskBoardTests`、`EngineHostTests`（真实 GPU）、Dart `engine_state_layout_test` | 通过 |
 | 视口/相机/拾取/数据集/渲染设置/测量/导出/最近项目/偏好 | 对应 widget 与服务测试：`main_shell_test`、`measurement_panel_test`、`export_test`、`render_settings_test`、`pipeline_history_test`、`engine_test` | 通过（离屏 + 窗口冒烟） |
 | 自动化测试 | CTest 40/40；Flutter 60 通过 6 跳过，带 `GS3D_ENGINE_E2E=1` 时 66 通过 0 跳过；`check_include_deps.py`、`check_engineering_guardrails.py` 均 OK | 通过 |
-| 三端 CI | run 43455696344：Linux ✓ 3m26s、Android ✓ 6m45s、Windows ✓ 14m42s（含 Flutter Windows 打包） | 通过 |
+| 三端 CI | run 43455696344（引擎收尾）与 run 43477435097（前端重设计）：Linux、Android、Windows 三条均通过，含 Flutter Windows 打包与三端 Flutter 测试 | 通过 |
 | 渲染冒烟 | Linux 窗口运行 + 截屏见点云；Vulkan 缺失给出可读报错并退出 1 | 通过（Linux） |
 | 可复现性能测量 | `scripts/measure_performance.py`（open/pack，含 `--no-lod`）与 `gs3d_bench`；数字见性能预算 | 通过，两条超预算已记录 |
 
