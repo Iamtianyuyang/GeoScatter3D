@@ -43,7 +43,7 @@ target_link_libraries(gs3d_data PUBLIC
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
-    find_package(OpenSSL QUIET)
+    find_package(OpenSSL 3 QUIET)
     if(OpenSSL_FOUND)
         target_link_libraries(gs3d_data PUBLIC OpenSSL::Crypto)
         target_compile_definitions(gs3d_data PRIVATE GS3D_USE_OPENSSL)

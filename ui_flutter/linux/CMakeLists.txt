@@ -103,6 +103,18 @@ if(NOT EXISTS "${GS3D_PIPELINE_LIBRARY}")
   message(FATAL_ERROR "Native pipeline not found. Run scripts/build_flutter_linux.sh first.")
 endif()
 install(FILES "${GS3D_PIPELINE_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+install(CODE "
+  file(GET_RUNTIME_DEPENDENCIES LIBRARIES \"${GS3D_PIPELINE_LIBRARY}\"
+    RESOLVED_DEPENDENCIES_VAR dependencies)
+  foreach(dependency IN LISTS dependencies)
+    if(dependency MATCHES \"/libcrypto\\\\.so(\\\\..*)?$\")
+      file(INSTALL DESTINATION \"${INSTALL_BUNDLE_LIB_DIR}\" TYPE SHARED_LIBRARY
+        FOLLOW_SYMLINK_CHAIN FILES \"\${dependency}\")
+      file(INSTALL DESTINATION \"${INSTALL_BUNDLE_DATA_DIR}/licenses\" TYPE FILE
+        FILES \"${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/openssl/LICENSE.txt\")
+    endif()
+  endforeach()
+" COMPONENT Runtime)
 set(GS3D_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tmp/build-linux/generated-assets/shaders"
     CACHE PATH "Compiled GeoScatter3D shaders")
 install(FILES "${GS3D_SHADER_DIR}/point.vert.spv" "${GS3D_SHADER_DIR}/point.frag.spv"
