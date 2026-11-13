@@ -476,9 +476,29 @@ Linux 可用 vulkaninfo 检查)` 并以 1 退出，不会静默黑屏。
 6. **CI**：Windows / Linux / Android 三矩阵 + lavapipe 渲染冒烟 + `gs3d_bench`
    基线比较（移植 `tools/gs3d_bench_bundle.cpp`）。
 
+## 验收记录
+
+对照本文档的成功标准，逐项证据（2026-11-13，HEAD `2cc76a7` 起）：
+
+| 标准 | 证据 | 结论 |
+| --- | --- | --- |
+| 三端可构建 | Linux `flutter build linux --release`、`build/` 与 `tmp/build-linux` 两个 CMake 目录；Android 两个 ABI 交叉编译 + `flutter build apk --debug`（141 MB，内含两个 ABI 的引擎与管线库）；Windows 由 CI `windows` 作业构建 | Linux/Android 本机通过；Windows 只在 CI |
+| 50M 工程包 | `tmp/bench-50m-lod*`：50,000,000 点、763 块、763 MiB，开包 2.40 s、帧 4.5 ms | 通过（打开时间超预算，见性能预算） |
+| 三端离线预处理、同一 v3 格式 | `gs3d_pack`（Linux）50M 建包两轮；`gs3d_pipeline_ffi` + `gs3d_preprocess` 交叉编译到 arm64/x86_64；格式测试 `ManifestTests`/`BundleBuildTests`/`PointStageTests` 全绿 | 通过（Android 上未真机跑） |
+| Android 后台与阶段恢复 | `PipelineJobService` 持有 JNI 任务、`BundleJob` 阶段检查点与 `--resume`；JVM 直连冒烟（UTF-8 路径建包、poll、NUL 拒绝）与 Kotlin 直接编译通过 | 代码级通过，设备级未验证 |
+| 单进程 ABI / 快照 / 异步任务 | `geoscatter3d_ffi.h` §21–23 + `TaskBoard`、`EngineHost` 单 IO 线程；`TaskBoardTests`、`EngineHostTests`（真实 GPU）、Dart `engine_state_layout_test` | 通过 |
+| 视口/相机/拾取/数据集/渲染设置/测量/导出/最近项目/偏好 | 对应 widget 与服务测试：`main_shell_test`、`measurement_panel_test`、`export_test`、`render_settings_test`、`pipeline_history_test`、`engine_test` | 通过（离屏 + 窗口冒烟） |
+| 自动化测试 | CTest 40/40；Flutter 60 通过 6 跳过，带 `GS3D_ENGINE_E2E=1` 时 66 通过 0 跳过；`check_include_deps.py`、`check_engineering_guardrails.py` 均 OK | 通过 |
+| 三端 CI | run 43436719122：Linux ✓ 4m3s、Android ✓ 6m52s、Windows 见运行页 | Linux/Android 通过；Windows 待本轮结果 |
+| 渲染冒烟 | Linux 窗口运行 + 截屏见点云；Vulkan 缺失给出可读报错并退出 1 | 通过（Linux） |
+| 可复现性能测量 | `scripts/measure_performance.py`（open/pack，含 `--no-lod`）与 `gs3d_bench`；数字见性能预算 | 通过，两条超预算已记录 |
+
 ## 未决
 
-- 桌面是否需要零拷贝纹理：等回读实测超过 3 ms 再决定。
+- 桌面是否需要零拷贝纹理：等回读实测超过 3 ms 再决定（当前 1080p 回读帧 4.5 ms，含回读）。
 - lavapipe 本机没装（需要 `vulkan-swrast` / `mesa-vulkan-drivers`），冒烟脚本未写。
-- 60 s 预处理目标未实测：三个阶段都已并行，但没有仓库内的计时数字。
-- Android 前台服务的存活策略（服务类型、电量与存储配额）未验证。
+- 打开 ≤ 1.5 s：实测 2.40 s，瓶颈是读点块与 LOD/GPU 上传；要达标得把 sidecar 读取与上传
+  重叠，或让 sidecar 直接给 GPU 可用的紧凑布局。
+- 预处理 ≤ 60 s 且 ≤ 2 GB：带 lod 时 115–120 s / 3.09 GB，`--no-lod` 时 55 s / 637 MiB。
+  lod 阶段当前把整包再读进内存；要两头达标得改成逐块流式累积各层体素。
+- Android 前台服务的存活策略（服务类型、电量与存储配额）、后台恢复与零拷贝呈现未在设备上验证。
