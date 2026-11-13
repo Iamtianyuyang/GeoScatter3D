@@ -277,7 +277,7 @@ void VulkanContext::pick_physical_device() {
         active_gpu_is_preferred_ = true;
     }
 
-    gs3d::util::log::error()
+    gs3d::util::log::info()
         << "[VULKAN] Selected GPU:\n"
         << "  name=" << gpu.name << '\n'
         << "  uuid=" << gpu.device_uuid << '\n'
