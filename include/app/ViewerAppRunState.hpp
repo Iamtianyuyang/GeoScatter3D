@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/ViewerPickSystem.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "data/format/Gs3dFormat.hpp"
 
 #include <cstddef>
 #include <cstdint>

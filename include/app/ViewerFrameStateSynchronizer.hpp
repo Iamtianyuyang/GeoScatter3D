@@ -2,7 +2,7 @@
 
 #include "app/AppState.hpp"
 #include "render/PointPipeline.hpp"
-#include "core/SceneState.hpp"
+#include "data/core/SceneState.hpp"
 
 #include <cstdint>
 #include <string>

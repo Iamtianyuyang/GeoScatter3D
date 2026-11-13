@@ -1,5 +1,5 @@
-#include "data/Gs3dExporter.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "data/format/Gs3dExporter.hpp"
+#include "data/format/Gs3dFormat.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

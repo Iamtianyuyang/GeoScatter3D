@@ -1,8 +1,8 @@
 #pragma once
 
 #include "app/AppState.hpp"
-#include "core/DatasetDescriptor.hpp"
-#include "data/Gs3dDataset.hpp"
+#include "data/core/DatasetDescriptor.hpp"
+#include "data/format/Gs3dDataset.hpp"
 
 #include <filesystem>
 #include <vector>

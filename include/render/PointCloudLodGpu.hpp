@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PointData.hpp"
+#include "data/core/PointData.hpp"
 #include "render/PointCloudGpu.hpp"
 #include "render/VulkanContext.hpp"
 

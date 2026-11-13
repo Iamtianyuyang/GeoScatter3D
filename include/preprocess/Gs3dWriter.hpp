@@ -1,7 +1,7 @@
 #pragma once
 
-#include "data/CsvStreamReader.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "data/csv/CsvStreamReader.hpp"
+#include "data/format/Gs3dFormat.hpp"
 #include "preprocess/StatisticsPass.hpp"
 
 #include <cstdint>

@@ -3,9 +3,9 @@
 #include "app/AppState.hpp"
 #include "app/UiActions.hpp"
 #include "app/ViewerAppInternal.hpp"
-#include "data/Gs3dDataset.hpp"
+#include "data/format/Gs3dDataset.hpp"
 #include "render/PointPipeline.hpp"
-#include "core/SceneState.hpp"
+#include "data/core/SceneState.hpp"
 
 #include <vector>
 

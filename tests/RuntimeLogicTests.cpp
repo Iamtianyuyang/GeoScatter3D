@@ -7,14 +7,14 @@
 #include "camera/BoxSelect.hpp"
 #include "camera/Camera.hpp"
 #include "camera/CameraController.hpp"
-#include "data/Gs3dFormat.hpp"
-#include "data/PointDataAdapters.hpp"
+#include "data/format/Gs3dFormat.hpp"
+#include "data/format/PointDataAdapters.hpp"
 #include "render/AxisGrid.hpp"
 #include "render/FrameUploadBudget.hpp"
 #include "render/LodSelector.hpp"
 #include "render/NearestPointQuery.hpp"
 #include "render/TileSelection.hpp"
-#include "core/SceneState.hpp"
+#include "data/core/SceneState.hpp"
 #include "ui/ViewportCanvas.hpp"
 
 #include <catch2/catch_test_macros.hpp>

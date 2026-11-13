@@ -22,10 +22,10 @@
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include <vulkan/vulkan.h>
 #include "control/JsonRpc.hpp"
-#include "data/Gs3dFormat.hpp"
-#include "data/Gs3dExporter.hpp"
-#include "data/Gs3dLodReader.hpp"
-#include "data/Gs3dReader.hpp"
+#include "data/format/Gs3dFormat.hpp"
+#include "data/format/Gs3dExporter.hpp"
+#include "data/lod/Gs3dLodReader.hpp"
+#include "data/format/Gs3dReader.hpp"
 #include "render/VulkanGpuInfo.hpp"
 #include "foundation/diagnostics/Log.hpp"
 

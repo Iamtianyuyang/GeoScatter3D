@@ -1,6 +1,6 @@
 #include "app/TilePointCache.hpp"
 #include "app/ViewerAppTileStreaming.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "data/format/Gs3dFormat.hpp"
 #include "render/TileSelection.hpp"
 #include "render/TileStagingPlan.hpp"
 

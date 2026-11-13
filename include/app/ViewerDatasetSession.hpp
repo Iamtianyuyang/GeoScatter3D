@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/TileData.hpp"
-#include "data/Gs3dDataset.hpp"
-#include "data/Gs3dLodDataset.hpp"
-#include "data/Gs3dTileReader.hpp"
+#include "data/core/TileData.hpp"
+#include "data/format/Gs3dDataset.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
+#include "data/tile/Gs3dTileReader.hpp"
 
 #include <cstdint>
 #include <optional>

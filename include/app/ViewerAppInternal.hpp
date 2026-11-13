@@ -2,7 +2,7 @@
 
 #include "app/AppState.hpp"
 #include "camera/Camera.hpp"
-#include "data/Gs3dFormat.hpp"
+#include "data/format/Gs3dFormat.hpp"
 
 #include <cstdint>
 #include <functional>

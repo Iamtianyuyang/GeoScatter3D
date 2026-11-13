@@ -1,7 +1,7 @@
 #include "app/AppConfig.hpp"
 #include "foundation/diagnostics/Log.hpp"
 #include "app/PreprocessedBundle.hpp"
-#include "data/Gs3dLodDataset.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
 #include "preprocess/CsvToGs3dConverter.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/Gs3dLodDataset.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
 
 #include <cstdint>
 #include <filesystem>

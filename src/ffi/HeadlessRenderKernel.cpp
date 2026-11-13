@@ -2,8 +2,8 @@
 
 #include "camera/CameraController.hpp"
 #include "camera/MouseRay.hpp"
-#include "data/PointDataAdapters.hpp"
-#include "data/TileDataAdapters.hpp"
+#include "data/format/PointDataAdapters.hpp"
+#include "data/tile/TileDataAdapters.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
 #include <algorithm>

@@ -9,8 +9,8 @@
  *   gs3d_bench_bundle --out <bundle_dir> [--points 4000000]
  *                     [--extent 40] [--tile-size 2] [--no-lod] [--no-tiles]
  */
-#include "data/Gs3dFormat.hpp"
-#include "data/Gs3dLodDataset.hpp"
+#include "data/format/Gs3dFormat.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
 #include "preprocess/Gs3dLodWriter.hpp"
 #include "preprocess/Gs3dTileWriter.hpp"
 

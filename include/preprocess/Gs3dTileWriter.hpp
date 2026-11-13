@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/Gs3dDataset.hpp"
+#include "data/format/Gs3dDataset.hpp"
 
 #include <cstdint>
 #include <filesystem>

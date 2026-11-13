@@ -1,7 +1,7 @@
 #include "preprocess/Gs3dTileWriter.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
-#include "data/Gs3dTileFormat.hpp"
+#include "data/tile/Gs3dTileFormat.hpp"
 #include "foundation/diagnostics/Stopwatch.hpp"
 #include "foundation/concurrency/ThreadPool.hpp"
 

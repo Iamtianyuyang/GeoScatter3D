@@ -1,7 +1,7 @@
 #pragma once
 
 #include "camera/Camera.hpp"
-#include "core/TileData.hpp"
+#include "data/core/TileData.hpp"
 
 #include <cstdint>
 #include <vector>

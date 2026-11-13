@@ -2,9 +2,9 @@
 
 #include "app/AppState.hpp"
 #include "app/UserPreferences.hpp"
-#include "core/DatasetDescriptor.hpp"
-#include "data/Gs3dLodDataset.hpp"
-#include "data/Gs3dTileReader.hpp"
+#include "data/core/DatasetDescriptor.hpp"
+#include "data/lod/Gs3dLodDataset.hpp"
+#include "data/tile/Gs3dTileReader.hpp"
 
 #include <cstddef>
 #include <optional>

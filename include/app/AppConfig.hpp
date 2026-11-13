@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/ViewerApp.hpp"
-#include "data/CsvChunkPlanner.hpp"
+#include "data/csv/CsvChunkPlanner.hpp"
 
 #include <array>
 #include <filesystem>

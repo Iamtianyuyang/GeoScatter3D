@@ -1,9 +1,9 @@
 #pragma once
 
-#include "data/CsvChunkPlanner.hpp"
-#include "data/CsvSniffer.hpp"
-#include "data/CsvStreamReader.hpp"
-#include "data/Gs3dDataset.hpp"
+#include "data/csv/CsvChunkPlanner.hpp"
+#include "data/csv/CsvSniffer.hpp"
+#include "data/csv/CsvStreamReader.hpp"
+#include "data/format/Gs3dDataset.hpp"
 
 #include <cstdint>
 #include <filesystem>

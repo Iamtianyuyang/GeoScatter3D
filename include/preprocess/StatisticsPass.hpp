@@ -1,7 +1,7 @@
 #pragma once
 
-#include "data/CsvStreamReader.hpp"
-#include "data/DataSchema.hpp"
+#include "data/csv/CsvStreamReader.hpp"
+#include "data/csv/DataSchema.hpp"
 
 #include <cstdint>
 #include <filesystem>

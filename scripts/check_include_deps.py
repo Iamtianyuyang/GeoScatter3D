@@ -11,19 +11,19 @@ from collections import defaultdict
 INCLUDE_RE = re.compile(r'^\s*#include\s+"([A-Za-z0-9_]+)/([^"]+)"')
 
 MODULE_ORDER = {
-    "app": 0,
-    "render": 2,
+    "math": 0,
+    "data": 1,
     "camera": 2,
-    "data": 2,
-    "core": 3,
+    "render": 3,
     "platform": 4,
-    "util": 4,
-    "math": 4,
+    "app": 5,
 }
 
 # Stage-1 transitional exemptions. Keep the list short and explicit.
 EXEMPT_EDGES = {
-    ("render", "camera"),
+    # Transitional: VulkanSwapchain.hpp (dead implementation) still names the
+    # GLFW window type; removed when the platform task replaces the legacy tree.
+    ("render", "platform"),
 }
 
 SCAN_ROOTS = ("include", "src")
@@ -34,6 +34,11 @@ ENGINE_ORDER = {
     "config": 3, "session": 4, "abi": 5, "cli": 6,
 }
 ENGINE_FLAT_MODULES = {"config", "abi", "cli"}
+# Within one layer, a module may only include modules listed as strictly lower.
+ENGINE_INTRA_ORDER = {
+    "data": {"core": -1, "format": 0, "csv": 1, "lod": 1, "tile": 1, "verify": 2},
+    "session": {"project": 0, "view": 1, "measure": 2},
+}
 
 
 def module_for(path: pathlib.Path, root: pathlib.Path) -> str | None:
@@ -87,7 +92,7 @@ def is_violation(src_module: str, dst_module: str) -> bool:
     if src_module not in MODULE_ORDER or dst_module not in MODULE_ORDER:
         return False
 
-    return MODULE_ORDER[src_module] >= MODULE_ORDER[dst_module]
+    return MODULE_ORDER[src_module] < MODULE_ORDER[dst_module]
 
 
 def engine_module(parts: tuple[str, ...]) -> tuple[str, ...] | None:
@@ -129,8 +134,12 @@ def collect_engine_violations(root: pathlib.Path) -> list[str]:
             dst = engine_module(parts)
             invalid = src is None or dst is None
             if not invalid and src != dst:
-                invalid = (ENGINE_ORDER[src[0]] <= ENGINE_ORDER[dst[0]] or
-                           (src[0] == "cli" and dst[0] in {"render", "session", "abi"}))
+                if src[0] == dst[0]:
+                    order = ENGINE_INTRA_ORDER.get(src[0], {})
+                    invalid = order.get(src[1], 99) <= order.get(dst[1], 99)
+                else:
+                    invalid = (ENGINE_ORDER[src[0]] <= ENGINE_ORDER[dst[0]] or
+                               (src[0] == "cli" and dst[0] in {"render", "session", "abi"}))
             if invalid:
                 violations.append(f"{path.relative_to(root)}:{line_number}: {src} -> {dst}")
     return sorted(violations)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/AppState.hpp"
-#include "data/Gs3dDataset.hpp"
+#include "data/format/Gs3dDataset.hpp"
 #include "render/PointPipeline.hpp"
 
 #include <string>

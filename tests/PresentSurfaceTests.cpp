@@ -1,5 +1,5 @@
-#include "data/Gs3dFormat.hpp"
-#include "data/PointDataAdapters.hpp"
+#include "data/format/Gs3dFormat.hpp"
+#include "data/format/PointDataAdapters.hpp"
 
 #include "render/PointCloudGpu.hpp"
 #include "render/PointPipeline.hpp"

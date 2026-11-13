@@ -1,7 +1,7 @@
-#include "data/CsvSniffer.hpp"
-#include "data/CsvStreamReader.hpp"
-#include "data/Gs3dFormat.hpp"
-#include "data/Gs3dReader.hpp"
+#include "data/csv/CsvSniffer.hpp"
+#include "data/csv/CsvStreamReader.hpp"
+#include "data/format/Gs3dFormat.hpp"
+#include "data/format/Gs3dReader.hpp"
 
 #include <algorithm>
 #include <cmath>

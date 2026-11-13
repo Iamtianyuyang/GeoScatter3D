@@ -1,9 +1,9 @@
 #include "preprocess/Gs3dWriter.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
-#include "data/CsvChunkPlanner.hpp"
-#include "data/CsvChunkReader.hpp"
-#include "data/CsvSniffer.hpp"
+#include "data/csv/CsvChunkPlanner.hpp"
+#include "data/csv/CsvChunkReader.hpp"
+#include "data/csv/CsvSniffer.hpp"
 #include "foundation/concurrency/ThreadPool.hpp"
 
 #include <fstream>

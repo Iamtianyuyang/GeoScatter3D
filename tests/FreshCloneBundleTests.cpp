@@ -1,5 +1,5 @@
-#include "data/Gs3dReader.hpp"
-#include "data/Gs3dTileReader.hpp"
+#include "data/format/Gs3dReader.hpp"
+#include "data/tile/Gs3dTileReader.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

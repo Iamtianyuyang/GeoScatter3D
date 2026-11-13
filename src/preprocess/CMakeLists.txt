@@ -3,6 +3,7 @@
 # ---------------------------------------------------------------------------
 
 add_library(gs3d_preprocess STATIC
+    ${PROJECT_SOURCE_DIR}/engine/pipeline/verify/Gs3dVerifier.cpp
     StatisticsPass.cpp
     Gs3dWriter.cpp
     CsvToGs3dConverter.cpp

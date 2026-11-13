@@ -12,7 +12,10 @@ foundation  ←  data  ←  pipeline  ←  render  ←  session  ←  abi
 ```
 
 - 下层不知道上层存在。`data` 不许 include `render`，`render` 不许 include `abi`。
-- 同层的兄弟模块之间不互相 include；需要共享的类型放在更低层。
+- 同层的兄弟模块之间不互相 include；需要共享的类型放在更低层。层内需要分层
+  时（如 `data/format` 被 `data/csv`、`data/lod`、`data/tile` 使用），在
+  `scripts/check_include_deps.py` 的 `ENGINE_INTRA_ORDER` 里显式声明先后，
+  未声明的兄弟模块只能由更低层提供依赖。
 - `config` 只依赖 `foundation`、`data`、`pipeline`，`session` 和 `abi` 可依赖
   `config`。`cli` 可依赖 `config` 及其下层，但不依赖 `render`、`session`、`abi`，
   以便预处理和校验工具不需要 Vulkan。

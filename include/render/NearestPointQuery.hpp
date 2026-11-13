@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PointData.hpp"
+#include "data/core/PointData.hpp"
 #include "camera/Camera.hpp"
 #include "camera/MouseRay.hpp"
 

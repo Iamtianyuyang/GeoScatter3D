@@ -1,6 +1,6 @@
 #include "preprocess/Gs3dLodWriter.hpp"
 
-#include "data/Gs3dLodFormat.hpp"
+#include "data/lod/Gs3dLodFormat.hpp"
 
 #include <filesystem>
 #include <fstream>

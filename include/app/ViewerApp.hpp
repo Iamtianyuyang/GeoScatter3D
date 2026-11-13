@@ -4,7 +4,7 @@
 #include "app/BenchmarkSession.hpp"
 #include "app/ViewerAppControlPlane.hpp"
 #include "app/ViewerAppRunState.hpp"
-#include "data/Gs3dExporter.hpp"
+#include "data/format/Gs3dExporter.hpp"
 
 #include <array>
 #include <atomic>
