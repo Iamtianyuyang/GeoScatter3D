@@ -34,6 +34,18 @@ target_link_libraries(GeoScatter3DPreprocess PRIVATE
 )
 copy_runtime_assets(GeoScatter3DPreprocess)
 
+add_executable(gs3d_pack
+    ${PROJECT_SOURCE_DIR}/engine/cli/gs3d_pack.cpp
+)
+target_include_directories(gs3d_pack PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/engine
+)
+target_link_libraries(gs3d_pack PRIVATE
+    gs3d_preprocess
+    gs3d_data
+)
+
 add_executable(gs3d_groundtruth
     ${PROJECT_SOURCE_DIR}/tools/gs3d_groundtruth.cpp
 )

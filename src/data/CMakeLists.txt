@@ -16,6 +16,7 @@ add_library(gs3d_data STATIC
     ${GS3D_ENGINE}/data/format/PointChunk.cpp
     ${GS3D_ENGINE}/data/format/Manifest.cpp
     ${GS3D_ENGINE}/foundation/io/AtomicFile.cpp
+    ${GS3D_ENGINE}/foundation/io/Sha256.cpp
     ${GS3D_ENGINE}/data/format/Gs3dReader.cpp
     ${GS3D_ENGINE}/data/format/Gs3dDataset.cpp
     ${GS3D_ENGINE}/data/format/Gs3dExporter.cpp

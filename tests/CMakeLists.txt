@@ -67,6 +67,21 @@ add_test(
     COMMAND GeoScatter3DPointStageTests
 )
 
+add_test(NAME GeoScatter3D.PackSample
+    COMMAND $<TARGET_FILE:gs3d_pack>
+        --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv
+        --out ${CMAKE_CURRENT_BINARY_DIR}/pack-sample
+        --chunk-points 8)
+set_tests_properties(GeoScatter3D.PackSample PROPERTIES FIXTURES_SETUP pack_sample)
+add_test(NAME GeoScatter3D.PackSampleResume
+    COMMAND $<TARGET_FILE:gs3d_pack>
+        --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv
+        --out ${CMAKE_CURRENT_BINARY_DIR}/pack-sample
+        --chunk-points 8)
+set_tests_properties(GeoScatter3D.PackSampleResume PROPERTIES
+    FIXTURES_REQUIRED pack_sample
+    PASS_REGULAR_EXPRESSION "resume: point stage already complete")
+
 add_executable(GeoScatter3DCpuInfoTests
     CpuInfoTests.cpp
 )
