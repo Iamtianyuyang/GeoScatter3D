@@ -14,6 +14,8 @@ add_library(gs3d_data STATIC
     ${GS3D_ENGINE}/data/csv/Delimiter.cpp
     ${GS3D_ENGINE}/data/format/Gs3dFormat.cpp
     ${GS3D_ENGINE}/data/format/PointChunk.cpp
+    ${GS3D_ENGINE}/data/format/Manifest.cpp
+    ${GS3D_ENGINE}/foundation/io/AtomicFile.cpp
     ${GS3D_ENGINE}/data/format/Gs3dReader.cpp
     ${GS3D_ENGINE}/data/format/Gs3dDataset.cpp
     ${GS3D_ENGINE}/data/format/Gs3dExporter.cpp
@@ -27,6 +29,10 @@ add_library(gs3d_data STATIC
 target_include_directories(gs3d_data PUBLIC
     ${PROJECT_SOURCE_DIR}/include
     ${GS3D_ENGINE}
+)
+
+target_include_directories(gs3d_data PRIVATE
+    ${NLOHMANN_JSON_INCLUDE_DIR}
 )
 
 target_link_libraries(gs3d_data PUBLIC

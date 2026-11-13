@@ -35,6 +35,22 @@ add_test(
     COMMAND GeoScatter3DThreadPoolTests
 )
 
+add_executable(GeoScatter3DManifestTests
+    ManifestTests.cpp
+)
+target_include_directories(GeoScatter3DManifestTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/engine
+)
+target_link_libraries(GeoScatter3DManifestTests PRIVATE
+    gs3d_data
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.Manifest
+    COMMAND GeoScatter3DManifestTests
+)
+
 add_executable(GeoScatter3DCpuInfoTests
     CpuInfoTests.cpp
 )
