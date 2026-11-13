@@ -21,6 +21,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val supportedAbis = mapOf("android-arm64" to "arm64-v8a", "android-x64" to "x86_64")
+val targets = (project.findProperty("target-platform") as? String)?.split(",")
+val selectedAbis = targets?.mapNotNull { supportedAbis[it] } ?: supportedAbis.values.toList()
+require(selectedAbis.isNotEmpty()) { "GeoScatter3D supports android-arm64 and android-x64." }
+
 android {
     namespace = "com.geoscatter3d.ui_flutter"
     compileSdk = flutter.compileSdkVersion
@@ -37,6 +42,7 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
+        ndk { abiFilters.addAll(selectedAbis) }
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -52,6 +58,10 @@ android {
                 storePassword = releaseKeystoreProperties["storePassword"] as String
             }
         }
+    }
+
+    packaging {
+        jniLibs.excludes.addAll(supportedAbis.values.filterNot { it in selectedAbis }.map { "**/$it/**" })
     }
 
     buildTypes {

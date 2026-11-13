@@ -447,7 +447,13 @@ class MainActivity : FlutterActivity() {
         if (requestCode == NOTIFICATION_PERMISSION_REQUEST) {
             val pending = pendingPipelinePermission
             pendingPipelinePermission = null
-            if (pending != null) startPipelineService(pending.first, pending.second)
+            if (pending != null) {
+                try {
+                    startPipelineService(pending.first, pending.second)
+                } catch (error: Exception) {
+                    pending.second.error("pipeline_error", error.message, null)
+                }
+            }
         }
     }
 
