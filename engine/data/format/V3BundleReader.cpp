@@ -51,6 +51,11 @@ bool is_v3_bundle(const fs::path& path) {
 V3BundleData read_v3_bundle(const fs::path& bundle_dir) {
     V3BundleData data;
     data.manifest = load_bundle_manifest(bundle_dir);
+    const auto stage = data.manifest.job.stages.find("points");
+    if (!data.manifest.job.resume_source_path.empty() &&
+        (stage == data.manifest.job.stages.end() || stage->second != "done")) {
+        throw std::runtime_error("v3 bundle: point stage is incomplete");
+    }
 
     std::uint64_t declared = 0;
     for (const ManifestChunk& chunk : data.manifest.chunks) {

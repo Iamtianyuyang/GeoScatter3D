@@ -41,8 +41,11 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     if (on_stage) {
         on_stage("fingerprint");
     }
-    if (options.source.empty()) {
-        throw std::runtime_error("build_bundle: source path is required");
+    if (options.source.empty() || options.bundle_dir.empty()) {
+        throw std::runtime_error("build_bundle: source and bundle paths are required");
+    }
+    if (options.points_per_chunk == 0 || options.points_per_chunk > 65536) {
+        throw std::runtime_error("build_bundle: points_per_chunk must be 1..65536");
     }
     std::error_code ec;
     const std::uint64_t source_bytes = fs::file_size(options.source, ec);
@@ -55,6 +58,9 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
 
     gs3d::data::Manifest manifest;
     bool have_manifest = fs::exists(options.bundle_dir / "manifest.json", ec);
+    if (ec) {
+        throw std::runtime_error("build_bundle: cannot inspect existing bundle: " + ec.message());
+    }
     if (have_manifest) {
         manifest = gs3d::data::load_bundle_manifest(options.bundle_dir);
         if (!fingerprints_match(manifest, source_bytes, sha256, hash)) {
@@ -76,10 +82,16 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     }
 
     manifest.job.id = manifest.job.id.empty() ? "job-" + sha256.substr(0, 12) : manifest.job.id;
-    manifest.job.source_path = options.source.filename().string();
+    const auto source_name = options.source.filename().u8string();
+    manifest.job.source_path.assign(source_name.begin(), source_name.end());
     manifest.job.source_bytes = source_bytes;
     manifest.job.source_sha256 = sha256;
     manifest.job.options_hash = hash;
+    const auto source_path = fs::absolute(options.source).u8string();
+    manifest.job.resume_source_path.assign(source_path.begin(), source_path.end());
+    manifest.job.resume_points_per_chunk = options.points_per_chunk;
+    manifest.job.resume_value_field = options.value_field;
+    gs3d::data::save_bundle_manifest(options.bundle_dir, manifest);
 
     if (have_manifest && stage_done(manifest, kStatsStageName)) {
         result.stages_skipped.push_back(kStatsStageName);
@@ -160,6 +172,25 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
         throw std::runtime_error("build_bundle: written bundle failed verification: " + error);
     }
     return result;
+}
+
+BundleBuildResult resume_bundle(const fs::path& bundle_dir,
+                                const std::function<void(const char*)>& on_stage) {
+    const auto manifest = gs3d::data::load_bundle_manifest(bundle_dir);
+    const auto& job = manifest.job;
+    const fs::path source(
+        std::u8string(job.resume_source_path.begin(), job.resume_source_path.end()));
+    if (job.id.empty() || job.source_sha256.empty() || job.options_hash.empty() ||
+        job.resume_source_path.empty() || !source.is_absolute() ||
+        job.resume_points_per_chunk == 0) {
+        throw std::runtime_error("resume_bundle: checkpoint lacks resume information");
+    }
+    BundleBuildOptions options;
+    options.source = source;
+    options.bundle_dir = bundle_dir;
+    options.points_per_chunk = job.resume_points_per_chunk;
+    options.value_field = job.resume_value_field;
+    return build_bundle(options, on_stage);
 }
 
 } // namespace gs3d::pipeline

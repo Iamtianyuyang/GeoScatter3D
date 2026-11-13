@@ -35,9 +35,14 @@ void atomic_write_file(const std::filesystem::path& path, std::span<const std::b
     if (path.empty()) {
         throw std::runtime_error("atomic_write_file: empty path");
     }
-    const std::filesystem::path tmp = path.string() + ".tmp";
+    std::filesystem::path tmp = path;
+    tmp += ".tmp";
     {
-        std::FILE* file = std::fopen(tmp.string().c_str(), "wb");
+#ifdef _WIN32
+        std::FILE* file = ::_wfopen(tmp.c_str(), L"wb");
+#else
+        std::FILE* file = std::fopen(tmp.c_str(), "wb");
+#endif
         if (file == nullptr) {
             throw std::runtime_error("atomic_write_file: cannot open " + tmp.string());
         }

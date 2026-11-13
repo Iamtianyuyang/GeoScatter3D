@@ -31,4 +31,8 @@ struct BundleBuildResult {
 BundleBuildResult build_bundle(const BundleBuildOptions& options,
                                const std::function<void(const char*)>& on_stage = {});
 
+// Restores the source and options saved in the bundle checkpoint.
+BundleBuildResult resume_bundle(const std::filesystem::path& bundle_dir,
+                                const std::function<void(const char*)>& on_stage = {});
+
 } // namespace gs3d::pipeline

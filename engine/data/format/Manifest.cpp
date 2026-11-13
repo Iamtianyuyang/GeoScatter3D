@@ -143,6 +143,11 @@ std::string serialize_manifest(const Manifest& manifest) {
                      {"sha256", manifest.job.source_sha256}}},
                    {"options_hash", manifest.job.options_hash},
                    {"stages", manifest.job.stages}};
+    if (!manifest.job.resume_source_path.empty()) {
+        root["job"]["resume"] = {{"source_path", manifest.job.resume_source_path},
+                                  {"points_per_chunk", manifest.job.resume_points_per_chunk},
+                                  {"value_field", manifest.job.resume_value_field}};
+    }
 
     return root.dump(2) + "\n";
 }
@@ -269,6 +274,20 @@ Manifest parse_manifest(std::string_view json_text) {
             manifest.job.source_path = source.value("path", std::string{});
             manifest.job.source_bytes = source.value("bytes", std::uint64_t{0});
             manifest.job.source_sha256 = source.value("sha256", std::string{});
+        }
+        if (job.contains("resume")) {
+            const json& resume = job["resume"];
+            if (!resume.is_object()) {
+                fail("job resume must be an object");
+            }
+            manifest.job.resume_source_path = read_string(resume, "source_path", "job resume");
+            const json& count = require(resume, "points_per_chunk", "job resume");
+            if (!count.is_number_unsigned() || count.get<std::uint64_t>() > 65536 ||
+                count.get<std::uint64_t>() == 0) {
+                fail("points_per_chunk in job resume must be an integer in 1..65536");
+            }
+            manifest.job.resume_points_per_chunk = count.get<std::uint32_t>();
+            manifest.job.resume_value_field = read_string(resume, "value_field", "job resume");
         }
         if (job.contains("stages") && job["stages"].is_object()) {
             for (auto it = job["stages"].begin(); it != job["stages"].end(); ++it) {

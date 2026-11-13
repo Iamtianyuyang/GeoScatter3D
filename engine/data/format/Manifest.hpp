@@ -43,6 +43,9 @@ struct ManifestJob {
     std::uint64_t source_bytes = 0;
     std::string source_sha256;
     std::string options_hash;
+    std::string resume_source_path;
+    std::uint32_t resume_points_per_chunk = 0;
+    std::string resume_value_field;
     std::map<std::string, std::string> stages; // stage name -> "done" / "pending" / ...
 };
 

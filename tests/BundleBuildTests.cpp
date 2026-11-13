@@ -1,4 +1,5 @@
 #include "data/format/Manifest.hpp"
+#include "data/format/V3BundleReader.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/stages/BundleBuild.hpp"
 #include "pipeline/stages/PointStage.hpp"
@@ -14,7 +15,9 @@ namespace {
 namespace fs = std::filesystem;
 
 fs::path make_source(const std::string& name, const std::string& body) {
-    const fs::path dir = fs::temp_directory_path() / ("gs3d-bundle-" + name);
+    const std::string dir_name = "gs3d-bundle-" + name;
+    const fs::path dir = fs::temp_directory_path() /
+                         fs::path(std::u8string(dir_name.begin(), dir_name.end()));
     std::error_code ignored;
     fs::remove_all(dir, ignored);
     fs::create_directories(dir);
@@ -66,9 +69,10 @@ TEST_CASE("a second build of the same source skips every finished stage")
 
 TEST_CASE("a build stopped at a stage boundary resumes from its checkpoint")
 {
-    const fs::path source = make_source("cancel-boundary", "1,2,3,4\n2,3,4,5\n");
+    const fs::path source = make_source("cancel-boundary-测试", "1,2,3,4\n2,3,4,5\n");
     const fs::path bundle = source.parent_path() / "bundle";
-    const auto options = options_for(source, bundle);
+    auto options = options_for(source, bundle);
+    options.value_field = "elevation";
     REQUIRE_THROWS(gs3d::pipeline::build_bundle(options, [](const char* stage) {
         if (std::string(stage) == "points") {
             throw std::runtime_error("cancelled");
@@ -77,9 +81,36 @@ TEST_CASE("a build stopped at a stage boundary resumes from its checkpoint")
     const auto partial = gs3d::data::load_bundle_manifest(bundle);
     REQUIRE(partial.job.stages.at("stats") == "done");
     REQUIRE(partial.job.stages.count("points") == 0);
-    const auto resumed = gs3d::pipeline::build_bundle(options);
+    REQUIRE(fs::path(std::u8string(partial.job.resume_source_path.begin(),
+                                   partial.job.resume_source_path.end())) == fs::absolute(source));
+    REQUIRE(partial.job.resume_points_per_chunk == 3);
+    REQUIRE(partial.job.resume_value_field == "elevation");
+    auto changed = partial;
+    changed.job.resume_points_per_chunk = 4;
+    gs3d::data::save_bundle_manifest(bundle, changed);
+    REQUIRE_THROWS(gs3d::pipeline::resume_bundle(bundle));
+    gs3d::data::save_bundle_manifest(bundle, partial);
+    const auto resumed = gs3d::pipeline::resume_bundle(bundle);
     REQUIRE(contains(resumed.stages_skipped, "stats"));
     REQUIRE(contains(resumed.stages_run, "points"));
+    std::ofstream(source, std::ios::app) << "3,4,5,6\n";
+    REQUIRE_THROWS(gs3d::pipeline::resume_bundle(bundle));
+    REQUIRE(gs3d::pipeline::verify_point_chunks(bundle, nullptr));
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
+TEST_CASE("a checkpoint before statistics can be resumed but not opened as a bundle")
+{
+    const fs::path source = make_source("before-stats", "1,2,3,4\n");
+    const fs::path bundle = source.parent_path() / "bundle";
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options_for(source, bundle), [](const char* stage) {
+        if (std::string(stage) == "stats") {
+            throw std::runtime_error("cancelled");
+        }
+    }));
+    REQUIRE_THROWS(gs3d::data::read_v3_bundle(bundle));
+    REQUIRE(gs3d::pipeline::resume_bundle(bundle).points == 1);
     std::error_code ignored;
     fs::remove_all(source.parent_path(), ignored);
 }

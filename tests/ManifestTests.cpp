@@ -36,6 +36,9 @@ Manifest sample_manifest() {
     manifest.job.source_bytes = 3350000067ull;
     manifest.job.source_sha256 = "abc";
     manifest.job.options_hash = "def";
+    manifest.job.resume_source_path = "/data/x.dat";
+    manifest.job.resume_points_per_chunk = 4096;
+    manifest.job.resume_value_field = "elevation";
     manifest.job.stages = {{"parse", "done"}, {"lod", "pending"}};
     return manifest;
 }
@@ -66,6 +69,9 @@ TEST_CASE("Manifest round-trips through JSON")
     REQUIRE(parsed.chunks.size() == 1);
     REQUIRE(parsed.chunks[0].crc32c == 0x1a2b3c4du);
     REQUIRE(parsed.job.stages.at("lod") == "pending");
+    REQUIRE(parsed.job.resume_source_path == original.job.resume_source_path);
+    REQUIRE(parsed.job.resume_points_per_chunk == 4096);
+    REQUIRE(parsed.job.resume_value_field == "elevation");
 }
 
 TEST_CASE("Manifest rejects bundles this build cannot read")
@@ -81,6 +87,10 @@ TEST_CASE("Manifest rejects bundles this build cannot read")
 
     manifest = sample_manifest();
     manifest.required_features = {"quantized-grid"};
+    REQUIRE_THROWS_AS(parse_manifest(serialize_manifest(manifest)), std::runtime_error);
+
+    manifest = sample_manifest();
+    manifest.job.resume_points_per_chunk = 0;
     REQUIRE_THROWS_AS(parse_manifest(serialize_manifest(manifest)), std::runtime_error);
 
     REQUIRE_THROWS_AS(parse_manifest("{\"format_version\": 3}"), std::runtime_error);
