@@ -136,7 +136,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      # 默认的 `tools` 包已从 SDK 仓库下线，v3 的默认值会让 sdkmanager 直接失败。
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.50.0'
