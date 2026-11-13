@@ -1,13 +1,20 @@
 #include "pipeline/stages/BundleBuild.hpp"
 
+#include "data/csv/CsvChunkPlanner.hpp"
+#include "data/csv/CsvChunkReader.hpp"
+#include "data/csv/CsvSniffer.hpp"
 #include "data/csv/CsvStreamReader.hpp"
 #include "data/format/Manifest.hpp"
+#include "foundation/concurrency/ThreadPool.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/compute/StatisticsPass.hpp"
 #include "pipeline/stages/PointStage.hpp"
 
 #include <algorithm>
+#include <deque>
+#include <future>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace gs3d::pipeline {
@@ -165,24 +172,68 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     }
 
     PointChunkWriter writer(options.bundle_dir, stage);
-    std::vector<gs3d::data::Gs3dPoint> batch;
-    batch.reserve(8192);
-    const double origin_x = manifest.origin[0];
-    const double origin_y = manifest.origin[1];
-    const double origin_z = manifest.origin[2];
-    gs3d::data::CsvStreamReader reader(config);
-    reader.read(options.source, [&](const gs3d::data::CsvPointRecord& record, std::uint64_t) {
-        batch.push_back(gs3d::data::Gs3dPoint{static_cast<float>(record.x - origin_x),
-                                              static_cast<float>(record.y - origin_y),
-                                              static_cast<float>(record.z - origin_z),
-                                              record.primary_value});
-        if (batch.size() == batch.capacity()) {
-            writer.write(batch);
-            batch.clear();
+    gs3d::data::CsvSniffer sniffer(config);
+    const auto sniff = sniffer.sniff(options.source);
+    gs3d::data::CsvChunkPlanConfig plan_config;
+    plan_config.min_parallel_file_bytes = 0;
+    const auto chunks = gs3d::data::CsvChunkPlanner::plan(options.source, sniff, plan_config);
+    std::uint64_t point_count = 0;
+    // The streaming reader validates extra attributes; the chunk reader only parses the primary value.
+    if (chunks.size() > 1 && sniff.resolved_schema.extra_attribute_cols.empty()) {
+        gs3d::data::CsvChunkReader reader(config);
+        gs3d::data::StatisticsResult stats;
+        stats.origin_x = manifest.origin[0];
+        stats.origin_y = manifest.origin[1];
+        stats.origin_z = manifest.origin[2];
+#ifdef __ANDROID__
+        constexpr unsigned max_workers = 4;
+#else
+        constexpr unsigned max_workers = 8;
+#endif
+        const auto workers = std::min<std::size_t>(
+            chunks.size(), std::min(max_workers, std::max(1u, std::thread::hardware_concurrency())));
+        gs3d::util::ThreadPool pool(workers);
+        std::deque<std::future<gs3d::data::CsvChunkPointResult>> pending;
+        std::size_t next = 0;
+        auto submit = [&] {
+            const auto chunk = chunks[next++];
+            pending.push_back(pool.submit([&, chunk] {
+                return reader.parse_chunk_for_points(options.source, sniff, chunk, stats);
+            }));
+        };
+        while (next < workers) {
+            submit();
         }
-    });
-    if (!batch.empty()) {
-        writer.write(batch);
+        while (!pending.empty()) {
+            auto parsed = pending.front().get();
+            pending.pop_front();
+            if (next < chunks.size()) {
+                submit();
+            }
+            point_count += parsed.points.size();
+            writer.write(parsed.points);
+        }
+    } else {
+        std::vector<gs3d::data::Gs3dPoint> batch;
+        batch.reserve(8192);
+        gs3d::data::CsvStreamReader reader(config);
+        (void)reader.read(options.source, [&](const gs3d::data::CsvPointRecord& record, std::uint64_t) {
+            batch.push_back(gs3d::data::Gs3dPoint{static_cast<float>(record.x - manifest.origin[0]),
+                                                  static_cast<float>(record.y - manifest.origin[1]),
+                                                  static_cast<float>(record.z - manifest.origin[2]),
+                                                  record.primary_value});
+            ++point_count;
+            if (batch.size() == batch.capacity()) {
+                writer.write(batch);
+                batch.clear();
+            }
+        });
+        if (!batch.empty()) {
+            writer.write(batch);
+        }
+    }
+    if (point_count != manifest.point_count) {
+        throw std::runtime_error("build_bundle: point count changed after statistics");
     }
     const PointStageResult stage_result = writer.finish();
     result.stages_run.push_back(kPointStageName);

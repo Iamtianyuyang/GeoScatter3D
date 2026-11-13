@@ -47,6 +47,38 @@ bool contains(const std::vector<std::string>& values, const std::string& value) 
 
 } // namespace
 
+TEST_CASE("large CSV chunks preserve point order and ignore invalid records")
+{
+    const fs::path source = make_source("parallel-points", "");
+    std::string block;
+    for (int i = 0; i < 500; ++i) {
+        block += "1,2,3,4\n5,6,7,8\n";
+    }
+    {
+        std::ofstream out(source, std::ios::app);
+        for (int i = 0; i < 2200; ++i) {
+            out << block;
+            if (i == 1000) out << "invalid,row\n";
+        }
+    }
+    auto options = options_for(source, source.parent_path() / "bundle");
+    options.points_per_chunk = 65536;
+    const auto result = gs3d::pipeline::build_bundle(options);
+    REQUIRE(result.points == 2200000);
+    const auto bundle = gs3d::data::read_v3_bundle(options.bundle_dir);
+    REQUIRE(bundle.points.size() == 2200000);
+    bool ordered = true;
+    for (std::size_t i = 0; i < bundle.points.size(); ++i) {
+        if (bundle.points[i].x != (i % 2 == 0 ? -2.0f : 2.0f)) {
+            ordered = false;
+            break;
+        }
+    }
+    REQUIRE(ordered);
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
 TEST_CASE("background bundle jobs publish completion and errors")
 {
     using gs3d::pipeline::BundleJobState;
@@ -165,6 +197,24 @@ TEST_CASE("a build stopped at a stage boundary resumes from its checkpoint")
     std::ofstream(source, std::ios::app) << "3,4,5,6\n";
     REQUIRE_THROWS(gs3d::pipeline::resume_bundle(bundle));
     REQUIRE(gs3d::pipeline::verify_point_chunks(bundle, nullptr));
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
+TEST_CASE("a source that loses points after statistics is not committed as complete")
+{
+    const std::string original = "X,Y,Z,elevation\n1,2,3,4\n2,3,4,5\n";
+    const fs::path source = make_source("change-during-build", "1,2,3,4\n2,3,4,5\n");
+    const auto options = options_for(source, source.parent_path() / "bundle");
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options, [&](const char* stage) {
+        if (std::string(stage) == "points") {
+            std::ofstream(source) << "X,Y,Z,elevation\n1,2,3,4\n";
+        }
+    }));
+    const auto partial = gs3d::data::load_bundle_manifest(options.bundle_dir);
+    REQUIRE(partial.job.stages.count("points") == 0);
+    std::ofstream(source) << original;
+    REQUIRE(gs3d::pipeline::resume_bundle(options.bundle_dir).points == 2);
     std::error_code ignored;
     fs::remove_all(source.parent_path(), ignored);
 }
