@@ -67,6 +67,22 @@ add_test(
     COMMAND GeoScatter3DPointStageTests
 )
 
+add_executable(GeoScatter3DBundleBuildTests
+    BundleBuildTests.cpp
+)
+target_include_directories(GeoScatter3DBundleBuildTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/engine
+)
+target_link_libraries(GeoScatter3DBundleBuildTests PRIVATE
+    gs3d_preprocess
+    Catch2::Catch2WithMain
+)
+add_test(
+    NAME GeoScatter3D.BundleBuild
+    COMMAND GeoScatter3DBundleBuildTests
+)
+
 add_test(NAME GeoScatter3D.PackSample
     COMMAND $<TARGET_FILE:gs3d_pack>
         --csv ${PROJECT_SOURCE_DIR}/examples/sample-points.csv
@@ -80,7 +96,7 @@ add_test(NAME GeoScatter3D.PackSampleResume
         --chunk-points 8)
 set_tests_properties(GeoScatter3D.PackSampleResume PROPERTIES
     FIXTURES_REQUIRED pack_sample
-    PASS_REGULAR_EXPRESSION "resume: point stage already complete")
+    PASS_REGULAR_EXPRESSION "skipped: stats,points")
 
 add_executable(GeoScatter3DCpuInfoTests
     CpuInfoTests.cpp

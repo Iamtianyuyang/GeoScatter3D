@@ -1,4 +1,5 @@
 #include "data/format/Manifest.hpp"
+#include "foundation/io/Sha256.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -123,4 +124,21 @@ TEST_CASE("Manifest load reports a missing bundle instead of empty defaults")
 {
     const std::filesystem::path dir = temp_bundle_dir();
     REQUIRE_THROWS_AS(gs3d::data::load_bundle_manifest(dir), std::runtime_error);
+}
+
+TEST_CASE("source fingerprints match the published SHA-256 vectors")
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "gs3d-sha256-abc.txt";
+    std::filesystem::remove(path);
+    std::ofstream(path, std::ios::binary) << "abc";
+    REQUIRE(gs3d::foundation::sha256_file_hex(path) ==
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+
+    std::filesystem::remove(path);
+    std::ofstream empty(path, std::ios::binary);
+    empty.close();
+    REQUIRE(gs3d::foundation::sha256_file_hex(path) ==
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    std::filesystem::remove(path);
 }

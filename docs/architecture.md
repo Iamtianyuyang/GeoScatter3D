@@ -216,19 +216,21 @@ manifest 必须包含：
   "crs": { "authority": "EPSG", "code": 32650, "axis_order": "east,north,up",
            "unit": "m", "vertical_unit": "m", "datum": "WGS84" },
   "origin": [28165200.0, 57031700.0, 3243.5],
-  "bounds": { "min": [-18688700.0, -20026100.0, -400.5],
-              "max": [18688700.0, 20026100.0, 400.5] },
-  "points": { "count": 50000000, "stride": 16 },
+  "bounds_min": [-18688700.0, -20026100.0, -400.5],
+  "bounds_max": [18688700.0, 20026100.0, 400.5],
+  "point_count": 50000000,
+  "stride": 16,
   "attributes": [ { "name": "elevation", "type": "f32", "unit": "m",
-                    "null": -9999 } ],
+                    "has_null": true, "null_value": -9999 } ],
   "chunks": [ { "path": "points/000000.chunk", "points": 65536,
-                "bytes": 1048608, "crc32c": "0x1a2b3c4d" } ],
-  "job": { "id": "uuid", "source": { "path": "x.dat", "bytes": 3350000067,
-                                     "sha256": "…" },
-           "options_hash": "…",
-           "stages": { "parse": "done", "lod": "done", "tiles": "done" } }
+                "bytes": 1048608, "crc32c": "1a2b3c4d" } ],
+  "job": { "id": "uuid", "source_path": "x.dat", "source_bytes": 3350000067,
+           "source_sha256": "…", "options_hash": "…",
+           "stages": { "stats": "done", "points": "done" } }
 }
 ```
+
+字段名以 `engine/data/format/Manifest.hpp` 为准，本文与代码不一致时按代码修文档。
 
 不变量：
 
@@ -238,6 +240,7 @@ manifest 必须包含：
    校验和，与块头中的值一致。读取先验证文件长度，再映射并校验载荷，校验成功后
    才能将数据交给调用方。
 4. 每个阶段完成后持久化块和阶段检查点；最终 manifest 只在全部必需阶段完成后发布。
+
    写块和临时元数据后先同步文件，再用同一文件系统内的原子替换发布并同步目录；
    各平台分别实现并验证等效的持久化语义。最终 manifest 校验通过才视为包完整。
 5. 恢复只从最后一个完成阶段开始：`job.id` + 源文件指纹 + `options_hash` 三者都
@@ -245,6 +248,21 @@ manifest 必须包含：
 6. 兼容：`min_reader_version` 高于自身 → 拒绝打开；`required_features` 有未知项 →
    拒绝；块表中未知的**可选**块类型忽略，未知的必需块类型拒绝。
 7. CRS 或 `axis_order` 不一致的两个包不允许在同一个会话里叠加测量，界面必须提示。
+
+实现状态（2026-11）：
+
+- 已实现：`engine/data/format/Manifest.*`（读写 + 原子发布）、`PointStage`（写块、
+  校验和、阶段检查点）、`BundleBuild`（按源文件 SHA-256 与 options_hash 判定可否
+  续跑，已完成阶段直接跳过）、`gs3d_pack`（命令行入口）、`V3BundleReader`（引擎
+  直接打开 v3 包）。
+- 未实现：`lod/` 与 `tiles/` 的 v3 写入与读取；在它们落地前，manifest 的
+  `required_features` 只应写 `points`。约定：`required_features` 里的特性在包里
+  找不到对应块时，读取方必须拒绝加载。
+- 未实现：块级续跑（中断的块重写），按决议只做阶段级续跑。
+- 实测（Ryzen 9 7945HX / clang / 单流）：682 MB CSV → 33,021,621 点、504 块、
+  72.1 s、峰值 RSS 514 MB、包 506 MB。按点数折算 50M 约 110 s，未达 60 s 预算，
+  属性能任务待优化（当前主要成本是两遍扫描、逐块 fsync 与 SHA-256）。
+
 
 ## 性能预算
 
