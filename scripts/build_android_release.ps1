@@ -72,6 +72,8 @@ try {
     $RequiredEntries = @(
         'base/lib/arm64-v8a/libgs3d_ffi.so',
         'base/lib/x86_64/libgs3d_ffi.so',
+        'base/lib/arm64-v8a/libgs3d_pipeline_ffi.so',
+        'base/lib/x86_64/libgs3d_pipeline_ffi.so',
         'base/assets/flutter_assets/assets/shaders/point.vert.spv',
         'base/assets/flutter_assets/assets/shaders/point.frag.spv',
         'base/assets/flutter_assets/assets/data/sample-points.csv'

@@ -49,7 +49,7 @@ Invoke-Checked $Cmake $ConfigureArgs
  # Flutter 桌面端通过 gs3d_ffi 直连单进程引擎；不要再构建已移除的
  # GeoScatter3D / GeoScatter3DPreprocess 双进程目标。
 Invoke-Checked $Cmake @('--build', $BuildDir, '--config', $NativeConfig, '--target',
-    'gs3d_ffi', '--parallel')
+    'gs3d_ffi', 'gs3d_pipeline_ffi', '--parallel')
 
 # 原生资源只暂存到 tmp；Flutter CMake 的 install 步骤负责部署 Debug/Release。
 $StageDir = Join-Path $RepoRoot "tmp/flutter-native/$Config"
@@ -62,6 +62,7 @@ if (Test-Path -LiteralPath $StageDir) {
 }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $FfiDir 'gs3d_ffi.dll') -Destination $StageDir -Force
+Copy-Item -LiteralPath (Join-Path $NativeDir 'gs3d_pipeline_ffi.dll') -Destination $StageDir -Force
 foreach ($RuntimeDir in @($NativeDir, $FfiDir)) {
     Get-ChildItem -LiteralPath $RuntimeDir -Filter '*.dll' | Copy-Item -Destination $StageDir -Force
 }
@@ -114,7 +115,7 @@ try {
     Pop-Location
 }
 $RunnerDir = Join-Path $FlutterDir "build/windows/x64/runner/$Config"
-foreach ($File in @('ui_flutter.exe', 'gs3d_ffi.dll', 'assets/shaders/point.vert.spv', 'assets/shaders/point.frag.spv')) {
+foreach ($File in @('ui_flutter.exe', 'gs3d_ffi.dll', 'gs3d_pipeline_ffi.dll', 'assets/shaders/point.vert.spv', 'assets/shaders/point.frag.spv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $RunnerDir $File))) {
         throw "Incomplete Flutter runtime: $File"
     }

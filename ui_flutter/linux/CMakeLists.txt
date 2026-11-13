@@ -97,6 +97,12 @@ if(NOT EXISTS "${GS3D_NATIVE_LIBRARY}")
   message(FATAL_ERROR "Native engine not found. Run scripts/build_flutter_linux.sh first.")
 endif()
 install(FILES "${GS3D_NATIVE_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+set(GS3D_PIPELINE_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/../../tmp/build-linux/src/libgs3d_pipeline_ffi.so"
+    CACHE FILEPATH "GeoScatter3D native pipeline library")
+if(NOT EXISTS "${GS3D_PIPELINE_LIBRARY}")
+  message(FATAL_ERROR "Native pipeline not found. Run scripts/build_flutter_linux.sh first.")
+endif()
+install(FILES "${GS3D_PIPELINE_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 set(GS3D_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tmp/build-linux/generated-assets/shaders"
     CACHE PATH "Compiled GeoScatter3D shaders")
 install(FILES "${GS3D_SHADER_DIR}/point.vert.spv" "${GS3D_SHADER_DIR}/point.frag.spv"

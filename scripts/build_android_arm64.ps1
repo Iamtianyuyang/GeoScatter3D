@@ -1,7 +1,6 @@
 <#
 .SYNOPSIS
-    使用 Android NDK 交叉编译 libgs3d_ffi.so (arm64-v8a)，
-    并自动部署到 ui_flutter/android/app/src/main/jniLibs/arm64-v8a/
+    使用 Android NDK 交叉编译引擎和管线动态库并部署到对应 jniLibs 目录。
 
 .PARAMETER NdkRoot
     NDK 根目录，默认自动探测 $LOCALAPPDATA/Android/Sdk/ndk/<最新版本>
@@ -9,19 +8,24 @@
 .PARAMETER AndroidApiLevel
     Android API 级别，默认 29 (Android 10，Tab S7 最低受支持版本)
 
+.PARAMETER Abi
+    Android ABI，默认 arm64-v8a；也支持 x86_64 模拟器。
+
 .EXAMPLE
     .\scripts\build_android_arm64.ps1
     .\scripts\build_android_arm64.ps1 -NdkRoot "C:\Android\Sdk\ndk\28.2.13676358"
 #>
 param(
     [string]$NdkRoot = '',
-    [int]$AndroidApiLevel = 29
+    [int]$AndroidApiLevel = 29,
+    [ValidateSet('arm64-v8a', 'x86_64')]
+    [string]$Abi = 'arm64-v8a'
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$BuildDir  = Join-Path $RepoRoot 'tmp/build-android-arm64'
-$JniLibDir = Join-Path $RepoRoot 'ui_flutter/android/app/src/main/jniLibs/arm64-v8a'
+$BuildDir  = Join-Path $RepoRoot "tmp/build-android-$Abi"
+$JniLibDir = Join-Path $RepoRoot "ui_flutter/android/app/src/main/jniLibs/$Abi"
 
 # ── NDK 探测 ────────────────────────────────────────────────────────────────
 if (-not $NdkRoot) {
@@ -57,12 +61,12 @@ function Invoke-Checked {
 }
 
 # ── 配置 ────────────────────────────────────────────────────────────────────
-Write-Host "==> Configuring arm64-v8a build..." -ForegroundColor Cyan
+Write-Host "==> Configuring $Abi build..." -ForegroundColor Cyan
 Invoke-Checked $Cmake @(
     '-S', $RepoRoot,
     '-B', $BuildDir,
     "-DCMAKE_TOOLCHAIN_FILE=$Toolchain",
-    '-DANDROID_ABI=arm64-v8a',
+    "-DANDROID_ABI=$Abi",
     "-DANDROID_PLATFORM=android-$AndroidApiLevel",
     '-DANDROID_STL=c++_shared',
     '-DCMAKE_BUILD_TYPE=Release',
@@ -72,23 +76,23 @@ Invoke-Checked $Cmake @(
 )
 
 # ── 编译 ────────────────────────────────────────────────────────────────────
-Write-Host "==> Building libgs3d_ffi.so (arm64-v8a)..." -ForegroundColor Cyan
-Invoke-Checked $Cmake @('--build', $BuildDir, '--target', 'gs3d_ffi', '--parallel')
-
-# ── 探测产物 ────────────────────────────────────────────────────────────────
-$SoFile = Get-ChildItem -Recurse $BuildDir -Filter 'libgs3d_ffi.so' |
-          Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $SoFile) { throw "编译产物 libgs3d_ffi.so 未找到" }
-Write-Host "==> Built: $($SoFile.FullName)" -ForegroundColor Green
+Write-Host "==> Building native libraries ($Abi)..." -ForegroundColor Cyan
+Invoke-Checked $Cmake @('--build', $BuildDir, '--target', 'gs3d_ffi', 'gs3d_pipeline_ffi', '--parallel')
 
 # ── 部署到 jniLibs ──────────────────────────────────────────────────────────
 New-Item -ItemType Directory -Force -Path $JniLibDir | Out-Null
-Copy-Item -LiteralPath $SoFile.FullName -Destination (Join-Path $JniLibDir 'libgs3d_ffi.so') -Force
-Write-Host "==> Deployed libgs3d_ffi.so to $JniLibDir" -ForegroundColor Green
+foreach ($Library in @('libgs3d_ffi.so', 'libgs3d_pipeline_ffi.so')) {
+    $SoFile = Get-ChildItem -Recurse $BuildDir -Filter $Library |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $SoFile) { throw "编译产物 $Library 未找到" }
+    Copy-Item -LiteralPath $SoFile.FullName -Destination (Join-Path $JniLibDir $Library) -Force
+    Write-Host "==> Deployed $Library to $JniLibDir" -ForegroundColor Green
+}
 
 # c++_shared STL：ANDROID_STL=c++_shared 时运行时由应用自带，而非系统提供。
 # 未打包此库会导致 dlopen 失败："library libc++_shared.so not found"
-$LibcppSrc = Join-Path $NdkRoot 'toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'
+$NdkTriple = if ($Abi -eq 'arm64-v8a') { 'aarch64-linux-android' } else { 'x86_64-linux-android' }
+$LibcppSrc = Join-Path $NdkRoot "toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/$NdkTriple/libc++_shared.so"
 if (Test-Path $LibcppSrc) {
     Copy-Item -LiteralPath $LibcppSrc -Destination (Join-Path $JniLibDir 'libc++_shared.so') -Force
     Write-Host "==> Deployed libc++_shared.so (NDK c++_shared STL runtime)" -ForegroundColor Green
