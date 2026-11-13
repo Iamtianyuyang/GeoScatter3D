@@ -3,6 +3,7 @@
 #include "camera/CameraController.hpp"
 #include "camera/MouseRay.hpp"
 #include "data/format/PointDataAdapters.hpp"
+#include "data/format/V3BundleReader.hpp"
 #include "data/tile/TileDataAdapters.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
@@ -319,21 +320,32 @@ int HeadlessRenderKernel::load_dataset(const std::string& path) {
             set_error("dataset not found: " + path);
             return -2;
         }
-        // bundle 目录 → source.gs3d
+        // v3 工程包（manifest.json + points/*.chunk）优先；旧 bundle 走 source.gs3d。
         std::filesystem::path bundle_directory;
-        if (std::filesystem::is_directory(fs_path)) {
+        gs3d::data::Gs3dDataset loaded;
+        const bool v3_bundle =
+            std::filesystem::is_directory(fs_path) && gs3d::data::is_v3_bundle(fs_path);
+        if (v3_bundle) {
             bundle_directory = fs_path;
-            fs_path = fs_path / "source.gs3d";
-            if (!std::filesystem::exists(fs_path)) {
-                set_error("bundle missing source.gs3d");
-                return -2;
+            gs3d::data::V3BundleData bundle = gs3d::data::read_v3_bundle(fs_path);
+            loaded = gs3d::data::Gs3dDataset(gs3d::data::v3_bundle_header(bundle),
+                                             std::move(bundle.points),
+                                             fs_path / "manifest.json");
+        } else {
+            if (std::filesystem::is_directory(fs_path)) {
+                bundle_directory = fs_path;
+                fs_path = fs_path / "source.gs3d";
+                if (!std::filesystem::exists(fs_path)) {
+                    set_error("bundle has neither manifest.json (v3) nor source.gs3d");
+                    return -2;
+                }
             }
+            loaded = gs3d::data::Gs3dDatasetLoader::load(fs_path);
         }
 
         // sidecar 与数据集同目录（bundle 为 lod.gs3dlod / tiles.gs3dtiles*）。
         const std::filesystem::path dataset_path = fs_path;
         const std::filesystem::path bundle_dir = bundle_directory;
-        auto loaded = gs3d::data::Gs3dDatasetLoader::load(fs_path);
         if (!loaded.has_point_data() || loaded.empty()) {
             set_error("dataset has no point data");
             return -3;

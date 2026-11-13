@@ -1,3 +1,4 @@
+#include "data/format/V3BundleReader.hpp"
 #include "pipeline/stages/PointStage.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -124,6 +125,50 @@ TEST_CASE("Point stage verification detects corrupted chunk bytes")
     std::string error;
     REQUIRE_FALSE(verify_point_chunks(dir, &error));
     REQUIRE_FALSE(error.empty());
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE("v3 bundle reads back every point it was written with")
+{
+    const std::filesystem::path dir = temp_dir();
+    const std::vector<Gs3dPoint> points = make_points(700);
+    auto stage_options = options(256);
+    stage_options.origin = {1000.0, 2000.0, 30.0};
+    stage_options.bounds_min = {-10.0, -20.0, -1.0};
+    stage_options.bounds_max = {10.0, 20.0, 1.0};
+    write_point_stage(dir, points, stage_options);
+
+    REQUIRE(gs3d::data::is_v3_bundle(dir));
+    const gs3d::data::V3BundleData bundle = gs3d::data::read_v3_bundle(dir);
+    REQUIRE(bundle.points.size() == points.size());
+    REQUIRE(bundle.points[255].x == points[255].x);
+    REQUIRE(bundle.points[699].value == points[699].value);
+    REQUIRE(bundle.manifest.origin[0] == 1000.0);
+
+    const gs3d::data::Gs3dHeader header = gs3d::data::v3_bundle_header(bundle);
+    REQUIRE(header.point_count == points.size());
+    REQUIRE(header.value_max == points.back().value);
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE("v3 bundle reader rejects a corrupted chunk before handing out points")
+{
+    const std::filesystem::path dir = temp_dir();
+    write_point_stage(dir, make_points(300), options(128));
+
+    std::fstream chunk(dir / "points/000001.chunk",
+                       std::ios::binary | std::ios::in | std::ios::out);
+    REQUIRE(chunk.is_open());
+    chunk.seekp(60);
+    const char byte = '\x2a';
+    chunk.write(&byte, 1);
+    chunk.close();
+
+    REQUIRE_THROWS_AS(gs3d::data::read_v3_bundle(dir), std::runtime_error);
 
     std::error_code ignored;
     std::filesystem::remove_all(dir, ignored);
