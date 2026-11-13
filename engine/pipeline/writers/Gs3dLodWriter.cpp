@@ -1,4 +1,4 @@
-#include "preprocess/Gs3dLodWriter.hpp"
+#include "pipeline/writers/Gs3dLodWriter.hpp"
 
 #include "data/lod/Gs3dLodFormat.hpp"
 

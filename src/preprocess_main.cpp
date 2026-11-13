@@ -2,9 +2,9 @@
 #include "foundation/diagnostics/Log.hpp"
 #include "app/PreprocessedBundle.hpp"
 #include "data/lod/Gs3dLodDataset.hpp"
-#include "preprocess/CsvToGs3dConverter.hpp"
-#include "preprocess/Gs3dLodWriter.hpp"
-#include "preprocess/Gs3dTileWriter.hpp"
+#include "pipeline/compute/CsvToGs3dConverter.hpp"
+#include "pipeline/writers/Gs3dLodWriter.hpp"
+#include "pipeline/writers/Gs3dTileWriter.hpp"
 #include "foundation/diagnostics/Stopwatch.hpp"
 
 #include <exception>

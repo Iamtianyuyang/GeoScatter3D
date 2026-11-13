@@ -11,8 +11,8 @@
  */
 #include "data/format/Gs3dFormat.hpp"
 #include "data/lod/Gs3dLodDataset.hpp"
-#include "preprocess/Gs3dLodWriter.hpp"
-#include "preprocess/Gs3dTileWriter.hpp"
+#include "pipeline/writers/Gs3dLodWriter.hpp"
+#include "pipeline/writers/Gs3dTileWriter.hpp"
 
 #include <cmath>
 #include <cstdint>

@@ -19,7 +19,7 @@
 #include "app/AppConfig.hpp"
 #include "app/RecentProjects.hpp"
 #include "app/UserPreferences.hpp"
-#include "preprocess/CsvToGs3dConverter.hpp"
+#include "pipeline/compute/CsvToGs3dConverter.hpp"
 #include <vulkan/vulkan.h>
 #include "control/JsonRpc.hpp"
 #include "data/format/Gs3dFormat.hpp"

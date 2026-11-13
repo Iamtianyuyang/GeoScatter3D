@@ -1,11 +1,11 @@
-#include "preprocess/CsvToGs3dConverter.hpp"
+#include "pipeline/compute/CsvToGs3dConverter.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
 #include "data/csv/CsvChunkPlanner.hpp"
 #include "data/csv/CsvChunkReader.hpp"
 #include "data/csv/CsvSniffer.hpp"
 #include "data/format/Gs3dFormat.hpp"
-#include "preprocess/StatisticsPass.hpp"
+#include "pipeline/compute/StatisticsPass.hpp"
 #include "foundation/diagnostics/Stopwatch.hpp"
 #include "foundation/concurrency/ThreadPool.hpp"
 

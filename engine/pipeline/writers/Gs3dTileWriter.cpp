@@ -1,4 +1,4 @@
-#include "preprocess/Gs3dTileWriter.hpp"
+#include "pipeline/writers/Gs3dTileWriter.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
 #include "data/tile/Gs3dTileFormat.hpp"

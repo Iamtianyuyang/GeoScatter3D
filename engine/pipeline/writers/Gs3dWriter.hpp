@@ -2,7 +2,7 @@
 
 #include "data/csv/CsvStreamReader.hpp"
 #include "data/format/Gs3dFormat.hpp"
-#include "preprocess/StatisticsPass.hpp"
+#include "pipeline/compute/StatisticsPass.hpp"
 
 #include <cstdint>
 #include <filesystem>

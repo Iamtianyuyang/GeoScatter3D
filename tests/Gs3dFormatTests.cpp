@@ -11,9 +11,9 @@
 #include "data/format/PointChunk.hpp"
 #include "data/tile/Gs3dTileFormat.hpp"
 #include "data/tile/Gs3dTileReader.hpp"
-#include "preprocess/CsvToGs3dConverter.hpp"
-#include "preprocess/Gs3dLodWriter.hpp"
-#include "preprocess/Gs3dTileWriter.hpp"
+#include "pipeline/compute/CsvToGs3dConverter.hpp"
+#include "pipeline/writers/Gs3dLodWriter.hpp"
+#include "pipeline/writers/Gs3dTileWriter.hpp"
 #include "foundation/io/Crc32c.hpp"
 
 #include <catch2/catch_test_macros.hpp>

@@ -1,4 +1,4 @@
-#include "preprocess/Gs3dWriter.hpp"
+#include "pipeline/writers/Gs3dWriter.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
 #include "data/csv/CsvChunkPlanner.hpp"

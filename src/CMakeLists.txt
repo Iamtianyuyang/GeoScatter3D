@@ -4,7 +4,7 @@
 
 add_subdirectory(platform)
 add_subdirectory(data)
-add_subdirectory(preprocess)
+add_subdirectory(${PROJECT_SOURCE_DIR}/engine/pipeline ${CMAKE_CURRENT_BINARY_DIR}/pipeline)
 add_subdirectory(render)
 add_subdirectory(app)
 add_subdirectory(camera)

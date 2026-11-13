@@ -38,6 +38,7 @@ ENGINE_FLAT_MODULES = {"config", "abi", "cli"}
 ENGINE_INTRA_ORDER = {
     "data": {"core": -1, "format": 0, "csv": 1, "lod": 1, "tile": 1, "verify": 2},
     "session": {"project": 0, "view": 1, "measure": 2},
+    "pipeline": {"compute": 0, "writers": 1, "verify": 2},
 }
 
 

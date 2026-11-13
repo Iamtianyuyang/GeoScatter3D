@@ -1,4 +1,4 @@
-#include "preprocess/StatisticsPass.hpp"
+#include "pipeline/compute/StatisticsPass.hpp"
 #include "foundation/diagnostics/Log.hpp"
 
 #include "data/csv/CsvChunkReader.hpp"
