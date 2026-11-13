@@ -52,6 +52,9 @@ PointChunkWriter::PointChunkWriter(fs::path bundle_dir, PointStageOptions option
         throw std::runtime_error("point stage: cannot create " + points_dir.string() + ": " +
                                  ec.message());
     }
+    // The cleanup below deletes files, so the directory must not be a link out
+    // of the bundle; resolve_chunk_file throws when it is.
+    gs3d::data::resolve_chunk_file(bundle_dir_, "points");
     // A restarted stage rewrites every chunk; the manifest would not list
     // leftovers from an interrupted run, so they must not survive.
     for (const fs::directory_entry& entry : fs::directory_iterator(points_dir)) {
@@ -160,11 +163,15 @@ bool point_stage_complete(const fs::path& bundle_dir) {
     if (stage == manifest.job.stages.end() || stage->second != "done") {
         return false;
     }
-    for (const gs3d::data::ManifestChunk& chunk : manifest.chunks) {
-        const fs::path file = bundle_dir / chunk.path;
-        if (!fs::exists(file, ec) || fs::file_size(file, ec) != chunk.bytes) {
-            return false;
+    try {
+        for (const gs3d::data::ManifestChunk& chunk : manifest.chunks) {
+            const fs::path file = gs3d::data::resolve_chunk_file(bundle_dir, chunk.path);
+            if (!fs::exists(file, ec) || fs::file_size(file, ec) != chunk.bytes) {
+                return false;
+            }
         }
+    } catch (const std::exception&) {
+        return false;
     }
     return true;
 }
@@ -177,7 +184,8 @@ bool verify_point_chunks(const fs::path& bundle_dir, std::string* error) {
             continue;
         }
         try {
-            const std::vector<std::byte> bytes = read_file(bundle_dir / chunk.path);
+            const std::vector<std::byte> bytes =
+                read_file(gs3d::data::resolve_chunk_file(bundle_dir, chunk.path));
             const auto decoded = gs3d::data::decode_point_chunk(bytes);
             if (bytes.size() != chunk.bytes ||
                 gs3d::data::point_chunk_header_checksum(bytes) != chunk.crc32c ||

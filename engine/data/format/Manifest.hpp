@@ -77,4 +77,9 @@ Manifest parse_manifest(std::string_view json_text);
 Manifest load_bundle_manifest(const std::filesystem::path& bundle_dir);
 void save_bundle_manifest(const std::filesystem::path& bundle_dir, const Manifest& manifest);
 
+// Resolves a manifest chunk path under `bundle_dir` and throws unless the
+// resolved file stays inside it (symlinks included).
+std::filesystem::path resolve_chunk_file(const std::filesystem::path& bundle_dir,
+                                         const std::string& chunk_path);
+
 } // namespace gs3d::data

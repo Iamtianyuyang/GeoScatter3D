@@ -114,6 +114,76 @@ TEST_CASE("Manifest ignores unknown optional chunk kinds")
     REQUIRE(manifest.chunks[0].path == "points/000000.chunk");
 }
 
+TEST_CASE("Manifest rejects malformed numbers and escaping chunk paths")
+{
+    const auto with_chunk = [](const char* path) {
+        return std::string(R"({
+  "format_version": 3, "min_reader_version": 3, "required_features": [],
+  "origin": [1.0, 2.0, 3.0],
+  "bounds": {"min": [0.0, 0.0, 0.0], "max": [10.0, 10.0, 10.0]},
+  "points": {"count": 8, "stride": 16},
+  "chunks": [{"path": ")") + path +
+               R"(", "points": 8, "bytes": 128, "crc32c": "0x0000abcd"}]
+})";
+    };
+    REQUIRE(parse_manifest(with_chunk("points/000000.chunk")).chunks.size() == 1);
+    for (const char* path : {"points/../escape.chunk", "lod/../../escape.lod",
+                             "points//000000.chunk", "points/000000.chunk/",
+                             "points/./000000.chunk"}) {
+        INFO(path);
+        REQUIRE_THROWS_AS(parse_manifest(with_chunk(path)), std::runtime_error);
+    }
+
+    for (const char* points : {R"({"count": 8.5, "stride": 16})",
+                               R"({"count": -8, "stride": 16})",
+                               R"({"count": 8, "stride": 0})"}) {
+        INFO(points);
+        const std::string text = std::string(R"({
+  "format_version": 3, "min_reader_version": 3, "required_features": [],
+  "origin": [1.0, 2.0, 3.0],
+  "bounds": {"min": [0.0, 0.0, 0.0], "max": [10.0, 10.0, 10.0]},
+  "points": )") + points + "}";
+        REQUIRE_THROWS_AS(parse_manifest(text), std::runtime_error);
+    }
+
+    for (const char* crc : {"0x1zz", "0x100000000", "1 1"}) {
+        INFO(crc);
+        const std::string text = std::string(R"({
+  "format_version": 3, "min_reader_version": 3, "required_features": [],
+  "origin": [1.0, 2.0, 3.0],
+  "bounds": {"min": [0.0, 0.0, 0.0], "max": [10.0, 10.0, 10.0]},
+  "points": {"count": 8, "stride": 16},
+  "chunks": [{"path": "points/000000.chunk", "points": 8, "bytes": 128, "crc32c": ")") +
+                     crc + R"("}]
+})";
+        REQUIRE_THROWS_AS(parse_manifest(text), std::runtime_error);
+    }
+}
+
+TEST_CASE("Chunk paths cannot leave the bundle through a symlink")
+{
+    namespace fs = std::filesystem;
+    const fs::path root = temp_bundle_dir();
+    const fs::path outside = root.parent_path() / (root.filename().string() + "-outside");
+    std::error_code ec;
+    fs::create_directories(outside, ec);
+    fs::create_directories(root, ec);
+    std::ofstream(outside / "000000.chunk") << "outside";
+    fs::create_directory_symlink(outside, root / "points", ec);
+    if (ec) {
+        fs::remove_all(root, ec);
+        fs::remove_all(outside, ec);
+        SUCCEED("symlinks unavailable on this filesystem");
+        return;
+    }
+
+    REQUIRE_THROWS_AS(gs3d::data::resolve_chunk_file(root, "points/000000.chunk"),
+                      std::runtime_error);
+    REQUIRE_NOTHROW(gs3d::data::resolve_chunk_file(root, "lod/000001.lod"));
+    fs::remove_all(root, ec);
+    fs::remove_all(outside, ec);
+}
+
 TEST_CASE("Manifest saves atomically and reloads from disk")
 {
     const std::filesystem::path dir = temp_bundle_dir();

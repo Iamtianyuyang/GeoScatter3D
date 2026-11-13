@@ -3,8 +3,10 @@
 #include "foundation/io/AtomicFile.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -47,11 +49,15 @@ double read_number(const json& node, const char* key, const char* where) {
 }
 
 std::uint64_t read_u64(const json& node, const char* key, const char* where) {
-    const double value = read_number(node, key, where);
-    if (value < 0.0 || value > 18446744073709551615.0) {
-        fail(std::string("\"") + key + "\" in " + where + " is out of range");
+    const json& value = require(node, key, where);
+    if (value.is_number_unsigned()) {
+        return value.get<std::uint64_t>();
     }
-    return static_cast<std::uint64_t>(value);
+    if (value.is_number_integer()) {
+        const auto signed_value = value.get<std::int64_t>();
+        if (signed_value >= 0) return static_cast<std::uint64_t>(signed_value);
+    }
+    fail(std::string("\"") + key + "\" in " + where + " must be a nonnegative integer");
 }
 
 std::array<double, 3> read_vec3(const json& node, const char* key, const char* where) {
@@ -79,12 +85,15 @@ std::uint32_t parse_hex32(const json& node, const char* where) {
         fail(std::string("chunk crc32c in ") + where + " must be a hex string");
     }
     const std::string text = node.get<std::string>();
-    char* end = nullptr;
-    const unsigned long value = std::strtoul(text.c_str(), &end, 16);
-    if (end == text.c_str()) {
+    const char* begin = text.data();
+    const char* end = begin + text.size();
+    if (text.size() >= 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) begin += 2;
+    std::uint32_t value = 0;
+    const auto parsed = std::from_chars(begin, end, value, 16);
+    if (begin == end || parsed.ec != std::errc{} || parsed.ptr != end) {
         fail(std::string("chunk crc32c in ") + where + " is not hexadecimal");
     }
-    return static_cast<std::uint32_t>(value);
+    return value;
 }
 
 std::string format_hex32(std::uint32_t value) {
@@ -164,15 +173,17 @@ Manifest parse_manifest(std::string_view json_text) {
     }
 
     Manifest manifest;
-    manifest.format_version = static_cast<int>(read_u64(root, "format_version", "root"));
-    if (manifest.format_version != Manifest::kFormatVersion) {
-        fail("unsupported format_version " + std::to_string(manifest.format_version));
+    const auto version = read_u64(root, "format_version", "root");
+    if (version != Manifest::kFormatVersion) {
+        fail("unsupported format_version " + std::to_string(version));
     }
-    manifest.min_reader_version = static_cast<int>(read_u64(root, "min_reader_version", "root"));
-    if (manifest.min_reader_version > Manifest::kFormatVersion) {
-        fail("bundle needs reader version " + std::to_string(manifest.min_reader_version) +
+    manifest.format_version = static_cast<int>(version);
+    const auto min_version = read_u64(root, "min_reader_version", "root");
+    if (min_version > Manifest::kFormatVersion) {
+        fail("bundle needs reader version " + std::to_string(min_version) +
              ", this build reads at most " + std::to_string(Manifest::kFormatVersion));
     }
+    manifest.min_reader_version = static_cast<int>(min_version);
 
     const json& features = require(root, "required_features", "root");
     if (!features.is_array()) {
@@ -219,10 +230,11 @@ Manifest parse_manifest(std::string_view json_text) {
         fail("\"points\" must be an object");
     }
     manifest.point_count = read_u64(points, "count", "points");
-    manifest.stride = static_cast<std::uint32_t>(read_u64(points, "stride", "points"));
-    if (manifest.stride == 0) {
-        fail("\"stride\" must be positive");
+    const auto stride = read_u64(points, "stride", "points");
+    if (stride == 0 || stride > std::numeric_limits<std::uint32_t>::max()) {
+        fail("\"stride\" must be a positive 32-bit integer");
     }
+    manifest.stride = static_cast<std::uint32_t>(stride);
 
     if (root.contains("attributes")) {
         if (!root["attributes"].is_array()) {
@@ -255,6 +267,14 @@ Manifest parse_manifest(std::string_view json_text) {
             const std::string path = read_string(item, "path", "chunk");
             if (!known_chunk_path(path)) {
                 continue; // unknown optional chunk kind: ignore, never fail
+            }
+            if (path.find('\\') != std::string::npos || path.find(':') != std::string::npos ||
+                path.find('\0') != std::string::npos || path.find("//") != std::string::npos ||
+                path.back() == '/') {
+                fail("invalid chunk path " + path);
+            }
+            for (const auto& part : std::filesystem::path(path)) {
+                if (part == "." || part == "..") fail("invalid chunk path " + path);
             }
             ManifestChunk chunk;
             chunk.path = path;
@@ -320,6 +340,32 @@ void save_bundle_manifest(const std::filesystem::path& bundle_dir, const Manifes
                                  ec.message());
     }
     foundation::atomic_write_file(bundle_dir / "manifest.json", serialize_manifest(manifest));
+}
+
+std::filesystem::path resolve_chunk_file(const std::filesystem::path& bundle_dir,
+                                         const std::string& chunk_path) {
+    std::error_code ec;
+    const std::filesystem::path root = std::filesystem::weakly_canonical(bundle_dir, ec);
+    if (ec) {
+        fail("cannot resolve bundle directory " + bundle_dir.string() + ": " + ec.message());
+    }
+    const std::filesystem::path file = std::filesystem::weakly_canonical(root / chunk_path, ec);
+    if (ec) {
+        fail("cannot resolve chunk path " + chunk_path + ": " + ec.message());
+    }
+    // Compare components instead of string prefixes so `bundle` never matches
+    // `bundle-other`, and reject anything that lands on or above the root.
+    auto root_part = root.begin();
+    auto file_part = file.begin();
+    for (; root_part != root.end(); ++root_part, ++file_part) {
+        if (file_part == file.end() || *file_part != *root_part) {
+            fail("chunk path " + chunk_path + " escapes the bundle");
+        }
+    }
+    if (file_part == file.end()) {
+        fail("chunk path " + chunk_path + " names the bundle directory itself");
+    }
+    return file;
 }
 
 } // namespace gs3d::data

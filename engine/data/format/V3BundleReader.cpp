@@ -73,7 +73,7 @@ V3BundleData read_v3_bundle(const fs::path& bundle_dir) {
         if (chunk.path.rfind("points/", 0) != 0) {
             continue;
         }
-        const std::vector<std::byte> bytes = read_file(bundle_dir / chunk.path);
+        const std::vector<std::byte> bytes = read_file(resolve_chunk_file(bundle_dir, chunk.path));
         if (bytes.size() != chunk.bytes) {
             throw std::runtime_error("v3 bundle: " + chunk.path + " has " +
                                      std::to_string(bytes.size()) + " bytes, manifest says " +
