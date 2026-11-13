@@ -2,13 +2,16 @@
 #include "data/format/V3BundleReader.hpp"
 #include "foundation/io/Sha256.hpp"
 #include "pipeline/stages/BundleBuild.hpp"
+#include "pipeline/stages/BundleJob.hpp"
 #include "pipeline/stages/PointStage.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -43,6 +46,41 @@ bool contains(const std::vector<std::string>& values, const std::string& value) 
 }
 
 } // namespace
+
+TEST_CASE("background bundle jobs publish completion and errors")
+{
+    using gs3d::pipeline::BundleJobState;
+    const fs::path source = make_source("background", "1,2,3,4\n");
+    const fs::path bundle = source.parent_path() / "bundle";
+    gs3d::pipeline::BundleJob job;
+    const auto wait = [&] {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        auto status = job.poll();
+        while (status.state == BundleJobState::running &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+            status = job.poll();
+        }
+        return status;
+    };
+    const auto first = job.start(options_for(source, bundle));
+    const auto complete = wait();
+    REQUIRE(complete.id == first);
+    REQUIRE(complete.state == BundleJobState::done);
+    REQUIRE(complete.points == 1);
+    REQUIRE_FALSE(job.cancel(first));
+
+    fs::remove(source);
+    const auto second = job.resume(bundle);
+    REQUIRE(second != first);
+    const auto failed = wait();
+    REQUIRE(failed.id == second);
+    REQUIRE(failed.state == BundleJobState::failed);
+    REQUIRE_FALSE(failed.error.empty());
+    REQUIRE_FALSE(job.cancel(first));
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
 
 TEST_CASE("a second build of the same source skips every finished stage")
 {

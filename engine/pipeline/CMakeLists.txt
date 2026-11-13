@@ -8,6 +8,7 @@ add_library(gs3d_preprocess STATIC
     ${GS3D_ENGINE}/pipeline/compute/CsvToGs3dConverter.cpp
     ${GS3D_ENGINE}/pipeline/compute/StatisticsPass.cpp
     ${GS3D_ENGINE}/pipeline/stages/BundleBuild.cpp
+    ${GS3D_ENGINE}/pipeline/stages/BundleJob.cpp
     ${GS3D_ENGINE}/pipeline/stages/PointStage.cpp
     ${GS3D_ENGINE}/pipeline/writers/Gs3dWriter.cpp
     ${GS3D_ENGINE}/pipeline/writers/Gs3dLodWriter.cpp
