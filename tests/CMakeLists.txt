@@ -103,6 +103,13 @@ target_include_directories(GeoScatter3DPipelineAbiTests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(GeoScatter3DPipelineAbiTests PRIVATE gs3d_pipeline_ffi Catch2::Catch2WithMain)
+# Windows 不会把共享库放到测试程序旁边；加载器找不到 DLL 时弹出错误框而不退出，
+# CI 上就表现为“没有任何输出的超时”。拷贝一份到可执行文件所在目录。
+add_custom_command(TARGET GeoScatter3DPipelineAbiTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:gs3d_pipeline_ffi>
+        $<TARGET_FILE_DIR:GeoScatter3DPipelineAbiTests>
+    VERBATIM)
 add_test(NAME GeoScatter3D.PipelineAbi COMMAND GeoScatter3DPipelineAbiTests)
 
 add_test(NAME GeoScatter3D.PackSample
