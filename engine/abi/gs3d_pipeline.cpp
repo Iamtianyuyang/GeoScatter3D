@@ -1,4 +1,4 @@
-#include "abi/gs3d_pipeline.h"
+#include "ffi/geoscatter3d_ffi.h"
 #include "pipeline/stages/BundleJob.hpp"
 
 #include <algorithm>

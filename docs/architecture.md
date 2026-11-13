@@ -298,7 +298,7 @@ manifest 必须包含：
   由用户手动恢复，记录中包含本地源路径。管线动态库中的 `BundleJob` 实例共享单重任务
   限制；其他静态链接副本及独立进程不受此限制。Android 统计阶段的工作线程最多为 4；
   管线 C 接口目前暂存于
-  `engine/abi/gs3d_pipeline.h`，尚未合入正式的统一 ABI 头文件，销毁管线实例会等待
+  统一 ABI 头 `include/ffi/geoscatter3d_ffi.h` §23（`gs3d_pipeline_ffi` 动态库），销毁管线实例会等待
   工作线程，调用方须避开 UI 线程。
 - Android 服务实施约定：用户在前台发起任务时启动 `dataSync` 前台服务并展示通知；
   服务持有进程内原生管线，Flutter 页面销毁不取消任务。系统回收进程后不假定任务仍在

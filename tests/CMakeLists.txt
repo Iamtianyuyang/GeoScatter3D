@@ -99,6 +99,9 @@ add_test(
 )
 
 add_executable(GeoScatter3DPipelineAbiTests PipelineAbiTests.cpp)
+target_include_directories(GeoScatter3DPipelineAbiTests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
 target_link_libraries(GeoScatter3DPipelineAbiTests PRIVATE gs3d_pipeline_ffi Catch2::Catch2WithMain)
 add_test(NAME GeoScatter3D.PipelineAbi COMMAND GeoScatter3DPipelineAbiTests)
 

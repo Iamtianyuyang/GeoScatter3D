@@ -7,7 +7,7 @@ add_subdirectory(data)
 add_subdirectory(${PROJECT_SOURCE_DIR}/engine/pipeline ${CMAKE_CURRENT_BINARY_DIR}/pipeline)
 
 add_library(gs3d_pipeline_ffi SHARED ${PROJECT_SOURCE_DIR}/engine/abi/gs3d_pipeline.cpp)
-target_compile_definitions(gs3d_pipeline_ffi PRIVATE GS3D_PIPELINE_EXPORTS)
+target_compile_definitions(gs3d_pipeline_ffi PRIVATE GS3D_FFI_EXPORTS)
 target_link_libraries(gs3d_pipeline_ffi PRIVATE gs3d_preprocess)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
     set_target_properties(gs3d_pipeline_ffi PROPERTIES BUILD_RPATH "$ORIGIN")

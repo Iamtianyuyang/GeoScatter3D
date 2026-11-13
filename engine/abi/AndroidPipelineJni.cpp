@@ -1,4 +1,4 @@
-#include "gs3d_pipeline.h"
+#include "ffi/geoscatter3d_ffi.h"
 
 #include <jni.h>
 

@@ -1,4 +1,4 @@
-#include "abi/gs3d_pipeline.h"
+#include "ffi/geoscatter3d_ffi.h"
 
 #include <catch2/catch_test_macros.hpp>
 
