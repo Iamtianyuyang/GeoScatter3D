@@ -165,6 +165,24 @@ TEST_CASE("resuming a completed bundle rejects corrupt point data")
     fs::remove_all(source.parent_path(), ignored);
 }
 
+TEST_CASE("building protects source and unrelated chunks in an existing points directory")
+{
+    const fs::path source = make_source("owned-chunks", "1,2,3,4\n");
+    const fs::path bundle = source.parent_path() / "bundle";
+    fs::create_directories(bundle / "points");
+    const fs::path existing = bundle / "points" / "existing.chunk";
+    std::ofstream(existing) << "keep me";
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options_for(source, bundle)));
+    REQUIRE(fs::file_size(existing) == 7);
+    REQUIRE_FALSE(fs::exists(bundle / "manifest.json"));
+
+    std::ofstream(existing) << "X,Y,Z,elevation\n1,2,3,4\n";
+    REQUIRE_THROWS(gs3d::pipeline::build_bundle(options_for(existing, bundle)));
+    REQUIRE(fs::file_size(existing) > 7);
+    std::error_code ignored;
+    fs::remove_all(source.parent_path(), ignored);
+}
+
 TEST_CASE("a changed source is rejected without changing the existing bundle")
 {
     const fs::path source = make_source("changed", "1,2,3,4\n2,3,4,5\n");

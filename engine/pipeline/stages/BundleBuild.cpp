@@ -47,6 +47,21 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     if (options.points_per_chunk == 0 || options.points_per_chunk > 65536) {
         throw std::runtime_error("build_bundle: points_per_chunk must be 1..65536");
     }
+    const fs::path points_dir = options.bundle_dir / "points";
+    const fs::path bundle_path = fs::weakly_canonical(fs::absolute(options.bundle_dir));
+    fs::path source_parent = fs::weakly_canonical(fs::absolute(options.source).parent_path());
+    if (fs::exists(bundle_path)) {
+        while (!source_parent.empty()) {
+            if (fs::equivalent(bundle_path, source_parent)) {
+                throw std::runtime_error("build_bundle: source must be outside the bundle directory");
+            }
+            const fs::path parent = source_parent.parent_path();
+            if (parent == source_parent) {
+                break;
+            }
+            source_parent = parent;
+        }
+    }
     std::error_code ec;
     const std::uint64_t source_bytes = fs::file_size(options.source, ec);
     if (ec) {
@@ -60,6 +75,13 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
     bool have_manifest = fs::exists(options.bundle_dir / "manifest.json", ec);
     if (ec) {
         throw std::runtime_error("build_bundle: cannot inspect existing bundle: " + ec.message());
+    }
+    if (!have_manifest && fs::exists(points_dir)) {
+        for (const auto& entry : fs::directory_iterator(points_dir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".chunk") {
+                throw std::runtime_error("build_bundle: existing point chunks have no manifest");
+            }
+        }
     }
     if (have_manifest) {
         manifest = gs3d::data::load_bundle_manifest(options.bundle_dir);
