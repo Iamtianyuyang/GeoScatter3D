@@ -11,6 +11,25 @@ void main() {
     expect(ffi.sizeOf<Gs3dStateNative>(), 480);
   });
 
+  test('command struct layout matches the native union', () {
+    expect(ffi.sizeOf<Gs3dCommandNative>(), 32);
+    final command = calloc<Gs3dCommandNative>();
+    try {
+      command.ref.structSize = ffi.sizeOf<Gs3dCommandNative>();
+      command.ref.op = gs3dCmdCameraInput;
+      command.ref.flags = 0;
+      const camera = [0.25, -0.5, 1.0, 2.0, 3.5];
+      for (var i = 0; i < camera.length; ++i) {
+        command.ref.args[i] = camera[i];
+      }
+      expect(command.ref.structSize, 32);
+      expect(command.ref.op, gs3dCmdCameraInput);
+      expect(command.ref.args[4], 3.5);
+    } finally {
+      calloc.free(command);
+    }
+  });
+
   test('state snapshot fields are read back from the native layout', () {
     final state = calloc<Gs3dStateNative>();
     try {

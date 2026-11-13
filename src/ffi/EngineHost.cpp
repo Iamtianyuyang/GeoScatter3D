@@ -1,6 +1,7 @@
 #include "ffi/EngineHost.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <exception>
 #include <future>
@@ -247,6 +248,85 @@ void EngineHost::run_open_dataset(std::uint64_t id, std::string path) {
         board_.set_dataset(kernel_->has_dataset(), kernel_->point_count());
         board_.finish(id, TaskBoard::State::Done, std::string{});
     });
+}
+
+bool EngineHost::valid(const RenderCommand& command) {
+    auto finite = [](float value) { return std::isfinite(value); };
+    switch (command.op) {
+        case RenderCommand::Op::CameraInput:
+            for (const float value : command.camera) {
+                if (!finite(value)) return false;
+            }
+            return true;
+        case RenderCommand::Op::PointSize:
+            return finite(command.point_size) && command.point_size > 0.0f &&
+                   command.point_size <= 64.0f;
+        case RenderCommand::Op::Colormap:
+            return command.colormap >= 0 && command.colormap < 64;
+        case RenderCommand::Op::Background:
+            for (const float value : command.color) {
+                if (!finite(value) || value < 0.0f || value > 1.0f) return false;
+            }
+            return true;
+        case RenderCommand::Op::Resize:
+            return command.width > 0 && command.height > 0 &&
+                   command.width <= 16384 && command.height <= 16384;
+        case RenderCommand::Op::RequestFrame:
+        case RenderCommand::Op::UnloadDataset:
+            return true;
+    }
+    return false;
+}
+
+int EngineHost::submit(const RenderCommand& command) {
+    if (!running()) {
+        return -2;
+    }
+    if (!valid(command)) {
+        return -1;
+    }
+    const bool queued = post([this, command] { execute(command); });
+    return queued ? 0 : -2;
+}
+
+// Render thread. Failures are reported through last_error, the caller never waits.
+void EngineHost::execute(const RenderCommand& command) {
+    if (!kernel_) {
+        return;
+    }
+    int rc = 0;
+    switch (command.op) {
+        case RenderCommand::Op::CameraInput:
+            rc = kernel_->camera_input(
+                command.camera[0], command.camera[1], command.camera[2],
+                command.camera[3], command.camera[4]
+            );
+            break;
+        case RenderCommand::Op::PointSize:
+            kernel_->set_point_size(command.point_size);
+            break;
+        case RenderCommand::Op::Colormap:
+            kernel_->set_colormap_index(command.colormap);
+            break;
+        case RenderCommand::Op::Background:
+            kernel_->set_background(
+                command.color[0], command.color[1], command.color[2], command.color[3]
+            );
+            break;
+        case RenderCommand::Op::Resize:
+            rc = kernel_->resize(command.width, command.height);
+            break;
+        case RenderCommand::Op::RequestFrame:
+            render_pending_frame();
+            return;
+        case RenderCommand::Op::UnloadDataset:
+            kernel_->unload_dataset();
+            board_.set_dataset(false, 0);
+            return;
+    }
+    if (rc != 0) {
+        set_error(kernel_->last_error());
+    }
 }
 
 int EngineHost::cancel(std::uint64_t task_id) {

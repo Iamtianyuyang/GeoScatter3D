@@ -189,6 +189,61 @@ int32_t gs3d_engine_cancel(gs3d_engine* e, uint64_t task) {
     return e->host.cancel(task);
 }
 
+static_assert(sizeof(gs3d_command) == 32, "gs3d_command layout drifted");
+
+int32_t gs3d_engine_submit(
+    gs3d_engine* e, const gs3d_command* command, uint64_t* out_task) {
+    if (e == nullptr || command == nullptr) {
+        return -1;
+    }
+    if (out_task != nullptr) {
+        *out_task = 0;  // 普通命令不产生任务
+    }
+    if (command->struct_size != sizeof(gs3d_command) || command->flags != 0) {
+        return -1;
+    }
+    gs3d::ffi::EngineHost::RenderCommand out;
+    switch (command->op) {
+        case GS3D_CMD_CAMERA_INPUT:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::CameraInput;
+            out.camera = {
+                command->args.camera.rotate_dx, command->args.camera.rotate_dy,
+                command->args.camera.pan_dx, command->args.camera.pan_dy,
+                command->args.camera.scroll_y,
+            };
+            break;
+        case GS3D_CMD_POINT_SIZE:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::PointSize;
+            out.point_size = command->args.point_size;
+            break;
+        case GS3D_CMD_COLORMAP:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::Colormap;
+            out.colormap = command->args.colormap;
+            break;
+        case GS3D_CMD_BACKGROUND:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::Background;
+            out.color = {
+                command->args.background[0], command->args.background[1],
+                command->args.background[2], command->args.background[3],
+            };
+            break;
+        case GS3D_CMD_RESIZE:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::Resize;
+            out.width = command->args.viewport.width;
+            out.height = command->args.viewport.height;
+            break;
+        case GS3D_CMD_REQUEST_FRAME:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::RequestFrame;
+            break;
+        case GS3D_CMD_UNLOAD_DATASET:
+            out.op = gs3d::ffi::EngineHost::RenderCommand::Op::UnloadDataset;
+            break;
+        default:
+            return -1;
+    }
+    return e->host.submit(out);
+}
+
 int32_t gs3d_engine_load_dataset(gs3d_engine* e, const char* path) {
     if (e == nullptr || path == nullptr) return -1;
     const std::string dataset_path = path;

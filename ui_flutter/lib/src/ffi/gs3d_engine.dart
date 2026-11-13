@@ -166,6 +166,15 @@ class Gs3dEngine {
     return _bindings.cancel(_ptr, task);
   }
 
+  /// 入队一条普通命令（相机、点大小、配色、背景、视口、出帧）。
+  /// 只表示已校验并入队，执行失败通过 [pollState] 的 error 发布。
+  int submitCommand(ffi.Pointer<Gs3dCommandNative> command) {
+    if (_disposed) return -2;
+    command.ref.structSize = ffi.sizeOf<Gs3dCommandNative>();
+    command.ref.flags = 0;
+    return _bindings.submitCommand(_ptr, command, ffi.nullptr);
+  }
+
   /// 读取一代状态。终态任务只在本次读取中出现，漏读就会永久丢失。
   Gs3dStateNative? pollState(ffi.Pointer<Gs3dStateNative> buffer) {
     if (_disposed) return null;

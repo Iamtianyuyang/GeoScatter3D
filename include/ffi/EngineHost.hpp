@@ -66,6 +66,29 @@ public:
     /// 拷贝最近发布的一代状态；终态任务在读取后释放。0 成功、-1 参数错误、-2 未发布。
     int poll_state(TaskBoard::Snapshot* out);
 
+    /// 普通命令：调用线程只做参数校验与入队，不等待渲染线程执行。
+    struct RenderCommand {
+        enum class Op : std::uint32_t {
+            CameraInput = 1,
+            PointSize = 2,
+            Colormap = 3,
+            Background = 4,
+            Resize = 5,
+            RequestFrame = 6,
+            UnloadDataset = 7,
+        };
+        Op op = Op::RequestFrame;
+        std::array<float, 5> camera{};
+        std::array<float, 4> color{};
+        float point_size = 0.0f;
+        std::int32_t colormap = 0;
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+    };
+
+    /// 0 已入队、-1 参数非法、-2 未运行或渲染队列已关闭。
+    int submit(const RenderCommand& command);
+
     /// 读取最近完成帧（不触发 Vulkan）。0 成功、-1 容量不足、-2 尚无帧。
     int read_frame_rgba(
         std::uint8_t* out,
@@ -98,6 +121,8 @@ private:
     bool post_io(std::function<void()> job);
     void stop_io();
     void run_open_dataset(std::uint64_t id, std::string path);
+    static bool valid(const RenderCommand& command);
+    void execute(const RenderCommand& command);
     void render_pending_frame();
     void set_error(const std::string& message);
 

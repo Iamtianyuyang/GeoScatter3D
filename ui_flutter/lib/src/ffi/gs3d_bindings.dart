@@ -66,6 +66,27 @@ String _readCString(ffi.Array<ffi.Char> buffer, int capacity) {
   return String.fromCharCodes(bytes);
 }
 
+// 普通命令（与 include/ffi/geoscatter3d_ffi.h 第 22 节一致）
+const int gs3dCmdCameraInput = 1;
+const int gs3dCmdPointSize = 2;
+const int gs3dCmdColormap = 3;
+const int gs3dCmdBackground = 4;
+const int gs3dCmdResize = 5;
+const int gs3dCmdRequestFrame = 6;
+const int gs3dCmdUnloadDataset = 7;
+
+/// 命令参数的并集用最大成员（camera = 5 个 float）表示，共 20 字节。
+final class Gs3dCommandNative extends ffi.Struct {
+  @ffi.Uint32()
+  external int structSize;
+  @ffi.Uint32()
+  external int op;
+  @ffi.Uint32()
+  external int flags;
+  @ffi.Array(5)
+  external ffi.Array<ffi.Float> args;
+}
+
 // Opaque engine pointer
 final class Gs3dEngineOpaque extends ffi.Opaque {}
 
@@ -240,6 +261,19 @@ typedef DartOpenDataset =
 typedef CCancel = ffi.Int32 Function(Gs3dEnginePtr e, ffi.Uint64 task);
 typedef DartCancel = int Function(Gs3dEnginePtr e, int task);
 
+typedef CSubmitCommand =
+    ffi.Int32 Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Gs3dCommandNative> command,
+      ffi.Pointer<ffi.Uint64> outTask,
+    );
+typedef DartSubmitCommand =
+    int Function(
+      Gs3dEnginePtr e,
+      ffi.Pointer<Gs3dCommandNative> command,
+      ffi.Pointer<ffi.Uint64> outTask,
+    );
+
 /// 低层动态链接库函数表
 class Gs3dBindings {
   final ffi.DynamicLibrary lib;
@@ -276,6 +310,7 @@ class Gs3dBindings {
   late final DartPollState pollState;
   late final DartOpenDataset openDataset;
   late final DartCancel cancel;
+  late final DartSubmitCommand submitCommand;
 
   Gs3dBindings(this.lib) {
     version = lib.lookupFunction<CVersion, DartVersion>('gs3d_engine_version');
@@ -365,6 +400,9 @@ class Gs3dBindings {
       'gs3d_engine_open_dataset',
     );
     cancel = lib.lookupFunction<CCancel, DartCancel>('gs3d_engine_cancel');
+    submitCommand = lib.lookupFunction<CSubmitCommand, DartSubmitCommand>(
+      'gs3d_engine_submit',
+    );
   }
 
   static ffi.DynamicLibrary openLibrary() {

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <fstream>
 #include <thread>
 #include <vector>
@@ -413,4 +414,65 @@ TEST_CASE("async open reports a snapshot before and after loading") {
 
     host.stop();
     fs::remove_all(dir, ignored);
+}
+
+// ─── 普通命令：调用线程只校验入队，执行在渲染线程 ──────────────────────────
+
+TEST_CASE("ordinary commands are validated before queueing and never block") {
+    using Command = gs3d::ffi::EngineHost::RenderCommand;
+    gs3d::ffi::EngineHost host;
+
+    Command camera;
+    camera.op = Command::Op::CameraInput;
+    camera.camera = {0.1f, 0.2f, 0.0f, 0.0f, 0.5f};
+    CHECK(host.submit(camera) == -2);  // 未启动：渲染队列已关闭
+
+    gs3d::ffi::HeadlessRenderKernel::Config config;
+    config.width = 320;
+    config.height = 200;
+    const std::filesystem::path shader_dir(GS3D_TEST_SHADER_DIR);
+    if (std::filesystem::exists(shader_dir / "point.vert.spv")) {
+        config.shader_dir = shader_dir.string();
+    }
+    if (host.start(config) != 0) {
+        SUCCEED("no Vulkan device; command execution needs a render thread");
+        return;
+    }
+
+    Command broken = camera;
+    broken.camera[0] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(host.submit(broken) == -1);
+    CHECK(host.submit(camera) == 0);
+
+    Command resize;
+    resize.op = Command::Op::Resize;
+    resize.width = 0;
+    resize.height = 100;
+    CHECK(host.submit(resize) == -1);
+    resize.width = 256;
+    resize.height = 128;
+    CHECK(host.submit(resize) == 0);
+
+    Command background;
+    background.op = Command::Op::Background;
+    background.color = {0.2f, 0.3f, 1.5f, 1.0f};  // 归一化之外
+    CHECK(host.submit(background) == -1);
+    background.color = {0.2f, 0.3f, 0.4f, 1.0f};
+    CHECK(host.submit(background) == 0);
+
+    // 出帧需要已装载的数据；装载走同步入口，只为观察命令确实被执行。
+    REQUIRE(host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+        return kernel.load_synthetic(1000);
+    }) == 0);
+
+    Command frame;
+    frame.op = Command::Op::RequestFrame;
+    CHECK(host.submit(frame) == 0);
+    for (int attempt = 0; attempt < 600 && host.frame_sequence() == 0; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    INFO(host.last_error());
+    CHECK(host.frame_sequence() > 0);
+
+    host.stop();
 }

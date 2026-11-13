@@ -116,7 +116,9 @@ int32_t gs3d_engine_poll_state(gs3d_engine*, gs3d_state* out);
 - 只读一次终态：任何漏读都会独占一个槽位，直到进程退出；Dart 侧每 200 ms 轮询。
 - 取消只保证结果不被装载，文件读取本身不可中断；`gs3d_engine_destroy` 会等 IO 线程
   读完当前文件后返回。
-- 只有一个 IO 线程，`gs3d_engine_submit`（普通命令）尚未实现，相机等仍走同步入口。
+- 只有一个 IO 线程，只服务开包类重任务；相机、点大小、配色、背景、视口、出帧和
+  卸载走 `gs3d_engine_submit` 入队（调用线程校验参数、渲染线程执行，不等待），
+  参数非法返回 -1、引擎未启动返回 -2；执行失败通过快照 error 发布（-1 只表示已入队）。
   `tests/EngineHostTests.cpp` 的 “async open reports a snapshot before and after
   loading” 在有 Vulkan 设备的机器上真实跑通：建 64 点工程包、提交、轮询到 Done、
   校验点数与终态一次性释放，并验证取消后装载被丢弃。

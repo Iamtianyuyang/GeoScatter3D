@@ -428,6 +428,51 @@ GS3D_FFI_API int32_t gs3d_engine_open_dataset(
  * 文件读取本身不可中断。0 成功、-1 未知或已结束的任务。 */
 GS3D_FFI_API int32_t gs3d_engine_cancel(gs3d_engine* e, uint64_t task);
 
+/* ---- 普通命令（第 22 节）：入队即返回，不等待渲染线程 ---- */
+
+enum {
+    GS3D_CMD_CAMERA_INPUT = 1,
+    GS3D_CMD_POINT_SIZE = 2,
+    GS3D_CMD_COLORMAP = 3,
+    GS3D_CMD_BACKGROUND = 4,
+    GS3D_CMD_RESIZE = 5,
+    GS3D_CMD_REQUEST_FRAME = 6,
+    GS3D_CMD_UNLOAD_DATASET = 7
+};
+
+typedef struct gs3d_camera_args {
+    float rotate_dx;
+    float rotate_dy;
+    float pan_dx;
+    float pan_dy;
+    float scroll_y;
+} gs3d_camera_args;
+
+/* 每类命令使用哪个成员由 op 决定，未用到的字节必须清零。 */
+typedef union gs3d_command_args {
+    gs3d_camera_args camera;
+    float point_size;
+    int32_t colormap;
+    float background[4];
+    struct {
+        uint32_t width;
+        uint32_t height;
+    } viewport;
+} gs3d_command_args;
+
+typedef struct gs3d_command {
+    uint32_t struct_size;  /* sizeof(gs3d_command) */
+    uint32_t op;           /* GS3D_CMD_* */
+    uint32_t flags;        /* 保留，必须为 0 */
+    gs3d_command_args args;
+} gs3d_command;
+
+/* 参数在调用线程校验并拷贝；返回 0 只表示已入队，不代表已执行。
+ * 0 入队、-1 参数非法（NaN、越界、未知 op、flags 非 0）、-2 未运行。
+ * 执行失败通过 gs3d_state.error 发布。任务号为普通命令保留，当前恒为 0。 */
+GS3D_FFI_API int32_t gs3d_engine_submit(
+    gs3d_engine* e, const gs3d_command* command, uint64_t* out_task);
+
 GS3D_FFI_API const char* gs3d_engine_version(void);
 GS3D_FFI_API int32_t gs3d_engine_preprocess_csv(
     const char* csv_path,
