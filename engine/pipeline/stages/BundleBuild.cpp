@@ -69,7 +69,11 @@ bool stage_done(const gs3d::data::Manifest& manifest, const char* stage) {
 void run_lod_stage(const fs::path& bundle_dir,
                    gs3d::data::Manifest& manifest,
                    BundleBuildResult& result,
-                   const std::function<void(const char*)>& on_stage) {
+                   const std::function<void(const char*)>& on_stage,
+                   bool write_lod) {
+    if (!write_lod) {
+        return;
+    }
     if (stage_done(manifest, kLodStageName)) {
         result.stages_skipped.push_back(kLodStageName);
         return;
@@ -80,6 +84,8 @@ void run_lod_stage(const fs::path& bundle_dir,
     if (!write_bundle_lod(bundle_dir)) {
         return;  // 读取端没有 sidecar 时会自己建链
     }
+    // 点阶段自己写过 manifest，这里的副本是旧的，必须重读再合并。
+    manifest = gs3d::data::load_bundle_manifest(bundle_dir);
     manifest.job.stages[kLodStageName] = "done";
     gs3d::data::save_bundle_manifest(bundle_dir, manifest);
     result.stages_run.push_back(kLodStageName);
@@ -160,7 +166,7 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
         result.points = manifest.point_count;
         result.chunks = manifest.chunks.size();
         result.stages_skipped = {kStatsStageName, kPointStageName};
-        run_lod_stage(options.bundle_dir, manifest, result, on_stage);
+        run_lod_stage(options.bundle_dir, manifest, result, on_stage, options.write_lod);
         return result;
     }
 
@@ -303,7 +309,7 @@ BundleBuildResult build_bundle(const BundleBuildOptions& options,
      * LOD 链只在预处理里算一次：运行时的 ffi::LodBuilder 在 50M 点上要 22 s，
      * 是“打开工程包”耗时的大头，而 sidecar 存在时内核直接读它。
      */
-    run_lod_stage(options.bundle_dir, manifest, result, on_stage);
+    run_lod_stage(options.bundle_dir, manifest, result, on_stage, options.write_lod);
     return result;
 }
 

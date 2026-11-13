@@ -11,11 +11,13 @@ namespace {
 
 void usage() {
     std::printf("usage: gs3d_pack --csv <file> --out <bundle-dir> [--chunk-points N]\n"
-                "                [--value-field NAME]\n"
+                "                [--value-field NAME] [--no-lod]\n"
                 "       gs3d_pack --resume <bundle-dir>\n"
                 "Builds a v3 bundle (manifest.json + points/*.chunk). Stages already recorded\n"
                 "as done for the same source and options are skipped, so an interrupted run\n"
-                "resumes from the last finished stage.\n");
+                "resumes from the last finished stage. --no-lod skips the LOD sidecar,\n"
+                "which costs about a minute on 50M points but makes every open rebuild\n"
+                "the chain at runtime.\n");
 }
 
 } // namespace
@@ -39,6 +41,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--value-field" && has_value) {
             build_argument = true;
             options.value_field = argv[++i];
+        } else if (arg == "--no-lod") {
+            build_argument = true;
+            options.write_lod = false;
         } else if (arg == "--resume" && has_value) {
             resume_dir = argv[++i];
         } else if (arg == "--help" || arg == "-h") {

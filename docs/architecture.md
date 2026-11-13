@@ -331,7 +331,13 @@ manifest 必须包含：
   默认视角绘制 813 k 点，峰值 RSS 1.2 GB。距离“打开到可交互 ≤ 1.5 s”仍有差距，差距来自
   766 MB 点块的解码与上传，不是建链。
   代价：50M 建包多出 `lod` 阶段（读回点块 + 建 5 层 + 写 50 MB sidecar，实测 +49 s），
-  总建包时间因此超出 60 s 预算；这是把耗时从每次打开搬到一次的取舍。
+  总建包时间因此超出 60 s 预算；这是把耗时从每次打开搬到一次的取舍。不需要快速打开时
+  可用 `gs3d_pack --no-lod` 跳过它（1.34 M 点样本实测 6.3 s → 2.8 s，打开时改由运行时
+  建链）。
+- 帧时间（Release，1920×1080，50M 包、813 k 点）：`render_rgba` 4.1 ms/帧，首帧 17 ms。
+  修复前同一命令 68 ms：回读用的 staging 缓冲挑到的是显卡上的 host-visible BAR 内存，
+  CPU 侧未缓存，单是整屏 memcpy 就 33 ms；改挑 `HOST_CACHED` 的系统内存后 memcpy 降到
+  1.4 ms。离屏回读路径（Windows/Linux 视口）因此从 68 ms 降到 4 ms，进入 16 ms 预算。
   `estimate_spacing` 曾按输入顺序取连续块，50M 数据按列导出时估出 537,970 的“点距”，
   整份数据被压成一层、屏幕上只剩 67 k 点；现以 bbox 最大面的面密度 sqrt(area/n) 作为
   与顺序无关的上界，同一数据改为 4 层。Android 设备没有实测数据。
@@ -349,9 +355,11 @@ manifest 必须包含：
 | 峰值内存 | ≤ 2 GB | ≤ 1.2 GB |
 | 桌面回读额外延迟 | ≤ 3 ms | 不适用 |
 
-测量门禁：`engine/cli/gs3d_bench`（从 `tools/gs3d_bench_bundle.cpp` 移植）无界面
-输出四个数字：开包毫秒、预处理各阶段秒数、一帧渲染毫秒、峰值 RSS。CI 记录数字并
-与基线比较（超过 1.5× 让任务失败）。Android 在发布前手工在 4 GB 设备上跑同一组
+测量门禁：`gs3d_bench`（`engine/cli/gs3d_bench.cpp`，桌面目标；`--bundle` 测开包与帧、
+`--csv ... --out ...` 测预处理各阶段）输出一行 JSON：开包毫秒、首帧毫秒、稳态帧毫秒、
+点数、峰值 RSS（Linux 取 `/proc/self/status` 的 VmHWM）。跨进程的同一组数字也可用
+`scripts/measure_performance.py open|pack` 取。CI 应记录数字并与基线比较（超过 1.5× 让
+任务失败）；当前 CI 只做构建与测试，逐渐落到门禁还需要基线机器。Android 在发布前手工在 4 GB 设备上跑同一组
 数字并记入 PR。
 
 瓦片选择应利用网格索引或缓存缩小候选范围；当前包有 30,479 个瓦片，具体耗时

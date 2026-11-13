@@ -111,6 +111,11 @@ TEST_CASE("preprocessing writes the lod sidecar that opening reuses")
     );
     REQUIRE(header.level_count >= 1);
     REQUIRE(header.source_point_count == 200000);
+    // lod 阶段写 manifest 时不能把点阶段的块表和检查点抹掉。
+    const auto manifest = gs3d::data::load_bundle_manifest(options.bundle_dir);
+    REQUIRE(manifest.chunks.size() == 4);
+    REQUIRE(manifest.job.stages.at("points") == "done");
+    REQUIRE(manifest.job.stages.at("lod") == "done");
 
     // 再打开同一个包：lod 已完成，不再写第二遍。
     const auto again = gs3d::pipeline::build_bundle(options);

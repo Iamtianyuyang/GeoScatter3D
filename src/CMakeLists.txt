@@ -57,6 +57,22 @@ target_link_libraries(gs3d_pack PRIVATE
     gs3d_data
 )
 
+# 无界面基准（开包/帧时间/预处理阶段）。需要 Vulkan，Android 交叉编译不建。
+if(NOT ANDROID)
+    add_executable(gs3d_bench
+        ${PROJECT_SOURCE_DIR}/engine/cli/gs3d_bench.cpp
+    )
+    target_include_directories(gs3d_bench PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/engine
+    )
+    target_link_libraries(gs3d_bench PRIVATE
+        gs3d_engine_core
+        gs3d_preprocess
+    )
+    copy_runtime_assets(gs3d_bench)
+endif()
+
 add_executable(gs3d_groundtruth
     ${PROJECT_SOURCE_DIR}/tools/gs3d_groundtruth.cpp
 )

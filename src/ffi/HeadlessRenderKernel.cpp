@@ -236,14 +236,24 @@ void HeadlessRenderKernel::ensure_frame_resources(std::size_t bytes) {
     vkGetBufferMemoryRequirements(device, staging_buffer_, &req);
     VkPhysicalDeviceMemoryProperties mem_props{};
     vkGetPhysicalDeviceMemoryProperties(context_->physical_device(), &mem_props);
+    /*
+     * 回读每帧要把整屏 memcpy 出去，必须挑 HOST_CACHED 的系统内存：
+     * 显卡上的 host-visible BAR 内存在 CPU 侧是未缓存的，1080p 一帧要 33 ms
+     * （实测），换成 cached 内存后降到 1 ms 量级。
+     */
     std::uint32_t mem_type = UINT32_MAX;
-    for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-        if ((req.memoryTypeBits & (1u << i)) &&
-            (mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-            (mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-            mem_type = i;
+    for (const VkMemoryPropertyFlags wanted :
+         {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+              VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT}) {
+        for (std::uint32_t i = 0; i < mem_props.memoryTypeCount && mem_type == UINT32_MAX;
+             ++i) {
+            if ((req.memoryTypeBits & (1u << i)) &&
+                (mem_props.memoryTypes[i].propertyFlags & wanted) == wanted) {
+                mem_type = i;
+            }
+        }
+        if (mem_type != UINT32_MAX) {
             break;
         }
     }

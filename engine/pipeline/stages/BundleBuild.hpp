@@ -16,6 +16,9 @@ struct BundleBuildOptions {
     std::filesystem::path bundle_dir;
     std::uint32_t points_per_chunk = 65536;
     std::string value_field;
+    /// 建包末尾是否写 lod.gs3dlod。关掉省一次读回与建链（50M 约 50 s），
+    /// 代价是引擎每次打开都要运行时建链（约 22 s）。
+    bool write_lod = true;
 };
 
 struct BundleBuildResult {
