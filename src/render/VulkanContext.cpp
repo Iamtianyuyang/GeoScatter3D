@@ -189,9 +189,12 @@ void VulkanContext::create_instance() {
     create_info.ppEnabledLayerNames =
         layers.empty() ? nullptr : layers.data();
 
+    // 失败时最常见原因是机器上没有 Vulkan 1.1 驱动/ICD：把排查方向写进消息，
+    // 否则用户只看到“instance 创建失败”，无从下手。
     check_vk(
         vkCreateInstance(&create_info, nullptr, &instance_),
-        "VulkanContext: failed to create Vulkan instance"
+        "VulkanContext: failed to create Vulkan instance "
+        "(没有可用的 Vulkan 1.1 驱动或 ICD；Linux 可用 vulkaninfo 检查)"
     );
 }
 

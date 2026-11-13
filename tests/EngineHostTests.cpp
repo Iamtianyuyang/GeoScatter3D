@@ -290,6 +290,8 @@ TEST_CASE("tile streaming uploads and composes a large bundle") {
      * 瓦片层才会出现；默认全景位姿下它故意不出，否则屏幕上会出现
      * 「一半全精度瓦片 + 一半底图」的硬拼接。
      */
+    // 缩进步数取决于 LOD 链与屏幕空间误差：点数/分布一变，两帧全景位姿就可能
+    // 还没进入瓦片区间，所以逐帧推进，直到瓦片真的介入为止。
     host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
         for (int step = 0; step < 2; ++step) {
             kernel.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
@@ -302,6 +304,13 @@ TEST_CASE("tile streaming uploads and composes a large bundle") {
     std::uint64_t tile_points = 0;
     std::uint64_t tile_uploaded_bytes = 0;
     for (int frame = 0; frame < 40; ++frame) {
+        // 每 4 帧再放大一步（最多 8 步），让不同 LOD 链都能走到瓦片区间。
+        if (frame % 4 == 0 && resident == 0) {
+            host.invoke([](gs3d::ffi::HeadlessRenderKernel& kernel) {
+                kernel.camera_input(0.0f, 0.0f, 0.0f, 0.0f, 3.0f);
+                return 0;
+            });
+        }
         host.request_frame();
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         host.invoke([&](gs3d::ffi::HeadlessRenderKernel& kernel) {
