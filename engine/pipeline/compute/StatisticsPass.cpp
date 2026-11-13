@@ -20,7 +20,12 @@ std::uint32_t resolve_thread_count(std::size_t chunk_count) noexcept {
         return 1;
     }
 
-    const auto hw = std::thread::hardware_concurrency();
+    const auto available = std::thread::hardware_concurrency();
+#ifdef __ANDROID__
+    const auto hw = std::min(available, 4u);
+#else
+    const auto hw = available;
+#endif
     if (hw <= 1) {
         return 1;
     }
